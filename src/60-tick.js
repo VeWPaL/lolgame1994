@@ -65,7 +65,7 @@ function update(){
      check has to survive the states above it. The suite missed this entirely because every test calls
      startGame() before it touches anything, so the title screen was the one place it could break and
      no test ever stood there. */
-  if(player&&player.restoreFX&&player.restoreFX.t>0)player.restoreFX.t--;
+  if(player&&player.restoreFX&&player.restoreFX.t>0&&roomFade<=RESTORE_FX_FADE)player.restoreFX.t--;
   // roomFade is progress-driven, not "the complement of a smoothstep": smooth() is flat at BOTH
   // ends, so 1-smooth(fadeT/ticks) jumped to 0 on the first tick and the whole fade was a cut.
   // p runs 0 -> 1 across the fade, so 1-smooth(p) starts at full black and eases out of it.

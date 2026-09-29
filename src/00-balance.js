@@ -461,12 +461,28 @@ function roomPressure(live){
    fair. A hidden accuracy ramp on a lone enemy is indistinguishable from the game cheating. */
 const PRESSURE_CLOSURE=0.85, PRESSURE_CADENCE=0.4;
 
-/* HOW LONG THE COOLDOWN-RESTORED FLASH LIVES, in ticks. 34 is about a third of a second at 60Hz and
-   it has to clear the READY window: the refill happens as the room fades up, so a flash shorter than
-   the hold would spend most of itself on a black screen. It is deliberately short. This is a receipt
-   for something that already happened, not a state the player has to read, and anything that lingers
-   becomes furniture. The fractions it draws with come from enterRoom, sampled before the reset. */
-const RESTORE_FX_TICKS=34;
+/* HOW LONG THE COOLDOWN-RESTORED FLASH LIVES, and how dark the screen may be while it does.
+
+   RESTORE_FX_TICKS is 34, about half a second of wall clock. It has to fit inside the READY window
+   (158 ticks) with room to spare, which it does comfortably.
+
+   RESTORE_FX_FADE is the half of this that actually mattered, and getting it wrong is why the flash
+   never appeared at all in play. The refill is fired by enterRoom, which runs DURING the room fade -
+   and the fade is 1-smooth(p), which is at its flattest at the START. Measured over the flash's life:
+
+       tick  0   roomFade 1.000    the HUD is 0% visible
+       tick 32   roomFade 0.894    the HUD is 13% visible
+
+   So the whole 34-tick flash played out against a screen that was 87-100% black. It was drawn
+   correctly every frame and then painted over by the fade, and it looked like a feature that simply
+   did not fire. The clock therefore does not start until the fade has lifted past
+   RESTORE_FX_FADE, which puts the flash in the last fifth of the fade where the room is legible.
+
+   Worth recording how this survived: the test asserted the clock counted down from 34 to 0, and it
+   did. It never asked whether anybody could see it. Measuring that a thing happens is not measuring
+   that it is observable, and for a VFX the second is the only one that counts. There is now a test
+   that fails if the flash is ever spent on a black screen again. */
+const RESTORE_FX_TICKS=34, RESTORE_FX_FADE=0.30;
 
 /* HOW FAR a ranged body will actually have walked in N ticks, given the standoff rule it obeys.
    It is emphatically not speed*N, and finding that out cost a day of a shooter missing a straight

@@ -4512,6 +4512,20 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('walking into a fight hands the kit back, and says so in proportion to what it gave',()=>{
+  /* The clock no longer starts the instant the refill happens. enterRoom fires it DURING the room
+     fade, and the fade is 1-smooth(p) - flat at its start - so a flash that began immediately was
+     drawn for its whole life against a screen 87-100% black and the player saw nothing at all. It
+     now holds until roomFade falls to RESTORE_FX_FADE, which is why the three assertions below walk
+     a whole arrival instead of counting off RESTORE_FX_TICKS ticks: the clock legitimately waits,
+     and a test that counts ticks from the refill is measuring the wrong span. */
+  const settleFlash=()=>{
+    // run until the screen is clear and the flash has finished, or give up
+    for(let i=0;i<400;i++){
+      update();
+      if(!player.restoreFX||player.restoreFX.t<=0) return i;
+    }
+    return 400;
+  };
     /* The refill in enterRoom is the most generous thing the game does and it was completely silent.
        Three numbers jump to full at the moment the player is looking at a door open, and a cooldown
        returning is invisible by nature: a bar that was half spent is now full and nothing about that
@@ -4562,9 +4576,12 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     near(arm(0,0,1,0).blink,0.5,'one blink of two held');
     near(arm(0,0,1,BLINK_RECHARGE*0.5).blink,0.25,'a blink bar three quarters full');
     // the flash must expire rather than sit on the HUD as furniture
+    // a whole arrival, not RESTORE_FX_TICKS ticks: the clock waits for the fade to lift first, so
+    // counting off the flash duration from the refill measures a span during which it has not begun
     fx=arm(20,20,0,0);
-    for(let i=0;i<RESTORE_FX_TICKS+2;i++) update();
-    eq(player.restoreFX.t,0,'the refill flash outlived its own duration and became furniture');
+    const spentOn=settleFlash();
+    eq(player.restoreFX.t,0,'the refill flash outlived its own duration and became furniture ('+
+       spentOn+' ticks into an arrival)');
     // and it must not fire for a room that has nothing to give back into
     startGame();
     const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
@@ -4715,12 +4732,74 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     }catch(e){ threw=e.message; }
     ok(threw===null,'a single update with no game running threw: '+threw);
     player=savedPlayer; state=savedState;
-    // and the guard must not have been written so loosely that it swallows a real flash
+    // and the guard must not have been written so loosely that it swallows a real flash. The clock
+    // only counts once the screen is legible, so this clears the fade first - otherwise the gate does
+    // exactly what it is supposed to and the assertion would be testing the gate, not the guard.
     startGame();
+    enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:1,alt:1,blink:1};
     update();
-    ok(player.restoreFX.t===RESTORE_FX_TICKS-1,'the guard stopped the flash clock ticking during '+
+    eq(player.restoreFX.t,RESTORE_FX_TICKS-1,'the guard stopped the flash clock ticking during '+
        'play, so protecting the title screen broke the feature instead');
+  });
+
+  test('the refill flash is spent where it can be seen, not on a black screen',()=>{
+    /* This is the second bug in the refill flash, and it is the one that made the feature look dead.
+
+       The first bug was that the clock never advanced, which a test caught by asserting the count
+       went from RESTORE_FX_TICKS to 0. Fixing it made the test green and the feature still did not
+       appear in play, because a clock counting down is not the same as a thing being visible.
+
+       The refill is fired by enterRoom, which runs DURING the room fade, and the fade is
+       1-smooth(p) - flat at its start. Measured over the original 34-tick life:
+
+           tick  0   roomFade 1.000   the HUD is 0% visible
+           tick 32   roomFade 0.894   the HUD is 13% visible
+
+       So the entire flash played out against a screen that was 87-100% black. It was drawn on every
+       one of those frames and then painted over by the fade. This is the fixture failure this file
+       has been rewritten several times to avoid, in a new costume: the probe was green, the fixture
+       was measuring something real, and the thing being measured was not the thing the player sees.
+
+       So the assertion is about VISIBILITY and not about the clock. If the flash is ever spent while
+       the screen is dark again, this fails - which is the only version of the claim that means
+       anything for a VFX. */
+    const visible=()=>1-roomFade;
+    startGame();
+    const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
+    r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    r.enemies.push(spawnEnemy(false,r,r.x,r.y,'lunger'));
+    r.armed=false;
+    player.cooldown=BLINK_RECHARGE; player.cooldownMax=BLINK_RECHARGE;
+    player.blinkCharges=0; player.blinkRegen=0;
+    enterRoom(cur.x,cur.y,'W');
+    ok(player.restoreFX&&player.restoreFX.t===RESTORE_FX_TICKS,'entering a fight with a spent kit '+
+       'queued nothing to draw');
+    // walk the whole arrival. The fade is driven by update() itself, so this needs no fixture help -
+    // the first version of this test zeroed roomFade by hand and then measured the gate I had just
+    // added, which is the same mistake in a new place.
+    let drewFor=0, darkest=1, firstTick=-1, lastTick=-1;
+    for(let i=0;i<400;i++){
+      const live=player.restoreFX&&player.restoreFX.t>0;
+      if(live&&player.restoreFX.t<RESTORE_FX_TICKS){
+        // only count a frame the flash actually drew: t still at its initial value means the clock
+        // has not started, and a held clock is not a drawn frame
+        drewFor++;
+        const v=visible();
+        if(v<darkest) darkest=v;
+        if(firstTick<0) firstTick=i;
+        lastTick=i;
+      }
+      update();
+    }
+    ok(drewFor>0,'the refill flash never drew a single frame of a whole room arrival');
+    ok(darkest>0.6,'the refill flash spent its frames on a screen that was only '+
+       Math.round(darkest*100)+'% visible (ticks '+firstTick+'..'+lastTick+'), so the player sees '+
+       'nothing - a flash that happens where nobody can see it is not a flash');
+    ok(drewFor<=RESTORE_FX_TICKS+1,'the refill flash spent '+drewFor+' frames drawing, which is more '+
+       'than its own duration ('+RESTORE_FX_TICKS+'), so it is drawing on frames it has already used');
+    ok(!player.restoreFX||player.restoreFX.t<=0,'the refill flash was still running 400 ticks into a '+
+       'room arrival ('+(player.restoreFX?player.restoreFX.t:-1)+' left)');
   });
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so
