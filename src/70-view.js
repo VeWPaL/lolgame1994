@@ -1,3 +1,10 @@
+/* ==============================================================================================
+   70-view  -  everything drawn
+
+   The part Unity replaces wholesale. Read it for BEHAVIOUR, not for structure: what has to be
+   legible, what must read in a glance, what the tells are. None of it ports; all of it is
+   specification for the replacement.
+   ============================================================================================== */
 // where a padlock hangs for each side: just outside the frame
 function c0(d){ return {N:[MIDX,ROOM_TOP-8],S:[MIDX,ROOM_BOTTOM+8],W:[ROOM_LEFT-8,MIDY],E:[ROOM_RIGHT+8,MIDY]}[d]; }
 function drawFloor(type){

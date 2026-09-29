@@ -1,3 +1,12 @@
+/* ==============================================================================================
+   30-enemies  -  spawning a body, and everything it thinks
+
+   Includes the lunge, the only committed attack in the game and the only mechanic whose entire
+   quality IS the quality of its prediction. solveIntercept is the reference implementation for the
+   two other things that aim at a moving player; the gunner solves the same problem with three extra
+   terms, and both now iterate fourteen times, because a shell is only 1.8x the player's speed and
+   three passes leave thirty pixels of miss.
+   ============================================================================================== */
 function spawnEnemy(boss,room,x,y,type){
   const rx=()=>ROOM_LEFT+SPAWN_MARGIN+Math.random()*(ROOM_RIGHT-ROOM_LEFT-SPAWN_MARGIN*2);
   const ry=()=>ROOM_TOP+SPAWN_MARGIN+Math.random()*(ROOM_BOTTOM-ROOM_TOP-SPAWN_MARGIN*2);

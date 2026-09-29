@@ -1,3 +1,11 @@
+/* ==============================================================================================
+   00-balance  -  every dial in the game
+
+   Nothing here draws, reads input or touches the DOM, so all of it ports to C# unchanged. This is
+   the highest-value file in the repo: ninety-odd numbers that ARE the game's feel, most of them
+   with the measurement that produced them in the comment above them. When a number is wrong this
+   is the file, and when a number is right this is why.
+   ============================================================================================== */
 const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 

@@ -1,3 +1,10 @@
+/* ==============================================================================================
+   50-run  -  blink, run flow, records, pause
+
+   The only thing here that is not pure simulation is the records pair, which touches localStorage.
+   In C# that becomes an interface with a PlayerPrefs or file implementation; everything else moves
+   across as-is.
+   ============================================================================================== */
 function getBlinkDir(){
   let dx=0,dy=0;
   if(keys['w']||keys['arrowup'])dy-=1;

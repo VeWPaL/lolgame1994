@@ -1,3 +1,14 @@
+/* ==============================================================================================
+   99-tests  -  the 94 checks: an executable specification, not a safety net
+
+   Larger than the game itself, and the most valuable thing in the repo. Seeded with mulberry32, so
+   a green run is a real contract rather than a lucky sample.
+
+   84 of the 94 bodies assert on the simulation alone and port to a headless NUnit suite unchanged.
+   The other 10 assert on drawing, and one of those is only "every screen renders without throwing" -
+   a smoke test that belongs on the engine side, not in a headless suite. That 84/10 split is why
+   the port is measurable rather than hopeful.
+   ============================================================================================== */
 /* ---------- regression tests: open depths.html?test (this block does nothing otherwise) ----------
    Seeded and synchronous, well under a second. Results go to the console, an on-page panel and
    window.__testResults. Saved records are backed up first and restored after, so real progress is untouched. */

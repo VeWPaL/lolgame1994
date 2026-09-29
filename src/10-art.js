@@ -1,3 +1,13 @@
+/* ==============================================================================================
+   10-art  -  every sprite, generated rather than loaded
+
+   No asset files exist in this project. Each body is a pixel array baked to a canvas at load, which
+   is why the whole game is 450KB and why there is no art pipeline to manage.
+
+   In Unity the same arrays become a Texture2D built at runtime and handed to a SpriteRenderer, so
+   this module ports nearly mechanically. That is the strongest argument for keeping the art
+   procedural, and the reason a 15GB asset pipeline never has to exist.
+   ============================================================================================== */
 /* ---------- cave floor texture ---------- */
 const caveCanvas=document.createElement('canvas');
 caveCanvas.width=128;caveCanvas.height=128;

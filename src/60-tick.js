@@ -1,3 +1,14 @@
+/* ==============================================================================================
+   60-tick  -  update(), 552 lines, the keystone of the port
+
+   The one function I would not translate mechanically. Everything else here is a list of rules;
+   this is where the rules interleave, and the only place where a mistake stays invisible until it
+   is expensive. Port it last, and port it against the tests rather than by reading it.
+
+   The order inside matters and is load-bearing: projectiles resolve, then bodies, then the player,
+   then the room. Several bugs in this function were ORDER bugs - a hit landing after the body it
+   hit had already moved, a projectile resolving before the cast that spawned it.
+   ============================================================================================== */
 function update(){
   frameCount++;
   tickFX();

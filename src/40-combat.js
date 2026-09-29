@@ -1,3 +1,13 @@
+/* ==============================================================================================
+   40-combat  -  the player, the guns, and the hook
+
+   The gunner intercept, the cast tell, the hold-still-while-charging rule, the hook's resistance
+   curve, the blast pool. Pure simulation.
+
+   Note the target of the gunner intercept: it aims at the player's HITBOX, ten pixels below the
+   sprite origin, because playerHit tests that circle. A chaser must NOT use that target - it steers
+   a body and would visibly drift low - but a projectile has no excuse for missing it.
+   ============================================================================================== */
 function clampPlayer(){
   const r=currentRoom();
   const inGapX=Math.abs(player.x-MIDX)<DOORW/2, inGapY=Math.abs(player.y-MIDY)<DOORW/2;

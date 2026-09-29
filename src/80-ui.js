@@ -1,3 +1,11 @@
+/* ==============================================================================================
+   80-ui  -  boot, input, and the DOM overlays
+
+   Also replaced by Unity, but one idea is worth carrying across: the uiHoldsInput / uiAllows pair,
+   which is a whole input-suppression layer. Overlays must take the keyboard away from the game and
+   hand it back cleanly on close, and that problem does not get smaller because the renderer
+   changed - it gets worse, because Unity has its own event systems underneath.
+   ============================================================================================== */
 mouse={x:W/2,y:H/2}; mouseDown=false; altMouseDown=false; keys={}; state='start';
 loadRecords();
 

@@ -1,3 +1,10 @@
+/* ==============================================================================================
+   20-world  -  global state and the dungeon generator
+
+   The map graph, room growth, doors, keys, and the spawn plan. Pure simulation: no drawing, no
+   input, no platform calls. Contains the global state block, which in C# becomes a GameState class
+   rather than nine module-level variables.
+   ============================================================================================== */
 let rooms, cur, player, projectiles, mouse, mouseDown, altMouseDown, keys, state, records;
 let allRooms=[], bossFront={};
 let showPerf=false, showSpawn=false, lastT=0, perfSamples=[], trans=null, readyT=0, fadeT=0, fadeTicks=1, entryDir='N';
