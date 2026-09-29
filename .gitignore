@@ -9,7 +9,21 @@
 src/*
 !src/*.js
 
-# scratch and build output
+# the C# port. Source is tracked, build output is not.
+!csharp/
+csharp/*
+!csharp/*.sln
+csharp/Depths.Core/
+!csharp/Depths.Core/
+csharp/Depths.Core/*
+!csharp/Depths.Core/*.cs
+!csharp/Depths.Core/*.csproj
+csharp/Depths.Tests/
+!csharp/Depths.Tests/
+csharp/Depths.Tests/*
+!csharp/Depths.Tests/*.cs
+!csharp/Depths.Tests/*.csproj
+
 bin/
 obj/
 *.user

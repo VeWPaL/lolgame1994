@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    netstandard2.1, and that is not negotiable. Unity 6 runs .NET Standard 2.1, so this is the one
+    target framework a library can target and still be referenced directly by the editor. A library
+    built for net9.0 compiles and tests perfectly under `dotnet test` and then fails to load in
+    Unity - which would mean rebuilding the core and re-verifying every ported check at the very
+    end, when mistakes are most expensive.
+
+    LangVersion 9.0 for the same reason: it is what Unity 6 compiles, so anything newer is code that
+    cannot ship. Keeping the two equal means `dotnet build` here is a real check on whether the code
+    survives contact with the engine.
+
+    TreatWarningsAsErrors because a warning nobody has to read is a warning nobody reads, and this
+    codebase's entire failure mode this session was something nobody noticed until it was expensive.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RootNamespace>Depths</RootNamespace>
+    <AssemblyName>Depths.Core</AssemblyName>
+    <!-- CS1591: not every public member carries XML docs on day one. The rule that stands is that
+         anything non-obvious IS documented; demanding it everywhere is noise. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

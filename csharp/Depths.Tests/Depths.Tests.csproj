@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    net9.0, NOT netstandard2.1. This is the one asymmetry in the solution and it is deliberate: a
+    test project has to RUN, and netstandard2.1 is a reference target with no entry point. It
+    consumes a netstandard2.1 library without trouble, so the code under test is byte-for-byte the
+    same assembly Unity will load.
+
+    That is the whole point of the layout. These tests are not a model of the port - they are
+    running the port. When this project goes green, the exact same assembly is what the editor
+    gets, and 84 of the 94 original checks live here with no second copy anywhere.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Depths.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Depths.Core\Depths.Core.csproj" />
+  </ItemGroup>
+
+</Project>
