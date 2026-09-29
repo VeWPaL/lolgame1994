@@ -40,7 +40,7 @@ const AGGRO_RANGE=Math.round(0.85*Math.hypot(ROOM_RIGHT-ROOM_LEFT,ROOM_BOTTOM-RO
 // actually about. 116px is still most of a body width past a Brunch, and 6.5s is roughly a third
 // of a full room, so a panic blink and a positioning blink are different decisions.
 const READY=sec(0.75), FADE_OUT=sec(0.35), FADE_CLEAR=sec(0.15), IFRAMES=sec(1), STRIDE=11*SPEEDUP, KNOCK_P_FRICTION=0.958;
-const CHASER_PAY=0.96, CHASER_WALK=0.3*CHASER_PAY, CHASER_RUN=0.82*CHASER_PAY, MAX_ARMOR=4;
+const LUNGER_PAY=0.96, LUNGER_WALK=0.3*LUNGER_PAY, LUNGER_RUN=0.82*LUNGER_PAY, MAX_ARMOR=4;
 const SHOOT_SLOW_MAX=0.7, SHOOT_SLOW_MAIN=0.35, SHOOT_SLOW_ALT=0.45, SLOW_EASE=0.079, SHOOT_SLOW_RECOVER=0.03*SPEEDUP;
 const KNOCK_FRICTION=0.976, KNOCK_GAIN=0.294, KNOCK_P_GAIN=0.3, KNOCK_BOUNCE=0.6, KNOCK_STUN=sec(0.42), KNOCK_TRADE=0.09, KNOCK_MAX=5, KNOCK_CUT=0.006;
 // The ramp. A walker used to ease toward its top speed at one fixed rate, so its approach was a
@@ -50,7 +50,7 @@ const KNOCK_FRICTION=0.976, KNOCK_GAIN=0.294, KNOCK_P_GAIN=0.3, KNOCK_BOUNCE=0.6
 // how much faster the acceleration gets once you are there. This replaced a hard "lunge" step that
 // jumped the speed up all at once, which read as a bug rather than as pressure. Any body that does
 // not shoot back does not ramp, so a Brunch pack still closes at the speed it is supposed to.
-const CHASER_ACCEL=0.0058, WANDER_SPEED=0.25, WANDER_TICKS=sec(1);
+const LUNGER_ACCEL=0.0058, WANDER_SPEED=0.25, WANDER_TICKS=sec(1);
 // The Brunch ramp. It used to reach full commitment in 0.23s, which meant a pack was on you before
 // you had finished looking at where it had come from - there was no interval in which to pick your
 // ground, which is the one thing the pack is supposed to be asking of you. 2.2s with a lower peak
@@ -59,68 +59,68 @@ const CHASER_ACCEL=0.0058, WANDER_SPEED=0.25, WANDER_TICKS=sec(1);
 // the whole reason it is frightening - it just commits in front of you now.
 const BRUNCH_RAMP=sec(2.2), BRUNCH_RAMP_GAIN=1.9;
 
-/* A chaser does not walk at you. It closes the distance, stops, TELLS you where it is going, and
+/* A lunger does not walk at you. It closes the distance, stops, TELLS you where it is going, and
    then commits to a straight line at that point. Every number here exists because of a specific way
    the old straight-line chase was unfair:
 
    LUNGE_CD  the gap between lunges. Without it a body that overshot simply turned around and wound
-             up again at once, so a room of four chasers became four things committing on one
+             up again at once, so a room of four lungers became four things committing on one
              shared clock - which is the definition of unfair rather than hard.
    WINDUP    the reaction window, and the number actually doing the fairness work. It has to be long
              enough that a player with the whole screen to themselves can read the tell, back off,
              and watch it miss. It is deliberately NOT longer than that: in a mixed room the OTHER
              enemies are what make a fair-length window insufficient, and that pressure belongs with
-             them rather than inside the chaser's own timing.
+             them rather than inside the lunger's own timing.
    REACH    with LUNGE_SPEED, the shape of the commit. The lunge is not a fixed length: it is solved
              as an intercept, so it is exactly as long as the shot that actually lands. Short and
              fast is dodged by one decisive sidestep and is over; long and slow is a wall you cannot
              walk around - and a player running in a straight line is already standing on the
              solution, so they get the wall.
    RECOVER   what pays you for having dodged it. The point of a committed attack is the moment where
-             the attacker is committed to having missed, and with no window where the chaser is slow
+             the attacker is committed to having missed, and with no window where the lunger is slow
              and facing where it went, evading one only means standing in front of the next one.
 
    The direction is captured when the windup BEGINS, never when it ends. A lunge that re-aims mid
    charge cannot be dodged and makes the tell a lie.
 
-   PREDICT is the one place a chaser is allowed to be clever, and it is deliberately much weaker
+   PREDICT is the one place a lunger is allowed to be clever, and it is deliberately much weaker
    than a gunner's. A shell leads you by your full velocity across its whole flight, so holding a
-   heading is punished by arithmetic. The chaser leads by this fraction of ONE windup and only along
+   heading is punished by arithmetic. The lunger leads by this fraction of ONE windup and only along
    your current heading, so a player who changes direction inside the window is not read at all -
    the same counter-strafe the gunners already reward, now being rewarded a second time. It aims at
    where you are plus a little, not at where you are going.
 
-   LEN_MIN/MAX let the lunge stretch or shrink to try to reach you. A fixed length means a chaser
+   LEN_MIN/MAX let the lunge stretch or shrink to try to reach you. A fixed length means a lunger
    that starts its charge too far away simply falls short every time, which reads as the attack
    whiffing for no reason at all. Scaling it to the gap means the charge is always visibly committed
    to covering the distance, and the variation is what makes it feel like an animal aiming rather
    than a timer firing. */
 const LUNGE_CD=sec(1.15), LUNGE_WINDUP=sec(0.34), LUNGE_SPEED=4.2, LUNGE_RECOVER=sec(0.55);
-const LUNGE_RANGE=178, CHASER_NEAR=0.55, CHASER_FAR=1.3;
+const LUNGE_RANGE=178, LUNGER_NEAR=0.55, LUNGER_FAR=1.3;
 const LUNGE_REACH=280, LUNGE_FLOOR=56;
-// The chaser holds this far off and lunges ACROSS the gap. It used to have no standoff at all: it
+// The lunger holds this far off and lunges ACROSS the gap. It used to have no standoff at all: it
 // walked straight at the player forever and then "lunged" from zero distance, which is why the hit
 // rate was a hundred percent and the quality of the prediction was irrelevant - you cannot dodge an
 // attack that starts on top of you. The gunner has always had a close/far band and holds station in
-// it. The chaser is the only walker that did not, and it is the one whose whole mechanic is a read.
+// it. The lunger is the only walker that did not, and it is the one whose whole mechanic is a read.
 const LUNGE_HOLD=78, LUNGE_MIN=34;
-// Two chasers meeting mid-charge. Light enough that the loser is out of the fight for a moment
+// Two lungers meeting mid-charge. Light enough that the loser is out of the fight for a moment
 // rather than launched, heavy enough that it reads as a collision and not as a graze.
 const LUNGE_CLASH=5.5;
-// How fast a chaser walks its own angle around the player, in px/tick, aimed tangentially so it can
+// How fast a lunger walks its own angle around the player, in px/tick, aimed tangentially so it can
 // never change how far away it is. This is the whole of the anti-front mechanic and it is a single
 // number on purpose: at a third of a pixel a tick the bodies take a second or two to fan out, which
 // reads as encircling rather than as teleporting into position. Scaling it by the approach speed
 // instead does nothing at all, because the approach speed is zero inside the standoff - which is
 // exactly where a pack spends most of its time.
-const CHASER_SPREAD=0.9;
-// How the chaser believes the player is moving. It reads a SMOOTHED heading rather than the
+const LUNGER_SPREAD=0.9;
+// How the lunger believes the player is moving. It reads a SMOOTHED heading rather than the
 // instantaneous velocity, and scales that reading by how settled the player looks: a player holding
 // one line is read in full and gets the whole intercept, a player who has been reversing is read as
 // unreliable and gets a much shorter, weaker lunge. So reversing to bait buys a weaker attack
 // instead of a free one, which is the trade the mechanic was missing.
 const LUNGE_TRACK=0.014, LUNGE_CONF_MIN=0.30;
-// The lunge reaches as far as the intercept solution needs and no further. A chaser whose solution
+// The lunge reaches as far as the intercept solution needs and no further. A lunger whose solution
 // is outside this does not commit at all - it keeps closing at its approach speed until the solution
 // fits, which is what "too far" means: not that the attack fails, but that it has not started yet.
 const LUNGE_ITER=3;
@@ -134,12 +134,12 @@ const LUNGE_ITER=3;
 // Below this the click is eaten rather than acted on, so that the cast and the cancel cannot be the
 // same input - otherwise a held button blows the hook up at your own feet one tick after throwing it.
 const HOOK_EARLY_MIN=sec(0.18);
-// How fast it closes before it is close enough to care. A chaser that simply arrives fast takes
+// How fast it closes before it is close enough to care. A lunger that simply arrives fast takes
 // away the player's ability to choose the ground before the fight starts, which is where most of
 // the "there was no room to do anything" feeling comes from. So: far is quick, near is deliberate.
-function approachSpeed(d){ return CHASER_NEAR+(CHASER_FAR-CHASER_NEAR)*Math.min(1,d/LUNGE_RANGE); }
+function approachSpeed(d){ return LUNGER_NEAR+(LUNGER_FAR-LUNGER_NEAR)*Math.min(1,d/LUNGE_RANGE); }
 
-// every landed hit drags the body down for a moment; base speeds pay for it with CHASER_PAY (-4%)
+// every landed hit drags the body down for a moment; base speeds pay for it with LUNGER_PAY (-4%)
 const HIT_SLOW_MULT=0.62, HIT_SLOW_TICKS=sec(0.55);
 // the enemy-facing position trails the real one and converges in ~0.4s, so a bullet aimed at the
 // spot the player just left is not a guaranteed hit
@@ -147,7 +147,7 @@ const HITBOX_LAG_EASE=0.05, HIT_FLASH=sec(0.13), BURST_TICKS=sec(0.2), MUZZLE_TI
 // a hit is a translucent wash over the body, not a white cut-out: it fades from max to min as the
 // flash decays, so a body under the Beam's fifth-of-a-second cadence still reads as a creature
 const HIT_FLASH_MAX=0.62, HIT_FLASH_MIN=0.38;
-const SHOT_DMG=1.8;   // a chip off a chaser's HP rather than half a heart
+const SHOT_DMG=1.8;   // a chip off a lunger's HP rather than half a heart
 const SPAWN_MARGIN=76, SPAWN_MID=104, SPAWN_SEP=158, SPAWN_DOOR=130, SPAWN_FAR=210;
 // the simulation ticks at a fixed TICK_HZ whatever the monitor refresh rate; STEP_TOL absorbs rAF
 // timer jitter so a 60Hz screen gets a steady 3.5 ticks per frame, MAX_CATCHUP_MS caps the run
@@ -195,7 +195,7 @@ const WEAPONS=[
 const PIERCE_FALLOFF=0.72;
 // The Bolt is the one gun whose damage visibly leaves the projectile as it travels. fMin is a floor,
 // not zero, so a spent Bolt never quite disappears - it just stops being the thing that ends a
-// chaser, and a shrinking bolt is a much earlier and more honest warning of that than a number the
+// lunger, and a shrinking bolt is a much earlier and more honest warning of that than a number the
 // player has to remember.
 //
 // The band is deliberately narrow. The first attempt drew it at 10.2px at the muzzle against a
@@ -312,7 +312,7 @@ const HOOK_PULL_GAIN=1-KNOCK_FRICTION;
 
    The knock-on is the point rather than a side effect. SWERVE also scales how far a long-range
    gunner's aim opens up, so this does not merely make reversing costlier: it makes a settled
-   straight line MORE readable and a reversing player MORE predictable, everywhere, for the chaser's
+   straight line MORE readable and a reversing player MORE predictable, everywhere, for the lunger's
    lunge lead and the shooter's lead as well as the gunner's spread. One number, three consumers, and
    they had all been quietly agreeing about a player who does not exist. */
 const SWERVE_GAIN=0.22, SWERVE_DECAY=0.0035, SWERVE_AIM=0.30;
@@ -324,7 +324,7 @@ const SWERVE_GAIN=0.22, SWERVE_DECAY=0.0035, SWERVE_AIM=0.30;
    matter what MOVE_ACCEL is.
 
    That asymmetry is the whole reason Momentum is safe. Everything in this game that was tuned
-   against a real measurement - the gunner's 105-tick cast, the chaser's lunge lead, the 350px
+   against a real measurement - the gunner's 105-tick cast, the lunger's lunge lead, the 350px
    shooter deadzone, SWERVE_FULL - is a function of DISTANCE and therefore of top speed only.
    Feeding the reward for playing well into acceleration rather than speed leaves every one of those
    numbers exactly where it was, and gives the player something that feels enormous: you stop
@@ -342,7 +342,7 @@ const MOVE_ACCEL=0.116;
    fights. Keeping 45% means a hit costs you your cushion, not your run. */
 const MOMENTUM_GAIN=0.0042, MOMENTUM_STALL_DECAY=0.006, MOMENTUM_HIT_KEEP=0.45;
 // below this the player is not going anywhere, so momentum neither charges nor bleeds - a body
-// pinned in a corner by two chasers is not "standing still", it is losing, and the meter is right
+// pinned in a corner by two lungers is not "standing still", it is losing, and the meter is right
 // to be quiet about it
 const MOMENTUM_MOVE_FLOOR=0.3;
 // what a full meter is worth. The speed half is deliberately small: SPEED_CAP is shared with items,
@@ -373,6 +373,22 @@ const SPEED_CAP=0.15, MOVE_SPEED_HARD_CAP=0.22;
    is the whole reason the stat model had to be additive and rebuilt from base. If Luck were stored as
    a multiplier on a live value, this would be the line that could not be written. */
 const PRECISION_STEP=0.20, PRECISION_SPREAD_FLOOR=0.04;
+
+/* HOW MUCH A CHARGING BODY BELIEVES A REVERSING PLAYER. One signal, two answers, and the split is
+   the point rather than a correction.
+
+   A GUNNER ROOTS ITSELF to charge, and a rooted body is watching: it sees you thrash and concludes
+   you are going nowhere, so it stops leading and the shell arrives where you already are. That is
+   right for it, and its 100% at two hundred pixels is measured.
+
+   A SHOOTER KEEPS WALKING, and walking is a commitment - it is closing on a particular point in the
+   room rather than observing the one in front of it. So it believes a reversing player more than half
+   as much, and leads accordingly. Without this the moving shooter is punished for moving: it lands on
+   a runner every time and on a quarter-second reverser about a fifth of the time, which makes reversing
+   the correct answer to it and hands back the exploit the movement was meant to close.
+
+   The value is not a fudge. One is "believe what you see", and a walking body does not see that. */
+const SWERVE_TRUST_WALKING=2.2, SWERVE_TRUST_ROOTED=1.0;
 function preciseSpread(base){
   return base*Math.max(PRECISION_SPREAD_FLOOR,1-PRECISION_STEP*Math.max(0,Stats.value('precision')));
 }
@@ -408,6 +424,33 @@ function roomPressure(live){
    Both are VISIBLE - it walks at you, and it shoots more often - which is the only reason this is
    fair. A hidden accuracy ramp on a lone enemy is indistinguishable from the game cheating. */
 const PRESSURE_CLOSURE=0.85, PRESSURE_CADENCE=0.4;
+
+/* HOW FAR a ranged body will actually have walked in N ticks, given the standoff rule it obeys.
+   It is emphatically not speed*N, and finding that out cost a day of a shooter missing a straight
+   runner by forty pixels.
+
+   The rule reverses at the body's own boundaries: it closes while further than `standoff`, stops in
+   the band between `standoff` and `close`, and backs away inside `close`. So a shooter starting at
+   200px with a close threshold of 150 walks in for fifty pixels, hits its own threshold, and spends
+   the rest of the cast walking back out again - thirty-two pixels of net travel, not the sixty-eight
+   that speed*CAST_TIME predicts. Aiming from a muzzle predicted with the naive figure put every
+   shot forty pixels wide, because the error is exactly the difference between the two.
+
+   Simulated rather than solved in closed form, because the answer is a triangle wave with a kink in
+   it and the loop is a hundred iterations of arithmetic on the rarest thing in the game - a comment
+   in the code already notes that shells are the rarest thing in the game, which makes this the
+   cheapest place in the codebase to be exact. */
+function standoffDrift(dist,close,standoff,speed,ticks){
+  let d=dist,moved=0;
+  for(let i=0;i<ticks;i++){
+    const dir=d<close?-1:(d>standoff?1:0);
+    if(!dir) return moved;              // in the band: it is holding, and will keep holding
+    const room=dir>0?standoff-d:d-close;
+    const step=Math.min(speed,room);
+    d+=dir*step; moved+=dir*step;
+  }
+  return moved;
+}
 // How far away a gunner has to be before counterstrafing buys anything. Half the width of the room
 // is the line, and the bonus is fully open by the time a body is a room-and-a-half away.
 /* Where the counterstrafe answer switches on, and where it is fully open.

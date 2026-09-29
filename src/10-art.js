@@ -37,22 +37,22 @@ const LEG_FRAMES=[
 ];
 const PLAYER_UPPER=[".....h","....hh","...hhh","..hhhh",".hhhhh",".yyyyy","hhhhhh","..ffff","..ffef","..fwww","...www",".mmtww","mmtttw","smyyyy",".mtttt","mmmmmm"].map(mirror);
 const PLAYER_PAL={h:'#4b2f86',y:'#e8c04a',f:'#f3cfa8',e:'#1a1220',w:'#ece8f5',m:'#7a55c4',t:'#5b3a9e',s:'#f3cfa8',b:'#2a1d38'};
-const CHASER_UPPER=["h.....","hh....",".hdddd","..dddd","..dyyd","..dkkk",".mmttt","mmtttt","dmtttt","dmtttt",".bbbbb",".bpppp","..pppp"].map(mirror);
-const CHASER_PAL={h:'#e6d9b8',d:'#d1495b',y:'#ffe066',k:'#3a141c',m:'#b03a4a',t:'#8f2b3a',b:'#3a141c',p:'#5c1f28'};
+const LUNGER_UPPER=["h.....","hh....",".hdddd","..dddd","..dyyd","..dkkk",".mmttt","mmtttt","dmtttt","dmtttt",".bbbbb",".bpppp","..pppp"].map(mirror);
+const LUNGER_PAL={h:'#e6d9b8',d:'#d1495b',y:'#ffe066',k:'#3a141c',m:'#b03a4a',t:'#8f2b3a',b:'#3a141c',p:'#5c1f28'};
 const BOSS_PAL={h:'#f2e2b0',d:'#ff8a3d',y:'#fff1a0',k:'#3d1c08',m:'#d9662a',t:'#b5501f',b:'#3d1c08',p:'#5c2c10'};
 const SHOOTER_UPPER=["...kkk","..kkkk",".kkkkk",".kkeed",".kkddd",".kkmtt","mmtttt","mstttt",".ttttt",".ttttt","tttttt","tttttt"].map(mirror);
 const SHOOTER_PAL={k:'#4a2f7a',d:'#160d24',e:'#7ff5ff',m:'#6a3fae',t:'#5b3a9e',s:'#c9a6ff',b:'#241a3d'};
 // the gunner is the same body scaled up and recoloured crimson: identical frame, bigger pixel size
 const GUNNER_PAL={k:'#5a2436',d:'#1a0c12',e:'#ffe08a',m:'#8a2f4a',t:'#6d2238',s:'#ff9db0',b:'#2a1018'};
-// Brunch is the chaser shrunk to a single pixel of sprite and recoloured acid, so a pack of them
+// Brunch is the lunger shrunk to a single pixel of sprite and recoloured acid, so a pack of them
 // reads as one bright smear coming at you rather than as several bodies
 const BRUNCH_PAL={h:'#eef7a4',d:'#5f6d1c',y:'#f6ff3d',k:'#171c08',m:'#bfe04a',t:'#9cc033',b:'#3b4712',p:'#5d6d1a'};
-const PLAYER_FRAMES=LEG_FRAMES.map(l=>PLAYER_UPPER.concat(l)), CHASER_FRAMES=LEG_FRAMES.map(l=>CHASER_UPPER.concat(l)), SHOOTER_FRAMES=LEG_FRAMES.map(l=>SHOOTER_UPPER.concat(l));
+const PLAYER_FRAMES=LEG_FRAMES.map(l=>PLAYER_UPPER.concat(l)), LUNGER_FRAMES=LEG_FRAMES.map(l=>LUNGER_UPPER.concat(l)), SHOOTER_FRAMES=LEG_FRAMES.map(l=>SHOOTER_UPPER.concat(l));
 // declared up here because the enemy table below reads PLAYER_MOVE; the note on what these three
 // dials are for, and the measurement behind them, is under BRUNCH
 const TEMPO={rate:1.5}, PRESSURE={rate:1.5}, PLAYER_MOVE=1.2;
 /* one row per enemy type. HP carries the +12% that pays for the hit-slowdown every body now gets,
-   CHASER_PAY takes 4% back out of the movement, and the gunner is the shooter cloned: half the
+   LUNGER_PAY takes 4% back out of the movement, and the gunner is the shooter cloned: half the
    rate of fire, double the damage per shell, a bigger frame, slower and heavier shells. It also
    carries enough HP to survive a miss or two and sidesteps incoming shots, but only so often.
    Brunch is the anti-solo enemy: quicker than you, so a pack slowly closes on a kiting player, and
@@ -65,8 +65,8 @@ const TEMPO={rate:1.5}, PRESSURE={rate:1.5}, PLAYER_MOVE=1.2;
    more health, which is what the tempo was actually spent on. */
 // A walker's closing speed is the one enemy number a player reads off the screen and reacts to, so
 // it is set directly rather than scaled by PRESSURE - PRESSURE is about how many bodies turn up and
-// how often the guns open up, and folding it in here would quietly turn every chaser into a threat
-// nobody asked for. The chaser keeps its 77% of the player (the player got quicker, so the chaser
+// how often the guns open up, and folding it in here would quietly turn every lunger into a threat
+// nobody asked for. The lunger keeps its 77% of the player (the player got quicker, so the lunger
 // does too, and the matchup is unchanged). Brunch is deliberately over that line at 111%: a pack
 // slowly eats the gap on a kiting player without ever running one down outright, which is what
 // makes it a pack problem rather than a chase problem.
@@ -89,11 +89,11 @@ const BRUNCH_WALK=0.62*PLAYER_MOVE, BRUNCH_RUN=1.35;
    The Brunch deliberately have no armour, so a pack still dies to a hose and the gun you happen to
    be holding is never simply the wrong one. */
 const ENEMY={
- chaser:{mass:1,r:14,art:2,bar:26,hp:18*TOUGH,walk:CHASER_WALK*PLAYER_MOVE,run:CHASER_RUN*PLAYER_MOVE,armour:ARMOUR},
+ lunger:{mass:1,r:14,art:2,bar:26,hp:18*TOUGH,walk:LUNGER_WALK*PLAYER_MOVE,run:LUNGER_RUN*PLAYER_MOVE,armour:ARMOUR},
  brunch:{mass:0.5,r:8,art:1,bar:11,hp:2*TOUGH,walk:BRUNCH_WALK,run:BRUNCH_RUN},
-  shooter:{mass:0.8,r:14,art:2,bar:26,hp:5.6*TOUGH,base:0.45*CHASER_PAY,sense:600,range:520,close:150,far:250,cdMin:sec(0.5),cdVar:sec(0.4),dmg:SHOT_DMG,pspd:2.2,pr:5,pcol:'#ff4d4d'},
-  gunner:{mass:2.4,r:22,art:3,bar:32,hp:8*TOUGH,base:0.3*CHASER_PAY,sense:700,range:600,close:120,far:200,cdMin:sec(0.8),cdVar:sec(0.6),dmg:SHOT_DMG*2,pspd:2.05,pr:7,pcol:'#ffb03a',armour:ARMOUR},
- boss:{mass:4,r:28,art:4,bar:40,hp:50*TOUGH,base:0.6*CHASER_PAY},
+  shooter:{mass:0.8,r:14,art:2,bar:26,hp:5.6*TOUGH,base:0.45*LUNGER_PAY,sense:600,range:520,close:150,far:250,cdMin:sec(0.5),cdVar:sec(0.4),dmg:SHOT_DMG,pspd:2.2,pr:5,pcol:'#ff4d4d'},
+  gunner:{mass:2.4,r:22,art:3,bar:32,hp:8*TOUGH,base:0.3*LUNGER_PAY,sense:700,range:600,close:120,far:200,cdMin:sec(0.8),cdVar:sec(0.6),dmg:SHOT_DMG*2,pspd:2.05,pr:7,pcol:'#ffb03a',armour:ARMOUR},
+ boss:{mass:4,r:28,art:4,bar:40,hp:50*TOUGH,base:0.6*LUNGER_PAY},
 };
 // A Brunch pack arrives as one knot. big packs are much rarer than small ones, so a room that rolls
 // an eight has genuinely gone wrong, and a room that rolls a four is a nuisance rather than a wall

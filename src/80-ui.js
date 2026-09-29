@@ -42,7 +42,7 @@ const FIXES={
   'mouse maps to canvas pixels inside the 2px border':['frame and input','the aim was offset by the frame thickness, so shots landed next to the cursor'],
 
   /* ---- weapons and damage ---- */
-  'weapons: every gun kills a chaser fast at the range it is meant to be used at':['weapons and damage','every gun used to be usable everywhere, which is the same as no gun being right anywhere'],
+  'weapons: every gun kills a lunger fast at the range it is meant to be used at':['weapons and damage','every gun used to be usable everywhere, which is the same as no gun being right anywhere'],
   'every gun loses damage with range but stays worth using':['weapons and damage','a gun that does not fall off is a gun with no range, and a room has one'],
   'weapons actually do less damage to a far target':['weapons and damage','the falloff was drawn on paper and not actually in the damage'],
   'a hit slows the body and the HP increase pays for it':['weapons and damage','hitting something was pure upside, so there was never a reason not to shoot'],
@@ -57,7 +57,7 @@ const FIXES={
   'the bolt visibly spends itself as it travels, and only visually':['weapons and damage','the falloff was invisible until it landed, which is a number the player has to memorise'],
   'every weapon, spell and icon is the colour its own projectile is':['weapons and damage','the icon lookup defaulted to the blast, so the Bolt was drawn orange while the wand was violet'],
   'a hit tints an enemy instead of painting it white':['weapons and damage','a flashing enemy lost its own colours for a frame, which reads as a rendering fault'],
-  'a shell is a chip off a chaser and knocks a body back without launching it':['weapons and damage','a shell could fling a chaser off the map at close range'],
+  'a shell is a chip off a lunger and knocks a body back without launching it':['weapons and damage','a shell could fling a lunger off the map at close range'],
 
   /* ---- the right click ---- */
   'the hook goes off exactly where the cursor was, deals nothing, and yanks bodies in':['the right click','the hook fired from a stale cursor position'],
@@ -69,7 +69,7 @@ const FIXES={
   'the secret is walled off, off the map, and only the right click opens it':['the right click','the secret could be reached and was visible before it was earned'],
 
   /* ---- enemies and AI ---- */
-  'a chaser lunges, and it can be dodged by reacting to the tell':['enemies and AI','chasers homed on you directly, so counterstrafing - the answer to the gunners - was the worst possible move against them'],
+  'a lunger lunges, and it can be dodged by reacting to the tell':['enemies and AI','lungers homed on you directly, so counterstrafing - the answer to the gunners - was the worst possible move against them'],
   'a hook cancels a lunge outright, and stars mark the bodies it holds':['enemies and AI','a stun skipped the state machine without clearing it, so the glow stayed up, the aim line stayed drawn, and the attack you had already dodged landed anyway'],
   'a gunner telegraphs before it fires, and the tell previews the shot':['enemies and AI','a shell left the instant the cooldown ran out, so the only counter to a gunner was not being there - and the flash meant to warn you was drawn in the projectile loop, where a gunner never appears, so it was never visible at all'],
   'a gunner is slower and heavier than a shooter, and pays for it':['enemies and AI','the two gunners were the same gun at two sizes, so there was no reason to want the big one'],
@@ -79,8 +79,8 @@ const FIXES={
   'the gunner is the shooter cloned: slower, double damage, bigger':['enemies and AI','the two gunners had drifted into the same body with different numbers'],
   'the gunners notice you well before they will shoot, and fight at close quarters':['enemies and AI','gunners shot from across the room at anything that moved'],
   'a hit wakes the room from any distance':['enemies and AI','a body you hit across the room did not know it had been hit'],
-  'chasers that reach the player keep their bodies apart':['enemies and AI','a whole pack could stack on one pixel and land as a single hit'],
-  'separation keeps a chaser pinned in a corner inside the room':['enemies and AI','pushing bodies apart could shove one out through a wall'],
+  'lungers that reach the player keep their bodies apart':['enemies and AI','a whole pack could stack on one pixel and land as a single hit'],
+  'separation keeps a lunger pinned in a corner inside the room':['enemies and AI','pushing bodies apart could shove one out through a wall'],
   'the spawn plan spreads bodies out and keeps gunners off the entry door':['enemies and AI','bodies spawned in a knot or in the doorway, so the room decided the fight before you moved'],
   'counterstrafing beats a straight line, and a straight line is punished':['enemies and AI','the gunners led their shots perfectly, so moving well made their aim better and there was no way to dodge a straight line'],
 
@@ -113,10 +113,10 @@ const FIXES={
   'the bug list opens on a key, in a normal game, with no query string':['HUD and interface','the change history was locked behind a test URL, so the one reader who needs it during a normal game is the one who cannot reach it'],
   'the controls sheet and the bug list take the keyboard away from the game':['HUD and interface','a DOM overlay on a canvas game is a click that casts and a key that walks you into a Brunch - and a suppressor that takes too much swallows the key that closes the overlay, which is a cancel you cannot reach, the same bug the hook cooldown gate was'],
   'a gunner shoots the gap it found, not the gap it wanted':['enemies and AI','the aim search sweeps a cone and returns the angle it cleared, but only its truthiness was being read - so whenever the straight line was blocked and a few degrees off was not, the gunner charged the blocked line and put the shell through the very Brunch it had just avoided'],
-  'a lunge that cannot reach waits, and one that can is never dawdled with':['enemies and AI','distance is a reason the attack has not started, not a reason it fails; a chaser that commits past its own reach reads as the attack breaking for no reason the player can see'],
-  'a chaser holds its distance instead of walking into you, and lunges across the gap':['enemies and AI','a chaser with no standoff closed the last thirty pixels and then lunged from zero range, where no read is worth anything because there is nothing left to dodge - every measurement of this attack came out a hundred percent for that reason, and not because the prediction was good'],
-  'a pack of chasers arrives around you, not in a line':['enemies and AI','every chaser steered at the player exact position, so a pack came as one front - one line, one angle, one threat to read. The bodies now hold slots on a ring, spread by the golden angle so no two ever share one'],
-  'two chasers that lunge into each other both come off worse':['enemies and AI','a lunge is aimed at a position, so two bodies reading the same player in the same instant were aimed at the same point and flew through each other; putting yourself between them is a real play and it now pays'],
+  'a lunge that cannot reach waits, and one that can is never dawdled with':['enemies and AI','distance is a reason the attack has not started, not a reason it fails; a lunger that commits past its own reach reads as the attack breaking for no reason the player can see'],
+  'a lunger holds its distance instead of walking into you, and lunges across the gap':['enemies and AI','a lunger with no standoff closed the last thirty pixels and then lunged from zero range, where no read is worth anything because there is nothing left to dodge - every measurement of this attack came out a hundred percent for that reason, and not because the prediction was good'],
+  'a pack of lungers arrives around you, not in a line':['enemies and AI','every lunger steered at the player exact position, so a pack came as one front - one line, one angle, one threat to read. The bodies now hold slots on a ring, spread by the golden angle so no two ever share one'],
+  'two lungers that lunge into each other both come off worse':['enemies and AI','a lunge is aimed at a position, so two bodies reading the same player in the same instant were aimed at the same point and flew through each other; putting yourself between them is a real play and it now pays'],
   'a gunner in your face hits a straight line AND a counterstrafer, and only far away misses':['enemies and AI','counterstrafing in front of a gunner was free, and the reason was arithmetic rather than tuning. The aim was not a lead at all - it was a claim about where the player would be, fired AT a shell that only covers so much ground, so every shot missed by the margin of the claim. The half second of visible charging was not counted either, so the gunner predicted a target that had already moved. And it solved all of this from where it stood when the muzzle lit up, while walking a hundred and twenty pixels during the charge it had just announced. It now solves a real intercept, from a muzzle that holds still to charge, at the part of the player the hit test actually uses'],
   'the hook is devastating once and a nuisance the third time, and bodies forget':['the right click','the hook was a permanent answer - land it, wait out the field, land it again, and a body never recovered. The resistance is per body and it decays, so the first hook is untouched and that keeps it the answer to a lunge'],
   'a lunge reads a settled heading, and a thrashing one is read as unreliable':['enemies and AI','aiming from the raw velocity aims at a player one tick into a keypress, who is still nearly stationary, and at a player mid-reversal, who is momentarily pointing the wrong way'],

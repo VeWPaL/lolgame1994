@@ -10,7 +10,7 @@ let allRooms=[], bossFront={};
 let showPerf=false, showSpawn=false, lastT=0, perfSamples=[], trans=null, readyT=0, fadeT=0, fadeTicks=1, entryDir='N';
 let roomFade=0, frameCount=0, dashFX=[], burstFX=[], hookFields=[], bossUnlocked=false, itemUnlocked=false;
 let unlockDoor=null, unlockT=0, bossWarnT=0, secretFound=false, bossWarned=false;
-// Which slice of the circle the next chaser to spawn takes. Walked by the golden angle so that no two
+// Which slice of the circle the next lunger to spawn takes. Walked by the golden angle so that no two
 // bodies ever land on the same slot however many have spawned, and not reset per room - a room's
 // pack is spaced by its order of arrival, which is what stops a wave arriving as one front.
 let FLANK_CURSOR=0;
@@ -262,9 +262,9 @@ function spawnWave(room,fromDir){
   const heavy=n>=3&&Rnd.run()<0.55;
   const pack=Rnd.run()<BRUNCH.chance&&n>=2?rollPack():0;
   const slots=pts.slice().sort((a,b)=>b.d-a.d).map((p,k)=>{
-    let type=Rnd.run()<0.5?'chaser':'shooter';
+    let type=Rnd.run()<0.5?'lunger':'shooter';
     if(heavy&&k===0) type='gunner';
-    else if(type==='shooter'&&p.d<SPAWN_FAR) type='chaser';   // no gunner starts on the doorstep
+    else if(type==='shooter'&&p.d<SPAWN_FAR) type='lunger';   // no gunner starts on the doorstep
     return {x:p.x,y:p.y,d:p.d,type};
   });
   // a pack takes over one standard slot and crowds into a knot around it, so the room does not get

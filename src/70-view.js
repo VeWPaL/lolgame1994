@@ -204,8 +204,8 @@ function drawRoom(){
     ctx.globalAlpha=1;
   }
   // The committed line. A lunge is a straight shot at a point, so the point gets drawn: from where
-  // the chaser was when it planted, to where it is going. Without it the player has to infer the
-  // direction from a glow, and with three chasers in a room, inferring which one aimed where is
+  // the lunger was when it planted, to where it is going. Without it the player has to infer the
+  // direction from a glow, and with three lungers in a room, inferring which one aimed where is
   // exactly the bookkeeping that makes a fight feel like bookkeeping instead of a fight.
   for(const e of r.enemies){
     if(e.lungeState!=='wind'&&e.lungeState!=='lunge') continue;
@@ -240,8 +240,8 @@ function drawRoom(){
     const hop=readyT>0?-Math.abs(Math.sin(readyProg*Math.PI*2))*6:0;
     const boss=e.type==='boss', shooter=e.type==='shooter'||e.type==='gunner';
     ctx.fillStyle='rgba(0,0,0,0.3)';ctx.beginPath();ctx.ellipse(e.x,e.y+e.r*0.8,e.r*0.9,e.r*0.3,0,0,7);ctx.fill();
-    const frames=shooter?SHOOTER_FRAMES:CHASER_FRAMES;
-    const pal=e.type==='gunner'?GUNNER_PAL:e.type==='brunch'?BRUNCH_PAL:shooter?SHOOTER_PAL:boss?BOSS_PAL:CHASER_PAL;
+    const frames=shooter?SHOOTER_FRAMES:LUNGER_FRAMES;
+    const pal=e.type==='gunner'?GUNNER_PAL:e.type==='brunch'?BRUNCH_PAL:shooter?SHOOTER_PAL:boss?BOSS_PAL:LUNGER_PAL;
     const ex=e.x, ey=e.y-(boss?6:2)+bob*(boss?2:1)+hop;
     drawSprite(frames[frame],pal,ex,ey,e.art,null,e.type+e.art+frame);
     // a hit lays a translucent white silhouette over the body instead of replacing it, so a body
@@ -258,7 +258,7 @@ function drawRoom(){
     // Stars over a held body. The hook's entire value is that it holds a knot on the floor for a
     // second and a half, and until now nothing said "this one is stuck" - the walk simply stopped,
     // which is also what a body at the edge of its aggro does. Three little stars orbiting the head
-    // read as stunned from across the room, and they are the cue that a chaser caught mid-charge
+    // read as stunned from across the room, and they are the cue that a lunger caught mid-charge
     // has lost that charge, so the glow going out is a reward rather than a glitch.
     if(e.stun>0) drawStunStars(e.x,ey-e.r-6,e.stun,frameCount);
     // The cast tell, drawn with the BODY and not with the projectiles. It was originally drawn in
@@ -365,7 +365,7 @@ function drawSpawnPlan(){
     const e=r.enemies[i];
     ctx.strokeStyle=e&&e.alerted?'#ff6b6b':'rgba(94,226,122,0.8)';
     ctx.beginPath();ctx.arc(s.x,s.y,e?e.r:12,0,7);ctx.stroke();
-    if(e&&e.type!=='chaser'&&e.type!=='boss'){
+    if(e&&e.type!=='lunger'&&e.type!=='boss'){
       ctx.strokeStyle='rgba(255,106,106,0.28)';
       ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(s.x,s.y);ctx.stroke();
       ctx.fillStyle='rgba(255,106,106,0.9)';

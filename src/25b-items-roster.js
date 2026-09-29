@@ -21,7 +21,7 @@ Items.define('heavy_hands',{
 Items.define('weighted_rod',{
   name:'Weighted Rod', use:'passive', slot:'sigil', rarity:'common', tags:['damage'],
   glyph:'WR', color:'#8a6238',
-  blurb:'+2 Strength. Two of these and a chaser dies in three hits instead of six, which is a different fight.',
+  blurb:'+2 Strength. Two of these and a lunger dies in three hits instead of six, which is a different fight.',
   fx:{stats:{strength:2}}
 });
 

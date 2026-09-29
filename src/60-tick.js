@@ -11,7 +11,7 @@
    ============================================================================================== */
 /* Momentum is charged on MOVEMENT UNDER PRESSURE, and the distinction is the whole mechanic: it
    reads actual velocity rather than whether a key is down, so a body pinned against a wall by two
-   chasers is not quietly farming the meter, and it only runs while something is alive to pressure
+   lungers is not quietly farming the meter, and it only runs while something is alive to pressure
    it, so backtracking and empty rooms neither charge nor drain it. A cleared room is a breath
    rather than a reset. */
 /* A shot whose cast has finished LEAVES, stunned or not.
@@ -115,7 +115,7 @@ function update(){
   player.vx+=(targetVx-player.vx)*accel;
   player.vy+=(targetVy-player.vy)*accel;
   /* The heading the player has been HOLDING, as opposed to the heading they are on this tick. The
-     chasers read this one and not the raw velocity, because a player one tick into a keypress is
+     lungers read this one and not the raw velocity, because a player one tick into a keypress is
      still nearly stationary and a player mid-reversal is momentarily pointing the wrong way - both
      of which a lunge aimed at would be aimed at a place the player is about to leave. Slow on
      purpose: a third of a second of memory is about how long it takes to see a line and answer it. */
@@ -256,7 +256,7 @@ function update(){
       let hitSomething=false;
       for(let j=r.enemies.length-1;j>=0;j--){
         const e2=r.enemies[j];
-        if(e2===p.owner || e2.type!=='chaser') continue;
+        if(e2===p.owner || e2.type!=='lunger') continue;
         if(Math.hypot(p.x-e2.x,p.y-e2.y)<p.r+e2.r){
           e2.hp-=1; e2.hitFlash=HIT_FLASH; alertEnemy(e2); slowEnemy(e2); hitSomething=true;
           if(e2.hp<=0) killEnemy(r,j);
@@ -291,14 +291,14 @@ function update(){
     if(e.slowT>0)e.slowT--;
     const sm=e.slowT>0?HIT_SLOW_MULT:1;
     if(e.stun>0){
-      // A stunned chaser is not a chaser mid-lunge, it is a chaser with its feet stuck. Letting the
+      // A stunned lunger is not a lunger mid-lunge, it is a lunger with its feet stuck. Letting the
       // stun skip the state machine without clearing it left the lunge QUEUED: the glow stayed up,
       // the aim line stayed drawn, and the attack resumed the instant the hold wore off, which is
       // both an attack you could not read and one you had already dodged. Interrupting a charge
       // with the hook has to actually interrupt it, and it has to look like it did.
       if(e.lungeState==='wind'||e.lungeState==='lunge'){
         e.lungeState='approach'; e.lungeT=0; e.lungeLen=0;
-        // and it pays for it: the cooldown starts now, so a chaser you caught mid-charge has to
+        // and it pays for it: the cooldown starts now, so a lunger you caught mid-charge has to
         // come all the way back around before it tries again
         e.lungeCd=LUNGE_CD;
       }
@@ -329,19 +329,19 @@ function update(){
     }
     // The offset hitbox is only used for the TOUCH test. Steering still aims at hx,hy: a body walks
     // at the player's position, not at the middle of their chest, and moving the seek target down ten
-    // pixels would make every chaser in the room drift visibly low as it closed.
+    // pixels would make every lunger in the room drift visibly low as it closed.
     const edx=hx-e.x,edy=hy-e.y,dist=Math.hypot(edx,edy)||1;
     if(e.walkSpeed!==undefined){
       if(dist<AGGRO_RANGE) e.aggroTimer=AGGRO_TIME;
       else if(e.aggroTimer>0) e.aggroTimer--;
       if(e.aggroTimer>0){
-        if(e.type==='chaser') stepLunge(e,edx/dist,edy/dist,dist,sm,r);
+        if(e.type==='lunger') stepLunge(e,edx/dist,edy/dist,dist,sm,r);
         else{
           // a Brunch pack announces itself and then arrives: the ramp is long enough that there is
           // a real interval in which to choose your ground before it is on you
           e.pursuit++;
           const gain=1+BRUNCH_RAMP_GAIN*Math.min(1,e.pursuit/BRUNCH_RAMP);
-          e.curSpeed+=(e.runSpeed-e.curSpeed)*CHASER_ACCEL*gain;
+          e.curSpeed+=(e.runSpeed-e.curSpeed)*LUNGER_ACCEL*gain;
           e.x+=edx/dist*e.curSpeed*sm; e.y+=edy/dist*e.curSpeed*sm;
         }
       } else { e.curSpeed=e.walkSpeed; e.pursuit=0; idleWander(e); }
@@ -374,14 +374,26 @@ function update(){
            that reversing inside it is not an answer, while the same body in a room of five is content
            to hold 250px and let the count do the work. See roomPressure in 00-balance. */
         const standoff=e.far-(e.far-e.close)*roomPress*PRESSURE_CLOSURE;
-        if(e.castT<=0){
+
+        /* A SHOOTER KEEPS WALKING WHILE IT CHARGES, and that is a change of identity rather than a
+           tweak. Holding the ground was the gunner's whole trick: the muzzle does not move, so the
+           line the clear-shot sweep checked and the line the shell walks are the same line, and the
+           tell can be trusted to preview the shot. It also made the body a statue for half a second,
+           at a fixed spot, every single cast - completely predictable, and a predictable enemy has
+           much less effect on a fight than a threatening one.
+
+           So the two are split. The gunner still roots itself: it is the heavy, committed shot and
+           its accuracy is measured to be exactly that. A shooter keeps drifting, which means its aim
+           has to be solved from where its muzzle WILL BE rather than where it is - see below. */
+        const rootsWhileCasting=e.type==='gunner';
+        if(e.castT<=0||!rootsWhileCasting){
           if(dist<e.close){e.x-=edx/dist*e.speed*sm;e.y-=edy/dist*e.speed*sm;}
           else if(dist>standoff){e.x+=edx/dist*e.speed*sm;e.y+=edy/dist*e.speed*sm;}
         }
         e.shootCd--;
         /* CAST, then fire. A gunner that fires the instant its cooldown runs out gives the player
            nothing to read - the shell is already in the air before you have decided what to do, and
-           the only counter is not being there. This is the smallest version of the chaser's tell: a
+           the only counter is not being there. This is the smallest version of the lunger's tell: a
            swelling light at the muzzle, no new state machine, and the gunner keeps moving and can
            still touch you while it charges.
 
@@ -390,7 +402,7 @@ function update(){
            you watched it point somewhere and it shot somewhere else. Aiming at the start means the
            tell genuinely previews the shot, and it also means the shot goes where the player was
            half a second ago, which is what makes the tell worth reading rather than just worth
-           noticing. It is the same bargain the chaser's lunge makes, at a quarter of the size.
+           noticing. It is the same bargain the lunger's lunge makes, at a quarter of the size.
 
            The clear-line check runs before the cast rather than after it, so the flash always means a
            shell is genuinely coming. A gunner that cannot see past its own Brunch pack holds its
@@ -433,7 +445,7 @@ function update(){
              making sense, and the shot lands on the counterstrafer for the same reason it lands on
              the runner - by a different route.
 
-             One signal, and the two gunners now agree about the player: the chaser's intercept and
+             One signal, and the two gunners now agree about the player: the lunger's intercept and
              the gunner's lead both shrink when the player thrashes, and both are exact when they
              do not. */
           /* THE GUNNER SOLVES AN INTERCEPT. It did not, and no amount of tuning the lead would have
@@ -454,7 +466,7 @@ function update(){
              looks fine in every test that does not involve movement. It only ever misses against the
              thing it is supposed to punish.
 
-             The same three-pass iteration the chaser's lunge uses, with two differences that are the
+             The same three-pass iteration the lunger's lunge uses, with two differences that are the
              whole of this. The shell does not exist for CAST_TIME more ticks, so the intercept is
              seeded from where the player will be WHEN THE SHELL LEAVES rather than where they are
              now - otherwise the half second of visible charging is a half second of free movement
@@ -479,23 +491,57 @@ function update(){
              player the tactic. The floor of 0.02 stays: a gunner is never perfectly deterministic,
              and a shot that is the same shot every time is a shot that can be walked into. */
           const reach=Math.max(0,Math.min(1,(dist-SWERVE_DEADZONE)/(SWERVE_FULL-SWERVE_DEADZONE)));
-          const conf=1-player.swerve;
+          const conf=Math.max(0,1-player.swerve*(rootsWhileCasting?SWERVE_TRUST_ROOTED:SWERVE_TRUST_WALKING));
           const bvx=player.trendVx*conf, bvy=player.trendVy*conf;
           /* The target is the player's HITBOX, not the point their sprite is drawn from. The hit test
              is a circle ten pixels below the origin - a body reads as its chest and hem, not as its
              coordinate - and an intercept solved against the origin is therefore aimed ten pixels
              ABOVE the thing it is trying to hit, every single time, by an amount that is small
              enough to look like nothing and large enough to matter: the shot passes over the player's
-             head with a hitbox's width to spare and registers as a clean miss. A chaser must not be
+             head with a hitbox's width to spare and registers as a clean miss. A lunger must not be
              given that target, because it steers a body and would visibly drift low, but a gunner is
              aiming a projectile at a point and has no reason at all to miss the one part of the
              player it is actually going to hit. */
           const ty=hy+PLAYER_HIT_DY;
-          let sx=hx-e.x, sy=ty-e.y, need=0;
+          /* The ORIGIN is where the muzzle will be when the shell leaves, not where it is now.
+             The player's position is already predicted this way - the shell does not exist for
+             CAST_TIME more ticks - and a walking shooter needs the same treatment for its own side,
+             or the angle is solved from a place the body has already left and the shell walks off
+             from wherever it ended up. The drift is exact rather than estimated: a body walking at
+             e.speed covers e.speed*CAST_TIME, and it walks toward or away depending on the same
+             standoff test that moved it a tick ago. */
+          /* The drift is what the standoff rule will REALLY do over the cast, not speed*CAST_TIME -
+             see standoffDrift, which exists because the difference between those two is forty pixels
+             of miss on a player running in a straight line. */
+          /* WHERE THE MUZZLE WILL BE, simulated rather than approximated.
+
+             Two approximations were tried and both left every shot about twenty pixels wide. The
+             first predicted a radial offset of speed*CAST_TIME and ignored that the body reverses at
+             its own threshold, so it travels a third of that. The second used the corrected radial
+             number and was still wrong, because "toward the player" is a BEARING: the player covers
+             more ground over the cast than the shooter does, so the bearing rotates underneath a walk
+             predicted as though it stood still.
+
+             So the muzzle is walked forward against the believed player path in twenty-four steps,
+             obeying the same standoff rule that is moving it. It depends on the BELIEF rather than the
+             truth, which is exactly right - a body solves the player it thinks is there, and when the
+             belief is wrong the shot misses, which is the mechanic and not a flaw in the arithmetic.
+             A gunner skips this entirely, so the loop below is unchanged for the heavy shot. */
+          let mx=e.x, my=e.y;
+          if(!rootsWhileCasting){
+            const step=CAST_TIME/24, v=e.speed*sm*step;
+            for(let t=step;t<=CAST_TIME+0.5;t+=step){
+              const px=hx+bvx*t, py=ty+bvy*t;
+              const ax=px-mx, ay=py-my, ad=Math.hypot(ax,ay)||1;
+              if(ad<e.close){ mx-=ax/ad*v; my-=ay/ad*v; }
+              else if(ad>standoff){ mx+=ax/ad*v; my+=ay/ad*v; }
+            }
+          }
+          let sx=hx-mx, sy=ty-my, need=0;
           /* Twelve passes, and the number is not arbitrary. This is fixed-point iteration, and how
              fast it converges is set by how much slower the target is than the shell: each pass pulls
              the remaining error down by the ratio of the player's speed to the shell's, which here
-             is a little over a half. Three passes - which is what the chaser's lunge uses, and is
+             is a little over a half. Three passes - which is what the lunger's lunge uses, and is
              plenty there, because a lunge crosses at six times the player's speed - leaves a
              sixteenth of the error, and a sixteenth of a two hundred and sixty tick horizon is
              twenty six ticks of lead, which is thirty pixels of miss on a player doing nothing
@@ -503,7 +549,8 @@ function update(){
              and shells are the rarest thing in the game. */
           for(let k=0;k<14;k++){
             need=(CAST_TIME+Math.hypot(sx,sy)/e.pspd);
-            sx=hx+bvx*need-e.x; sy=ty+bvy*need-e.y;
+            const px=hx+bvx*need, py=ty+bvy*need;
+            sx=px-mx; sy=py-my;
           }
           const want=Math.atan2(sy,sx)+(Rnd.jitter()-0.5)*2*(0.02+SWERVE_AIM*player.swerve*reach);
           // never put a shell through one of your own. a gunner that blindly fires into a Brunch pack

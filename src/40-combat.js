@@ -5,7 +5,7 @@
    curve, the blast pool. Pure simulation.
 
    Note the target of the gunner intercept: it aims at the player's HITBOX, ten pixels below the
-   sprite origin, because playerHit tests that circle. A chaser must NOT use that target - it steers
+   sprite origin, because playerHit tests that circle. A lunger must NOT use that target - it steers
    a body and would visibly drift low - but a projectile has no excuse for missing it.
    ============================================================================================== */
 function clampPlayer(){
@@ -34,7 +34,7 @@ function damagePlayer(amount,kx,ky,force){
   if(player.armor>0){const used=Math.min(player.armor,rem);player.armor-=used;rem-=used;}
   if(rem>0) player.hp-=rem;
   // Snap a float epsilon to exactly zero. Damage here is deliberately fractional - a shell does
-  // 1.8, which is what makes a chaser take a satisfying number of hits - and repeated fractional
+  // 1.8, which is what makes a lunger take a satisfying number of hits - and repeated fractional
   // subtraction can land health on 6.66e-16 instead of 0. That value is greater than zero, so the
   // death check never fired, and the player was left standing on a health bar that read as empty.
   // Only the band just BELOW zero is snapped; anything at or above zero is left exactly as it is,
@@ -51,7 +51,7 @@ function damagePlayer(amount,kx,ky,force){
 
 // a landed hit drags the body down for a moment and wakes it up no matter where the player is:
 // at this point in the game a shot is what tells a room where you are, and it is what makes
-// sniping a far chaser viable now that it aggroes from anywhere
+// sniping a far lunger viable now that it aggroes from anywhere
 function alertEnemy(e){
   e.noticeTimer=0; e.alerted=true;
   if(e.aggroTimer!==undefined) e.aggroTimer=Math.max(e.aggroTimer,AGGRO_TIME);
@@ -142,7 +142,7 @@ function clampEnemy(e){
 function bounceEnemies(a,b){
   const dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy),min=a.r+b.r;
   if(d>=min) return;
-  // overlapping bodies are always pushed apart (the heavier one moves less), otherwise chasers
+  // overlapping bodies are always pushed apart (the heavier one moves less), otherwise lungers
   // converging on the player merge into one blob; knockback is only traded when one of them is flying
   let nx,ny;
   if(d<0.001){const ang=Rnd.jitter()*6.283;nx=Math.cos(ang);ny=Math.sin(ang);}
@@ -160,14 +160,14 @@ function bounceEnemies(a,b){
   }
 }
 /* `mode.pool` is not per-enemy damage: it is one budget shared out between everyone caught, so a
-   lone chaser eats the whole thing and dies, while a clump of four each takes a quarter and the
+   lone lunger eats the whole thing and dies, while a clump of four each takes a quarter and the
    blast works as a repositioning tool instead. The shove is scaled by how close you put it, and the
    hook inverts it into a pull and carries no budget at all, so it only ever moves bodies.
 
    The share is pool / crowd^DISPERSE, not pool / crowd. A flat split means the blast deals its full
    budget no matter how many bodies it catches, which is exactly wrong for a swarm: the budget was
-   sized to kill one armoured chaser, and a four-strong Brunch pack does not have enough total health
-   to survive being handed a whole chaser's worth of damage. Raising the exponent makes each extra
+   sized to kill one armoured lunger, and a four-strong Brunch pack does not have enough total health
+   to survive being handed a whole lunger's worth of damage. Raising the exponent makes each extra
    body cost more than a proportional slice, so the *total* the blast actually lands falls away as
    the crowd grows - which is what turns it from a pack-clearing button into a panic nudge you still
    have to follow up on.
@@ -180,14 +180,14 @@ function bounceEnemies(a,b){
 
    The other end of the curve is a killshot and it has to clear the third Brunch with MARGIN, not
    just barely. At 2.40 a three-strong group took 2.689 against 2.7 health: the intent was "it dies"
-   and the float said "it survives on 0.011", which is the same failure as a chaser sitting alive at
+   and the float said "it survives on 0.011", which is the same failure as a lunger sitting alive at
    3e-15 hp in an earlier build. Any exponent where a whole-body kill lands inside a percent of the
    body is a knife edge waiting for a different TOUGH value. 2.30 leaves an 11% margin at three and
    still halves a four-pack.
 
    Against a 2.7hp Brunch: 1 caught dies, 2 die, 3 die, 4 are left at 43%, 6 at 76%, 8 at 88%. So the
    blast kills what it catches when it catches a handful and only bruises it once there is an actual
-   group, which is the line between "a weapon" and "a panic button". Against a lone 24.3hp chaser it
+   group, which is the line between "a weapon" and "a panic button". Against a lone 24.3hp lunger it
    is completely unchanged - a crowd of one is a crowd of one whatever the exponent says. */
 const DISPERSE=2.3;
 function explode(room,x,y,mode){

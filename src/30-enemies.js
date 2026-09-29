@@ -12,20 +12,20 @@ function spawnEnemy(boss,room,x,y,type){
   const ry=()=>ROOM_TOP+SPAWN_MARGIN+Rnd.run()*(ROOM_BOTTOM-ROOM_TOP-SPAWN_MARGIN*2);
   const base={x:x===undefined?rx():x,y:y===undefined?ry():y,hitFlash:0,idleDir:[0,0],idleTimer:(Rnd.jitter()*WANDER_TICKS)|0,
     noticeTimer:(Rnd.jitter()*16*SPEEDUP)|0,anim:0,kvx:0,kvy:0,stun:0,slowT:0,alerted:false,dodgeCd:0,pursuit:0};
-  const c=ENEMY[boss?'boss':type==='shooter'||type==='gunner'?type:type==='brunch'?'brunch':'chaser'];
-  const e=Object.assign(base,{type:boss?'boss':type||'chaser',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp,maxHp:c.hp,armour:c.armour||1});
+  const c=ENEMY[boss?'boss':type==='shooter'||type==='gunner'?type:type==='brunch'?'brunch':'lunger'];
+  const e=Object.assign(base,{type:boss?'boss':type||'lunger',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp,maxHp:c.hp,armour:c.armour||1});
   if(c.base!==undefined) e.speed=c.base*PRESSURE.rate;
   if(boss){e.aggroTimer=9999;return e;}
-  // chasers and Brunch are the same shape of body: they walk at you and hit you on contact. only
+  // lungers and Brunch are the same shape of body: they walk at you and hit you on contact. only
   // the two gunners carry a ranged kit
   if(c.walk!==undefined){e.curSpeed=c.walk;e.walkSpeed=c.walk;e.runSpeed=c.run;e.aggroTimer=0;
-    // chaser-only lunge state. Brunch do not get it: they are the pressure, and a pack that also
+    // lunger-only lunge state. Brunch do not get it: they are the pressure, and a pack that also
     // telegraphs is a room with nothing left to read
     e.lungeState='approach'; e.lungeT=0; e.lungeCd=0; e.lungeDx=0; e.lungeDy=0;
   e.hookStacks=0; e.hookCalm=0; e.hookMark=0;
   /* Flank slot. Walked round the circle by the golden angle, so no two bodies ever share a slot
-     however many have spawned - and NOT randomised, because two chasers drawing the same angle out
-     of a bag is a front half the time. The angle is fixed for the body's life: a chaser that
+     however many have spawned - and NOT randomised, because two lungers drawing the same angle out
+     of a bag is a front half the time. The angle is fixed for the body's life: a lunger that
      changed its mind about which side of the player it wanted would weave through its own pack on
      the way, which reads as indecision rather than as pressure. */
   e.flank=FLANK_CURSOR;
@@ -41,16 +41,16 @@ function spawnEnemy(boss,room,x,y,type){
   return e;
 }
 
-/* The chaser's whole attack. Four states, and the transitions between them are the fight.
+/* The lunger's whole attack. Four states, and the transitions between them are the fight.
    This is deliberately a function of the body and not of a timer, so a stunned, slowed or knocked
    body stops mid-lunge and resumes from where it was rather than snapping back to "walking at you".
-   A committed attack the player can interrupt by hitting the chaser once is a different weapon from
+   A committed attack the player can interrupt by hitting the lunger once is a different weapon from
    one that always plays out on schedule, and the interruptible one is the one worth having. */
-/* Where a body leaving a chaser's position, at lunge speed and after a windup it spends PLANTED,
+/* Where a body leaving a lunger's position, at lunge speed and after a windup it spends PLANTED,
    can first reach a player who is already moving at their current velocity - solved, not guessed.
 
    The old lunge aimed at the player's position plus a lead worth about thirty pixels, and stopped
-   at a hundred and sixty six. A player running in a straight line away from a chaser settles about
+   at a hundred and sixty six. A player running in a straight line away from a lunger settles about
    a hundred and thirty six pixels out, and from there the shot that actually catches them is two
    hundred and ninety four long. So the old lunge fell one hundred and twenty eight pixels short
    every time it was used: not a hard attack that can be read and beaten, but one that could not
@@ -61,17 +61,17 @@ function spawnEnemy(boss,room,x,y,type){
    the other. Three passes converge: the second is already within a pixel and the third moves
    nothing measurable. */
 function solveIntercept(e,gx,gy){
-  /* The velocity the chaser BELIEVES, which is not the velocity the player has.
+  /* The velocity the lunger BELIEVES, which is not the velocity the player has.
 
      Instantaneous velocity is a bad thing to aim from, and not only because it is noisy. A player
-     one tick into pressing a key is still nearly stationary, so a chaser that reads the raw number
+     one tick into pressing a key is still nearly stationary, so a lunger that reads the raw number
      commits to a point that stops being true immediately - and a player mid-reversal is read at
      whatever the easing happens to be sitting on that tick. So it reads a smoothed heading, and it
      reads it in proportion to how SETTLED the player looks, using the same swerve the gunners use to
      widen their aim. One signal, two consumers, and it means the two gunners agree about the player.
 
      The consequence is the point. Hold a line and you are read in full, so the intercept is right
-     and the lunge lands. Start reversing and the chaser loses confidence in you, the solution
+     and the lunge lands. Start reversing and the lunger loses confidence in you, the solution
      shortens, and the lunge it commits to is a smaller one - which the player can then slip. Baiting
      is not free, it is a downgrade: you get a weaker attack instead of no attack. */
   const conf=LUNGE_CONF_MIN+(1-LUNGE_CONF_MIN)*(1-player.swerve);
@@ -90,7 +90,7 @@ function stepLunge(e,ux,uy,dist,sm,room){
   if(e.lungeCd>0) e.lungeCd--;
   switch(e.lungeState){
     case 'approach':{
-      /* THE STANDOFF, which is what makes this mechanic a mechanic. A chaser that simply walks at
+      /* THE STANDOFF, which is what makes this mechanic a mechanic. A lunger that simply walks at
          the player ends up touching them - its approach speed is faster than theirs at range - and
          then "lunges" from zero distance, where no read is worth anything because there is nothing
          left to dodge. Every measurement of this attack came out a hundred percent for that reason,
@@ -103,10 +103,10 @@ function stepLunge(e,ux,uy,dist,sm,room){
          be walked into.
 
          Inside the hold it brakes rather than reversing. Reversing was the first version and it
-         backed five chasers into each other while they ringed a stationary player, which the
+         backed five lungers into each other while they ringed a stationary player, which the
          separation pass then had to fight. A brake stops the body at the line and leaves spacing to
          the pass that already owns it.
-      /* SPREAD, on the same two lines of code. Every chaser used to steer at the player's exact
+      /* SPREAD, on the same two lines of code. Every lunger used to steer at the player's exact
          position, so a pack arrived as a single front: one line, one angle, one threat to read. Each
          body now carries a flank angle, assigned at spawn and spread around the circle by the golden
          angle, and it walks that angle around the player.
@@ -128,7 +128,7 @@ function stepLunge(e,ux,uy,dist,sm,room){
          A step along the tangent cannot become radial at any distance. Distance is the standoff's
          job; the angle is this one's.
 
-         And it only runs when there is more than one of them. A lone chaser circling to its slot
+         And it only runs when there is more than one of them. A lone lunger circling to its slot
          before it commits makes the FIRST lunge of a fight late for no reason - there is nothing to
          be spread out from - and it measured worse on its own, badly enough to fail two tests: the
          lunge it set up after circling was much harder to answer than one set up coming straight in.
@@ -139,12 +139,12 @@ function stepLunge(e,ux,uy,dist,sm,room){
       while(err>Math.PI) err-=2*Math.PI;
       while(err<-Math.PI) err+=2*Math.PI;
       const side=err>=0?1:-1;
-      e.x+=-Math.sin(bearing)*side*CHASER_SPREAD; e.y+=Math.cos(bearing)*side*CHASER_SPREAD;
+      e.x+=-Math.sin(bearing)*side*LUNGER_SPREAD; e.y+=Math.cos(bearing)*side*LUNGER_SPREAD;
     }
       if(dist<LUNGE_HOLD){
-        e.curSpeed+=(0-e.curSpeed)*CHASER_ACCEL*8;    // close enough to lunge; must not walk in
+        e.curSpeed+=(0-e.curSpeed)*LUNGER_ACCEL*8;    // close enough to lunge; must not walk in
       } else {
-        e.curSpeed+=((approachSpeed(dist)*sm)-e.curSpeed)*CHASER_ACCEL*6;
+        e.curSpeed+=((approachSpeed(dist)*sm)-e.curSpeed)*LUNGER_ACCEL*6;
         e.x+=ux*e.curSpeed; e.y+=uy*e.curSpeed;
       }
       if(e.lungeCd<=0){
@@ -155,11 +155,11 @@ function stepLunge(e,ux,uy,dist,sm,room){
              running in a straight line   you are already standing on the solution, so the lunge
                                          arrives. Indifference is what kills you.
              changing your heading        you step off a line that was drawn for the old one. The
-                                         chaser is committed to a line you are no longer on, and
+                                         lunger is committed to a line you are no longer on, and
                                          it goes past you like a train.
 
            The length is the solution as well, so it arrives exactly rather than approximately, and
-           it is capped: a chaser whose solution is out of reach does not commit, it keeps closing.
+           it is capped: a lunger whose solution is out of reach does not commit, it keeps closing.
            That is what lets it wait. A player who is far away and running gets closed on at the
            approach speed until the solution fits inside the reach, and only then is the lunge set
            up - so distance is never the reason the attack does not happen, only the reason it has
@@ -180,7 +180,7 @@ function stepLunge(e,ux,uy,dist,sm,room){
       break;
     }
     case 'wind':{
-      // planted. it does not creep forward, because a chaser that keeps walking through its own
+      // planted. it does not creep forward, because a lunger that keeps walking through its own
       // windup closes the gap it just told the player it was going to stop at
       e.curSpeed=0;
       e.lungeT--;
@@ -196,7 +196,7 @@ function stepLunge(e,ux,uy,dist,sm,room){
     case 'lunge':{
       e.x+=e.lungeDx*LUNGE_SPEED*sm; e.y+=e.lungeDy*LUNGE_SPEED*sm;
       e.lungeT--;
-      /* Two chasers on the same line meet mid-charge and both come off worse. This is the player's
+      /* Two lungers on the same line meet mid-charge and both come off worse. This is the player's
          reward for it: a lunge is aimed at a position, so two bodies reading the same player at the
          same instant are aimed at the same point, and a player who puts themselves between them gets
          a gap and a stunned attacker for free.
@@ -225,13 +225,13 @@ function stepLunge(e,ux,uy,dist,sm,room){
     }
     case 'recover':{
       // committed to having missed, and facing where it went. this is the window the player earns
-      e.curSpeed+=((e.walkSpeed*0.5*sm)-e.curSpeed)*CHASER_ACCEL*4;
+      e.curSpeed+=((e.walkSpeed*0.5*sm)-e.curSpeed)*LUNGER_ACCEL*4;
       e.x+=e.lungeDx*e.curSpeed; e.y+=e.lungeDy*e.curSpeed;
       if(--e.lungeT<=0){ e.lungeState='approach'; e.lungeCd=LUNGE_CD; }
       break;
     }
   }
-  // a lunge that runs into a wall is over, not a chaser that grinds along it. without this a chaser
+  // a lunge that runs into a wall is over, not a lunger that grinds along it. without this a lunger
   // cornered against the left wall teleports through it on the far side
   if(e.lungeState==='lunge'){
     const cx=Math.max(ROOM_LEFT,Math.min(ROOM_RIGHT,e.x)), cy=Math.max(ROOM_TOP,Math.min(ROOM_BOTTOM,e.y));
