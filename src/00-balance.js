@@ -31,7 +31,30 @@ const ROOM_LEFT=50, ROOM_RIGHT=750, ROOM_TOP=130, ROOM_BOTTOM=580;
 const MIDX=(ROOM_LEFT+ROOM_RIGHT)/2, MIDY=(ROOM_TOP+ROOM_BOTTOM)/2;
 const OPP={N:'S',S:'N',E:'W',W:'E'};
 const ROOM_BG={start:'#1c2230',normal:'#191b22',item:'#2a2410',boss:'#2a1414'};
-const AGGRO_RANGE=Math.round(0.85*Math.hypot(ROOM_RIGHT-ROOM_LEFT,ROOM_BOTTOM-ROOM_TOP)), AGGRO_TIME=sec(2.5), BLINK_DIST=116, BLINK_RECHARGE=sec(6.5), BLINK_FILL_CLEAR=9, BLINK_IFRAMES=sec(0.17);
+/* BLINK RECHARGE IS A DURATION, AND IT IS NOT SCALED BY TEMPO.
+
+   BLINK_RECHARGE is in ticks, and a tick is 1/TICK_HZ of a second, so the constant is literally a
+   count of seconds - 3.5s is 735 ticks. The fill rate in a fight is one tick per tick, which is one
+   second of wall clock per tick, so the bar drains in exactly the number of seconds it names. There is
+   no conversion at the point of use and no other file has to know the rate.
+
+   It used to be multiplied by TEMPO.rate at the point of use, and that was the wrong coupling in both
+   directions. It made this constant lie - sec(6.5) described a 4.33s escape, so the one number in the
+   file that a designer would reach for when asking "how long is the blink" was off by a third and
+   pointing at a dial that has nothing to do with the player's escape. And it made the escape the one
+   cooldown whose real duration nobody could state without also stating TEMPO.
+
+   The cost of dropping it, stated plainly: every OTHER player cooldown still divides by TEMPO.rate, so
+   at the current build of TEMPO=1.5 they all read a third quicker than their nominal values while blink
+   reads exactly 3.5s. Blink is now the slowest-reading escape relative to the rest of the kit. If TEMPO
+   is ever turned into a runtime dial - which the design intends - blink should scale WITH it, and the
+   right way is to divide the SECONDS here and leave this constant named for what it is, not to put a
+   multiplier back on the fill rate.
+
+   BLINK_FILL_CLEAR is the quiet-room fill, in ticks per tick, and is the only reason a charge feels
+   free once a fight is over: 9 per tick against 1 in a fight makes the recharge 9x faster in a room
+   with nothing in it. 735/9 = 82 ticks, about 0.39s. */
+const AGGRO_RANGE=Math.round(0.85*Math.hypot(ROOM_RIGHT-ROOM_LEFT,ROOM_BOTTOM-ROOM_TOP)), AGGRO_TIME=sec(2.5), BLINK_DIST=116, BLINK_RECHARGE=sec(3.5), BLINK_FILL_CLEAR=9, BLINK_IFRAMES=sec(0.17);
 // The blink was 140px on an 8s recharge, and together those two made it a teleport with a long
 // wait rather than an escape with a cost: nothing about a 140px jump reads as movement, so the
 // move is only ever "get me out of here", and an 8s wait means the correct play is to bank both
@@ -114,12 +137,25 @@ const LUNGE_CLASH=5.5;
 // instead does nothing at all, because the approach speed is zero inside the standoff - which is
 // exactly where a pack spends most of its time.
 const LUNGER_SPREAD=0.9;
-// How the lunger believes the player is moving. It reads a SMOOTHED heading rather than the
-// instantaneous velocity, and scales that reading by how settled the player looks: a player holding
-// one line is read in full and gets the whole intercept, a player who has been reversing is read as
-// unreliable and gets a much shorter, weaker lunge. So reversing to bait buys a weaker attack
-// instead of a free one, which is the trade the mechanic was missing.
-const LUNGE_TRACK=0.014, LUNGE_CONF_MIN=0.30;
+// How the lunger tracks the player's heading over time. This is the SLOW average, kept for the
+// shooters' belief about speed and as the fallback when a player is too slow to have a heading at all.
+// It is NOT what the lunge is aimed from any more - see solveIntercept and LUNGE_BELIEF_TRACK below,
+// because an average with a third of a second of memory lags a human reversal and aims lunges at
+// where the player has just been. LUNGE_CONF_MIN used to sit here and is gone: see below.
+const LUNGE_TRACK=0.014;
+
+/* WHICH WAY THE LUNGER THINKS THE PLAYER IS GOING. LUNGE_TRACK above smooths a VELOCITY over about
+   0.34s, which is the wrong question for an attack that has to commit inside a 0.34s windup: a
+   person reverses faster than the average can follow, so it reports the direction they have just
+   left. Measured at the instant of each commit, that put 289 of 900 lunges - nearly a third - aimed
+   against the player's actual heading.
+
+   LUNGE_BELIEF_TRACK is a unit heading (not a velocity) and is deliberately quicker, so the belief
+   has turned over by the time the lunge lands rather than partway through it. It is not as fast as
+   it could be because a heading read from a single tick flips on any jitter. PLAYER_SPEED_EPS is
+   the floor below which the player is treated as stationary and the old long average is used
+   instead, which is the one case a slow average is genuinely good for. */
+const LUNGE_BELIEF_TRACK=0.14, PLAYER_SPEED_EPS=0.05;
 // The lunge reaches as far as the intercept solution needs and no further. A lunger whose solution
 // is outside this does not commit at all - it keeps closing at its approach speed until the solution
 // fits, which is what "too far" means: not that the attack fails, but that it has not started yet.

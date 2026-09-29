@@ -61,21 +61,52 @@ function spawnEnemy(boss,room,x,y,type){
    the other. Three passes converge: the second is already within a pixel and the third moves
    nothing measurable. */
 function solveIntercept(e,gx,gy){
-  /* The velocity the lunger BELIEVES, which is not the velocity the player has.
+  /* THE BELIEF IS A DISPLACEMENT, NOT A HEADING, and that is the whole correction.
 
-     Instantaneous velocity is a bad thing to aim from, and not only because it is noisy. A player
-     one tick into pressing a key is still nearly stationary, so a lunger that reads the raw number
-     commits to a point that stops being true immediately - and a player mid-reversal is read at
-     whatever the easing happens to be sitting on that tick. So it reads a smoothed heading, and it
-     reads it in proportion to how SETTLED the player looks, using the same swerve the gunners use to
-     widen their aim. One signal, two consumers, and it means the two gunners agree about the player.
+     Both earlier versions of this asked "which way is the player going" and answered it with a
+     direction: a long velocity EMA with 0.34s of memory, which lags a human reversal; and then a
+     quick smoothed heading, which fixed the lag and kept the deeper mistake. Measured at the real
+     lunge cadence, both aim BACKWARDS at a counter-strafing player 33-50% of the time, which is the
+     thing that was reported as "it lunges the opposite way".
 
-     The consequence is the point. Hold a line and you are read in full, so the intercept is right
-     and the lunge lands. Start reversing and the lunger loses confidence in you, the solution
-     shortens, and the lunge it commits to is a smaller one - which the player can then slip. Baiting
-     is not free, it is a downgrade: you get a weaker attack instead of no attack. */
-  const conf=LUNGE_CONF_MIN+(1-LUNGE_CONF_MIN)*(1-player.swerve);
-  const bvx=player.trendVx*conf, bvy=player.trendVy*conf;
+     The mistake is asking the question at all. A player who reverses every quarter second NET travels
+     almost nothing over a lunge's horizon - windup plus flight is about half a second, two full
+     reversal cycles. There is no direction to lead along, because their displacement over the time
+     the lunge spends in the air is near zero and points wherever their phase happened to be. So the
+     honest prediction is
+
+         settled, holding a line   their real displacement, because they really are going there
+         reversing continuously     no lead at all, because they are not going anywhere
+
+     and the transition between those two is exactly what SWERVE already measures. The old code had
+     both the wrong model and a floor that let a third of a wrong-direction lead survive. Here the
+     belief is a DISPLACEMENT in pixels scaled by how settled the player looks, so an unsettled
+     player's belief collapses toward zero and the solve aims at where they are - which is the
+     correct answer for somebody who is not going anywhere, and which no heading can express.
+
+     A heading is still read, because a line-holder needs one and because a player who has only just
+     started moving has no displacement at all yet. It is only ever used to give that displacement a
+     DIRECTION. */
+  /* HOW MUCH OF THE BELIEVED DISPLACEMENT IS REAL. It runs all the way to zero.
+
+     It used to stop at LUNGE_CONF_MIN (0.30), which was the other half of the bug: even a player who
+     had convinced the lunger they were going nowhere still got a third of a full lead thrown along
+     the last direction the lunger believed, and when that direction was stale the lunge went the
+     wrong way. A floor on confidence is only safe when the thing being scaled is a velocity, because
+     then a wrong direction still points roughly at the player. Scaled as a displacement it is not
+     safe at all, so the floor had to go when the model did.
+
+     At zero the solve aims at the player's current position, which is the correct answer for a
+     continuous reverser and costs them nothing they had not already given up by never settling. */
+  const conf=1-player.swerve;
+  // READS the belief the tick maintains. It does not update it: a function called "solve" that
+  // rewrites the player's state is doing two jobs, and the tick is the only thing that owns
+  // per-frame state. The belief is maintained beside trendV in update().
+  let dirVx=player.beliefVx, dirVy=player.beliefVy;
+  if(Math.hypot(dirVx,dirVy)<1e-4){
+    dirVx=player.trendVx; dirVy=player.trendVy;   // never aim a lunge from a zero-length belief
+  }
+  const bvx=dirVx*PLAYER_MOVE*conf, bvy=dirVy*PLAYER_MOVE*conf;
   let ax=gx, ay=gy, n=0;
   for(let k=0;k<LUNGE_ITER;k++){
     n=Math.hypot(ax,ay)/LUNGE_SPEED;

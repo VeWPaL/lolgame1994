@@ -62,7 +62,7 @@ function startGame(){
   generateDungeon();
   cur={x:START,y:START};
   player={x:MIDX,y:MIDY,r:13,speed:0.935*PLAYER_MOVE,vx:0,vy:0,kvx:0,kvy:0,lagX:MIDX,lagY:MIDY,hp:8,maxHp:8,armor:0,weaponIdx:0,cooldown:0,cooldownMax:WEAPONS[0].cooldown/TEMPO.rate,altCooldown:0,altCooldownMax:ALT_WEAPON.cooldown/TEMPO.rate,altMode:'blast',iframes:0,hasSilver:false,hasGold:false,
-    blinkCharges:2,blinkRegen:0,restoreFX:null,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,momentum:0,trendVx:0,trendVy:0};
+    blinkCharges:2,blinkRegen:0,restoreFX:null,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,momentum:0,trendVx:0,trendVy:0,beliefVx:0,beliefVy:0};
   projectiles=[]; dashFX=[]; burstFX=[]; hookFields=[]; bossUnlocked=false; itemUnlocked=false; trans=null; readyT=0;
   unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
   entryDir='N';
@@ -123,10 +123,33 @@ function autoPause(){
 
 function tickBlink(){
   if(player.blinkCharges>=2) return;
-  // BLINK_FILL_CLEAR per tick is 7, so a charge comes back in 1.1s in a quiet room and
-  // BLINK_RECHARGE (8s) in a fight
-  // TEMPO quickens the fill rate rather than shortening the bar, so the HUD fraction stays honest
-  player.blinkRegen+=(currentRoom().enemies.length===0?BLINK_FILL_CLEAR:1)*TEMPO.rate;
+  /* A charge comes back in BLINK_RECHARGE seconds of wall clock, in a fight, and that is the number
+     a designer tunes. Everything below is arranged so that stays true:
+
+       in a fight        the fill rate is 1 tick per tick, and a tick IS 1/TICK_HZ of a second, so the
+                        bar drains in exactly BLINK_RECHARGE ticks = BLINK_RECHARGE seconds. The
+                        constant means its own name and needs no conversion anywhere.
+       in a quiet room   the fill rate is BLINK_FILL_CLEAR ticks per tick, so the bar drains
+                        BLINK_RECHARGE/BLINK_FILL_CLEAR = 82 ticks sooner, about 0.39s. And a room
+                        that has just gone quiet ALSO jumps the bar to half first (see the clear in
+                        update), which leaves 368 ticks to fill and measures 42 ticks, about 0.20s.
+                        Both figures are real and they are different situations, so both are here:
+                        a charge eaten mid-fight comes back in 0.39s, and one you earned by winning
+                        the fight comes back in 0.20s. Measured, not derived - the first version of
+                        this comment quoted 0.39s and was wrong for the common case, which is the
+                        exact failure the paragraph at the foot of this function is about.
+       tempo             TEMPO.rate is deliberately NOT applied here. It used to be, and it made this
+                        constant lie: sec(6.5) became 6.5*1.5 = 9.75s of bar, which at the old rate of
+                        1.5 ticks per tick took 6.5s to drain... and at any other TEMPO it took
+                        something else again, so the one number in the file describing how long an
+                        escape took was a function of an unrelated dial. See the note on the constant.
+
+     The comments on this function used to state three numbers, and all three were wrong: it said the
+     clear-room fill was 7 (it is 9), that a charge came back in 1.1s in a quiet room (0.39s), and
+     that BLINK_RECHARGE was 8s (it was 6.5s). Nobody was misled only because the real values were
+     readable two lines below, which is exactly the situation a comment about numbers is supposed to
+     prevent. Every figure quoted in a comment here is now a figure the code actually uses. */
+  player.blinkRegen+=(currentRoom().enemies.length===0?BLINK_FILL_CLEAR:1);
   if(player.blinkRegen>=BLINK_RECHARGE){player.blinkCharges++;player.blinkRegen=0;}
 }
 function killEnemy(r,j){

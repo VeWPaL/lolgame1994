@@ -131,7 +131,32 @@ proved the port was right all along.
 
 ---
 
-# PROPOSED — awaiting the user's decision
+## The routine cleanup pass
+
+The user asks for one of these every so often. It is a fixed list, not an invitation to look around,
+and every item on it is something that has actually been found this way.
+
+1. **Every number quoted in a comment, re-derived from the code.** This is the item that matters most,
+   because a stale figure in a comment is invisible until somebody tunes the thing it describes. The
+   worked example, which is what to look for: `tickBlink` said `BLINK_FILL_CLEAR` was 7 (it is 9),
+   that a charge came back in 1.1s in a quiet room (0.39s), and that `BLINK_RECHARGE` was 8s (6.5s).
+   Three wrong numbers in three lines, none of them load-bearing, all of them confidently wrong. A
+   second pass over the *same* comment then quoted only the fill and missed that a cleared room also
+   jumps the bar to 50% first, so the honest answer needed both figures (0.39s mid-fight, 0.20s after
+   winning). **A number in a comment is a claim about the running game, not about the line below it,
+   and a comment describing a derived quantity must quote every path through that derivation.**
+2. **Dead constants** — defined, never read.
+3. **`Math.random()` in game code** — the tripwire test already covers this; confirm it is still green.
+4. **Comments that contradict the code beside them**, in either direction.
+5. **Unused locals and unused parameters**, especially `const p=...` left behind after its last read.
+6. **Every `null` guard**, and whether the value can actually be `null` (as opposed to `undefined`).
+7. **Tests that only compare a value against itself** — the failure that produced the inert Strength
+   and Vigor stats. A stat is verified by its *effect*.
+8. **File hygiene** — LF only, no BOM, no U+00C2. The encoding check is copy-pasteable below.
+
+---
+
+# PROPOSED - awaiting the user's decision
 
 Everything below is a **proposal, not a rule**. Strike what does not earn its place.
 

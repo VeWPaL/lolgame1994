@@ -141,6 +141,26 @@ function update(){
      purpose: a third of a second of memory is about how long it takes to see a line and answer it. */
   player.trendVx+=(player.vx-player.trendVx)*LUNGE_TRACK;
   player.trendVy+=(player.vy-player.trendVy)*LUNGE_TRACK;
+
+  /* WHICH WAY THE LUNGERS THINK YOU ARE GOING, which is a different question from how fast you are
+     moving and is maintained HERE rather than inside the solve, because the tick is the only thing
+     that owns per-frame state.
+
+     This is a heading and not a velocity, and it is quick rather than slow. trendV above is a
+     velocity averaged over about a third of a second, which is the right memory for "which line is
+     this person on" and the wrong one for "which way have they just turned": a person reverses faster
+     than that average can follow, so aiming from it put nearly a third of all lunges at the direction
+     the player had just left - measured at 289 of 900 commits against a half-second reversal.
+
+     It is still smoothed, because a heading read from one raw tick flips on any jitter. A player too
+     slow to have a heading at all leaves the belief alone and the solve falls back to trendV. */
+  const bsp=Math.hypot(player.vx,player.vy);
+  if(bsp>PLAYER_SPEED_EPS){
+    player.beliefVx+=(player.vx/bsp-player.beliefVx)*LUNGE_BELIEF_TRACK;
+    player.beliefVy+=(player.vy/bsp-player.beliefVy)*LUNGE_BELIEF_TRACK;
+    const bl=Math.hypot(player.beliefVx,player.beliefVy);
+    if(bl>1e-4){ player.beliefVx/=bl; player.beliefVy/=bl; }
+  }
   // SWERVE: how unsettled your movement is right now, 0 while you hold a heading and 1 while you
   // are reversing every few ticks. The gunners aim wider the higher it is, which is what turns
   // counterstrafing from a lucky trick into a tactic you can rely on - a shot at a target holding a

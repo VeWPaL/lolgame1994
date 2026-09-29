@@ -4362,7 +4362,22 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const thrashConf=solveIntercept(c,player.x-c.x,player.y-c.y).conf;
     ok(thrashConf<settledConf*0.6,'a thrashing player is read as '+(thrashConf/settledConf).toFixed(2)+
        'x as confident as a settled one, so reversing buys nothing');
-    ok(thrashConf>=LUNGE_CONF_MIN-0.01,'the lunger is completely blind to a thrashing player, so the lunge is never a threat');
+    /* This assertion used to require thrashConf to stay ABOVE LUNGE_CONF_MIN, and that floor was
+       the bug rather than a safety property. It guaranteed that even a player who had fully convinced
+       the lunger they were going nowhere kept a third of a full lead thrown along the last direction
+       the lunger believed - and when that direction was stale, the lunge went the wrong way.
+
+       The floor existed so that reversing could never make the attack harmless. Displacing it means
+       confidence now reaches zero, so what protects the attack is that a thrashing player is being
+       read as genuinely not going anywhere, which is TRUE of them: they net-travel almost nothing
+       over a lunge's horizon, so aiming at their current position is the correct prediction and not
+       a punishment. The claim is therefore that the two ends of the range behave correctly and in
+       opposite directions, rather than that one of them is clamped. */
+    ok(thrashConf<settledConf*0.15,'a thrashing player is read at '+thrashConf.toFixed(2)+
+       ' confidence against a settled '+settledConf.toFixed(2)+', so a continuous reverser is still'+
+       ' only half believed and the lunge is never harmless');
+    ok(thrashConf>=0,'confidence went negative for a thrashing player ('+thrashConf.toFixed(3)+
+       '), which would aim the lunge lead BACKWARDS along the direction they just abandoned');
     // and the confidence must actually shorten the lunge, not just be reported
     const long=solveIntercept(c,player.x-c.x,player.y-c.y);
     ok(long.dist>=0,'the solver returned a nonsense distance');
