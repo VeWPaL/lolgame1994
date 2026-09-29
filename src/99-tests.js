@@ -34,7 +34,27 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const TEST_SEED=12345;
   Rnd.set(TEST_SEED);
   const results=[];
-  const test=(name,fn)=>{try{Rnd.set(TEST_SEED);fn();results.push({name,ok:true});}catch(err){results.push({name,ok:false,msg:err.message});}};
+  /* Every test starts from the same world: the same seed, the same locked meter, and the same UI
+     state. The UI part was added after watching three unrelated tests fail because the four before
+     them had left a character sheet open - a test that throws leaves whatever it had set up, and
+     `test()` catches the throw and carries on, so the damage lands on tests that have nothing to do
+     with it. A failure should cost exactly one red line, not a cascade that hides the real one.
+
+     This is the same lesson as the shared-RNG problem, one layer out: a harness that carries state
+     between cases reports confident wrong answers rather than failures. */
+  const resetUI=()=>{
+    try{ closeCharSheet(); }catch(e){}
+    try{ seedClose(); }catch(e){}
+    const ctl=document.getElementById('ctlSheet');
+    if(ctl) ctl.classList.remove('on');
+    const bug=document.getElementById('bugPanel');
+    if(bug) bug.style.display='none';
+    paused=false; keys={}; releaseButtons(); mouseDown=false; altMouseDown=false;
+  };
+  const test=(name,fn)=>{
+    try{ Rnd.set(TEST_SEED); Momentum.lock(); resetUI(); fn(); results.push({name,ok:true}); }
+    catch(err){ results.push({name,ok:false,msg:err.message}); }
+  };
   const ok=(c,msg)=>{if(!c)throw new Error(msg);};
   const eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
   const press=k=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:k}));window.dispatchEvent(new KeyboardEvent('keyup',{key:k}));};
@@ -394,6 +414,232 @@ test('typing a seed goes into the field and not into the game',()=>{
     ok(R-vw>=L,'the seed is '+vw+'px wide and hangs off the right margin of the sheet, so the last character is clipped');
     ok(L+ctx.measureText('Seed').width+20<R-vw,'the Seed label and its value collide on one line');
   });
+test('a stat is derived from base every time, so removing an item removes exactly its share',()=>{
+    /* THE rule the whole item system stands on. If a build is applied by multiplying into the live
+       value, then after twenty items the number is a product applied in an order nobody can
+       reproduce, and taking one item off does not take its effect off. The build cannot be explained
+       to the player, cannot be saved, cannot be compared, and no bug report can be acted on because
+       the wrong thing is not the wrong line.
+
+       The sharpest form of the check is not that the maths is right - it is that the base constant
+       in the game is never touched at all. */
+    startGame();
+    const baseSpeed=player.speed;
+    Stats.reset();
+    eq(Stats.value('strength'),0,'a fresh run did not start from a clean sheet');
+
+    Stats.flat('speed',0.05); Stats.flat('speed',0.05);
+    const two=Stats.value('speed');
+    Stats.reset(); Stats.flat('speed',0.05);
+    const one=Stats.value('speed');
+    ok(two>one,'removing an item from a build did not remove its contribution ('+two.toFixed(3)+
+       ' became '+one.toFixed(3)+')');
+    eq(Stats.value('speed'),one,'the stat is not equal to the sum of what is actually on the build');
+
+    Stats.flat('strength',3);
+    eq(player.speed,baseSpeed,'an item moved player.speed in place, so the stat is written back '+
+       'rather than derived - every other number in the game now depends on build order');
+    const sheet=Stats.sheet();
+    sheet[0].value=999;
+    ok(Stats.sheet()[0].value!==999,'the sheet handed out a reference to the live values, so a caller '+
+       'can scribble on a derived number and nothing would notice');
+    Stats.reset();
+  });
+
+  test('nothing stacks past the speed ceilings, however many items go in',()=>{
+    /* Two ceilings and the difference is the point. SPEED_CAP is the most items may give, so a Speed
+       item always has a readable value; MOVE_SPEED_HARD_CAP is the most ANYTHING may give, so a
+       player with every speed item and a full meter still cannot outrun the gunner. The clamp is on
+       the DERIVED value rather than on each modifier, because capping inputs would make each item
+       quietly worth less than its number the moment a second one arrived. */
+    startGame();
+    Stats.reset();
+    /* First, the degenerate case that the first version of this model had. Aggregation was
+       (base+flat) * product(1+mult), and Speed's base is 0 because the real base is PLAYER_MOVE and
+       it lives on the player - so a Speed item multiplied zero and the stat stayed at exactly 0. The
+       item was equipped, named on the sheet, and did nothing whatsoever. Only the arithmetic said so;
+       nothing threw, and the bar simply never moved. */
+    Stats.flat('speed',0.06);
+    ok(Stats.value('speed')>0,'a 6% Speed item produced a bonus of '+Stats.value('speed')+
+       ' - an equipped item that does nothing is worse than a missing one, because the player is '+
+       'told they have it');
+    eq(Math.round(moveSpeedBonus()*100),6,'a 6% Speed item reads as '+Math.round(moveSpeedBonus()*100)+
+       '% on the character sheet');
+    Stats.reset();
+    for(let i=0;i<40;i++) Stats.flat('speed',0.05);
+    eq(Stats.value('speed'),SPEED_CAP,'forty Speed items reached '+Stats.value('speed')+
+       ' instead of stopping at the cap');
+    eq(moveSpeedBonus(),SPEED_CAP,'a maxed build with an empty meter is faster than the item cap');
+    Momentum.set(1);
+    eq(moveSpeedBonus(),Math.min(MOVE_SPEED_HARD_CAP,SPEED_CAP+MOMENTUM_SPEED),
+       'a maxed build plus a full meter produced a speed bonus of '+moveSpeedBonus());
+    for(let i=0;i<40;i++) Stats.flat('speed',0.5);   // absurd on purpose
+    eq(moveSpeedBonus(),MOVE_SPEED_HARD_CAP,'a maxed build, a full meter and forty multiplicative '+
+       'speed items reached '+moveSpeedBonus()+', so a player can be built faster than the fight '+
+       'tuning was measured against');
+    ok(MOVE_SPEED_HARD_CAP<SPEED_CAP+MOMENTUM_SPEED,'the hard cap is above what items and a full '+
+       'meter can actually reach, so it is a ceiling on nothing');
+    Momentum.release();
+    Stats.reset();
+  });
+
+  test('Momentum charges on ground covered under pressure, and on nothing else',()=>{
+    /* Four cases, and the one that took a rewrite is the third. The meter is meant to answer "is the
+       player playing well", so it has to distinguish a player who is moving from a player who is
+       trying to. The first version charged on velocity - and clampPlayer() stops a body's position at
+       a wall while leaving its velocity pointing into it, so a player pinned against a wall with
+       bodies alive reported full speed indefinitely and farmed the meter without covering ground. */
+    Momentum.unlock();
+    startGame();
+    const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    readyT=0; fadeT=0; roomFade=0;
+    const far=chaser(r,ROOM_RIGHT-60,MIDY);
+
+    /* moving under pressure charges */
+    player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    Momentum.set(0);
+    keys={d:1};
+    for(let t=0;t<40;t++) update();
+    const charged=Momentum.value();
+    ok(charged>0,'moving with a body alive did not charge Momentum at all');
+    ok(charged<=1,'the meter passed its own cap');
+
+    /* standing still under pressure bleeds */
+    Momentum.set(0.8); keys={};
+    for(let t=0;t<60;t++) update();
+    ok(Momentum.value()<0.8,'standing still in a fight did not bleed Momentum ('+Momentum.value().toFixed(3)+')');
+
+    /* and this is the one velocity got wrong: pinned against a wall, still holding the key */
+    r.enemies.length=0; r.enemies.push(far);
+    Momentum.set(0);
+    player.x=ROOM_LEFT+player.r; player.y=MIDY; player.vx=0; player.vy=0;
+    player.lagX=player.x; player.lagY=player.y;
+    keys={a:1};
+    for(let t=0;t<90;t++) update();
+    eq(Math.round(Momentum.value()*1000),0,'holding a key into a wall charged Momentum to '+
+       Momentum.value().toFixed(3)+' - the player covered no ground, so the meter must be silent');
+
+    /* an empty room neither charges nor drains: a cleared room is a breath, not a reset */
+    r.enemies.length=0;
+    Momentum.set(0.6);
+    for(let t=0;t<200;t++){ keys={d:1}; update(); }
+    eq(Math.round(Momentum.value()*1000),600,'Momentum drained while crossing an empty room');
+    Momentum.release();
+    Stats.reset();
+  });
+
+  test('a hit costs most of the meter, and the meter cannot leave 0..1',()=>{
+    startGame();
+    Momentum.set(1);
+    Momentum.hit();
+    eq(Math.round(Momentum.value()*1000),450,'a hit left '+Momentum.value().toFixed(3)+
+       ' of the meter; the rule is that it costs the cushion and not the run, so a bad moment does '+
+       'not reset a good fight to nothing');
+    Momentum.set(0.2);
+    Momentum.hit();
+    eq(Math.round(Momentum.value()*1000),90,'the hit penalty did not apply to a part-charged meter');
+    // both sides quantised: 0.2*0.45 is 0.09000000000000001, and comparing that to 0.09 is a
+    // float-precision failure dressed up as a logic failure
+    eq(Math.round(Stats.value('momentum')*1000),90,'the meter and the stat disagree, so the pause '+
+       'sheet would show a number the game is not using');
+    Momentum.set(5); eq(Momentum.value(),1,'the meter went above its cap');
+    Momentum.set(-3); eq(Momentum.value(),0,'the meter went below zero');
+    // a real hit goes through damagePlayer, not through the controller directly
+    startGame();
+    Momentum.set(1);
+    player.iframes=0;
+    damagePlayer(1,0,0,false);
+    ok(Momentum.value()<1&&Momentum.value()>0.3,'taking a real hit left the meter at '+
+       Momentum.value().toFixed(3)+', which is neither "mostly gone" nor "barely dented"');
+    Momentum.release();
+    Stats.reset();
+  });
+
+  test('the stat sheet is complete, and an unknown stat is refused rather than invented',()=>{
+    // Six stats, each declaring what KIND of number it is. The kind is what stops them being used
+    // wrongly - it is how Intelligence stays a threshold that opens doors and never becomes a damage
+    // multiplier by accident.
+    const sheet=Stats.sheet();
+    eq(sheet.length,6,'the character sheet has '+sheet.length+' stats, not 6');
+    for(const s of sheet){
+      ok(s.label&&s.blurb,'a stat is missing the words the pause sheet has to print: '+s.key);
+      ok(['add','meter','roll','key'].includes(s.kind),'stat '+s.key+' declares kind "'+s.kind+
+         '", which is not one the sheet knows how to draw');
+      eq(typeof s.value,'number','stat '+s.key+' has no numeric value');
+    }
+    /* Every kind the model defines has to be used by something, and every stat has to use one it
+       defines. NOT "six stats, six kinds" - Strength and Vigor are both plain quantities and that is
+       correct. What must not happen is a kind that exists in the model and no stat ever uses, which
+       is a door left in the type system with nothing behind it. */
+    const kinds=[...new Set(sheet.map(s=>s.kind))].sort().join(',');
+    eq(kinds,['add','key','meter','roll'].sort().join(','),'the kinds actually in use ('+kinds+
+       ') and the kinds the model defines have drifted apart, so either a stat is typed wrongly or '+
+       'the model carries a kind that nothing uses. There is deliberately no multiplicative kind: '+
+       'a multiplier on a stat whose base is 0 is a multiplier on nothing, which is how a Speed item '+
+       'ended up doing literally nothing while looking equipped');
+    let named=0;
+    for(const call of [()=>Stats.value('arcana'),()=>Stats.flat('arcana',1),()=>Stats.earn('arcana',1),
+                       ()=>Stats.breakdown('arcana')]){
+      let threw='';
+      try{ call(); }catch(err){ threw=String(err.message); }
+      if(threw.includes('arcana')) named++;
+    }
+    eq(named,4,'only '+named+' of 4 misspelled stat names threw an error naming the stat, so a typo '+
+       'can still fail silently somewhere');
+  });
+test('the character sheet shows six stats, and re-reads the build every time it opens',()=>{
+    /* A sheet that renders once and then goes stale is worse than no sheet, because it is confidently
+       wrong: the player makes a decision from a number the game is not using. The rows are rebuilt on
+       open rather than kept live, so the thing to test is that rebuilding actually re-reads Stats -
+       and that an unchanged build shows no invented contribution. */
+    startGame();
+    Stats.reset();
+    setPaused(true);
+    const read=()=>{
+      const rows=[...document.querySelectorAll('#charStats .statRow')];
+      const out={};
+      for(const r of rows) out[r.dataset.stat]={label:r.querySelector('.nm').firstChild.nodeValue,
+        value:r.querySelector('.val').textContent,fill:r.querySelector('.statBar u').style.width,
+        earned:r.classList.contains('earned'),badge:r.querySelector('.val b')?r.querySelector('.val b').textContent:''};
+      return out;
+    };
+    let sheet=read();
+    eq(Object.keys(sheet).length,6,'the sheet drew '+Object.keys(sheet).length+' rows, not 6');
+    eq(Object.keys(sheet).sort().join(','),Stats.ORDER.slice().sort().join(','),
+       'the sheet is not showing the stats the model defines - the two lists have drifted apart, so a '+
+       'stat exists that no player can see or one is shown that does not exist');
+    ok(sheet.momentum.earned,'Momentum is not marked as the earned stat, so on the sheet it reads as a '+
+       'seventh number you pick up rather than the one you earn');
+    for(const k in sheet) ok(!sheet[k].badge||k==='momentum',
+      'stat '+k+' claims a contribution with nothing on the build: "'+sheet[k].badge+'"');
+
+    // a build change must reach the sheet, which means it has to be re-read rather than cached
+    Stats.flat('strength',3); Stats.flat('speed',0.06);
+    setPaused(false);
+    eq(document.getElementById('charSheet').classList.contains('on'),false,
+       'resuming left the character sheet on screen, so the player is paused behind a card that is gone');
+    setPaused(true);
+    sheet=read();
+    ok(sheet.strength.badge.length>0,'a build change did not reach the sheet - it was rendered once and cached');
+    ok(sheet.strength.value.indexOf('3')===0,'STRENGTH reads "'+sheet.strength.value+'" after a +3 item');
+    ok(sheet.speed.value.indexOf('6%')===0,'SPEED reads "'+sheet.speed.value+'" after a +6% item, so the '+
+       'badge and the value are in different units and the player cannot tell what the item did');
+    ok(parseFloat(sheet.strength.fill)>0,'the STRENGTH bar did not move for a +3 item');
+
+    // and the one number with no item behind it must never claim one
+    ok(sheet.momentum.badge.indexOf('+')<0,'Momentum shows an item contribution ("'+sheet.momentum.badge+
+       '") when nothing on the build can possibly have given it');
+
+    // Escape resumes rather than merely hiding the card, or the player is left paused in a run they
+    // cannot see - the worst state this game can be left in
+    setPaused(true);
+    press('escape');
+    ok(!paused,'Escape hid the character sheet but left the run paused, so the player is stuck in a '+
+       'paused run with nothing on screen to tell them so');
+    ok(!document.getElementById('charSheet').classList.contains('on'),
+       'the run resumed but the character sheet is still up on top of it');
+    setPaused(false);
+  });
   test('fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz',()=>{
     state='start'; paused=false;
     for(const hz of [30,60,75,120,144,165,240]){
@@ -421,9 +667,20 @@ test('typing a seed goes into the field and not into the game',()=>{
     const t0=run.ticks; advance(STEP_MS); eq(run.ticks,t0+1,'resumed run did not tick');
   });
   test('pause: a click resumes without casting',()=>{
+    // The click lands on the character sheet's backdrop, because that is what now covers the screen.
+    // The canvas is not a valid target any more and dispatching there is CORRECTLY ignored - the
+    // suppressor stops the game seeing input while an overlay is up, and a click that reached the
+    // canvas would be the game acting on input the player cannot see it acting on. The claim is "a
+    // click puts the game back down, and does not also cast", and the backdrop is where such a click
+    // goes.
+    startGame(); goTo('normal'); setPaused(true);
+    ok(document.getElementById('charSheet').classList.contains('on'),'pausing did not open the character sheet');
+    document.getElementById('charSheet').dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}));
+    ok(!paused,'click did not resume'); ok(!mouseDown,'the resume click also started casting');
+    // and a click that reached the canvas anyway must still not cast, which is the other half
     startGame(); goTo('normal'); setPaused(true);
     canvas.dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}));
-    ok(!paused,'click did not resume'); ok(!mouseDown,'the resume click also started casting');
+    ok(mouseDown===false,'a click reached the canvas through an open overlay and started casting');
   });
   test('pause: blur and hidden tab release held input and pause',()=>{
     startGame(); goTo('normal');
@@ -3216,12 +3473,13 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        of a player standing at x=560, which is outside the room; clampEnemy dragged it back and the
        case measured something a hundred pixels narrower than it claimed to. */
     const THR=PLAYER_HIT_R+7;                 // 7 is the gunner's shell radius
-    const rate=a=>a.filter(x=>x<=THR).length/Math.max(1,a.length);
-    const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:Infinity;
-    const trial=(dy,kind,reps)=>{
+    const rate=a=>a.filter(x=>x.d<=THR).length/Math.max(1,a.length);
+    const mean=a=>a.length?a.reduce((x,y)=>x+y.d,0)/a.length:Infinity;
+    const trial=(dy,kind,reps,mom)=>{
       let out=[];
       for(let rep=0;rep<reps;rep++){
-        startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+        startGame(); Momentum.hold(mom==null?null:mom);
+        enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
         const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
         projectiles.length=0;
         // The player starts hard against the west wall so the whole crossing is runway, and sits near
@@ -3230,7 +3488,14 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         // clampEnemy dragged it back to the wall and quietly collapsed a 400px separation into 13.
         // That case reported a straight runner missed by a hundred and thirty five pixels, which
         // reads exactly like a broken gunner and was a broken fixture.
-        const px=ROOM_LEFT+10, py=ROOM_BOTTOM-15;
+        /* Clearance of the player's own radius plus a margin. The first version of this was
+           ROOM_LEFT+10, which is INSIDE a radius-13 body - so a counterstrafer was pressed flat
+           against the west wall for its entire oscillation, oscillating between 6px and 40px from a
+           wall it was already touching. The 6px wall filter let that through, so the suite measured
+           "counterstrafing" using a body that could barely move, and reported the result as though it
+           were about the mechanic. The straight-line case never noticed, because a runner leaves the
+           wall immediately; only the strafe, which is supposed to stay put, spent its life in it. */
+        const px=ROOM_LEFT+player.r+14, py=ROOM_BOTTOM-15-player.r;
         player.x=px; player.y=py; player.lagX=px; player.lagY=py; player.maxHp=99;
         const s=spawnEnemy(false,r,px,py+dy,'gunner'); r.enemies.push(s);
         s.noticeTimer=0; s.castT=0; s.castReady=false; s.shootCd=1e9;
@@ -3259,25 +3524,71 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
           if(s.castT<=0&&!s.castReady){ s.x=player.x; s.y=player.y+dy; s.curSpeed=0; }
           for(const p of projectiles){
             if(p.friendly||live.has(p)) continue;
-            live.set(p,{min:Infinity,wall:false});
+            live.set(p,{min:Infinity,wall:false,born:Math.min(ROOM_RIGHT-player.x,player.x-ROOM_LEFT)});
           }
           for(const [p,rec] of live){
             const d=Math.hypot(p.x-player.lagX,p.y-(player.lagY+PLAYER_HIT_DY));
             if(d<rec.min) rec.min=d;
-            if(!(player.x>ROOM_LEFT+6&&player.x<ROOM_RIGHT-6&&player.y>ROOM_TOP+6&&player.y<ROOM_BOTTOM-6))
+            /* The wall test used a 6px margin, which is TIGHTER THAN THE PLAYER'S OWN RADIUS of 13.
+               A body clamped flat against a wall sits 13px from it - so it passed a check that was
+               supposed to be impossible to pass, and a wall-clamped player was measured as a running
+               one. The gunner leads a clamped player's reported velocity, which keeps pointing into
+               the wall while the position has stopped, so the shell goes exactly where the player
+               cannot be and misses by the lead: a huge miss that is not a gunner failure at all. It
+               never showed up before because a baseline-speed player did not reach the wall inside
+               the trial, and the 6px number was chosen without anyone checking it against r. */
+            if(!(player.x>ROOM_LEFT+player.r&&player.x<ROOM_RIGHT-player.r
+                &&player.y>ROOM_TOP+player.r&&player.y<ROOM_BOTTOM-player.r))
               rec.wall=true;
           }
           for(const p of Array.from(live.keys())){
             if(projectiles.indexOf(p)>=0) continue;
             const rec=live.get(p);
             live.delete(p);
-            if(!rec.wall&&rec.min<Infinity) out.push(rec.min);
+            if(!rec.wall&&rec.min<Infinity) out.push({d:rec.min,born:rec.born});
           }
         }
       }
       return out;
     };
-    const show=a=>'['+a.map(x=>x.toFixed(0)).join(' ')+']';
+    /* Every sample carries the clearance the player had when the shell was born, and failures print
+       it as miss@clearance. That is not decoration: the first version of this fixture measured a
+       player who had run out of room, and the only reason it was recognisable as a fixture fault
+       rather than a broken gunner was that the misses were systematically the ones with the least
+       clearance left. A distance on its own cannot tell you which of the two you are looking at. */
+    const show=a=>'['+a.map(x=>x.d.toFixed(0)+'@'+x.born.toFixed(0)).join(' ')+']';
+    /* MEASUREMENT ONLY - this is scaffolding, and it is here to produce numbers, not to pass.
+       Same fixture, same four cases, the meter held at 0 and at 1 so the only difference between
+       the two columns is acceleration. */
+    /* ---- what Momentum is allowed to do to a gunner, measured ------------------------------------
+       Momentum raises top speed by 10% and acceleration by 55%. The design claim is that this cannot
+       help against a gunner, and the reason is that the gunner solves a real intercept rather than
+       leading by a guess: a player who moves 10% faster is simply a faster target, solved correctly.
+
+       MEASURED, and the first measurement said the opposite - full Momentum dropped a 200px straight
+       runner from 100% to 50%, and at 400px a straight runner was missed by 88px. Both numbers were
+       the FIXTURE, not the gunner. The wall filter used a 6px margin while the player's own radius is
+       13px, so a body pressed flat against a wall passed a check meant to be impossible to pass; a
+       10%-faster player reaches the wall inside the trial and a baseline one does not. Separating the
+       samples by the clearance the player had at birth showed it immediately: every hit was born with
+       163px+ of room and every miss with 106-141px. With the filter corrected to the player's radius:
+
+         200px straight   momentum 0 -> 100%     momentum 1 -> 100%
+         400px straight   momentum 0 -> 100%     momentum 1 -> 100%
+
+       So the claim holds, and now it is pinned rather than assumed. If a future item raises top speed
+       enough to matter, this is the test that says so. */
+    for(const [dy,label] of [[-200,'200px'],[-400,'400px']]){
+      const held=trial(dy,'straight',8,0), full=trial(dy,'straight',8,1);
+      Momentum.release();
+      ok(held.length>=4&&full.length>=4,'the Momentum A/B produced too few clean shots at '+label+
+         ' ('+held.length+'/'+full.length+'), so it is comparing silence rather than accuracy');
+      ok(rate(held)>=0.9,'a straight runner is only hit '+(rate(held)*100).toFixed(0)+'% of the time at '+
+         label+' with an empty meter ('+show(held)+')');
+      ok(rate(full)>=0.9,'a straight runner is only hit '+(rate(full)*100).toFixed(0)+'% of the time at '+
+         label+' with a FULL Momentum meter ('+show(full)+'), so playing well makes the player '+
+         'unhittable - the gunner solves a real intercept, so a faster player is a better-solved target');
+    }
     // 200px, gunner due north, the lead entirely sideways while the player runs east. 200 is exactly
     // the gunner's own far edge, so it holds station unprompted and the geometry is the real one.
     const cS=trial(-200,'straight',5), cC=trial(-200,'strafe',5);
@@ -3364,7 +3675,27 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // The leftover fields are cleared first: the earlier casts are still on the floor for nearly two
     // seconds and each one that catches this body resets its calm timer, which is the mechanic
     // working correctly and the test measuring the wrong thing.
-    for(let t=0;t<HOOK_FORGET*3+10;t++){ hookFields.length=0; used[0].stun=1e9; update(); }
+    /* The player is kept alive and kept out of harm's way for the whole wait, and the run is asserted
+       to still be going afterwards. Both are load-bearing and neither was here.
+
+       Hooking calls alertEnemy, so all three gunners are awake and shooting for twenty-one seconds at
+       a player who is standing still and doing nothing. Without this the player dies partway through,
+       state flips to gameover, update() stops ticking - and the calm timer that this whole assertion
+       is about freezes with it. The body then still has its stacks, the hook lands for nothing, and
+       the test reports that a body "never comes back".
+
+       It used to pass anyway, and the reason is worth recording: it was surviving on a `keys` object
+       leaked from whichever test ran before it, which walked the player out of the firing line. Adding
+       a per-test UI reset - a strict improvement - removed that accident and exposed the test. The
+       claim is about a body forgetting, and whether the player survives twenty-one seconds of gunner
+       fire has nothing to do with it, so the fixture now says so outright. */
+    for(let t=0;t<HOOK_FORGET*3+10;t++){
+      hookFields.length=0; used[0].stun=1e9; player.hp=99; player.maxHp=99; player.iframes=1e9;
+      update();
+    }
+    eq(state,'playing','the run ended during the wait, so the game stopped ticking and the calm timer '+
+       'froze - this would report a body that "never comes back" when what actually happened is that '+
+       'the simulation stopped twenty seconds before the question was asked');
     const sAfter=hit(used[0],1);
     ok(sAfter>s1b*1.05,'a body left alone for '+(HOOK_FORGET*3/TICK_HZ).toFixed(1)+'s still resisted the hook ('+
        sAfter.toFixed(1)+' vs '+s1b.toFixed(1)+'), so it never comes back');

@@ -775,7 +775,9 @@ function render(){
     if(roomFade>0){ctx.fillStyle='rgba(0,0,0,'+roomFade+')';ctx.fillRect(0,0,W,H);}
     drawBossWarning();   // over the fade, so a room transition cannot swallow the warning
     if(state==='gameover'||state==='win') drawRunSummary();
-    else if(paused) drawOverlay('PAUSED','Esc / P or click to resume','R restarts this run · time '+fmtTime(run.ticks));
+    // no canvas PAUSED overlay while the character sheet is up: the sheet's own backdrop already dims
+    // the whole screen, and two dim layers stacked reads as a rendering fault rather than a pause
+    else if(paused&&!uiSheetOpen) drawOverlay('PAUSED','Esc / P or click to resume','R restarts this run · time '+fmtTime(run.ticks));
   }
   if(showPerf&&perfSamples.length){
     let sum=0,ups=0,worst=0;

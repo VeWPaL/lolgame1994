@@ -9,6 +9,20 @@
    then the room. Several bugs in this function were ORDER bugs - a hit landing after the body it
    hit had already moved, a projectile resolving before the cast that spawned it.
    ============================================================================================== */
+/* Momentum is charged on MOVEMENT UNDER PRESSURE, and the distinction is the whole mechanic: it
+   reads actual velocity rather than whether a key is down, so a body pinned against a wall by two
+   chasers is not quietly farming the meter, and it only runs while something is alive to pressure
+   it, so backtracking and empty rooms neither charge nor drain it. A cleared room is a breath
+   rather than a reset. */
+function tickMomentum(moved){
+  if(momentumLocked) return;
+  if(currentRoom().enemies.length===0) return;
+  player.momentum=moved>MOMENTUM_MOVE_FLOOR
+    ? Math.min(1,player.momentum+MOMENTUM_GAIN*moved)
+    : Math.max(0,player.momentum-MOMENTUM_STALL_DECAY);
+  Stats.earn('momentum',player.momentum);
+}
+
 function update(){
   frameCount++;
   tickFX();
@@ -69,10 +83,17 @@ function update(){
      And it decays whether you are moving or not, so it cannot be banked by standing still. */
   if(player.boost>0)player.boost--;
   const align=len?(dx/len)*player.boostX+(dy/len)*player.boostY:0;
-  const spd=player.speed*player.slowMult*(player.boost>0?1+(BLINK_BOOST_GAIN-1)*Math.max(0,align):1);
+  // top speed comes from the DERIVED stat, never from an item having multiplied player.speed in
+  // place. The base constant is untouched, so removing an item removes exactly its contribution.
+  const spd=player.speed*player.slowMult*(1+moveSpeedBonus())*(player.boost>0?1+(BLINK_BOOST_GAIN-1)*Math.max(0,align):1);
   const targetVx=len?(dx/len)*spd:0, targetVy=len?(dy/len)*spd:0;
-  player.vx+=(targetVx-player.vx)*0.116;
-  player.vy+=(targetVy-player.vy)*0.116;
+  // acceleration, not speed, is where the Momentum reward lives. Reaching a steady heading takes
+  // the same number of ticks either way, so a room is still crossed in the same time - which is
+  // what keeps every distance-based measurement in this game valid - while the player stops
+  // sliding and can commit on the tick they think of it.
+  const accel=MOVE_ACCEL*(1+Momentum.level()*MOMENTUM_ACCEL);
+  player.vx+=(targetVx-player.vx)*accel;
+  player.vy+=(targetVy-player.vy)*accel;
   /* The heading the player has been HOLDING, as opposed to the heading they are on this tick. The
      chasers read this one and not the raw velocity, because a player one tick into a keypress is
      still nearly stationary and a player mid-reversal is momentarily pointing the wrong way - both
@@ -94,6 +115,10 @@ function update(){
     player.dirX=targetVx/msp; player.dirY=targetVy/msp;
   }
   player.swerve=Math.max(0,player.swerve-SWERVE_DECAY);
+  // where the body was before the move, and how much of what moves it is the enemy's doing rather
+  // than the player's. See tickMomentum - charging on velocity instead of on displacement is the bug
+  // this exists to prevent.
+  const wasX=player.x, wasY=player.y, knk=Math.hypot(player.kvx,player.kvy);
   player.x+=player.vx+player.kvx; player.y+=player.vy+player.kvy;
   player.kvx*=KNOCK_P_FRICTION; player.kvy*=KNOCK_P_FRICTION;
   if(Math.abs(player.kvx)<KNOCK_CUT)player.kvx=0;
@@ -103,6 +128,16 @@ function update(){
   if(trans) return;
 
   const sp=Math.hypot(player.vx,player.vy);
+  /* Displacement under the player's OWN power: how far the body actually got, less whatever the
+     enemy threw at it. Not velocity, and not whether a key is down.
+
+     Velocity was the first attempt and it is wrong in a way that only shows up when you ask what it
+     does to a player who is losing. clampPlayer() stops a body's POSITION at the wall and leaves its
+     velocity pointing into it, because that is what keeps the movement code simple everywhere else -
+     so a player holding a key against a wall with bodies alive reports full speed forever and farms
+     the meter without moving a pixel. Momentum is meant to measure whether you are playing well, and
+     a player who is pinned is not. Measuring the ground actually covered is the honest version. */
+  tickMomentum(Math.max(0,Math.hypot(player.x-wasX,player.y-wasY)-knk));
   player.anim=sp>0.12?player.anim+sp/STRIDE:0;
   tickBlink();
 

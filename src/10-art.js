@@ -385,6 +385,42 @@ function neighbor(x,y,d){return d==='N'?[x,y-1]:d==='S'?[x,y+1]:d==='E'?[x+1,y]:
 function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Rnd.run()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
 // smoothstep, so room fades ease in and out of black instead of snapping
 function smooth(t){return t<=0?0:t>=1?1:t*t*(3-2*t);}
+
+/* An item's face, for the character sheet. Drawn rather than labelled, because a list of words is a
+   list of words and a player scanning a build is looking for SHAPES - the same reason the HUD uses
+   baked icons instead of printing weapon names.
+
+   A beveled tile in the item's own colour with a stamped initial, so even the first dozen items read
+   as a set of objects rather than as a column of text. An item definition supplies `glyph` (a short
+   mark) and `color`; everything else here is the tile. Memoised per id+size, like every other baker in
+   this file - a sheet that re-bakes on every open shimmers while you are trying to read it. */
+const itemIconCache={};
+function bakeItemIcon(id,px,color,glyph){
+  const k=id+px+(color||'')+(glyph||'');
+  if(itemIconCache[k])return itemIconCache[k];
+  const c=mk(px,px),g=c.getContext('2d'),m=Math.max(1,Math.round(px*0.09));
+  g.fillStyle='#0b0e14';g.fillRect(0,0,px,px);
+  g.fillStyle=color||'#8a6238';g.fillRect(m,m,px-m*2,px-m*2);
+  g.fillStyle='rgba(255,240,210,0.30)';g.fillRect(m,m,px-m*2,m);
+  g.fillStyle='rgba(0,0,0,0.42)';g.fillRect(m,px-m*2,px-m*2,m);
+  g.fillStyle='rgba(0,0,0,0.55)';g.fillRect(0,0,px,m);g.fillRect(0,0,m,px);
+  // a stamped mark, in the darker ink the rest of the sheet uses for anything printed on a surface
+  g.fillStyle='rgba(20,12,5,0.72)';
+  const t=(glyph||String(id||'?').replace(/[^a-z0-9]/gi,'').slice(0,2)||'?').toUpperCase();
+  g.font='bold '+Math.round(px*0.46)+'px monospace';g.textAlign='center';g.textBaseline='middle';
+  g.fillText(t.slice(0,2),px/2,px/2+px*0.03);
+  return itemIconCache[k]=c;
+}
+/* returns a live canvas element, because the sheet rebuilds its rows on open and an <img> would need
+   a data URL per item per open */
+function itemIcon(id,px){
+  const def=(typeof Content!=='undefined'&&Content.has('item',id))?Content.get('item',id):null;
+  const src=bakeItemIcon(id,px||22,def&&def.color,def&&def.glyph);
+  const c=document.createElement('canvas');
+  c.width=src.width; c.height=src.height;
+  c.getContext('2d').drawImage(src,0,0);
+  return c;
+}
 function dropLoot(x,y){
   const roll=Rnd.run();
   if(roll<0.18) return {x,y,r:10,kind:'heart'};

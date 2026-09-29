@@ -53,10 +53,12 @@ function doBlink(){
 }
 
 function startGame(){
+  // every stat is rebuilt from base, so a new run can never inherit a modifier from the last one
+  Stats.reset();
   generateDungeon();
   cur={x:START,y:START};
   player={x:MIDX,y:MIDY,r:13,speed:0.935*PLAYER_MOVE,vx:0,vy:0,kvx:0,kvy:0,lagX:MIDX,lagY:MIDY,hp:8,maxHp:8,armor:0,weaponIdx:0,cooldown:0,cooldownMax:WEAPONS[0].cooldown/TEMPO.rate,altCooldown:0,altCooldownMax:ALT_WEAPON.cooldown/TEMPO.rate,altMode:'blast',iframes:0,hasSilver:false,hasGold:false,
-    blinkCharges:2,blinkRegen:0,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,trendVx:0,trendVy:0};
+    blinkCharges:2,blinkRegen:0,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,momentum:0,trendVx:0,trendVy:0};
   projectiles=[]; dashFX=[]; burstFX=[]; hookFields=[]; bossUnlocked=false; itemUnlocked=false; trans=null; readyT=0;
   unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
   entryDir='N';
@@ -99,10 +101,15 @@ function endRun(won){
   lastRun=s;
 }
 
-// pausing only exists during a run; acc is dropped so resuming never replays the paused time
+// pausing only exists during a run; acc is dropped so resuming never replays the paused time.
+// Pausing OPENS THE CHARACTER SHEET rather than dimming the game and stopping: a player who pauses in
+// a fight is asking what their build is, and an overlay that only says PAUSED makes them resume, walk
+// out of the room, and pause again somewhere safer to find out.
 function setPaused(on){
   paused=!!on&&state==='playing';
   acc=0;
+  if(paused){ if(typeof openCharSheet==='function') openCharSheet(); }
+  else if(typeof closeCharSheet==='function') closeCharSheet();
 }
 function autoPause(){
   keys={}; releaseButtons();   // the matching keyup/mouseup may never arrive

@@ -291,6 +291,44 @@ let hookFieldId=0;
 const HOOK_PULL_GAIN=1-KNOCK_FRICTION;
 // counterstrafing: how fast a reversal is forgotten, and how much a reversal widens a gunner's aim
 const SWERVE_GAIN=0.22, SWERVE_DECAY=0.011, SWERVE_AIM=0.30;
+
+/* --- how the player actually moves, and the Momentum meter -------------------------------------
+   The movement model already has two separate levers, which is the fact the whole stat design rests
+   on: `spd` is how fast you travel, and MOVE_ACCEL is how fast you GET there. Reaching a steady
+   heading takes MOVE_ACCEL's worth of ticks either way, so a room is crossed in the same time no
+   matter what MOVE_ACCEL is.
+
+   That asymmetry is the whole reason Momentum is safe. Everything in this game that was tuned
+   against a real measurement - the gunner's 105-tick cast, the chaser's lunge lead, the 350px
+   shooter deadzone, SWERVE_FULL - is a function of DISTANCE and therefore of top speed only.
+   Feeding the reward for playing well into acceleration rather than speed leaves every one of those
+   numbers exactly where it was, and gives the player something that feels enormous: you stop
+   sliding, and you can commit to a direction on the same tick you think of it. */
+const MOVE_ACCEL=0.116;
+
+/* Momentum is combat momentum, not walking momentum. It charges only while bodies are alive, so
+   backtracking and shopping never bank it - a run is a series of fights and this is the meter for
+   the one you are in. Three verbs, and the rule set is small enough to hold in the head:
+     moving under pressure charges it
+     standing still under pressure bleeds it
+     getting hit costs most of it - not all of it
+   That last one is the fairness decision. A meter that resets to zero on hit punishes the player
+   for the exact moment they are already recovering, and turns a good run into a series of unrelated
+   fights. Keeping 45% means a hit costs you your cushion, not your run. */
+const MOMENTUM_GAIN=0.0042, MOMENTUM_STALL_DECAY=0.006, MOMENTUM_HIT_KEEP=0.45;
+// below this the player is not going anywhere, so momentum neither charges nor bleeds - a body
+// pinned in a corner by two chasers is not "standing still", it is losing, and the meter is right
+// to be quiet about it
+const MOMENTUM_MOVE_FLOOR=0.3;
+// what a full meter is worth. The speed half is deliberately small: SPEED_CAP is shared with items,
+// and a mechanic that could eat the whole budget would leave no room for a Speed item to mean
+// anything. The acceleration half is where the reward actually lives.
+const MOMENTUM_SPEED=0.10, MOMENTUM_ACCEL=0.55;
+// Two ceilings, and the difference matters. SPEED_CAP is the most ITEMS may give, so a Speed item
+// always has a readable value. MOVE_SPEED_HARD_CAP is the most ANYTHING may give, so no combination
+// of a good build and a full meter produces a player who crosses rooms before the gunner has
+// finished winding up. One number for the build, one for the world, both visible and both tunable.
+const SPEED_CAP=0.15, MOVE_SPEED_HARD_CAP=0.22;
 // How far away a gunner has to be before counterstrafing buys anything. Half the width of the room
 // is the line, and the bonus is fully open by the time a body is a room-and-a-half away.
 const SWERVE_DEADZONE=Math.round((ROOM_RIGHT-ROOM_LEFT)/2), SWERVE_FULL=SWERVE_DEADZONE+220;

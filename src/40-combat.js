@@ -40,6 +40,10 @@ function damagePlayer(amount,kx,ky,force){
   // Only the band just BELOW zero is snapped; anything at or above zero is left exactly as it is,
   // which is the whole point - a positive remainder is real remaining health and must survive.
   if(player.hp<0&&player.hp>-1e-6) player.hp=0;
+  // A hit costs most of the Momentum meter, not all of it. Unconditional here, including a hit that
+  // armour absorbed entirely: the player lost the trade, and the meter measures whether you are
+  // winning, not whether the health bar went down.
+  Momentum.hit();
   if(force){player.kvx+=kx*force;player.kvy+=ky*force;}
   player.iframes=IFRAMES;
   return true;

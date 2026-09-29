@@ -96,6 +96,66 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
 #seedBtns button.go{color:#12161e;background:#c79bff;border-color:#c79bff;font-weight:600;}
 #seedBtns button.go:hover{background:#d9b6ff;}
 #seedErr{min-height:14px;margin:10px 0 0;font-size:11px;color:#ff8080;letter-spacing:.02em;}
+/* ---- the character sheet -----------------------------------------------------------------------
+   The pause screen is this sheet. Not a dimmed game with a box on top of it: a player who pauses in a
+   fight is asking "what is my build and what have I got", and that question deserves the whole
+   screen. The backdrop dims hard, so it reads as the game being put down rather than as a menu
+   opening over it.
+
+   Same card as the controls sheet, because it is the same kind of object. The bars are notched
+   rather than smooth, and notched for a reason that is not decoration: a stat that is a percentage
+   wants to be read against the ceiling it is measured against, and a smooth bar with no graduations
+   cannot answer "how much of this have I used". The notch count IS the scale. */
+#charSheet{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+  background:rgba(6,8,12,.88);padding:20px;overflow:auto;}
+#charSheet.on{display:flex;}
+#charCard{background:#10141c;border:1px solid #2b3342;border-radius:6px;padding:18px 24px 20px;
+  box-shadow:0 18px 60px rgba(0,0,0,.65);width:100%;max-width:560px;}
+#charCard h2{margin:0 0 3px;font-size:15px;letter-spacing:.10em;color:#dfe6f2;font-weight:400;}
+#charCard .sub{margin:0 0 15px;font-size:11px;color:#6c7688;letter-spacing:.04em;text-align:left;}
+#charStats{display:flex;flex-direction:column;gap:2px;}
+.statRow{display:grid;grid-template-columns:118px 1fr 66px;align-items:center;gap:11px;padding:5px 0;}
+.statRow .nm{font-size:10px;letter-spacing:.15em;color:#8e9ab0;}
+.statRow .nm em{display:block;font-style:normal;font-size:9px;letter-spacing:.03em;color:#5b6474;
+  margin-top:2px;text-transform:none;}
+/* the track. Twenty notches, drawn as a repeating gradient rather than as twenty elements - the bar
+   is re-rendered every time the sheet opens and forty divs per row is forty divs to garbage
+   collect sixty times a minute. */
+.statBar{position:relative;height:9px;background:#0b0e14;border:1px solid #212836;border-radius:1px;
+  overflow:hidden;}
+.statBar i{position:absolute;left:0;top:0;bottom:0;display:block;
+  background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.55) 0 1px,rgba(0,0,0,0) 1px 5px);}
+.statBar u{position:absolute;left:0;top:0;bottom:0;display:block;background:#d6c08a;text-decoration:none;}
+/* the ceiling the bar is measured against, so a nearly-full bar is visibly nearly full */
+.statBar s{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,240,210,.5);text-decoration:none;}
+/* Momentum is the only bar on the sheet that is not a build, so it is drawn as a fill of live colour
+   rather than as a brass gauge - it is a thing that is happening, not a thing you own. */
+.statRow.earned .statBar u{background:#7fd4a8;}
+.statRow.earned .nm{color:#8fbfa4;}
+.statRow .val{font:600 13px/1 ui-monospace,Menlo,Consolas,monospace;color:#dfe6f2;text-align:right;
+  letter-spacing:.02em;}
+.statRow .val b{font-weight:400;color:#7fd4a8;}
+#charNote{margin:14px 0 0;padding:9px 11px;background:#0c1017;border:1px solid #212836;
+  border-left:2px solid #6a5230;border-radius:3px;font-size:11px;line-height:1.55;color:#8d98ab;
+  text-align:left;}
+#charNote b{color:#d6c08a;font-weight:400;}
+#charFoot{margin-top:14px;padding-top:12px;border-top:1px solid #232a37;display:flex;
+  justify-content:space-between;gap:12px;font-size:11px;color:#6c7688;}
+/* ---- carried items ---------------------------------------------------------------------------
+   An empty roster has to look like a deliberate state rather than a feature that has not arrived
+   yet, so it gets a real empty state with a rule through it and a line of actual copy. */
+#charItems{margin-top:16px;}
+#charItems h3{margin:0 0 9px;font-size:10px;letter-spacing:.16em;color:#8e9ab0;font-weight:400;
+  text-transform:uppercase;border-bottom:1px solid #232a37;padding-bottom:5px;
+  display:flex;justify-content:space-between;}
+#charItems h3 span{color:#5b6474;letter-spacing:.04em;text-transform:none;}
+.itemGrid{display:flex;flex-wrap:wrap;gap:7px;}
+.itemEmpty{width:100%;padding:13px 0 2px;text-align:center;font-size:11px;color:#5b6474;
+  border-top:1px dashed #232a37;}
+.itemChip{display:flex;align-items:center;gap:7px;padding:5px 9px 5px 5px;background:#0c1017;
+  border:1px solid #2b3342;border-radius:3px;font-size:11px;color:#cdd6e4;}
+.itemChip canvas{width:22px;height:22px;image-rendering:pixelated;border-radius:2px;background:#07090d;}
+.itemChip small{color:#6c7688;font-size:9px;letter-spacing:.08em;}
 </style>
 </head>
 <body>
@@ -153,6 +213,26 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
   </div>
 </div>
 </div>
+<!-- The character sheet, which is what pausing IS. A player who pauses mid-fight is asking two
+     questions - what is my build, and what am I carrying - and both are answered here rather than by a
+     dimmed game with a box on top of it. The rows are built from Stats.sheet() in code, so adding a
+     seventh stat is a one-line change and not an edit to markup that will drift. -->
+<div id="charSheet" role="dialog" aria-modal="true" aria-label="Character">
+<div id="charCard">
+  <h2>CHARACTER</h2>
+  <p class="sub">Depths on this seed, and what has been done to it.</p>
+  <div id="charStats"></div>
+  <p id="charNote"></p>
+  <div id="charItems">
+    <h3>Carried <span></span></h3>
+    <div class="itemGrid" id="itemGrid"></div>
+  </div>
+  <div id="charFoot">
+    <span>Escape or P puts the game back down. It does not take input while this is open.</span>
+    <span>Same seed, different build.</span>
+  </div>
+</div>
+</div>
 <!-- The seed. Entering one is the whole point of the sheet: it is the only way two people can play
      the same dungeon, which is what turns a run that went well into a thing you can argue about.
      Opened on S. Deliberately NOT persisted - the run summary already prints the seed a run used,
@@ -180,6 +260,7 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
 </div>
 <script src="src/00-balance.js"></script>
 <script src="src/05-rng.js"></script>
+<script src="src/06-stats.js"></script>
 <script src="src/10-art.js"></script>
 <script src="src/15-content.js"></script>
 <script src="src/20-world.js"></script>

@@ -160,11 +160,16 @@ const FIXES={
    leave the wand firing if the button was down before the sheet opened, so the game's own handlers
    ALSO ask uiHoldsInput() first. Belt and braces, and the second half is what stops the game being
    mid-swing when the overlay closes. */
+/* whether the character sheet is up. Read by the canvas so it can stop drawing its own dimmed PAUSED
+   overlay underneath a backdrop that already dims - two dim layers stacked read as a bug, and the
+   canvas cannot know a DOM element is covering it. */
+let uiSheetOpen=false;
 function uiOverlay(){
   const s=document.getElementById('ctlSheet'), b=document.getElementById('bugPanel'),
-        d=document.getElementById('seedSheet');
+        d=document.getElementById('seedSheet'), c=document.getElementById('charSheet');
   if(s&&s.classList.contains('on')) return s;
   if(d&&d.classList.contains('on')) return d;
+  if(c&&c.classList.contains('on')) return c;
   if(b&&b.style.display==='block') return b;
   return null;
 }
@@ -177,9 +182,136 @@ function uiHoldsInput(){ return !!uiOverlay(); }
 /* The keys the overlays answer to. They have to get past the suppressor below, or the bug list
    cannot be closed with the key that opened it - the same class of bug as a cancel you cannot
    reach, and exactly the mistake the hook's cooldown gate used to be. */
-const UI_KEYS=['escape','h','b','s'];
+/* The keys the overlays answer to. They have to get past the suppressor below, or an overlay cannot
+   be closed with the key that opened it - the same class of bug as a cancel you cannot reach, and
+   exactly the mistake the hook's cooldown gate used to be.
+
+   P and R are here because the character sheet IS the pause screen, so pausing puts an overlay up and
+   the keys that dismiss it are P and R. Without them, Escape worked and P did not: the sheet opened
+   on pause, and then the suppressor ate the resume. Three tests failed and then left the sheet open,
+   which broke the five after them. An overlay that traps its own dismiss key does not fail one test,
+   it poisons the rest of the run. */
+const UI_KEYS=['escape','h','b','s','p','r'];
 function uiAllows(k){ return UI_KEYS.indexOf(String(k).toLowerCase())>=0; }
 // Anything aimed at the overlay is consumed on the way down, before the game sees it.
+/* ---- the character sheet -----------------------------------------------------------------------
+   Pausing IS this sheet. A player who pauses mid-fight is asking what their build is and what they
+   are carrying, and that deserves the whole screen rather than a box on a dimmed game.
+
+   Built from Stats.sheet() in code, so a seventh stat is one entry in DEFS and nothing else. The
+   rows are rebuilt on open rather than kept live, which is what lets a 40-tick pause cost nothing
+   and means there is no update loop that can be out of step with the simulation.
+
+   THE BARS ARE NOTCHED, and the notch count is the scale. Momentum is capped at 1 and Speed at 15% -
+   a smooth bar with no graduations cannot answer "how much of this have I used", and for a stat whose
+   whole design is a ceiling that cannot be exceeded, the ceiling is the interesting part. */
+const CHAR_NOTCHES=20;
+
+/* How wide a full bar is, per stat. For a stat with a real ceiling the ceiling IS the bar, so a
+   nearly-full bar is visibly nearly full - which is the entire point of a capped stat, and the reason
+   a bar is notched rather than smooth. For an uncapped one this is "as big as it usefully gets": a
+   Vigor bar that can fill only at 400 health stops being information after the third pickup. */
+const STAT_SPAN={strength:12,speed:1,momentum:1,intelligence:5,luck:6,vigor:14};
+const statSpan=s=>STAT_SPAN[s.key]||10;
+/* asPct is declared on the definition, not guessed from the kind: Strength and Speed are both `add`
+   and one of them prints as 3 while the other prints as 6%, and a number that changes units
+   depending on how large it has become would be unreadable. */
+const statIsPct=s=>!!s.asPct||s.kind==='meter';
+function statDisplay(s){
+  if(statIsPct(s)) return Math.round(s.value*100)+'%';
+  if(s.kind==='roll') return s.value>0?'+'+Math.round(s.value*10)/10:'even';
+  return String(Math.round(s.value*100)/100);
+}
+function statFraction(s){
+  return Math.max(0,Math.min(1,s.value/statSpan(s)));
+}
+
+function renderCharSheet(){
+  const host=document.getElementById('charStats');
+  if(!host) return;
+  host.textContent='';
+  for(const s of Stats.sheet()){
+    const row=document.createElement('div');
+    row.className='statRow'+(s.kind==='meter'?' earned':'');
+    row.dataset.stat=s.key;
+
+    const nm=document.createElement('div'); nm.className='nm';
+    nm.appendChild(document.createTextNode(s.label));
+    const em=document.createElement('em'); em.textContent=s.blurb; nm.appendChild(em);
+
+    const bar=document.createElement('div'); bar.className='statBar';
+    const notches=document.createElement('i'); notches.style.width='100%';
+    const fill=document.createElement('u');
+    fill.style.width=(statFraction(s)*100).toFixed(1)+'%';
+    bar.appendChild(notches); bar.appendChild(fill);
+
+    const val=document.createElement('div'); val.className='val';
+    val.textContent=statDisplay(s);
+    if(s.fromItems){
+      /* Say WHERE a number came from, in the SAME UNITS as the number itself. A stat reading 7 with
+         no explanation is a number the player has to trust, and an item they cannot connect to it is
+         an item that feels like tax. A badge in different units to the value is worse than none. */
+      const b=document.createElement('b');
+      b.textContent=statIsPct(s)?' +'+Math.round(s.flat*100)+'%':' +'+Math.round(s.flat*100)/100;
+      b.title='from items';
+      val.appendChild(b);
+    } else if(s.kind==='meter'){
+      const b=document.createElement('b'); b.textContent=' play'; val.appendChild(b);
+    }
+
+    row.appendChild(nm); row.appendChild(bar); row.appendChild(val);
+    host.appendChild(row);
+  }
+
+  /* The one sentence that tells the player what the most unusual number on the sheet is FOR. Without
+     it, Momentum reads as a seventh damage number and the whole mechanic is invisible. */
+  const note=document.getElementById('charNote');
+  if(note){
+    const m=Stats.value('momentum');
+    note.innerHTML='<b>Momentum</b> is the one number here you did not pick up. It charges while you '+
+      'move with bodies in the room, bleeds if you stand still, and a hit costs you most of it. '+
+      'Right now it is worth <b>'+(moveSpeedBonus()*100).toFixed(1)+'%</b> speed and '+
+      '<b>'+Math.round(MOVE_ACCEL*(1+m*MOMENTUM_ACCEL)/MOVE_ACCEL*100-100)+'%</b> acceleration.';
+  }
+
+  const grid=document.getElementById('itemGrid'), head=document.querySelector('#charItems h3 span');
+  if(grid){
+    grid.textContent='';
+    const carried=(typeof loadout!=='undefined'&&loadout.items)?loadout.items:[];
+    if(carried.length) for(const it of carried){
+      const chip=document.createElement('div'); chip.className='itemChip';
+      chip.appendChild(itemIcon(it.id,22));
+      const nm2=document.createElement('span'); nm2.textContent=it.name; chip.appendChild(nm2);
+      if(it.charges!=null&&it.charges<Infinity){
+        const sm=document.createElement('small'); sm.textContent='x'+it.charges; chip.appendChild(sm);
+      }
+      grid.appendChild(chip);
+    }
+    else{
+      /* A designed empty state, not a missing feature. A dashed rule and a sentence in the game's
+         own voice, because "nothing carried" is a normal thing to be looking at on tick one. */
+      const em=document.createElement('div'); em.className='itemEmpty';
+      em.textContent='Nothing carried. Something will turn up.';
+      grid.appendChild(em);
+    }
+    if(head) head.textContent=carried.length?carried.length+' item'+(carried.length===1?'':'s'):'';
+  }
+}
+
+function openCharSheet(){
+  const s=document.getElementById('charSheet');
+  if(!s) return;
+  renderCharSheet();
+  s.classList.add('on');
+  uiSheetOpen=true;
+  uiTakeInput();
+}
+function closeCharSheet(){
+  const s=document.getElementById('charSheet');
+  if(s) s.classList.remove('on');
+  uiSheetOpen=false;
+  uiReleaseFocus();
+}
 window.addEventListener('keydown',e=>{
   if(seedTyping(e)) return;
   if(uiHoldsInput()&&!uiAllows(e.key)){ e.preventDefault(); e.stopPropagation(); }
@@ -188,9 +320,23 @@ window.addEventListener('keyup',e=>{
   if(seedTyping(e)) return;
   if(uiHoldsInput()&&!uiAllows(e.key)){ e.preventDefault(); e.stopPropagation(); }
 },true);
+/* A click on an overlay's own dim backdrop belongs to that overlay, and must be let through.
+
+   This is the THIRD time the suppressor has eaten something the UI needed, and the pattern is worth
+   naming: it runs in the CAPTURE phase on window, which is ahead of every element in the tree, so its
+   stopPropagation is unconditional and total. The seed field lost every keystroke. The character sheet
+   lost the click that dismisses it, which is the mouse equivalent of a cancel button you cannot reach
+   - the pause screen could be opened with the keyboard and closed with nothing. The suppressor exists
+   to stop the GAME seeing input while an overlay is up, and it was doing that so thoroughly that it
+   stopped the overlay seeing it either.
+
+   Anything an overlay needs to receive has to be exempted here by name. There is no way to write this
+   so that new UI is safe by default, which is the real lesson. */
+const overlayBackdrop=e=>{const t=e.target;return !!(t&&(t.id==='charSheet'||t.id==='ctlSheet'));};
 for(const type of ['mousedown','mouseup','mousemove','contextmenu','wheel','pointercancel']){
   window.addEventListener(type,e=>{
     if(!uiOverlay()) return;
+    if(overlayBackdrop(e)) return;
     e.preventDefault(); e.stopPropagation();
   },true);
 }
@@ -216,6 +362,11 @@ function uiCloseTop(){
   if(s&&s.classList.contains('on')){ s.classList.remove('on'); uiReleaseFocus(); return; }
   const d=document.getElementById('seedSheet');
   if(d&&d.classList.contains('on')){ d.classList.remove('on'); uiReleaseFocus(); return; }
+  const c=document.getElementById('charSheet');
+  // Escape out of the character sheet RESUMES rather than merely hiding it. Hiding it would leave the
+  // game paused behind a card that is no longer there, and the player would be stuck in a paused run
+  // they cannot see, which is the worst state this game can be left in.
+  if(c&&c.classList.contains('on')){ setPaused(false); return; }
   const p=document.getElementById('bugPanel');
   if(p&&p.style.display==='block'){ p.style.display='none'; releaseButtons(); keys={}; return; }
   toggleControls();
@@ -277,6 +428,20 @@ document.getElementById('seedSheet').addEventListener('mousedown',e=>{
 });
 /* Typed keys must reach the field and must NOT reach the game. WASD is movement, and on the title
    screen ANY key starts a run - so a field that leaked either would start a dungeon per letter. */
+/* Clicking the dim area around the character sheet resumes, the same as clicking the game does -
+   the player is putting the game back down either way, and making them find the key first would be
+   the game disagreeing with its own convention. A click ON the card does not resume.
+
+   stopPropagation is load-bearing and was not here first time. Resuming closes the sheet, so by the
+   time this same click bubbled up to the window handler there was no overlay up and no pause in
+   force - and it fell through to the cast branch. One click that dismissed the pause screen and
+   started firing at whatever the wand was pointing at. The window handler is a BUBBLE listener, so
+   stopping propagation here is enough to keep the event to the overlay that consumed it. */
+document.getElementById('charSheet').addEventListener('mousedown',e=>{
+  if(e.target.id!=='charSheet') return;
+  e.stopPropagation();
+  setPaused(false);
+});
 document.getElementById('seedInput').addEventListener('keydown',e=>{
   e.stopPropagation();
   if(e.key==='Enter'){ e.preventDefault(); seedDescend(); return; }
@@ -415,7 +580,13 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden) autoPause(
 // decided from the event target rather than by stopping propagation, so the capture-phase suppressor
 // above and this one cannot disagree about who saw the click.
 document.getElementById('ctlSheet').addEventListener('mousedown',e=>{
-  if(e.target.id==='ctlSheet') toggleControls();
+  // same stopPropagation reason as the character sheet: closing the sheet and then letting the click
+  // carry on into the game is how a dismiss-click becomes an attack. This handler could not fire at
+  // all until overlayBackdrop was taught about ctlSheet - the suppressor had been eating it, so
+  // clicking outside the controls sheet has never closed it, only Escape ever has.
+  if(e.target.id!=='ctlSheet') return;
+  e.stopPropagation();
+  toggleControls();
 });
 canvas.addEventListener('mousemove',e=>{
   if(uiHoldsInput()) return;
