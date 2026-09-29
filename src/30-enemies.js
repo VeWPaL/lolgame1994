@@ -8,10 +8,10 @@
    three passes leave thirty pixels of miss.
    ============================================================================================== */
 function spawnEnemy(boss,room,x,y,type){
-  const rx=()=>ROOM_LEFT+SPAWN_MARGIN+Math.random()*(ROOM_RIGHT-ROOM_LEFT-SPAWN_MARGIN*2);
-  const ry=()=>ROOM_TOP+SPAWN_MARGIN+Math.random()*(ROOM_BOTTOM-ROOM_TOP-SPAWN_MARGIN*2);
-  const base={x:x===undefined?rx():x,y:y===undefined?ry():y,hitFlash:0,idleDir:[0,0],idleTimer:(Math.random()*WANDER_TICKS)|0,
-    noticeTimer:(Math.random()*16*SPEEDUP)|0,anim:0,kvx:0,kvy:0,stun:0,slowT:0,alerted:false,dodgeCd:0,pursuit:0};
+  const rx=()=>ROOM_LEFT+SPAWN_MARGIN+Rnd.run()*(ROOM_RIGHT-ROOM_LEFT-SPAWN_MARGIN*2);
+  const ry=()=>ROOM_TOP+SPAWN_MARGIN+Rnd.run()*(ROOM_BOTTOM-ROOM_TOP-SPAWN_MARGIN*2);
+  const base={x:x===undefined?rx():x,y:y===undefined?ry():y,hitFlash:0,idleDir:[0,0],idleTimer:(Rnd.jitter()*WANDER_TICKS)|0,
+    noticeTimer:(Rnd.jitter()*16*SPEEDUP)|0,anim:0,kvx:0,kvy:0,stun:0,slowT:0,alerted:false,dodgeCd:0,pursuit:0};
   const c=ENEMY[boss?'boss':type==='shooter'||type==='gunner'?type:type==='brunch'?'brunch':'chaser'];
   const e=Object.assign(base,{type:boss?'boss':type||'chaser',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp,maxHp:c.hp,armour:c.armour||1});
   if(c.base!==undefined) e.speed=c.base*PRESSURE.rate;
@@ -37,7 +37,7 @@ function spawnEnemy(boss,room,x,y,type){
   e.range=c.range; e.sense=c.sense; e.close=c.close; e.far=c.far; e.cdMin=c.cdMin/PRESSURE.rate; e.cdVar=c.cdVar/PRESSURE.rate;
   e.castT=0; e.castReady=false; e.castAim=0;
   e.dmg=c.dmg; e.pspd=c.pspd; e.pr=c.pr; e.pcol=c.pcol; e.aggroTimer=0;
-  e.shootCd=e.cdMin+Math.random()*e.cdVar;
+  e.shootCd=e.cdMin+Rnd.jitter()*e.cdVar;
   return e;
 }
 
@@ -239,7 +239,7 @@ function stepLunge(e,ux,uy,dist,sm,room){
   }
 }
 function idleWander(e){  e.idleTimer--;
-  if(e.idleTimer<=0){e.idleDir=[Math.random()-0.5,Math.random()-0.5];e.idleTimer=WANDER_TICKS/2+((Math.random()*WANDER_TICKS/2)|0);}
+  if(e.idleTimer<=0){e.idleDir=[Rnd.jitter()-0.5,Rnd.jitter()-0.5];e.idleTimer=WANDER_TICKS/2+((Rnd.jitter()*WANDER_TICKS/2)|0);}
   const len=Math.hypot(e.idleDir[0],e.idleDir[1])||1;
   e.x+=e.idleDir[0]/len*WANDER_SPEED; e.y+=e.idleDir[1]/len*WANDER_SPEED;
 }

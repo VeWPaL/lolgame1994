@@ -16,11 +16,25 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const REC_KEYS=['depths_best','depths_fastest','depths_wins',TICK_KEY], saved={};
   for(const k of REC_KEYS){try{saved[k]=localStorage.getItem(k);}catch(e){}}
   const realRandom=Math.random;
-  let seed=12345;   // mulberry32, so every run of the suite sees the same dungeons
+  /* The game draws from three named streams, so the suite seeds those rather than hijacking
+     Math.random. Two things follow, and both are worth more than the seeding itself.
 
-  Math.random=function(){seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+     ISOLATION. Every test starts from the identical world. Before this, one Math.random closure
+     was shared by every test, so the dungeon a test saw depended on how many tests ran before it.
+     That is deterministic as a SET and useless individually: a test that failed could not be run
+     on its own to find out why, and inserting a test silently changed every test after it. Now a
+     test's world is the same every time - which is most of what a test suite is for.
+
+     A TRIPWIRE. Math.random is replaced by a counter rather than simply removed, and the suite
+     asserts the count is still zero at the end. The alternative is a comment asking people not to
+     use Math.random, and that decays within a month. This fails loudly the first time somebody
+     adds a stray call, which is the only kind of rule that survives contact with a real codebase. */
+  let strayRandom=0;
+  Math.random=function(){ strayRandom++; return 0.5; };
+  const TEST_SEED=12345;
+  Rnd.set(TEST_SEED);
   const results=[];
-  const test=(name,fn)=>{try{fn();results.push({name,ok:true});}catch(err){results.push({name,ok:false,msg:err.message});}};
+  const test=(name,fn)=>{try{Rnd.set(TEST_SEED);fn();results.push({name,ok:true});}catch(err){results.push({name,ok:false,msg:err.message});}};
   const ok=(c,msg)=>{if(!c)throw new Error(msg);};
   const eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
   const press=k=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:k}));window.dispatchEvent(new KeyboardEvent('keyup',{key:k}));};
@@ -142,6 +156,243 @@ if(new URLSearchParams(location.search).has('test')) (function(){
     ok(m.errors.some(e=>e.includes('on_hit_bonus_damag')),'a hook name that does not exist was accepted silently');
     Content.resetMods();
     delete HOOKS.on_hit_bonus_damage;
+  });
+/* A fingerprint of everything the RUN stream decides: the shape of the dungeon, and for every
+     ordinary room the bodies it rolled - their types and their positions. Spawns are placed on
+     room entry rather than at generation, so this has to walk in and let each room roll, in a
+     fixed order, or the second half of the fingerprint would always be empty and the test would
+     pass for the wrong reason. */
+  const probeRun=()=>{
+    const all=Object.values(rooms).slice().sort((a,b)=>(a.y*64+a.x)-(b.y*64+b.x));
+    let s=all.length+'|';
+    for(const r of all){
+      s+=r.x+','+r.y+','+r.type+'{';
+      if(r.type==='normal'){
+        enterRoom(r.x,r.y,'W');
+        for(const e of r.enemies.slice().sort((p,q)=>p.x-q.x||p.y-q.y))
+          s+=e.type[0]+Math.round(e.x)+'.'+Math.round(e.y)+',';
+      }
+      s+='}';
+    }
+    return s;
+  };
+  const runAt=seed=>{Rnd.set(seed);startGame();return probeRun();};
+
+  test('a seed is a short fixed-width string that survives the trip through text',()=>{
+    // A seed is worthless if the player cannot copy it reliably. It has to be typable, come back
+    // the same length every time so the screen never reflows, and survive being pasted out of a
+    // chat window with the wrong case and a stray space in it.
+    eq(Rnd.encode(0),'0000000','seed zero is not padded, so the label moves when the number is small');
+    // asserted as a SHAPE, not as a value. Writing down an expected encoding is how you end up
+    // debugging the test: 12345 is 9IX in base 36, not the P9 a hand-calculation produces, and the
+    // first version of this line was confidently wrong about that.
+    ok(/^[0-9A-Z]{7}$/.test(Rnd.encode(12345)),'a seed is not seven uppercase base-36 characters: '+Rnd.encode(12345));
+    for(const n of [0,1,42,12345,999999,4294967295]){
+      eq(Rnd.decode(Rnd.encode(n)),n>>>0,'seed '+n+' did not survive its own text form');
+    }
+    eq(Rnd.decode(' 4f2a '),Rnd.decode('4F2A'),'a pasted seed with the wrong case or spacing failed to parse');
+    ok(Rnd.encode(12345).length===7,'seeds are not all the same width, so the display will jump about');
+    // and rubbish is refused rather than silently becoming some other seed
+    eq(Rnd.decode(''),null,'an empty seed was accepted');
+    eq(Rnd.decode('   '),null,'a blank seed was accepted');
+    eq(Rnd.decode('!!!'),null,'punctuation was accepted as a seed');
+    eq(Rnd.decode('ZZZZZZZZZ'),null,'a nine-character seed was accepted, and it cannot fit seven digits');
+  });
+
+  test('the same seed builds the same run, and a different one does not',()=>{
+    // This is the promise the whole system exists to make. Same seed, same dungeon - room graph
+    // and every body in it, because that is what a player means by "the same run".
+    const a=runAt(12345), b=runAt(12345);
+    eq(a,b,'the same seed built two different dungeons');
+    ok(runAt(99999)!==a,'two different seeds built the identical dungeon');
+    // and not merely different from the seed above, but different from its NEIGHBOUR: if both
+    // streams were seeded with the bare seed, adjacent seeds would collide and half the seed
+    // space would be unusable
+    ok(runAt(12346)!==a,'seed 12346 built the same dungeon as 12345, so the streams are not being derived apart');
+    ok(runAt(12347)!==a,'seed 12347 built the same dungeon as 12345');
+    // a big one, because the offset constants are where an overflow bug would hide
+    ok(runAt(4294967295)!==runAt(4294967294),'the top two seeds are indistinguishable');
+  });
+
+  test('the run stream cannot be reached by the jitter or the art, or by playing the game',()=>{
+    // THE POINT OF THE WHOLE EXERCISE. If any non-run draw shared the run's stream then adding an
+    // enemy behaviour, or touching the art, would silently renumber every future seed - and the
+    // first person to find out would be a friend who pasted a seed and got a different dungeon,
+    // who would then conclude the feature was broken rather than that it had rotted.
+    const base=runAt(12345);
+
+    // burning the cosmetic streams to death must not move a single stone
+    Rnd.set(12345);
+    for(let i=0;i<20000;i++){ Rnd.jitter(); }
+    for(let i=0;i<20000;i++){ Rnd.art(); }
+    startGame();
+    eq(probeRun(),base,'drawing 20000 jitter values and 20000 art values changed the dungeon');
+
+    // and playing the game - which spends jitter on every body it rolls - must not either, or the
+    // same seed would not replay
+    Rnd.set(12345);
+    startGame();
+    for(let i=0;i<600;i++){ keys={d:1}; update(); }
+    Rnd.set(12345);
+    startGame();
+    eq(probeRun(),base,'playing six hundred ticks changed what the seed produced afterwards');
+
+    // the streams must also be counted, or "isolation" is only an intention. This is the number
+    // that says the art really is being drawn from its own stream rather than the run's.
+    Rnd.set(4242);
+    startGame();
+    const afterDungeon=Rnd.calls.run;
+    for(let i=0;i<50;i++) Rnd.art();
+    eq(Rnd.calls.run,afterDungeon,'drawing art advanced the RUN stream');
+  });
+
+  test('every seed produces a dungeon a player can actually walk',()=>{
+    // A seed system hands the player a number and a promise. The promise has to hold for all of
+    // them, not for the one the test happens to use - so this is the check that the GENERATOR is
+    // sound, across the whole seed space, rather than that one dungeon happens to be fine. 300
+    // seeds is enough to have caught a degenerate draw more than once.
+    let worst=0;
+    for(let n=0;n<300;n++){
+      const seed=(n*2654435761)>>>0;
+      Rnd.set(seed);
+      startGame();
+      const all=Object.values(rooms);
+      ok(all.length>=8,'seed '+Rnd.encode(seed)+' built only '+all.length+' rooms');
+      worst=Math.max(worst,all.length);
+      let bosses=0;
+      for(const r of all){
+        ok(typeof r.type==='string'&&r.type.length>0,'seed '+Rnd.encode(seed)+' built a room with no type');
+        ok(r.x>=0&&r.y>=0&&r.x<GRID&&r.y<GRID,'seed '+Rnd.encode(seed)+' put a room off the grid at '+r.x+','+r.y);
+        if(r.type==='boss') bosses++;
+        // a body rolled into a wall, or outside the room it belongs to, is a room you cannot clear
+        if(r.spawnPlan) for(const p of r.spawnPlan){
+          ok(p.x>=ROOM_LEFT&&p.x<=ROOM_RIGHT&&p.y>=ROOM_TOP&&p.y<=ROOM_BOTTOM,
+            'seed '+Rnd.encode(seed)+' rolled a '+p.type+' outside its own room');
+          ok(typeof p.type==='string'&&ENEMY[p.type],'seed '+Rnd.encode(seed)+' rolled a body of unknown type "'+p.type+'"');
+        }
+      }
+      eq(bosses,1,'seed '+Rnd.encode(seed)+' built '+bosses+' boss rooms instead of one');
+    }
+    ok(worst<=24,'a seed built '+worst+' rooms, which is past the point where a run is a game');
+  });
+test('typing a seed goes into the field and not into the game',()=>{
+    // The suppressor that stops the game seeing keys while an overlay is open runs in the CAPTURE
+    // phase on window, which is ahead of every element in the tree. Without an exemption for the
+    // field, the stopPropagation there means the input never sees a keystroke at all - a text box
+    // that accepts nothing, and no error anywhere, because from the browser's point of view nothing
+    // is wrong. This is the whole test: that box has to take letters.
+    startGame();
+    seedClose();
+    state='start';
+    toggleSeedSheet();
+    const inp=document.getElementById('seedInput');
+    keys={};
+    inp.dispatchEvent(new KeyboardEvent('keydown',{key:'w',bubbles:true,cancelable:true}));
+    eq(keys.w,undefined,'a key typed into the seed field reached the game as movement');
+    keys={};
+    inp.dispatchEvent(new KeyboardEvent('keydown',{key:'a',bubbles:true,cancelable:true}));
+    eq(keys.a,undefined,'strafe out of the seed field leaked into the wand');
+    seedClose();
+  });
+
+  test('S opens the seed sheet from the title screen, and is still strafe-down in play',()=>{
+    // S is a movement key, so it only means "seed" where it cannot cost the player a run. The
+    // distinction is the whole design: a menu key that steals a movement key mid-fight is how
+    // somebody dies while reading your menu.
+    seedClose();
+    state='start';
+    press('s');
+    ok(document.getElementById('seedSheet').classList.contains('on'),'S did not open the seed sheet on the title screen');
+    eq(state,'start','opening the seed sheet started a run');
+    press('escape');
+    ok(!document.getElementById('seedSheet').classList.contains('on'),'Escape did not close the seed sheet');
+
+    startGame();
+    seedClose();
+    press('s');
+    ok(!document.getElementById('seedSheet').classList.contains('on'),'S opened the seed sheet mid-run');
+    eq(state,'playing','S left the game out of play');
+    seedClose();
+  });
+
+  test('a typed seed is used, a mistyped one is refused in place, and an empty one is a new dungeon',()=>{
+    // The loop this exists for: read a seed off somebody's summary, type it in, get that exact
+    // dungeon. Three cases, and the middle one matters most - a mistyped seed that quietly started
+    // a random dungeon instead would make the whole feature feel broken, with nothing on screen
+    // saying why.
+    startGame();
+    seedClose();
+    const inp=document.getElementById('seedInput'), err=document.getElementById('seedErr'),
+          sheet=document.getElementById('seedSheet');
+    const open=()=>{ if(sheet.classList.contains('on')) seedClose(); toggleSeedSheet(); inp.value=''; };
+
+    open();
+    inp.value='4f2a';
+    seedDescend();
+    eq(Rnd.seedText,Rnd.encode(Rnd.decode('4f2a')),'a typed seed was not the seed the run used');
+    eq(state,'playing','typing a good seed did not start the run');
+    eq(err.textContent,'','a perfectly good seed still produced an error message');
+
+    state='start'; open();
+    inp.value='!!!!';
+    const before=Rnd.seed;
+    seedDescend();
+    eq(state,'start','a mistyped seed started a run anyway');
+    eq(Rnd.seed,before,'a mistyped seed changed the active seed');
+    ok(err.textContent.length>0,'a mistyped seed was refused silently');
+    eq(inp.value,'!!!!','the refused text was wiped, so the player cannot see or correct what they typed');
+    seedClose();
+
+    // empty means "surprise me", and it must NOT mean seed zero - zero is a real, typeable seed
+    state='start'; open();
+    inp.value='';
+    seedDescend();
+    eq(state,'playing','an empty seed field did not start a run');
+    eq(Rnd.seedText.length,7,'the fresh seed is not displayable');
+    seedClose();
+  });
+
+  test('surfaces the player reads are baked once instead of rebuilt every frame',()=>{
+    // Two bugs of exactly the same shape lived here, and neither announced itself.
+    //
+    // paperTex looked its result up in woodCache under a 'paper' key, which can never collide with
+    // a 'wood' key, so it missed every single time. drawRunSummary calls it once per frame: 3360
+    // noise iterations and about ten thousand draws, sixty times a second, on the death screen.
+    // Worse than the cost: the speckle came from the art stream each time, so the paper SHIMMERED.
+    // eq() on two object references is the whole assertion - a texture that re-bakes is a different
+    // object every frame, and this fails the moment somebody reintroduces the mistake.
+    eq(paperTex(420,320),paperTex(420,320),'the paper is re-baked on every call');
+
+    const tag=seedTagArt(172,52,'ABC1234');
+    eq(seedTagArt(172,52,'ABC1234'),tag,'the seed tag is re-baked on every call');
+    ok(seedTagArt(172,52,'ABC1235')!==tag,'two different seeds baked the same tag, so a tag cannot show which seed it is');
+
+    // and neither may touch the run stream: these are things to look at, not decisions
+    Rnd.set(31337);
+    const before=Rnd.calls.run;
+    paperTex(420,320);
+    seedTagArt(172,52,'ABC1234');
+    eq(Rnd.calls.run,before,'drawing a surface advanced the RUN stream');
+  });
+
+  test('the run summary carries the seed that produced the run',()=>{
+    // The summary is the artefact a player actually sends to a friend. If it does not carry the
+    // seed then the seed is decoration - the player has no way to hand anybody the dungeon they
+    // are talking about, which was the entire point of showing them one.
+    startGame();
+    Rnd.set(4242);
+    endRun(false);
+    eq(state,'gameover','ending a run did not reach the summary screen');
+    eq(lastRun.seed,Rnd.encode(4242),'the summary did not record which seed produced the run');
+    ok(/^[0-9A-Z]{7}$/.test(lastRun.seed),'the recorded seed is not something a player could type back in: '+lastRun.seed);
+    // and it has to FIT. stampText centres on its x, so a value right-aligned by centring hangs
+    // half its width over the paper and the last character falls off the edge - which prints
+    // "000039" for a seed that is "000039U", and a seed missing a character is a dungeon that will
+    // not replay. The summary is a pixel layout, so this is checked as one.
+    const pw=440,px=(W-pw)/2,L=px+36,R=px+pw-36;
+    const vw=stampWidth(ctx,lastRun.seed,15,2.6);
+    ok(R-vw>=L,'the seed is '+vw+'px wide and hangs off the right margin of the sheet, so the last character is clipped');
+    ok(L+ctx.measureText('Seed').width+20<R-vw,'the Seed label and its value collide on one line');
   });
   test('fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz',()=>{
     state='start'; paused=false;
@@ -3396,6 +3647,12 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     for(let i=0;i<BLINK_BOOST+4;i++) update();
     eq(player.boost,0,'momentum outlived its own burst');
   });
+  // the discipline check itself, as a test: if any game module ever draws from raw Math.random
+  // again, the seed stops meaning anything and this is the line that says so
+  results.push({name:'every draw in game code names its stream - no raw Math.random survives',
+    ok:strayRandom===0,
+    msg:strayRandom===0?'':strayRandom+' stray call(s): a draw went through Math.random, so it is '
+      +'shared between the run, the jitter and the art, and the seed no longer reproduces the run'});
   Math.random=realRandom;
   for(const k of REC_KEYS){try{saved[k]==null?localStorage.removeItem(k):localStorage.setItem(k,saved[k]);}catch(e){}}
   loadRecords(); keys={}; releaseButtons(); paused=false; acc=0; lastRun=null; state='start'; mouse={x:W/2,y:H/2};

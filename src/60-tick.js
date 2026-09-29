@@ -259,8 +259,8 @@ function update(){
           const dx=e.x-p.x, dy=e.y-p.y;
           if(Math.hypot(dx,dy)<GUNNER_DODGE.sight && dx*p.vx+dy*p.vy>0){threat=p;break;}
         }
-        if(threat&&Math.random()<GUNNER_DODGE.chance){
-          const sp=Math.hypot(threat.vx,threat.vy)||1, side=Math.random()<0.5?1:-1;
+        if(threat&&Rnd.jitter()<GUNNER_DODGE.chance){
+          const sp=Math.hypot(threat.vx,threat.vy)||1, side=Rnd.jitter()<0.5?1:-1;
           e.kvx+=-threat.vy/sp*side*GUNNER_DODGE.kick; e.kvy+=threat.vx/sp*side*GUNNER_DODGE.kick;
           e.dodgeCd=GUNNER_DODGE.cd;
         }
@@ -338,7 +338,7 @@ function update(){
              what holding the ground above buys, and why this needs no re-aiming. The gunner stands
              still to charge, so the line the clear-shot sweep checked and the line the shell walks
              are the same line, and the angle can simply be stored and used. */
-          e.shootCd=e.cdMin+Math.random()*e.cdVar;
+          e.shootCd=e.cdMin+Rnd.jitter()*e.cdVar;
           projectiles.push({x:e.x,y:e.y,vx:Math.cos(e.castAim)*e.pspd,vy:Math.sin(e.castAim)*e.pspd,r:e.pr,
             dmg:e.dmg,friendly:false,color:e.pcol,owner:e,heavy:e.type==='gunner'});
         } else if(e.shootCd<=0){
@@ -449,7 +449,7 @@ function update(){
             need=(CAST_TIME+Math.hypot(sx,sy)/e.pspd);
             sx=hx+bvx*need-e.x; sy=ty+bvy*need-e.y;
           }
-          const want=Math.atan2(sy,sx)+(Math.random()-0.5)*2*(0.02+SWERVE_AIM*player.swerve*reach);
+          const want=Math.atan2(sy,sx)+(Rnd.jitter()-0.5)*2*(0.02+SWERVE_AIM*player.swerve*reach);
           // never put a shell through one of your own. a gunner that blindly fires into a Brunch pack
           // wastes its shot and teaches the player that shells are not the threat; one that waits
           // for a gap is shooting at you *through* the pack, which is the whole reason to want the

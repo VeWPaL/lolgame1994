@@ -1,0 +1,115 @@
+/* =========================================================================================
+   05-rng  -  the random source, and the three streams it is split into
+
+   THE GAME HAD NO SEED. Every decision it made - the shape of the dungeon, which bodies turned
+   up and where, what a pack was made of - came out of Math.random, and a player could not see
+   the number, could not type it in, and could not give it to anyone. Two people who played the
+   same build played different games, and a run that went well could not be repeated to find out
+   why.
+
+   THE PART THAT ACTUALLY MATTERS IS NOT THE SEED. It is the split into three streams.
+
+   A single stream is a trap, and it is a slow one. Everything draws from it in call order, so
+   adding one idle-wander roll - or changing the art, which rolls a lot - shifts every subsequent
+   draw, and the dungeon you published last month is no longer the dungeon that seed produces.
+   Seeds silently rot, and nobody notices until a friend pastes one back and gets a different run
+   and concludes the feature is broken.
+
+   So randomness is sorted by WHAT IT DECIDES, and each decision gets its own stream:
+
+     run     what the run IS. Dungeon shape, room growth, spawn placement, pack composition,
+             which bodies, item rolls. A seed fixes this and nothing else.
+     jitter  cosmetic timing and behaviour noise. Cooldown rolls, idle wander, a gunner's dodge,
+             a shell's spread. It has to be reproducible too, or the same seed plays differently
+             twice, but it must never be able to reach into the run.
+     art     texture noise - the grain in the wood, the fleck in the paper. Purely cosmetic,
+             consumed a great deal, and therefore the one most likely to change without anyone
+     changing the game.
+
+   The player is shown ONE number. The other two are derived from it, so a seed is a single thing
+   to copy, and the streams stay independent of each other.
+
+   mulberry32 lives here now rather than in the test harness, because the game needs it too and
+   two copies of a generator is two chances for them to disagree.
+   ========================================================================================= */
+
+function mulberry32(seed){
+  let s=seed>>>0;
+  return function(){
+    s=(s+0x6D2B79F5)>>>0;
+    let t=s;
+    t=Math.imul(t^(t>>>15),1|t);
+    t=(t+Math.imul(t^(t>>>7),61|t))^t;
+    return ((t^(t>>>14))>>>0)/4294967296;
+  };
+}
+
+const Rnd=(function(){
+  /* Each stream is seeded from the one number the player can see, through a different constant.
+     A fixed irrational-looking offset means the streams do not overlap for nearby seeds: seed 1 and
+     seed 2 must not produce the same dungeon, which they would if both streams were just seeded
+     with the seed. */
+  const OFF_JITTER=0x9E3779B9, OFF_ART=0x85EBCA6B;
+
+  /* A short readable seed. base36 keeps it typable and copyable, and seven characters is 78
+     billion possibilities, which is far more than a player will exhaust and far fewer than they
+     will mistype. Fixed width, so a seed is always the same shape on screen. */
+  const WIDTH=7, ALPHABET='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const encode=n=>{let s=(n>>>0).toString(36).toUpperCase();while(s.length<WIDTH)s='0'+s;return s;};
+  function decode(text){
+    if(text==null) return null;
+    const t=String(text).trim().toUpperCase().replace(/[^0-9A-Z]/g,'');
+    if(!t||t.length>WIDTH) return null;
+    const n=parseInt(t,36);
+    if(!Number.isFinite(n)||n<0) return null;
+    return n>>>0;
+  }
+
+  let seed=0, runFn=null, jitFn=null, artFn=null;
+  /* A call count per stream, so the tests can prove the split is being respected rather than
+     merely intended. An unused diagnostic is a comment; a counted one is a test. */
+  const calls={run:0,jitter:0,art:0};
+
+  function set(n){
+    seed=n>>>0;
+    runFn=mulberry32(seed);
+    jitFn=mulberry32((seed^OFF_JITTER)>>>0);
+    artFn=mulberry32((seed^OFF_ART)>>>0);
+    calls.run=0; calls.jitter=0; calls.art=0;
+    return seed;
+  }
+
+  /* A random seed that a player can read out loud. Time-based, because the alternative - a
+     counter - produces 1, 2, 3, which people cannot tell apart across two machines.
+
+     crypto.getRandomValues rather than Math.random, and that is not fastidiousness: it is what
+     lets the suite assert that game code contains NO raw random() call sites at all. One is
+     achievable, two is not, and a rule you cannot enforce is a rule that decays. */
+  function fresh(){
+    const buf=new Uint32Array(1);
+    if(typeof crypto!=='undefined'&&crypto.getRandomValues){ crypto.getRandomValues(buf); return buf[0]>>>0; }
+    /* Fallback for an environment with no Web Crypto. Date.now alone is coarse, but a run lasts
+       seconds, so consecutive runs still differ - and this is a single-player game played by a
+       person, not a lottery. */
+    return (Date.now()^(Math.floor(performance.now())*2654435761))>>>0;
+  }
+
+  return {
+    set:set, encode:encode, decode:decode, fresh:fresh,
+    get seed(){return seed;},
+    get seedText(){return encode(seed);},
+    calls:calls,
+    run:()=>{calls.run++; return runFn();},
+    jitter:()=>{calls.jitter++; return jitFn();},
+    art:()=>{calls.art++; return artFn();},
+    /* convenience, so a call site reads as a decision rather than as plumbing */
+    range:(lo,hi,f)=>lo+f()*(hi-lo),
+    int:(n,f)=>Math.floor(f()*n),
+    pick:(arr,f)=>arr[Math.floor(f()*arr.length)],
+  };
+})();
+
+/* Seeded once at load, so nothing in the game can reach an uninitialised stream. A game with an
+   unseeded RNG is a game whose first run is unreproducible, and that is the run everybody
+   remembers. */
+Rnd.set(Rnd.fresh());

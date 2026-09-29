@@ -633,6 +633,79 @@ function drawHUD(){
   ctx.textAlign='left';
 }
 
+/* ---- the seed tag ------------------------------------------------------------------------------
+   A luggage tag: chamfered corner, punched hole, the word stamped above the number.
+
+   It is the one thing on screen whose entire job is to be READ OFF and sent to somebody else, so
+   it is drawn as a physical object you could pick up rather than as a line of text floating on a
+   background. Baked per text and cached, for the reason paperTex had to be: an object re-baked from
+   a random stream every frame shimmers rather than sitting still, and a tag is read - not glanced
+   at - so it has to hold perfectly still while it is being read. */
+const tagCache={};
+/* letter-spacing by hand rather than ctx.letterSpacing, which is not everywhere yet, and by hand
+   it can be measured properly so the run of characters is CENTRED - canvas has no tracking-aware
+   measureText, so a centred letterspaced run otherwise sits off-centre by half the tracking. */
+function stampText(g,text,cx,y,size,color,gap){
+  let x=cx-stampWidth(g,text,size,gap)/2;
+  const chs=String(text).split('');
+  g.textAlign='left'; g.fillStyle=color;
+  for(const ch of chs){ const w=g.measureText(ch).width; g.fillText(ch,x,y); x+=w+gap; }
+}
+function stampWidth(g,text,size,gap){
+  g.font='bold '+size+'px monospace';
+  return String(text).split('').reduce((a,ch)=>a+g.measureText(ch).width,0)+gap*(String(text).length-1);
+}
+/* Right-aligned, for the sheet. stampText CENTRES on its x, and canvas has no tracking-aware
+   measureText, so centring a value where every other row is flush to the right margin hangs it
+   half its width over the paper. The first version of this row did exactly that and the seed read
+   "000039" instead of "000039U" - a truncated seed is worse than no seed, because the missing
+   character is the difference between a dungeon that replays and one that does not. */
+function stampRight(g,text,rx,y,size,color,gap){
+  stampText(g,text,rx-stampWidth(g,text,size,gap)/2,y,size,color,gap);
+}
+function seedTagArt(w,h,text){
+  const k=w+'x'+h+text;
+  if(tagCache[k])return tagCache[k];
+  const c=mk(w,h),g=c.getContext('2d'),CH=18;
+  const outline=()=>{g.beginPath();g.moveTo(CH,1);g.lineTo(w-1,1);g.lineTo(w-1,h-1);g.lineTo(1,h-1);g.lineTo(1,CH);g.closePath();};
+  outline(); g.fillStyle=g.createPattern(WOOD_TEX,'repeat'); g.fill();
+  // light falls from the top-left, the same direction woodPlate already implies, so the two read as
+  // cut from the same plank
+  g.save(); g.clip();
+  g.strokeStyle='rgba(255,228,186,0.26)'; g.lineWidth=2; g.stroke();
+  g.restore();
+  g.strokeStyle='rgba(26,14,6,0.85)'; g.lineWidth=1; outline(); g.stroke();
+  g.strokeStyle='rgba(255,214,160,0.32)'; g.lineWidth=1;   // the cut edge, catching light on its diagonal
+  g.beginPath(); g.moveTo(1,CH); g.lineTo(CH,1); g.stroke();
+  // a punched hole: dark bore, far wall lit on the lower right, so it reads as a hole THROUGH the
+  // card rather than a dot painted on it
+  const hx=CH*0.72,hy=h/2,hr=5.5;
+  g.fillStyle='#150c05'; g.beginPath(); g.arc(hx,hy,hr,0,6.283); g.fill();
+  g.strokeStyle='rgba(240,205,150,0.38)'; g.lineWidth=1.5;
+  g.beginPath(); g.arc(hx,hy,hr,Math.PI*0.15,Math.PI*0.95); g.stroke();
+  // sized off h rather than written in, so the tag cannot be resized without the type coming with
+  // it - which is how the number and the caption ended up sitting on top of each other.
+  // The number is filled twice, a pixel apart: a pale one down-right, then the ink over it. That one
+  // extra fill is the whole difference between PRINTED on a tag and PRESSED into one, and a tag is
+  // only worth drawing at all if it looks like it has been through something.
+  stampText(g,text,w/2+12,h*0.62+1,h*0.40,'rgba(255,214,160,0.32)',3.6);
+  stampText(g,text,w/2+12,h*0.62,h*0.40,'#241206',3.6);
+  stampText(g,'SEED',w/2+12,h*0.88,h*0.17,'rgba(36,18,6,0.72)',2.8);
+  return tagCache[k]=c;
+}
+function drawSeedTag(cx,cy,text,w,h){
+  w=w||260; h=h||58;
+  ctx.drawImage(seedTagArt(w,h,text),Math.round(cx-w/2),Math.round(cy-h/2));
+  return w;
+}
+function drawStartSeed(){
+  // shown BEFORE you commit to it, not only afterwards: the number that is about to decide this
+  // dungeon belongs on screen while the player decides whether to accept it
+  drawSeedTag(W/2,418,Rnd.seedText);
+  ctx.textAlign='center'; ctx.font='12px monospace'; ctx.fillStyle='#6f7a8c';
+  ctx.fillText('the seed decides this dungeon  ·  press S to play a different one',W/2,472);
+  ctx.textAlign='left';
+}
 function drawOverlay(title,sub,foot){
   ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,H);
   ctx.fillStyle='#fff';ctx.textAlign='center';
@@ -660,7 +733,7 @@ function drawRunSummary(){
   ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,H);
   ctx.textAlign='center';ctx.font='bold 34px monospace';ctx.fillStyle=s.won?'#5ee27a':'#ff6b6b';
   ctx.fillText(s.won?'DUNGEON CLEARED':'YOU DIED',W/2,108);
-  const pw=440,ph=340,px=(W-pw)/2,py=132,L=px+36,R=px+pw-36;
+  const pw=440,ph=380,px=(W-pw)/2,py=132,L=px+36,R=px+pw-36;
   ctx.drawImage(woodPlate(pw,ph),px,py);
   drawInset(px+8,py+8,pw-16,ph-16,null);
   ctx.drawImage(paperTex(pw-20,ph-20),px+10,py+10);
@@ -675,7 +748,12 @@ function drawRunSummary(){
   row(y,'Enemies defeated',String(s.kills)); y+=26;
   row(y,'Damage taken',fmtHearts(s.dmgTaken)); y+=26;
   row(y,'Accuracy',s.shots?Math.round(100*s.hits/s.shots)+'% ('+s.hits+'/'+s.shots+')':'no shots fired'); y+=26;
-  row(y,'Weapon',s.weapon); y+=20;
+  row(y,'Weapon',s.weapon); y+=26;
+  // the seed is tracked out like a serial number rather than set like the rest of the sheet,
+  // because it is the one line here the reader is expected to copy out character by character -
+  // and because it is what turns "that went well" into an argument somebody else can check
+  ctx.textAlign='left';ctx.font='15px monospace';ctx.fillStyle=INK;ctx.fillText('Seed',L,y);
+  stampRight(ctx,s.seed||Rnd.seedText,R,y,15,INK,2.6); y+=20;
   ctx.fillStyle='rgba(90,60,30,0.35)';ctx.fillRect(L,y,R-L,2); y+=26;
   ctx.textAlign='left';ctx.font='bold 12px monospace';ctx.fillStyle=INK_SOFT;ctx.fillText('RECORDS',L,y); y+=24;
   row(y,'Best rooms explored',String(records.rooms)); y+=26;
@@ -691,6 +769,7 @@ function render(){
   if(state==='start'){
     ctx.fillStyle='#12141a';ctx.fillRect(0,0,W,H);
     drawOverlay('DEPTHS','click or press any key to descend',recordsLine());
+    drawStartSeed();
   } else {
     drawRoom(); drawHUD();
     if(roomFade>0){ctx.fillStyle='rgba(0,0,0,'+roomFade+')';ctx.fillRect(0,0,W,H);}

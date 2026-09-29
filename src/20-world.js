@@ -36,7 +36,7 @@ function freeDir(rs,room,prefer){
   if(!free.length) return null;
   // prefer leaving sideways off the host so a fork reads as a fork, not as a stub
   const side=free.filter(d=>d!==OPP[prefer]&&d!==prefer);
-  return (side.length?side:free)[(Math.random()*(side.length||free.length))|0];
+  return (side.length?side:free)[(Rnd.run()*(side.length||free.length))|0];
 }
 // walks one corridor out of (x,y), returning the rooms it placed plus its tip. the run travels in
 // straight segments of two or three rooms and bends once at the end of each, so a run reads as a
@@ -44,14 +44,14 @@ function freeDir(rs,room,prefer){
 // which is how the loose pass finds room for the long runs.
 function grow(rs,x,y,dir,len,strict,bias){
   const path=[];
-  let cx=x,cy=y,lastTurn=-1,seg=1+((Math.random()*2.4)|0);
+  let cx=x,cy=y,lastTurn=-1,seg=1+((Rnd.run()*2.4)|0);
   for(let step=0;step<len;step++){
     let order;
     if(seg<=0){
       // bend: take a side, usually keeping the same handedness, so the run makes Ls and Us
-      const first=lastTurn<0?(Math.random()<0.5?0:1):(Math.random()<bias?lastTurn:1-lastTurn);
+      const first=lastTurn<0?(Rnd.run()<0.5?0:1):(Rnd.run()<bias?lastTurn:1-lastTurn);
       order=[TURNS[dir][first],TURNS[dir][1-first],dir];
-      seg=1+((Math.random()*2.4)|0);
+      seg=1+((Rnd.run()*2.4)|0);
     } else {
       order=[dir,dir,...TURNS[dir]];
       seg--;
@@ -119,7 +119,7 @@ function tryBuild(strict){
     }
   }
   if(!walls.length) return null;
-  const spot=walls[(Math.random()*walls.length)|0];
+  const spot=walls[(Rnd.run()*walls.length)|0];
   rs[key(spot.x,spot.y)]=newRoom(spot.x,spot.y,'secret');
   spot.r.secret=spot.d;
   return rs;
@@ -221,13 +221,13 @@ function spawnPlan(count,fromDir){
   const [ex,ey]=entryPoint(fromDir);
   const cand=[], spare=[];
   for(let i=0;i<320;i++){
-    const x=ROOM_LEFT+SPAWN_MARGIN+Math.random()*(ROOM_RIGHT-ROOM_LEFT-SPAWN_MARGIN*2);
-    const y=ROOM_TOP+SPAWN_MARGIN+Math.random()*(ROOM_BOTTOM-ROOM_TOP-SPAWN_MARGIN*2);
+    const x=ROOM_LEFT+SPAWN_MARGIN+Rnd.run()*(ROOM_RIGHT-ROOM_LEFT-SPAWN_MARGIN*2);
+    const y=ROOM_TOP+SPAWN_MARGIN+Rnd.run()*(ROOM_BOTTOM-ROOM_TOP-SPAWN_MARGIN*2);
     if(Math.hypot(x-MIDX,y-MIDY)<SPAWN_MID) continue;   // the middle of the room stays walkable
     (Math.hypot(x-ex,y-ey)<SPAWN_DOOR?spare:cand).push({x,y});   // nothing starts in the doorway
   }
   for(const s of spare) if(cand.length<count+4) cand.push(s);
-  while(cand.length<count) cand.push({x:MIDX+Math.cos(Math.random()*6.283)*200,y:MIDY+Math.sin(Math.random()*6.283)*140});
+  while(cand.length<count) cand.push({x:MIDX+Math.cos(Rnd.run()*6.283)*200,y:MIDY+Math.sin(Rnd.run()*6.283)*140});
   const pts=[];
   for(let i=0;i<count;i++){
     // first pick optimises against the entry door, later picks balance it against the bodies
@@ -248,7 +248,7 @@ function spawnPlan(count,fromDir){
   return pts;
 }
 function rollPack(){
-  let r=Math.random();
+  let r=Rnd.run();
   for(let i=0;i<BRUNCH.pack.length;i++){ if(r<BRUNCH.weight[i]) return BRUNCH.pack[i]; r-=BRUNCH.weight[i]; }
   return BRUNCH.pack[0];
 }
@@ -256,13 +256,13 @@ function spawnWave(room,fromDir){
   // more bodies at higher pressure. this is the only lever that makes a competent kiter work for
   // something, and it is the one that costs clear time, so it is what pays back the ground that
   // TEMPO gives away
-  const n=Math.max(2,2+((Math.random()*(2+PRESSURE.rate))|0));
+  const n=Math.max(2,2+((Rnd.run()*(2+PRESSURE.rate))|0));
   const pts=spawnPlan(n,fromDir);
   // at most one gunner, and only where there are enough bodies to space it from the rest
-  const heavy=n>=3&&Math.random()<0.55;
-  const pack=Math.random()<BRUNCH.chance&&n>=2?rollPack():0;
+  const heavy=n>=3&&Rnd.run()<0.55;
+  const pack=Rnd.run()<BRUNCH.chance&&n>=2?rollPack():0;
   const slots=pts.slice().sort((a,b)=>b.d-a.d).map((p,k)=>{
-    let type=Math.random()<0.5?'chaser':'shooter';
+    let type=Rnd.run()<0.5?'chaser':'shooter';
     if(heavy&&k===0) type='gunner';
     else if(type==='shooter'&&p.d<SPAWN_FAR) type='chaser';   // no gunner starts on the doorstep
     return {x:p.x,y:p.y,d:p.d,type};
@@ -270,7 +270,7 @@ function spawnWave(room,fromDir){
   // a pack takes over one standard slot and crowds into a knot around it, so the room does not get
   // bigger, it just gets a different problem. never the slot the gunner is holding
   if(pack&&slots.length>1){
-    const victim=slots[1+((Math.random()*(slots.length-1))|0)];
+    const victim=slots[1+((Rnd.run()*(slots.length-1))|0)];
     victim.type='brunch'; victim.pack=pack;
   }
   room.spawnPlan=slots;

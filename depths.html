@@ -67,6 +67,35 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
   border-left:2px solid #6a5230;border-radius:3px;font-size:11px;line-height:1.5;color:#8d98ab;}
 .ctlNote b{color:#d6c08a;font-weight:400;}
 .ctlNote i{color:#aab4c6;font-style:italic;}
+/* ---- the seed sheet --------------------------------------------------------------------------
+   The same card as the controls sheet, because it is the same kind of object: something you opened
+   on purpose in order to read it carefully. The difference is that this one has a real text field.
+   Hand-rolling seven characters of keyboard input on a canvas would be absurd, and a real field
+   gets paste, capitalisation and phone keyboards for free. */
+#seedSheet{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+  background:rgba(6,8,12,.86);padding:20px;overflow:auto;}
+#seedSheet.on{display:flex;}
+#seedCard{background:#10141c;border:1px solid #2b3342;border-radius:6px;padding:18px 22px 20px;
+  box-shadow:0 18px 60px rgba(0,0,0,.6);max-width:430px;width:100%;}
+#ctlCard h2,#seedCard h2{margin:0 0 3px;font-size:15px;letter-spacing:.10em;color:#dfe6f2;font-weight:400;}
+#ctlCard .sub,#seedCard .sub{margin:0 0 16px;font-size:11px;color:#6c7688;letter-spacing:.04em;
+  text-align:left;max-width:none;padding:0;}
+#seedField{display:flex;align-items:center;gap:10px;padding:9px 11px;background:#0c1017;
+  border:1px solid #232a37;border-radius:3px;margin-bottom:13px;}
+#seedField label{font-size:10px;letter-spacing:.16em;color:#8e9ab0;text-transform:uppercase;}
+#seedInput{flex:1 1 auto;min-width:0;background:transparent;border:0;outline:0;color:#d6c08a;
+  font:600 21px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.26em;padding:3px 0 4px;}
+#seedInput::placeholder{color:#48515f;letter-spacing:.16em;}
+#seedNote{margin:0 0 14px;font-size:11px;line-height:1.55;color:#8d98ab;text-align:left;}
+#seedNote b{color:#ccd5e3;font-weight:400;}
+#seedBtns{display:flex;gap:8px;}
+#seedBtns button{flex:1 1 auto;padding:9px 10px;font:400 11px/1 system-ui,-apple-system,sans-serif;
+  letter-spacing:.10em;text-transform:uppercase;color:#cdd6e4;background:#161c27;border:1px solid #2b3342;
+  border-radius:3px;cursor:pointer;}
+#seedBtns button:hover{background:#1c2431;border-color:#3d4859;}
+#seedBtns button.go{color:#12161e;background:#c79bff;border-color:#c79bff;font-weight:600;}
+#seedBtns button.go:hover{background:#d9b6ff;}
+#seedErr{min-height:14px;margin:10px 0 0;font-size:11px;color:#ff8080;letter-spacing:.02em;}
 </style>
 </head>
 <body>
@@ -85,6 +114,8 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
   <span class="grp"><span class="cap">ESC</span><span class="lbl">pause</span><span class="cap">R</span><span class="lbl">restart</span></span>
   <span class="sep"></span>
   <span class="grp"><span class="cap">H</span><span class="lbl">controls</span><span class="cap">B</span><span class="lbl">bug list</span></span>
+  <span class="sep"></span>
+  <span class="grp"><span class="cap">S</span><span class="lbl">seed</span></span>
 </div>
 
 <!-- The controls sheet. Same content as the bar above, but drawn out and explained, for the player
@@ -102,6 +133,7 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
       <div class="ctlRow"><span class="keys"><span class="cap">R</span></span><span class="what">Restart, while paused or after a run.</span></div>
       <div class="ctlRow"><span class="keys"><span class="cap">H</span></span><span class="what">This sheet.</span></div>
       <div class="ctlRow"><span class="keys"><span class="cap">B</span></span><span class="what">The bug list: every fix in this build and why it is pinned.</span></div>
+      <div class="ctlRow"><span class="keys"><span class="cap">S</span></span><span class="what">This dungeon&rsquo;s <b>seed</b>, on the title screen or from a pause. Type one to play exactly that dungeon again &mdash; the same rooms, the same bodies, the same weapons. Leave it empty for a new one.</span></div>
       <div class="ctlRow"><span class="keys"><span class="cap">F</span><span class="cap">G</span></span><span class="what">Frame rate, and the room spawn plan.</span></div>
     </section>
     <section>
@@ -121,8 +153,33 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
   </div>
 </div>
 </div>
+<!-- The seed. Entering one is the whole point of the sheet: it is the only way two people can play
+     the same dungeon, which is what turns a run that went well into a thing you can argue about.
+     Opened on S. Deliberately NOT persisted - the run summary already prints the seed a run used,
+     so the loop is "read it off the sheet, type it here", and quietly reloading the previous seed
+     would mean two people opening the game saw a different number for reasons neither could see. -->
+<div id="seedSheet" role="dialog" aria-modal="true" aria-label="Seed">
+<div id="seedCard">
+  <h2>SEED</h2>
+  <p class="sub">One short word decides the whole dungeon.</p>
+  <div id="seedField">
+    <label for="seedInput">Seed</label>
+    <input id="seedInput" type="text" maxlength="7" autocomplete="off" autocapitalize="characters"
+           autocorrect="off" spellcheck="false" placeholder="0000000">
+  </div>
+  <p id="seedNote">Empty gives you a <b>new</b> dungeon. A seed gives you <b>exactly</b> that one
+     again &mdash; the same rooms, the same bodies in the same places, the same weapons in them.</p>
+  <div id="seedBtns">
+    <button id="seedGo" class="go">Descend</button>
+    <button id="seedRand">New seed</button>
+    <button id="seedClose">Close</button>
+  </div>
+  <p id="seedErr"></p>
+</div>
+</div>
 </div>
 <script src="src/00-balance.js"></script>
+<script src="src/05-rng.js"></script>
 <script src="src/10-art.js"></script>
 <script src="src/15-content.js"></script>
 <script src="src/20-world.js"></script>

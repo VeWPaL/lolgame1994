@@ -85,7 +85,7 @@ function falloffMult(p){
 
 function knockEnemy(e,dx,dy,force){
   const len=Math.hypot(dx,dy);
-  if(len<1){const a=Math.random()*6.283;dx=Math.cos(a);dy=Math.sin(a);}
+  if(len<1){const a=Rnd.jitter()*6.283;dx=Math.cos(a);dy=Math.sin(a);}
   else{dx/=len;dy/=len;}
   e.kvx+=dx*force/e.mass; e.kvy+=dy*force/e.mass;
   const sp=Math.hypot(e.kvx,e.kvy);
@@ -141,7 +141,7 @@ function bounceEnemies(a,b){
   // overlapping bodies are always pushed apart (the heavier one moves less), otherwise chasers
   // converging on the player merge into one blob; knockback is only traded when one of them is flying
   let nx,ny;
-  if(d<0.001){const ang=Math.random()*6.283;nx=Math.cos(ang);ny=Math.sin(ang);}
+  if(d<0.001){const ang=Rnd.jitter()*6.283;nx=Math.cos(ang);ny=Math.sin(ang);}
   else{nx=dx/d;ny=dy/d;}
   const tot=a.mass+b.mass,push=min-d;
   a.x-=nx*push*b.mass/tot; a.y-=ny*push*b.mass/tot;
@@ -284,7 +284,7 @@ function fireWeapon(){
   const w=WEAPONS[player.weaponIdx];
   const ang0=Math.atan2(mouse.y-player.y,mouse.x-player.x);
   for(let i=0;i<w.count;i++){
-    const off=w.count>1?(i-(w.count-1)/2)*w.spread:(Math.random()-0.5)*w.spread;
+    const off=w.count>1?(i-(w.count-1)/2)*w.spread:(Rnd.jitter()-0.5)*w.spread;
     const a=ang0+off;
     projectiles.push({x:player.x,y:player.y,vx:Math.cos(a)*w.speed,vy:Math.sin(a)*w.speed,r:w.r||5,dmg:w.dmg,friendly:true,color:w.color,
       ox:player.x,oy:player.y,fNear:w.fNear,fFar:w.fFar,fMin:w.fMin,shrink:!!w.shrink,

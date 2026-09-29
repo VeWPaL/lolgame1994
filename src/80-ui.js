@@ -161,22 +161,31 @@ const FIXES={
    ALSO ask uiHoldsInput() first. Belt and braces, and the second half is what stops the game being
    mid-swing when the overlay closes. */
 function uiOverlay(){
-  const s=document.getElementById('ctlSheet'), b=document.getElementById('bugPanel');
+  const s=document.getElementById('ctlSheet'), b=document.getElementById('bugPanel'),
+        d=document.getElementById('seedSheet');
   if(s&&s.classList.contains('on')) return s;
+  if(d&&d.classList.contains('on')) return d;
   if(b&&b.style.display==='block') return b;
   return null;
 }
+/* True while the keystroke is aimed at the seed field. The suppressor below runs in the CAPTURE
+   phase on window, which is ahead of every target in the tree - so stopPropagation there stops a
+   key reaching the input at all, and a text field whose every keystroke is eaten accepts nothing,
+   silently. The field has to be let through before the suppressor decides anything. */
+const seedTyping=e=>{const t=e.target;return !!(t&&t.id==='seedInput');};
 function uiHoldsInput(){ return !!uiOverlay(); }
 /* The keys the overlays answer to. They have to get past the suppressor below, or the bug list
    cannot be closed with the key that opened it - the same class of bug as a cancel you cannot
    reach, and exactly the mistake the hook's cooldown gate used to be. */
-const UI_KEYS=['escape','h','b'];
+const UI_KEYS=['escape','h','b','s'];
 function uiAllows(k){ return UI_KEYS.indexOf(String(k).toLowerCase())>=0; }
 // Anything aimed at the overlay is consumed on the way down, before the game sees it.
 window.addEventListener('keydown',e=>{
+  if(seedTyping(e)) return;
   if(uiHoldsInput()&&!uiAllows(e.key)){ e.preventDefault(); e.stopPropagation(); }
 },true);
 window.addEventListener('keyup',e=>{
+  if(seedTyping(e)) return;
   if(uiHoldsInput()&&!uiAllows(e.key)){ e.preventDefault(); e.stopPropagation(); }
 },true);
 for(const type of ['mousedown','mouseup','mousemove','contextmenu','wheel','pointercancel']){
@@ -205,10 +214,74 @@ function toggleControls(){
 function uiCloseTop(){
   const s=document.getElementById('ctlSheet');
   if(s&&s.classList.contains('on')){ s.classList.remove('on'); uiReleaseFocus(); return; }
+  const d=document.getElementById('seedSheet');
+  if(d&&d.classList.contains('on')){ d.classList.remove('on'); uiReleaseFocus(); return; }
   const p=document.getElementById('bugPanel');
   if(p&&p.style.display==='block'){ p.style.display='none'; releaseButtons(); keys={}; return; }
   toggleControls();
 }
+
+/* ---- the seed sheet ----------------------------------------------------------------------------
+   Opened on S from the title screen or from a pause. No persistence, deliberately: the run summary
+   already prints the seed a run used, so the loop is "read it off the sheet, type it here". Quietly
+   reloading the previous seed would instead mean two people opening the game saw a different number
+   for reasons neither of them could see, which is the exact confusion seeds are supposed to remove.
+
+   An EMPTY field means "surprise me", not "seed zero" - and zero is a perfectly good seed that a
+   player can type deliberately, so the two must not collide. */
+function seedClose(){
+  const d=document.getElementById('seedSheet');
+  if(d) d.classList.remove('on');
+  uiReleaseFocus();
+}
+function toggleSeedSheet(){
+  const d=document.getElementById('seedSheet');
+  if(!d) return;
+  if(d.classList.contains('on')){ seedClose(); return; }
+  d.classList.add('on');
+  uiTakeInput();
+  const inp=document.getElementById('seedInput');
+  const err=document.getElementById('seedErr');
+  if(err) err.textContent='';
+  if(inp){ inp.value=Rnd.seedText; setTimeout(()=>{inp.focus();inp.select();},0); }
+}
+function seedDescend(){
+  const inp=document.getElementById('seedInput'), err=document.getElementById('seedErr');
+  const raw=(inp&&inp.value||'').trim();
+  let n;
+  if(!raw) n=Rnd.fresh();
+  else{
+    n=Rnd.decode(raw);
+    if(n===null){
+      // refused LOUDLY and in place, keeping what was typed. Silently starting a random dungeon
+      // because a letter was mistyped is the one outcome that makes this feel broken.
+      if(err) err.textContent='That is not a seed. Seven letters and digits, like '+Rnd.seedText+'.';
+      if(inp){ inp.focus(); inp.select(); }
+      return;
+    }
+  }
+  Rnd.set(n);
+  seedClose();
+  startGame();
+}
+document.getElementById('seedGo').addEventListener('click',seedDescend);
+document.getElementById('seedRand').addEventListener('click',()=>{
+  Rnd.set(Rnd.fresh());
+  const inp=document.getElementById('seedInput'), err=document.getElementById('seedErr');
+  if(inp) inp.value=Rnd.seedText;
+  if(err) err.textContent='';
+});
+document.getElementById('seedClose').addEventListener('click',seedClose);
+document.getElementById('seedSheet').addEventListener('mousedown',e=>{
+  if(e.target.id==='seedSheet') seedClose();
+});
+/* Typed keys must reach the field and must NOT reach the game. WASD is movement, and on the title
+   screen ANY key starts a run - so a field that leaked either would start a dungeon per letter. */
+document.getElementById('seedInput').addEventListener('keydown',e=>{
+  e.stopPropagation();
+  if(e.key==='Enter'){ e.preventDefault(); seedDescend(); return; }
+  if(e.key==='Escape'){ e.preventDefault(); seedClose(); return; }
+});
 // focus has to go somewhere sensible so the sheet is reachable by keyboard, and come back after
 let uiReturnFocus=null;
 function uiReleaseFocus(){
@@ -324,6 +397,10 @@ window.addEventListener('keydown',e=>{
   // anyone who hits something odd can read the change history without a query string
   if(k==='b'&&first){ if(document.getElementById('bugBtn')) toggleBugPanel(); else showBugPanel(); return; }
   if(k==='h'&&first){ toggleControls(); return; }
+  // S opens the seed sheet, but only where it means something: on the title screen and from a
+  // pause. During play it stays strafe-down, because taking a movement key to open a dialog is how
+  // a player dies while reading your menu.
+  if(k==='s'&&first&&(state==='start'||paused)){ toggleSeedSheet(); return; }
   if(k==='escape'&&uiHoldsInput()){ uiCloseTop(); return; }
   if(state==='start'){startGame();return;}
   if(!first) return;

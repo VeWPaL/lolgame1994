@@ -89,7 +89,7 @@ function endRun(won){
   state=won?'win':'gameover';
   const all=Object.values(rooms), explored=all.filter(x=>x.visited).length;
   const s={won,ticks:run.ticks,explored,total:all.length,kills:run.kills,dmgTaken:run.dmgTaken,
-    shots:run.shots,hits:run.hits,weapon:WEAPONS[player.weaponIdx].name,newRooms:false,newFastest:false};
+    shots:run.shots,hits:run.hits,weapon:WEAPONS[player.weaponIdx].name,seed:Rnd.seedText,newRooms:false,newFastest:false};
   if(explored>records.rooms){records.rooms=explored;s.newRooms=true;}
   if(won){
     records.wins++;

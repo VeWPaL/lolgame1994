@@ -15,12 +15,12 @@ caveCanvas.width=128;caveCanvas.height=128;
   const c=caveCanvas.getContext('2d');
   c.fillStyle='#25211c';c.fillRect(0,0,128,128);
   for(let i=0;i<220;i++){
-    const x=Math.random()*128,y=Math.random()*128,r=1+Math.random()*3;
-    c.fillStyle='rgba('+(Math.random()<0.5?'0,0,0,':'255,240,210,')+(0.04+Math.random()*0.08)+')';
+    const x=Rnd.art()*128,y=Rnd.art()*128,r=1+Rnd.art()*3;
+    c.fillStyle='rgba('+(Rnd.art()<0.5?'0,0,0,':'255,240,210,')+(0.04+Rnd.art()*0.08)+')';
     c.beginPath();c.arc(x,y,r,0,7);c.fill();
   }
   for(let i=0;i<36;i++){
-    const x=Math.random()*128,y=Math.random()*128,r=3+Math.random()*7;
+    const x=Rnd.art()*128,y=Rnd.art()*128,r=3+Rnd.art()*7;
     c.fillStyle='rgba(0,0,0,0.10)';
     c.beginPath();c.arc(x,y,r,0,7);c.fill();
   }
@@ -135,7 +135,12 @@ const KEY_PAL_DIM={g:'#6e5f22'}, KEY_SILVER_DIM={g:'#5b6068'};
 const KEY_SKIN={key:KEY_SILVER_PAL,goldkey:KEY_PAL};   // the two keys are the same shape, two alloys
 const MOUSE_ROWS=["..mmm..",".mmmmm.","mmmdmmm","mLmdmRm","mLmdmRm","mLmdmRm","mmmdmmm",".mmmmm.","..mmm.."];
 
-const spriteCache={}, glowCache={}, floorCache={}, woodCache={}, iconCache={}, glyphCache={};
+/* paperCache was missing: paperTex was reading and writing woodCache under a 'paper' key, which can
+   never collide with a 'wood' key, so it re-baked every call. drawRunSummary calls it once per
+   frame - 3360 noise iterations and about ten thousand draws, sixty times a second, on the death
+   screen. Worse than the cost: the speckle came from the art stream each time, so the paper
+   visibly SHIMMERED rather than sitting still. */
+const spriteCache={}, glowCache={}, floorCache={}, woodCache={}, paperCache={}, iconCache={}, glyphCache={};
 function bakeSprite(rows,palette,pxSize,flash){
   const w=rows[0].length,h=rows.length,pad=2;
   const c=mk(Math.ceil(w*pxSize)+pad*2,Math.ceil(h*pxSize)+pad*2);
@@ -175,10 +180,10 @@ const WOOD_TEX=(function(){
   const shades=['#5b3a1c','#7a5230','#684222','#73492a'];
   for(let x=0;x<96;x+=2){
     let y=0;
-    while(y<96){const len=(8+((Math.random()*30)|0))&~1;g.fillStyle=shades[(Math.random()*4)|0];g.fillRect(x,y,2,len);y+=len;}
+    while(y<96){const len=(8+((Rnd.art()*30)|0))&~1;g.fillStyle=shades[(Rnd.art()*4)|0];g.fillRect(x,y,2,len);y+=len;}
   }
-  for(let i=0;i<26;i++){g.fillStyle='rgba(28,14,5,0.4)';g.fillRect(((Math.random()*94)|0)&~1,((Math.random()*90)|0)&~1,2,2+2*((Math.random()*4)|0));}
-  for(let i=0;i<3;i++){const x=10+((Math.random()*76)|0),y=10+((Math.random()*76)|0);g.fillStyle='#4a2c14';g.fillRect(x,y,6,4);g.fillStyle='#3a200e';g.fillRect(x+2,y+1,2,2);}
+  for(let i=0;i<26;i++){g.fillStyle='rgba(28,14,5,0.4)';g.fillRect(((Rnd.art()*94)|0)&~1,((Rnd.art()*90)|0)&~1,2,2+2*((Rnd.art()*4)|0));}
+  for(let i=0;i<3;i++){const x=10+((Rnd.art()*76)|0),y=10+((Rnd.art()*76)|0);g.fillStyle='#4a2c14';g.fillRect(x,y,6,4);g.fillStyle='#3a200e';g.fillRect(x+2,y+1,2,2);}
   return c;
 })();
 function woodPlate(w,h){
@@ -197,12 +202,12 @@ function drawInset(x,y,w,h,fill){
   if(fill){ctx.fillStyle=fill;ctx.fillRect(x+2,y+2,w-4,h-4);}
 }
 function paperTex(w,h){
-  const k='paper'+w+'x'+h;if(woodCache[k])return woodCache[k];
+  const k='paper'+w+'x'+h;if(paperCache[k])return paperCache[k];
   const c=mk(w,h),g=c.getContext('2d');
   g.fillStyle='#efe7d1';g.fillRect(0,0,w,h);
-  for(let i=0;i<w*h/40;i++){g.fillStyle=Math.random()<0.5?'rgba(150,125,80,0.10)':'rgba(255,255,255,0.35)';g.fillRect((Math.random()*w)|0,(Math.random()*h)|0,1+((Math.random()*2)|0),1);}
+  for(let i=0;i<w*h/40;i++){g.fillStyle=Rnd.art()<0.5?'rgba(150,125,80,0.10)':'rgba(255,255,255,0.35)';g.fillRect((Rnd.art()*w)|0,(Rnd.art()*h)|0,1+((Rnd.art()*2)|0),1);}
   g.fillStyle='rgba(120,95,55,0.10)';g.fillRect(0,0,w,2);g.fillRect(0,h-2,w,2);g.fillRect(0,0,2,h);g.fillRect(w-2,0,2,h);
-  return woodCache[k]=c;
+  return paperCache[k]=c;
 }
 
 /* Pixel hearts, filled by FRACTION rather than by one of three states.
@@ -377,11 +382,11 @@ function drawGlyph(kind,cx,cy,px,color){
 
 function key(x,y){return x+','+y;}
 function neighbor(x,y,d){return d==='N'?[x,y-1]:d==='S'?[x,y+1]:d==='E'?[x+1,y]:[x-1,y];}
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Rnd.run()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
 // smoothstep, so room fades ease in and out of black instead of snapping
 function smooth(t){return t<=0?0:t>=1?1:t*t*(3-2*t);}
 function dropLoot(x,y){
-  const roll=Math.random();
+  const roll=Rnd.run();
   if(roll<0.18) return {x,y,r:10,kind:'heart'};
   if(roll<0.26) return {x,y,r:10,kind:'armor'};
   return null;
