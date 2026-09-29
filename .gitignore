@@ -1,16 +1,17 @@
-# The game is a single tracked file. It must never be ignored, and it must never have its
-# line endings rewritten: depths.html is LF-only by design, and a CRLF pass would break the
-# byte-level encoding the middle-dot canary depends on. core.autocrlf is off in this repo
-# for the same reason.
+# The game is a shell that loads ten plain <script> files. They must never be ignored, and
+# they must never have their line endings rewritten: every file here is LF-only by design, and a
+# CRLF pass would break the byte-level encoding the middle-dot canary depends on. core.autocrlf
+# is off in this repo for the same reason.
 *
 !.gitignore
 !depths.html
+!src/
+src/*
+!src/*.js
 
 # scratch and build output
-src/Depths.Core/bin/
-src/Depths.Core/obj/
-src/Depths.Tests/bin/
-src/Depths.Tests/obj/
+bin/
+obj/
 *.user
 .vs/
 .idea/

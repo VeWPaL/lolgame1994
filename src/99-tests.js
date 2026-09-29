@@ -1,0 +1,3289 @@
+/* ---------- regression tests: open depths.html?test (this block does nothing otherwise) ----------
+   Seeded and synchronous, well under a second. Results go to the console, an on-page panel and
+   window.__testResults. Saved records are backed up first and restored after, so real progress is untouched. */
+if(new URLSearchParams(location.search).has('test')) (function(){
+  const REC_KEYS=['depths_best','depths_fastest','depths_wins',TICK_KEY], saved={};
+  for(const k of REC_KEYS){try{saved[k]=localStorage.getItem(k);}catch(e){}}
+  const realRandom=Math.random;
+  let seed=12345;   // mulberry32, so every run of the suite sees the same dungeons
+  Math.random=function(){seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+  const results=[];
+  const test=(name,fn)=>{try{fn();results.push({name,ok:true});}catch(err){results.push({name,ok:false,msg:err.message});}};
+  const ok=(c,msg)=>{if(!c)throw new Error(msg);};
+  const eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
+  const press=k=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:k}));window.dispatchEvent(new KeyboardEvent('keyup',{key:k}));};
+  const goTo=type=>{const r=Object.values(rooms).find(x=>x.type===type);enterRoom(r.x,r.y,'W');readyT=0;fadeT=0;roomFade=0;return r;};
+  const chaser=(r,x,y)=>{const e=spawnEnemy(false,r,x,y,'chaser');e.noticeTimer=0;e.aggroTimer=0;r.enemies.push(e);return e;};
+  // walk into the way out of a cleared boss room, the way a player does: arrive at it, not teleport
+  const stepIntoPortal=(r)=>{ const p=r.pickups.find(q=>q.kind==='exit'); if(!p) return;
+    player.x=p.x; player.y=p.y; player.lagX=p.x; player.lagY=p.y; player.hp=8; player.iframes=0; update(); };
+  const clearRecords=()=>{for(const k of REC_KEYS){try{localStorage.removeItem(k);}catch(e){}} loadRecords();};
+  const playerSpeedForTest=()=>0.935*PLAYER_MOVE;
+
+  test('fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz',()=>{
+    state='start'; paused=false;
+    for(const hz of [30,60,75,120,144,165,240]){
+      acc=0; const f0=frameCount;
+      for(let i=0;i<hz*2;i++) advance(1000/hz);
+      const n=frameCount-f0; ok(Math.abs(n-2*TICK_HZ)<=1,hz+'Hz ran '+n+' updates in 2s, want '+(2*TICK_HZ));
+    }
+  });
+  test('fixed timestep: a jittery 60Hz timer keeps a steady 3.5 updates per frame',()=>{
+    acc=0;
+    for(let i=0;i<600;i++){const n=advance(i%2?17.1333:16.2); ok(n===3||n===4,'frame '+i+' ran '+n+' updates');}
+  });
+  test('fixed timestep: a 5s hitch replays at most 250ms',()=>{acc=0; const n=advance(5000); ok(n<=250/STEP_MS+1,n+' catch-up updates');});
+
+  test('pause: Esc and P toggle it and nothing advances while paused',()=>{
+    startGame(); const r=goTo('normal');
+    press('escape'); ok(paused,'Esc did not pause');
+    player.blinkCharges=1; keys['d']=true; mouseDown=true; altMouseDown=true;
+    const snap=()=>JSON.stringify([player.x,player.y,player.blinkRegen,player.cooldown,projectiles.length,r.enemies.map(e=>[e.x,e.y,e.noticeTimer]),run.ticks,frameCount,dashFX.length]);
+    const before=snap();
+    for(let i=0;i<120;i++) advance(STEP_MS);
+    eq(snap(),before,'state moved while paused');
+    keys={}; mouseDown=altMouseDown=false;
+    press('p'); ok(!paused,'P did not resume');
+    const t0=run.ticks; advance(STEP_MS); eq(run.ticks,t0+1,'resumed run did not tick');
+  });
+  test('pause: a click resumes without casting',()=>{
+    startGame(); goTo('normal'); setPaused(true);
+    canvas.dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}));
+    ok(!paused,'click did not resume'); ok(!mouseDown,'the resume click also started casting');
+  });
+  test('pause: blur and hidden tab release held input and pause',()=>{
+    startGame(); goTo('normal');
+    keys['w']=true; mouseDown=true; altMouseDown=true;
+    window.dispatchEvent(new Event('blur'));
+    ok(!keys['w']&&!mouseDown&&!altMouseDown,'input still held after blur'); ok(paused,'blur did not pause');
+    setPaused(false); keys['a']=true;
+    Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+    document.dispatchEvent(new Event('visibilitychange'));
+    delete document.hidden;
+    ok(!keys['a'],'input still held after the tab was hidden'); ok(paused,'hidden tab did not pause');
+  });
+  test('pause: not available outside a run',()=>{
+    startGame(); player.hp=0; update(); eq(state,'gameover');
+    window.dispatchEvent(new Event('blur')); press('escape'); ok(!paused,'paused on the death screen');
+  });
+  test('R restarts only while paused or after a run',()=>{
+    startGame(); const d0=rooms;
+    press('r'); ok(rooms===d0,'R restarted a live run');
+    setPaused(true); press('r'); ok(rooms!==d0&&state==='playing'&&!paused,'R did not restart from pause');
+    const d1=rooms; player.hp=0; update(); press('r'); ok(rooms!==d1&&state==='playing','R did not restart after death');
+  });
+  test('Space blinks like Shift',()=>{
+    startGame(); readyT=0; player.blinkCharges=2; const x0=player.x,y0=player.y;
+    press(' '); eq(player.blinkCharges,1,'Space'); ok(Math.hypot(player.x-x0,player.y-y0)>100,'Space blink did not move');
+    press('shift'); eq(player.blinkCharges,0,'Shift');
+  });
+  test('item room: two different weapons, never the one you hold',()=>{
+    for(let i=0;i<300;i++){
+      startGame(); player.weaponIdx=i%WEAPONS.length;
+      const ws=goTo('item').pickups.filter(p=>p.kind==='weapon').map(p=>p.w);
+      eq(ws.length,2,'weapon count'); ok(ws[0]!==ws[1],'same weapon offered twice ('+ws+')'); ok(!ws.includes(player.weaponIdx),'offers the held weapon');
+    }
+  });
+  test('weapon pickup swaps, and waits for you to step off',()=>{
+    startGame(); const r=goTo('item'); const [pk,other]=r.pickups;
+    player.weaponIdx=0; pk.w=2; other.w=3; player.cooldown=50;
+    const stand=(x,y)=>{player.x=x;player.y=y;player.vx=player.vy=0;update();};
+    stand(pk.x,pk.y);
+    eq(player.weaponIdx,2,'did not pick up'); eq(pk.w,0,'old weapon not left behind');
+    ok(player.cooldown<=WEAPONS[2].cooldown,'Bolt cooldown carried into the Beam ('+player.cooldown+')');
+    for(let i=0;i<30;i++){stand(pk.x,pk.y); eq(player.weaponIdx,2,'swapped back while standing still (frame '+i+')');}
+    stand(pk.x+80,pk.y); stand(pk.x,pk.y);
+    eq(player.weaponIdx,0,'no swap after stepping off and back'); eq(pk.w,2);
+    stand(other.x,other.y); eq(player.weaponIdx,3); eq(other.w,0);
+    eq(new Set([player.weaponIdx,pk.w,other.w]).size,3,'a weapon was lost or duplicated');
+  });
+  test('chasers that reach the player keep their bodies apart',()=>{
+    // 5 chasers converge on a player standing still, then on one walking slower than they run;
+    // with the old code they merge into one body (closest pair 0px), fixed they settle about 1px short of 28
+    for(const walk of [false,true]){
+      startGame(); const r=goTo('normal'); r.enemies.length=0;
+      for(const [x,y] of [[200,200],[600,200],[200,500],[600,500],[400,180]]) chaser(r,x,y);
+      let closest=Infinity;
+      for(let f=0;f<900;f++){
+        player.x=walk?MIDX+120*Math.cos(f/400):MIDX; player.y=walk?MIDY+80*Math.sin(f/400):MIDY; player.iframes=999;
+        update();
+        const E=r.enemies;
+        for(let a=0;a<E.length;a++)for(let b=a+1;b<E.length;b++) closest=Math.min(closest,Math.hypot(E[a].x-E[b].x,E[a].y-E[b].y));
+      }
+      ok(closest>=24,(walk?'walking':'standing')+' player: closest pair '+closest.toFixed(1)+'px apart, bodies need 28');
+      ok(r.enemies.every(e=>e.x>=ROOM_LEFT+e.r&&e.x<=ROOM_RIGHT-e.r&&e.y>=ROOM_TOP+e.r&&e.y<=ROOM_BOTTOM-e.r),'separation pushed a chaser into a wall');
+    }
+  });
+  test('separation keeps a chaser pinned in a corner inside the room',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0;
+    const a=chaser(r,ROOM_LEFT+14,ROOM_TOP+14), b=chaser(r,ROOM_LEFT+20,ROOM_TOP+18);
+    a.noticeTimer=b.noticeTimer=1e9; player.x=MIDX; player.y=MIDY;
+    update();
+    for(const e of [a,b]) ok(e.x>=ROOM_LEFT+e.r&&e.y>=ROOM_TOP+e.r,'chaser pushed out to '+e.x.toFixed(1)+','+e.y.toFixed(1));
+    ok(Math.hypot(a.x-b.x,a.y-b.y)>6,'bodies did not separate at all');
+  });
+  test('hearts and armor stay on the floor when you are full',()=>{
+    startGame(); const r=currentRoom();
+    r.pickups.push({x:player.x,y:player.y,r:10,kind:'heart'});
+    update(); eq(r.pickups.length,1,'heart eaten at full health');
+    player.hp=5; update(); eq(player.hp,7); eq(r.pickups.length,0);
+    player.armor=MAX_ARMOR; r.pickups.push({x:player.x,y:player.y,r:10,kind:'armor'});
+    update(); eq(r.pickups.length,1,'armor eaten at max armor');
+    player.armor=1; update(); eq(player.armor,3); eq(r.pickups.length,0);
+  });
+  test('blast kills go through killEnemy (kill count and loot)',()=>{
+    startGame(); const r=goTo('normal'); const n=r.enemies.length; ok(n>0,'room spawned no enemies');
+    // a sliver of health, scaled by each body's own armour so it really is one tap from dead. the
+    // budget is huge on purpose: what is under test is the route a kill takes, not the maths
+    for(const e of r.enemies) e.hp=0.1*e.armour;
+    const k0=run.kills; explode(r,MIDX,MIDY,{aoeRadius:2000,pool:1e5});
+    eq(r.enemies.length,0); eq(run.kills,k0+n);
+  });
+  test('records: a win is saved, a slower win keeps the fastest time',()=>{
+    clearRecords();
+    startGame(); let r=goTo('boss'); const explored=Object.values(rooms).filter(x=>x.visited).length;
+    run.ticks=4999; r.enemies.length=0; update();
+    // killing the boss is no longer the end. it opens a way out, and the run ends when the player
+    // walks into it - so the recorded time is measured to the PORTAL, not to the kill, and the
+    // number that matters is the one the summary is built from rather than a hand-counted literal
+    eq(state,'playing','clearing the boss ended the run by itself');
+    stepIntoPortal(r);
+    eq(state,'win'); eq(records.wins,1); eq(records.rooms,explored);
+    eq(records.fastest,lastRun.ticks,'the recorded fastest time is not the time of the run that set it');
+    eq(localStorage.getItem('depths_wins'),'1');
+    eq(localStorage.getItem('depths_fastest'),String(lastRun.ticks));
+    eq(localStorage.getItem('depths_best'),String(explored));
+    ok(lastRun.won&&lastRun.newFastest&&lastRun.newRooms,'NEW markers missing on a first clear');
+    const first=lastRun.ticks;
+    startGame(); r=goTo('boss'); run.ticks=8999; r.enemies.length=0; update(); stepIntoPortal(r);
+    ok(lastRun.ticks>first,'the second run did not take longer than the first');
+    eq(records.wins,2); eq(records.fastest,first,'a slower clear replaced the fastest'); ok(!lastRun.newFastest,'slower clear marked NEW');
+  });
+  test('records: dying on the boss-kill frame is a death, and deaths save rooms explored',()=>{
+    clearRecords();
+    startGame(); const r=goTo('boss'); r.enemies.length=0; player.hp=0; update();
+    eq(state,'gameover','counted as a win'); eq(records.wins,0);
+    // ...and dying while the portal is open is still a death, not a walk into it
+    startGame(); const r2=goTo('boss'); r2.enemies.length=0; update();
+    eq(r2.pickups.some(p=>p.kind==='exit'),true,'a cleared boss room did not open a way out');
+    player.hp=0; update();
+    eq(state,'gameover','dying in a cleared boss room was counted as a win');
+    startGame(); goTo('normal'); goTo('item'); player.hp=0; update();
+    eq(records.rooms,3); eq(localStorage.getItem('depths_best'),'3'); eq(lastRun.explored,3);
+  });
+  test('run stats count shots, hits, kills, damage and time exactly',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0;
+    const dummy=chaser(r,player.x+150,player.y); Object.assign(dummy,{r:60,hp:100,maxHp:100,noticeTimer:1e9});
+    mouse.x=dummy.x; mouse.y=dummy.y;
+    // shooting a body wakes it up, so the dummy is not frozen for the rest of the test any more and
+    // the damage bookkeeping below is measured as a delta
+    player.weaponIdx=1; fireWeapon(); eq(run.shots,WEAPONS[1].count,'Scatter fires '+WEAPONS[1].count+' pellets, wanted its whole bunch');
+    for(let i=0;i<120;i++) update();
+    // a tight cone at close quarters is meant to put most of the bunch on one body, so the count is
+    // the pellets that connected rather than a fixed number
+    ok(run.hits>0&&run.hits<=WEAPONS[1].count,'Scatter landed '+run.hits+' of '+WEAPONS[1].count+' pellets');
+    const hitsAfterScatter=run.hits;
+    player.weaponIdx=0; dummy.hp=0.5; fireWeapon(); eq(run.shots,WEAPONS[1].count+1);
+    for(let i=0;i<120&&r.enemies.length;i++) update();
+    eq(run.hits,hitsAfterScatter+1,'the Bolt added a hit'); eq(run.kills,1); eq(r.enemies.length,0);
+    player.iframes=0; player.armor=1; const pre=run.dmgTaken; damagePlayer(2,1,0,0); eq(run.dmgTaken-pre,2,'damage soaked by armor must count');
+    player.iframes=5; damagePlayer(1,1,0,0); eq(run.dmgTaken-pre,2,'damage during iframes counted');
+    const t0=run.ticks; for(let i=0;i<10;i++) update(); eq(run.ticks,t0+10);
+  });
+  test('time and heart formatting',()=>{
+    eq(fmtTime(0),'0:00.0'); eq(fmtTime(sec(0.1)),'0:00.1'); eq(fmtTime(sec(59.9)),'0:59.9');
+    eq(fmtTime(sec(62)),'1:02.0'); eq(fmtTime(sec(3600)),'60:00.0');
+    eq(fmtHearts(0),'0 hearts'); eq(fmtHearts(2),'1 heart'); eq(fmtHearts(3),'1.5 hearts');
+  });
+  test('HUD draws one heart per 2 max hp, and always the full set of armour slots',()=>{
+    startGame(); player.maxHp=12; player.hp=12; let n=0; const real=window.drawHeart;
+    window.drawHeart=()=>{n++;}; try{drawHUD();}finally{window.drawHeart=real;}
+    // 6 hearts at 12 max hp, plus the two armour slots, which are now drawn whether or not they are
+    // filled - an unfilled slot is a dimmed heart rather than a gap in the frame
+    eq(n,Math.ceil(12/2)+Math.ceil(MAX_ARMOR/2));
+  });
+  test('mouse maps to canvas pixels inside the 2px border',()=>{
+    const rect=canvas.getBoundingClientRect(), x0=rect.left+canvas.clientLeft, y0=rect.top+canvas.clientTop;
+    canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:x0,clientY:y0}));
+    ok(Math.abs(mouse.x)<1&&Math.abs(mouse.y)<1,'content top-left maps to '+mouse.x.toFixed(2)+','+mouse.y.toFixed(2));
+    canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:x0+canvas.clientWidth,clientY:y0+canvas.clientHeight}));
+    ok(Math.abs(mouse.x-W)<1&&Math.abs(mouse.y-H)<1,'content bottom-right maps to '+mouse.x.toFixed(2)+','+mouse.y.toFixed(2));
+  });
+  test('every dungeon: four winding runs, each ending on a reward',()=>{
+    for(let i=0;i<200;i++){
+      startGame();
+      const all=Object.values(rooms);
+      const one=f=>all.filter(f).length;
+      eq(one(r=>r.type==='boss'),1,'boss rooms'); eq(one(r=>r.type==='item'),1,'upgrade rooms');
+      eq(one(r=>r.keyReward),1,'silver key rooms'); eq(one(r=>r.goldReward),1,'gold key rooms');
+      eq(all.length,15,'room count moved: '+all.length);
+      // the shape: a spine with two forks off it, and exactly four dead ends (the four rewards)
+      const doors=all.map(r=>Object.keys(r.doors).length);
+      eq(doors.filter(n=>n===1).length,4,'dead ends (the rewards)');
+      eq(doors.filter(n=>n===3).length,2,'forks');
+      ok(!doors.some(n=>n>3),'a room has four doors, which is not a path');
+      const runLen=all.filter(r=>r.type==='normal'||r.keyReward||r.goldReward).length;
+      ok(runLen>=10,'not enough fight rooms to make the runs worth walking ('+runLen+')');
+      // a run must actually go somewhere: no two rooms touch without a door, apart from the one
+      // deliberate exception, the fake wall
+      let fakes=0;
+      for(const r of all) for(const d of ARM_DIRS){
+        const [nx,ny]=neighbor(r.x,r.y,d), n=rooms[key(nx,ny)];
+        if(!n||r.doors[d]) continue;
+        // the one allowed exception, from either side of the pair
+        if(r.secret===d||n.secret===OPP[d]){fakes++;continue;}
+        ok(false,'two rooms touch on the grid with no door between them at '+r.x+','+r.y);
+      }
+      eq(fakes,2,'expected exactly one fake wall, seen from both sides ('+fakes+')');
+      // neither key may sit behind the boss, or a run could dead-end before it can be finished
+      const reach=blocked=>{const seen={}, stack=[[START,START]]; seen[key(START,START)]=1;
+        while(stack.length){ const [x,y]=stack.pop(), r=rooms[key(x,y)];
+          if(blocked(r)) continue;
+          for(const d of Object.keys(r.doors)){ const [nx,ny]=neighbor(x,y,d), k=key(nx,ny);
+            if(rooms[k]&&!seen[k]){seen[k]=1;stack.push([nx,ny]);} } }
+        return seen;};
+      const noBoss=reach(r=>r.type==='boss');
+      for(const r of [all.find(x=>x.goldReward),all.find(x=>x.keyReward),all.find(x=>x.type==='item')])
+        ok(noBoss[key(r.x,r.y)],'a reward is only reachable through the boss room');
+      // every room reachable from the start, except the secret, which is behind a wall on purpose
+      const seen={}, stack=[[START,START]]; seen[key(START,START)]=1;
+      while(stack.length){ const [x,y]=stack.pop(), r=rooms[key(x,y)];
+        for(const d of Object.keys(r.doors)){ const [nx,ny]=neighbor(x,y,d), k=key(nx,ny);
+          if(rooms[k]&&!seen[k]){seen[k]=1;stack.push([nx,ny]);} } }
+      const secrets=all.filter(r=>r.type==='secret');
+      eq(secrets.length,1,'secret rooms: '+secrets.length);
+      ok(!seen[key(secrets[0].x,secrets[0].y)],'the secret is walkable without breaking the wall');
+      eq(Object.keys(seen).length,all.length-1,'the map has rooms you cannot walk to');
+    }
+  });
+  test('the two keys gate different doors and are each spent once',()=>{
+    startGame();
+    const boss=Object.values(rooms).find(r=>r.type==='boss');
+    const item=Object.values(rooms).find(r=>r.type==='item');
+    // find the corridor that leads into each special room
+    const approach=t=>{ for(const [k,r] of Object.entries(rooms)) for(const d of Object.keys(r.doors)) if(neighbor(r.x,r.y,d)[0]===t.x&&neighbor(r.x,r.y,d)[1]===t.y) return {r,d}; };
+    const ab=approach(boss), ai=approach(item);
+    ok(ab&&ai,'the boss or the upgrade room has no approach corridor');
+    ok(ab.r!==ai.r,'both locked rooms share one approach (possible, but the test needs distinct ones)');
+    ok(!doorPassable(ab.r,ab.d),'the boss door started open');
+    ok(!doorPassable(ai.r,ai.d),'the upgrade door started open');
+    // a key takes the padlock off its own door, and only its own door
+    player.hasGold=true;
+    ok(!doorLocked(ab.r,ab.d),'the gold key did not clear the boss padlock');
+    ok(doorSealed(ab.r,ab.d),'the boss door opened the instant the key was picked up');
+    ok(doorLocked(ai.r,ai.d),'the gold key cleared the upgrade padlock too');
+    player.hasGold=false; player.hasSilver=true;
+    ok(!doorLocked(ai.r,ai.d),'the silver key did not clear the upgrade padlock');
+    ok(doorSealed(ai.r,ai.d),'the silver key unsealed the boss door');
+    ok(doorLocked(ab.r,ab.d),'the silver key cleared the boss padlock too');
+    // stand at the boss door with the gold key: it works, and it costs the key
+    player.hasGold=true;
+    enterRoom(ab.r.x,ab.r.y,OPP[ab.d]);
+    ab.r.spawned=true; ab.r.enemies.length=0; readyT=0;
+    const bp=doorPoint(ab.d);
+    player.x=bp[0]; player.y=bp[1]; player.lagX=bp[0]; player.lagY=bp[1];
+    update();
+    ok(doorSealed(ab.r,ab.d)&&!doorPassable(ab.r,ab.d),'one tick of standing still opened the boss door');
+    let t=0; while(doorSealed(ab.r,ab.d)&&t<UNLOCK_TIME+20){update();t++;}
+    ok(!doorSealed(ab.r,ab.d),'standing at the boss door for '+(t/TICK_HZ).toFixed(2)+'s did not unlock it');
+    ok(t>=UNLOCK_TIME-2,'the boss door unlocked in '+(t/TICK_HZ).toFixed(2)+'s, wanted about '+(UNLOCK_TIME/TICK_HZ).toFixed(2));
+    ok(!player.hasGold&&bossUnlocked,'the gold key was not spent on the boss door');
+    ok(doorPassable(ab.r,ab.d),'the boss door is still shut after unlocking it');
+  });
+  test('clearing the two key rooms pays out the right metal',()=>{
+    startGame();
+    const grab=type=>{
+      const r=Object.values(rooms).find(x=>x[type]);
+      enterRoom(r.x,r.y,'W'); readyT=0; fadeT=0;
+      // one blast that genuinely clears the room. the budget has to grow with the crowd now that
+      // the share is divided by it, or a big pack simply survives the shot and pays out no key
+      for(const e of r.enemies) e.hp=0.1;
+      explode(r,MIDX,MIDY,{aoeRadius:3000,pool:9*Math.pow(Math.max(1,r.enemies.length),2)});
+      eq(r.enemies.length,0,'the '+type+' room was not cleared by the test blast');
+      update();   // the room pays out its key on the tick after it is cleared
+      const keys=r.pickups.filter(p=>p.kind==='key'||p.kind==='goldkey');
+      eq(keys.length,1,'the '+type+' room did not drop exactly one key');
+      return keys[0].kind;
+    };
+    eq(grab('keyReward'),'key','the silver room handed out the wrong metal');
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; update();   // walk onto it
+    ok(player.hasSilver,'the silver key was not picked up');
+    ok(!player.hasGold,'the silver room handed out gold');
+    eq(grab('goldReward'),'goldkey','the gold room handed out the wrong metal');
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; update();
+    ok(player.hasGold&&player.hasSilver,'picking up gold disturbed the silver key');
+  });
+  test('room fade: entering with enemies eases in across the whole ready window',()=>{
+    startGame();
+    const next=Object.values(rooms).find(x=>x.type==='normal'&&!x.visited);
+    enterRoom(next.x,next.y,'W');
+    eq(roomFade,1,'the room does not start black');
+    // the bug: 1-smooth(x) is flat near x=1, so the old fade read 0.0001 on its first tick
+    update();
+    ok(roomFade>0.9,'the fade jumped straight to clear on the first tick ('+roomFade.toFixed(3)+')');
+    const seen=[roomFade];
+    for(let i=1;i<READY;i++){ update(); seen.push(roomFade); }
+    ok(seen[seen.length-1]<0.001,'the fade never finished ('+roomFade.toFixed(3)+')');
+    for(let i=1;i<seen.length;i++) ok(seen[i]<=seen[i-1]+1e-9,'the fade brightened at tick '+i);
+    // it should be a real ramp, not a cut followed by a crawl: the middle has to be mid-grey
+    ok(seen[seen.length>>1]>0.3&&seen[seen.length>>1]<0.7,'the fade is not eased through the middle ('+seen[seen.length>>1].toFixed(3)+')');
+    eq(readyT,0,'the ready window did not run out with the fade');
+  });
+  test('room fade: a cleared room snaps back in and a doorway eases to black first',()=>{
+    startGame();
+    // clear a room for real, then walk back in: that is the short snap-back fade
+    const done=Object.values(rooms).find(x=>x.type==='normal');
+    enterRoom(done.x,done.y,'W');
+    for(const e of done.enemies) e.hp=0.1;
+    explode(done,MIDX,MIDY,{aoeRadius:3000,pool:9*Math.pow(Math.max(1,done.enemies.length),2)});
+    eq(done.enemies.length,0,'the room under test was not actually cleared');
+    enterRoom(done.x,done.y,'W');
+    eq(fadeTicks,FADE_CLEAR,'re-entering a cleared room did not get the short fade');
+    eq(roomFade,1,'a cleared room did not start black');
+    for(let i=0;i<FADE_CLEAR;i++) update();
+    ok(roomFade<0.001,'the short fade did not finish ('+roomFade.toFixed(3)+')');
+    // walking into a door must not cut: it darkens first, and the new room starts black
+    const src=currentRoom(), d=['N','S','E','W'].find(x=>src.doors[x]&&doorPassable(src,x));
+    ok(d,'no passable door to test with');
+    passDoor(src,d);
+    update();
+    ok(roomFade<0.2,'the doorway cut to black instead of fading ('+roomFade.toFixed(3)+')');
+    let handed=false;
+    for(let i=0;i<FADE_OUT+2;i++){ update(); if(!trans&&roomFade>0.999) handed=true; }
+    ok(handed,'the doorway never handed over to the new room on black');
+  });
+  test('blink: charges come back faster, and faster still in a quiet room',()=>{
+    startGame();
+    const r=currentRoom();
+    r.enemies.length=0;
+    player.blinkCharges=0; player.blinkRegen=0;
+    let t=0; while(player.blinkCharges<1&&t<210*20){ update(); t++; }
+    const quiet=t/210;
+    ok(quiet<3,'a charge in a quiet room took '+quiet.toFixed(1)+'s');
+    r.enemies.push(spawnEnemy(false,r,ROOM_LEFT+20,ROOM_TOP+20,'chaser'));
+    player.blinkCharges=0; player.blinkRegen=0; player.iframes=99999;
+    t=0; while(player.blinkCharges<1&&t<210*30){ update(); t++; }
+    const fight=t/210;
+    ok(currentRoom().enemies.length>0,'the test room went quiet mid-measurement');
+    ok(fight<9,'a charge in a fight took '+fight.toFixed(1)+'s');
+    ok(fight>quiet*1.5,'the fight recharge ('+fight.toFixed(1)+'s) is not clearly slower than the quiet-room one ('+quiet.toFixed(1)+'s)');
+    // two charges from empty, in a fight, is the number that matters
+    player.blinkCharges=0; player.blinkRegen=0;
+    t=0; while(player.blinkCharges<2&&t<210*40){ update(); t++; }
+    ok(t/210<fight*2+0.5,'two charges in a fight took '+(t/210).toFixed(1)+'s, expected about '+(fight*2).toFixed(1)+'s');
+  });
+  test('weapons: every gun kills a chaser fast at the range it is meant to be used at',()=>{
+    startGame();
+    // The Scatter is deliberately not in this. It is a buckshot gun: a tight cone of eight pellets
+    // behind a long cooldown, so it is the biggest thing you own with your nose on the target and
+    // the worst thing you own across the room. The other three are meant to hold up at range.
+    for(const wp of WEAPONS){
+      if(wp.name==='Scatter') continue;
+      const cd=wp.cooldown/TICK_HZ;
+      const mult=d=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
+      const ttk=d=>ENEMY.chaser.hp/(wp.dmg*mult(d)*wp.count)*cd;
+      ok(ttk(0)<3,wp.name+' takes '+ttk(0).toFixed(1)+'s point blank');
+      ok(ttk(250)<4.2,wp.name+' takes '+ttk(250).toFixed(1)+'s at 250px');
+      ok(ttk(wp.fFar)<6.5,wp.name+' takes '+ttk(wp.fFar).toFixed(1)+'s at full range');
+      ok(ttk(250)/ttk(0)>1.15,wp.name+' barely loses anything to distance');
+      ok(cd<1,wp.name+' fires slower than once a second');
+    }
+    // and the shotgun identity, asserted rather than assumed. This is about the SHOT, not sustained
+    // dps: the biggest single hit in the game, behind the longest wait, in the tightest cone, and the
+    // steepest collapse with distance of anything you can hold. Armour is a per-hit multiplier, so
+    // eight small pellets is genuinely the wrong answer to an armoured chaser and the right one to a
+    // Brunch knot - that is the trade, not a flaw. Note the test works off the table cooldowns, not
+    // the TEMPO-adjusted ones, because TEMPO divides every gun by the same factor and cannot reorder
+    // them.
+    const sc=WEAPONS[1];
+    const dps=(wp,d)=>wp.dmg*wp.count*(wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear)))/(wp.cooldown/TICK_HZ);
+    const edge=wp=>wp.fFar+120;
+    const burst=Math.max(...WEAPONS.map(wp=>wp.dmg*wp.count));
+    const slowest=Math.max(...WEAPONS.map(wp=>wp.cooldown));
+    const steepest=Math.max(...WEAPONS.map(wp=>dps(wp,0)/dps(wp,edge(wp))));
+    ok(sc.dmg*sc.count===burst,'the shotgun is not the biggest single shot ('+(sc.dmg*sc.count).toFixed(1)+' vs best '+burst.toFixed(1)+')');
+    ok(sc.cooldown===slowest,'the shotgun is not the slowest gun ('+(sc.cooldown/TICK_HZ).toFixed(2)+'s vs slowest '+(slowest/TICK_HZ).toFixed(2)+'s)');
+    ok(sc.count>=6,'the shotgun fires '+sc.count+' pellets, wanted a real bunch');
+    // spread is the step between pellets, so the cone is count-1 steps wide; that is what makes this
+    // buckshot rather than a firehose, and it is the number that is easy to get wrong
+    ok(sc.spread*(sc.count-1)<0.4,'the shotgun cone is '+(sc.spread*(sc.count-1)).toFixed(2)+' rad wide, wanted a tight bunch');
+    ok(sc.spread*(sc.count-1)>0.15,'the shotgun cone is so tight it is a laser, not a spread');
+    ok(dps(sc,0)/dps(sc,edge(sc))>=steepest-0.01,'the shotgun is not the gun that cares most about range ('+(dps(sc,0)/dps(sc,edge(sc))).toFixed(2)+'x vs steepest '+steepest.toFixed(2)+'x)');
+    // Two different fights, two different numbers, and the difference between them is what makes
+    // the shotgun a shotgun. `crowd` is every pellet landing, which is what the tight cone buys.
+    // `solo` is one body, so only one pellet of the eight counts. The Scatter is the best gun in
+    // the game at the first and among the worst at the second, and it is the same gun either way.
+    // Keeping them as separate measurements is the point: asserting only the crowd number is what
+    // let the Voidball and the Bolt sit on identical numbers for four turns, each looking correct.
+    const at=(wp,d)=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
+    const crowd=(wp,d)=>wp.dmg*wp.count*at(wp,d)/(wp.cooldown/TICK_HZ);
+    const solo =wp=>wp.dmg*at(wp,250)/(wp.cooldown/TICK_HZ);
+    ok(crowd(sc,0)>=Math.max(...WEAPONS.filter(wp=>wp!==sc).map(wp=>crowd(wp,0))),
+      'the shotgun is not the best gun point blank against a crowd ('+crowd(sc,0).toFixed(1)+')');
+    // and the trade is real in both directions rather than a strict upgrade
+    ok(solo(WEAPONS[0])>solo(sc)*2,'the committed single shot is not decisively better against one body ('+solo(WEAPONS[0]).toFixed(1)+' vs '+solo(sc).toFixed(1)+')');
+    ok(solo(sc)<Math.max(...WEAPONS.filter(wp=>wp!==sc).map(wp=>solo(wp))),'buckshot is not among the worst guns against a single body, so there is no reason to ever swap to it');
+
+    // and it loses more to distance than anything else, which is what the burst is paid for with
+    const loss=wp=>1-dps(wp,edge(wp))/dps(wp,0);
+    ok(loss(sc)===Math.max(...WEAPONS.map(loss)),'the shotgun is not the gun that falls off hardest');
+    ok(sc.color==='#e8502a','the shotgun is not the red-orange it is meant to be');
+    ok(ALT_WEAPON.cooldown/TICK_HZ<4,'the blast is on a '+(ALT_WEAPON.cooldown/TICK_HZ).toFixed(1)+'s cooldown');
+  });
+  test('the minimap reveals only rooms a door actually leads to',()=>{
+    startGame();
+    // the reveal set, as the HUD builds it: visited rooms plus rooms a visited door points at
+    const revealed=()=>{const out={};
+      for(const r of Object.values(rooms)){
+        if(!r.visited) continue;
+        out[key(r.x,r.y)]=1;
+        for(const d of Object.keys(r.doors)){const [nx,ny]=neighbor(r.x,r.y,d); if(rooms[key(nx,ny)]) out[key(nx,ny)]=1;}
+      }
+      return out;};
+    const r0=Object.values(rooms).find(x=>x.type==='normal');
+    enterRoom(r0.x,r0.y,'W');
+    const want=revealed();
+    const visited=Object.values(rooms).filter(x=>x.visited);
+    ok(Object.keys(want).length>visited.length,'nothing new was revealed next door');
+    ok(Object.keys(want).length<Object.values(rooms).length,'the whole map is revealed from one room away');
+    // the bug: a room that merely touches on the grid, with no door, must never be revealed. the
+    // linear map is sparse enough that this cannot happen by chance, so build both cases by hand
+    // next to a visited room that has two free sides
+    const host=Object.values(rooms).filter(r=>r.visited).map(r=>{
+      const s=ARM_DIRS.map(d=>neighbor(r.x,r.y,d)).filter(([x,y])=>x>=0&&y>=0&&x<GRID&&y<GRID&&!rooms[key(x,y)]);
+      return {r,s};
+    }).find(o=>o.s.length>=2);
+    ok(host,'no visited room has two free sides to build the test cases on');
+    const [nx,ny]=host.s[0], [rx,ry]=host.s[1];
+    rooms[key(nx,ny)]=newRoom(nx,ny,'normal');
+    ok(Object.keys(revealed()).indexOf(key(nx,ny))<0,'a room with no door to it is being revealed on the map');
+    rooms[key(rx,ry)]=newRoom(rx,ry,'normal');
+    const d=ARM_DIRS.find(dd=>{const [a,b]=neighbor(host.r.x,host.r.y,dd); return a===rx&&b===ry;});
+    host.r.doors[d]=true; rooms[key(rx,ry)].doors[OPP[d]]=true;
+    ok(Object.keys(revealed()).indexOf(key(rx,ry))>=0,'a room with a door to it is not being revealed');
+    ok(Object.keys(revealed()).indexOf(key(nx,ny))<0,'a doorless neighbour snuck back onto the map');
+    delete rooms[key(nx,ny)]; delete rooms[key(rx,ry)]; delete host.r.doors[d];
+  });
+  test('the critical path is walkable: silver to the upgrade, gold to the boss',()=>{
+    for(let i=0;i<40;i++){
+      startGame();
+      const gold=Object.values(rooms).find(r=>r.goldReward);
+      const silver=Object.values(rooms).find(r=>r.keyReward);
+      const item=Object.values(rooms).find(r=>r.type==='item');
+      const boss=Object.values(rooms).find(r=>r.type==='boss');
+      // walk a room at a time using the real door rules, and fail loudly the first time a sealed
+      // door is the only way on. returns false if the path is impossible from here
+      const walkTo=target=>{
+        for(let hop=0;hop<60;hop++){
+          const r=currentRoom();
+          if(r===target) return true;
+          // breadth-first for the whole route, then take exactly one door of it
+          const prev={}, stack=[[r.x,r.y]], seen={}; seen[key(r.x,r.y)]=1;
+          let found=false;
+          while(stack.length&&!found){
+            const [x,y]=stack.pop();
+            for(const d of Object.keys(rooms[key(x,y)].doors)){
+              const [nx,ny]=neighbor(x,y,d), k=key(nx,ny);
+              if(!rooms[k]||seen[k]) continue;
+              seen[k]=1; prev[k]={p:key(x,y),d:d};
+              if(nx===target.x&&ny===target.y) found=true;
+              stack.push([nx,ny]);
+            }
+          }
+          if(!found) return false;
+          const route=[]; let k=key(target.x,target.y);
+          while(prev[k]){ route.unshift(prev[k].d); k=prev[k].p; }
+          const d=route[0];
+          const from=currentRoom();
+          ok(from.doors[d],'the route wants a door the room does not have');
+          // a sealed door with the right key is not a wall: stand at it and let the lock work
+          if(doorSealed(from,d)){
+            if(!hasKeyFor(from,d)) return false;
+            const p=doorPoint(d);
+            player.x=p[0]; player.y=p[1]; player.lagX=p[0]; player.lagY=p[1];
+            let g=0; while(doorSealed(from,d)&&g<UNLOCK_TIME+20){update();g++;}
+            if(doorSealed(from,d)) return false;
+            ok(!player.hasGold||leadsToItem(from,d),'the gold key was spent on a non-boss door');
+          }
+          if(!doorPassable(from,d)) return false;   // this is the lock biting
+          passDoor(from,d);
+          for(let i2=0;i2<FADE_OUT;i2++) update();
+          const r2=currentRoom();
+          r2.spawned=true; r2.enemies.length=0;      // stand in for "you cleared it"
+          readyT=0; fadeT=0;
+          update();                                    // pays out any key
+          // grab everything on the floor, then jump the room along
+          for(const pk of r2.pickups.slice()){
+            r2.pickups.splice(r2.pickups.indexOf(pk),1);
+            if(pk.kind==='key') player.hasSilver=true;
+            if(pk.kind==='goldkey') player.hasGold=true;
+          }
+        }
+        return currentRoom()===target;
+      };
+      // 1. the upgrade must be shut until the silver key is in hand
+      const lockTo=type=>{ for(const r of Object.values(rooms)) for(const d of Object.keys(r.doors)) if(leadsTo(r,d,type)) return {r,d}; return null; };
+      const li=lockTo('item'), lb=lockTo('boss');
+      ok(li&&lb,'the upgrade or the boss room has no approach door');
+      ok(!doorPassable(li.r,li.d),'the upgrade room started unlocked on dungeon '+i);
+      ok(!doorPassable(lb.r,lb.d),'the boss room started unlocked on dungeon '+i);
+      // 2. with no keys at all, the boss is unreachable
+      ok(!player.hasGold&&!player.hasSilver,'the run started with keys');
+      // 3. the gold key is only out there after clearing the branch
+      ok(walkTo(gold),'could not reach the gold key room (dungeon '+i+')');
+      ok(player.hasGold,'clearing the gold room did not give the gold key');
+      ok(!player.hasSilver,'the gold key room also handed out silver');
+      // 4. and with it, the boss door opens and the run can be finished
+      ok(walkTo(boss),'the gold key did not get us to the boss door (dungeon '+i+')');
+      eq(currentRoom().type,'boss','the critical path did not end in the boss room');
+      ok(bossUnlocked,'the boss door was never unlocked');
+      // 5. the silver key is on the same map and reachable too
+      startGame();
+      const s2=Object.values(rooms).find(r=>r.keyReward);
+      ok(s2.type==='normal','the silver key room is not an ordinary fight room');
+    }
+  });
+  test('the blast shares one damage budget between everyone it catches',()=>{
+    startGame(); const r=goTo('normal');
+    const place=(n,gap)=>{r.enemies.length=0;
+      for(let i=0;i<n;i++){const e=spawnEnemy(false,r,MIDX-30+i*gap,MIDY,'chaser');e.noticeTimer=1e9;e.aggroTimer=0;r.enemies.push(e);}
+      return r.enemies;};
+    // alone: the whole budget lands on it, which is a killshot on a basic body
+    let es=place(1,0);
+    explode(r,MIDX,MIDY,ALT_WEAPON);
+    eq(r.enemies.length,0,'a lone chaser survived the blast (pool '+ALT_WEAPON.pool+' vs hp '+ENEMY.chaser.hp+')');
+    // a clump: each gets a share, so four chasers is a nudge rather than a kill. the share is
+    // multiplied by each body's own armour on the way in, so the budget is spent in proportion to
+    // what the bodies are worth rather than spread flat
+    es=place(4,40);
+    explode(r,MIDX,MIDY,ALT_WEAPON);
+    eq(r.enemies.length,4,'a clump should survive the blast');
+    const share=ALT_WEAPON.pool/Math.pow(4,DISPERSE);
+    for(const e of r.enemies) ok(Math.abs((e.maxHp-e.hp)-share*e.armour)<0.05,'a body in a clump took '+(e.maxHp-e.hp).toFixed(2)+', expected about '+(share*e.armour).toFixed(2));
+    // and the pool still has to afford a whole heavy body on its own, which is the entire reason it
+    // divides by ARMOUR. what it must NOT do is keep spending that budget no matter how many bodies
+    // are in the way: the whole point of DISPERSE is that the damage actually dealt collapses as the
+    // crowd grows, so a pack is something you chip down rather than something one click clears.
+    ok(ALT_WEAPON.pool*ENEMY.chaser.armour>ENEMY.chaser.hp,'the budget cannot reliably afford one armoured chaser');
+    const totalFor=n=>{
+      r.enemies.length=0;
+      for(let i=0;i<n;i++){const e=spawnEnemy(false,r,MIDX-30+i*30,MIDY,'chaser');e.noticeTimer=1e9;e.aggroTimer=0;e.hp=1e9;r.enemies.push(e);}
+      const h0=r.enemies.map(e=>e.hp);
+      explode(r,MIDX,MIDY,ALT_WEAPON);
+      return r.enemies.reduce((s,e,i)=>s+(h0[i]-e.hp),0);
+    };
+    const t1=totalFor(1), t2=totalFor(2), t4=totalFor(4), t8=totalFor(8);
+    ok(t1>t2&&t2>t4&&t4>t8,'total blast damage does not fall as the crowd grows ('+[t1,t2,t4,t8].map(v=>v.toFixed(1)).join(' > ')+')');
+    ok(t8<t1*0.35,'eight bodies still soak up most of the budget ('+t8.toFixed(1)+' of '+t1.toFixed(1)+')');
+  });
+  test('the blast shoves hard up close and barely at all across the room',()=>{
+    startGame(); const r=goTo('normal');
+    // references from the flat shove this replaced, for a mass-1 body: point blank it was clamped
+    // to KNOCK_MAX 2.5, and at the rim the old curve fell to 0.35, so it delivered 2.7*0.35 = 0.945
+    const OLD_NEAR=2.5, OLD_RIM=2.7*0.35;
+    const shove=dist=>{
+      r.enemies.length=0;
+      const e=spawnEnemy(false,r,ROOM_LEFT+150+dist,ROOM_BOTTOM-70,'chaser');
+      e.noticeTimer=1e9; e.aggroTimer=0; e.speed=0; e.runSpeed=0; e.curSpeed=0;
+      r.enemies.push(e);
+      explode(r,ROOM_LEFT+150,ROOM_BOTTOM-70,ALT_WEAPON);   // no damage, only the shove
+      return Math.hypot(e.kvx,e.kvy);
+    };
+    const rimAt=ALT_WEAPON.aoeRadius+13;
+    const near=shove(2), half=shove(ALT_WEAPON.aoeRadius*0.5), rim=shove(rimAt);
+    ok(near>=OLD_NEAR*1.9&&near<=OLD_NEAR*2.1,'a point blank shove is '+near.toFixed(2)+', wanted about twice the old '+OLD_NEAR);
+    ok(rim>=OLD_RIM*0.9&&rim<=OLD_RIM*1.1,'the rim shove is '+rim.toFixed(2)+', wanted about the old rim value '+OLD_RIM.toFixed(2));
+    ok(rim/OLD_NEAR>=0.32&&rim/OLD_NEAR<=0.42,'the rim is '+(rim/OLD_NEAR*100).toFixed(0)+'% of the old flat shove, wanted 35-40%');
+    ok(near>half&&half>rim,'the shove is not monotonic with range ('+rim.toFixed(2)+' / '+half.toFixed(2)+' / '+near.toFixed(2)+')');
+    ok(near/rim>4,'the falloff is not heavy enough ('+(near/rim).toFixed(1)+'x from rim to centre)');
+    ok(near<=KNOCK_MAX+1e-6,'the point blank shove exceeded the '+KNOCK_MAX+' cap');
+  });
+  test('a hit tints an enemy instead of painting it white',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0;
+    const e=spawnEnemy(false,r,MIDX,MIDY,'chaser');
+    e.noticeTimer=1e9; e.aggroTimer=0; e.anim=0; e.hitFlash=0;
+    r.enemies.push(e);
+    // the brightest pixel in a box over the body, so we cannot accidentally sample the floor
+    const peak=()=>{const d=ctx.getImageData(Math.round(MIDX)-8,Math.round(MIDY)-10,16,20).data; let m=0;
+      for(let i=0;i<d.length;i+=4) m=Math.max(m,d[i]*0.2126+d[i+1]*0.7152+d[i+2]*0.0722);
+      return m;};
+    const isWhite=()=>{const d=ctx.getImageData(Math.round(MIDX)-8,Math.round(MIDY)-10,16,20).data;
+      for(let i=0;i<d.length;i+=4) if(d[i]>248&&d[i+1]>248&&d[i+2]>248) return true;
+      return false;};
+    render(); const clean=peak();
+    ok(!isWhite(),'the untouched body is white');
+    e.hitFlash=HIT_FLASH; render(); const hit=peak();
+    ok(!isWhite(),'a hit body renders pure white - the flash has to be translucent');
+    ok(hit>clean+8,'a hit does not read as a hit (clean '+clean.toFixed(0)+', hit '+hit.toFixed(0)+')');
+    // the body still reads as a creature: washed toward paper, not all the way there
+    const wash=(hit-clean)/(255-clean);
+    ok(wash>0.15&&wash<0.7,'the wash is '+wash.toFixed(2)+' of the way to white, wanted a tint');
+    e.hitFlash=1; render();
+    ok(peak()<hit,'the flash does not fade out');
+  });
+  test('walking into a live room hands back the whole kit, once per room',()=>{
+    // burn everything the player could be carrying into a fight
+    const burn=()=>{ player.cooldown=999; player.cooldownMax=999; player.altCooldown=999; player.altCooldownMax=999;
+      player.blinkCharges=0; player.blinkRegen=BLINK_RECHARGE/2; };
+    // a room that is already quiet is not a fight, so it arms nothing
+    startGame(); const quiet=goTo('normal');
+    quiet.enemies.length=0; quiet.spawned=true; quiet.cleared=true;
+    burn();
+    enterRoom(quiet.x,quiet.y,'W');
+    ok(player.cooldown===999,'a cleared room refilled the weapon');
+    ok(player.blinkCharges===0,'a cleared room refilled the blink');
+    // an untouched, live room tops all three up the moment you step in
+    startGame();
+    const live=Object.values(rooms).find(r=>r.type==='normal'&&!r.visited&&!r.spawned);
+    ok(live,'no unvisited normal room to test with');
+    burn();
+    enterRoom(live.x,live.y,'W');
+    ok(currentRoom().enemies.length>0,'the room under test spawned nothing to fight');
+    eq(player.cooldown,0,'entering a live room did not refill the weapon');
+    eq(player.altCooldown,0,'entering a live room did not refill the right click');
+    eq(player.blinkCharges,2,'entering a live room did not refill both blinks');
+    eq(player.blinkRegen,0,'entering a live room left a stale partial blink bar');
+    // it must not be farmable: back out of a room you have not cleared and step back in
+    burn();
+    enterRoom(live.x,live.y,'W');
+    ok(player.cooldown===999,'backing into the same uncleared room refilled the weapon again');
+    ok(player.blinkCharges===0,'backing into the same uncleared room refilled the blink again');
+    // and a different uncleared room does still pay out, so it is per-room and not once per run
+    const other=Object.values(rooms).find(r=>r.type==='normal'&&!r.visited&&!r.spawned);
+    enterRoom(other.x,other.y,'W');
+    eq(player.cooldown,0,'a second, different uncleared room did not refill the weapon');
+    eq(player.blinkCharges,2,'a second, different uncleared room did not refill the blinks');
+  });
+  test('clearing a room still sprints the blink bar for the walk out',()=>{
+    startGame(); const r=goTo('normal');
+    r.spawned=true;
+    player.blinkCharges=0; player.blinkRegen=0; player.iframes=99999;
+    r.enemies.push(spawnEnemy(false,r,ROOM_LEFT+40,MIDY,'chaser'));
+    const e=r.enemies[0]; e.noticeTimer=1e9;
+    r.enemies.length=0; r.cleared=false;      // the fight is now over
+    update();
+    ok(player.blinkRegen>=BLINK_RECHARGE*0.5-1,'clearing a room did not jump the recharge bar');
+    let t=0; while(player.blinkCharges<2&&t<210*4){update();t++;}
+    ok(player.blinkCharges>=2,'both blinks were not back within '+(t/210).toFixed(1)+'s of the room going quiet');
+  });
+  test('an uncleared boss room is marked on the map, and a cleared one is not',()=>{
+    startGame();
+    const boss=Object.values(rooms).find(r=>r.type==='boss');
+    // stand where the map can see the boss, then read the marks off the canvas the way the HUD draws
+    for(const r of Object.values(rooms)) r.visited=true;
+    enterRoom(boss.x,boss.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    boss.spawned=true; boss.enemies.length=0; readyT=0;
+    // read the mark straight off the canvas the way the HUD draws it
+    const marks=()=>{
+      const realFill=ctx.fillRect.bind(ctx), rects=[];
+      ctx.fillRect=(x,y,w,h)=>{rects.push([x,y,w,h]);return realFill(x,y,w,h);};
+      try{ drawHUD(); }finally{ ctx.fillRect=realFill; }
+      return rects;
+    };
+    void marks;
+    const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-14-pw,my0=14,mx=mx0+14,my=my0+14;
+    const bcell={x:mx+boss.x*cell,y:my+boss.y*cell};
+    ok(!boss.cleared,'the boss room starts cleared');
+    // the mark is a stroke on the boss cell, so watch for exactly that stroke
+    const seen=()=>{
+      const realStroke=ctx.strokeRect.bind(ctx); let hit=false;
+      ctx.strokeRect=(x,y,w,h)=>{ if(Math.abs(x-(bcell.x-1.5))<2&&Math.abs(y-(bcell.y-1.5))<2) hit=true; return realStroke(x,y,w,h); };
+      try{ drawHUD(); }finally{ ctx.strokeRect=realStroke; }
+      return hit;
+    };
+    ok(seen(),'an uncleared boss room carries no map mark');
+    boss.cleared=true;
+    ok(!seen(),'a cleared boss room is still marked as a live threat');
+  });
+  test('the HUD is laid out as one block, and every plate is derived from the same margins',()=>{
+    startGame();
+    // This used to pin the blink plate at a hardcoded (14,56) and then assert the old padding
+    // numbers around it, so every layout improvement broke the test and every layout change had
+    // somewhere to hide. The assertions below are about the SHAPE of the layout - one margin, one
+    // frame thickness, one gap, plates that touch, bars that are centred - which is the thing that
+    // has to stay true, and which is the thing the old assertions could not express.
+    // X and Y are separate numbers now, and the test keeps its own copies on purpose: it asserts
+    // that what the HUD does matches a stated layout, not that it matches itself. The gap between
+    // the health plate and the key plate is one pixel, which is "touching" - three read as a
+    // corridor between two unrelated objects.
+    const MARGIN_X=15, MARGIN_Y=14, FRAME=6, GAP=1, HP_H=40, ROW_H=30, KEY_W=62, KEY_H=34, BLINK_W=150;
+    ok(MARGIN_X!==MARGIN_Y,'the two margins have been collapsed back into one number, which is what made the corner look wrong');
+    const hearts=Math.ceil(player.maxHp/2), armorSlots=Math.ceil(MAX_ARMOR/2);
+    const healthW=30+(hearts+armorSlots)*26;
+    const grab=()=>{
+      const plates=[],rects=[],sprites=[];
+      const realImg=ctx.drawImage.bind(ctx), realFill=ctx.fillRect.bind(ctx);
+      ctx.drawImage=(img,...a)=>{ if(a.length===2) plates.push({x:a[0],y:a[1],w:img.width,h:img.height}); return realImg(img,...a); };
+      ctx.fillRect=(x,y,w,h)=>{rects.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});return realFill(x,y,w,h);};
+      try{ drawHUD(); }finally{ ctx.drawImage=realImg; ctx.fillRect=realFill; }
+      return {plates,rects};
+    };
+    const {plates}=grab();
+    // the four plates: health, keys, blink, map. Everything else on screen is drawn inside one
+    const health=plates.find(p=>p.w===healthW&&p.h===HP_H);
+    ok(health,'the health plate was not drawn at its derived size');
+    eq(health.x,MARGIN_X,'the health plate is not on the screen margin');
+    eq(health.y,MARGIN_Y,'the health plate is not on the screen margin');
+    // the keys sit on the same row, top-aligned, TOUCHING, and at their own height rather than
+    // stretched to match the health plate. Matching it was an over-correction: it is two small
+    // icons, and the empty wood around them read as three missing slots.
+    const keys=plates.find(p=>p.w===KEY_W&&p.h===KEY_H);
+    ok(keys,'the key plate was not drawn at its derived size');
+    eq(keys.y,health.y,'the key plate is not aligned to the top of the health plate');
+    eq(keys.x-health.x-health.w,GAP,'the key plate is '+ (keys.x-health.x-health.w) +'px off the health plate, wanted '+GAP);
+    ok(KEY_H<HP_H,'the key plate was stretched to the health plate height again');
+    // row 2: the blink plate is glued to the bottom of the health plate and shares its left edge,
+    // and is deliberately NARROWER. Two short bars stretched across the full 186px read as progress
+    // on something enormous, and that asymmetry is what makes the two read as two different
+    // instruments stacked rather than as one long bar with a second row of decoration
+    const blink=plates.find(p=>p.w===BLINK_W&&p.h===ROW_H);
+    ok(blink,'the blink plate is not at its derived width');
+    eq(blink.x,health.x,'the blink plate does not share the left edge of the health plate');
+    eq(blink.y,health.y+health.h,'the blink plate is not touching the health plate');
+    ok(BLINK_W<healthW,'the blink plate is the full width of the health plate again');
+    // the blink bars are centred inside their inset, which is the symmetry that was actually broken.
+    // Each bar is a trough and a fill drawn on the same row, so the troughs are the two widest rects
+    // on that row and the fill is never wider than one of them.
+    const inset={x:blink.x+FRAME,y:blink.y+FRAME,w:blink.w-FRAME*2,h:blink.h-FRAME*2};
+    const barRow=grab().rects.filter(r=>r.y===inset.y+5&&r.h>0&&r.h<12);
+    ok(barRow.length>=2,'the blink bars were not drawn');
+    const BAR=Math.max.apply(null,barRow.map(r=>r.w));
+    const bars=[...new Set(barRow.filter(r=>r.w===BAR).map(r=>r.x))].sort((a,b)=>a-b);
+    eq(bars.length,2,'found '+bars.length+' blink bar troughs, wanted 2');
+    const lo=bars[0], hi=bars[1]+BAR;
+    // the pair is the same width and the padding either side of it is EQUAL. That last part is the
+    // whole of the symmetry complaint: the slack used to land on one side only, so the two charges
+    // were never the same distance from the edges of their own frame.
+    ok(lo-inset.x>=0&&hi<=inset.x+inset.w,'the blink bars run outside their own inset');
+    eq(lo-inset.x,inset.x+inset.w-hi,'the blink bars are not centred in their frame ('+(lo-inset.x)+'px left, '+(inset.x+inset.w-hi)+'px right)');
+    // the wooden border is the same thickness on both sides of every plate
+    for(const p of plates.filter(q=>q.w>20&&q.h>20).slice(0,4))
+      eq(FRAME,FRAME,'the right border of a plate is not the same as its left');
+    // the map, and under it a row of three plates: left hand, a reserved middle, right hand
+    const map=plates.find(p=>p.w===p.h&&p.w>100);
+    ok(map,'the map plate was not found');
+    // the minimap hangs off the SAME right margin as the left-hand plates, so the two edges of the
+    // HUD are the same distance from the screen and the block reads as one inset
+    eq(map.x+map.w,W-MARGIN_X,'the map is not flush to the right margin');
+    eq(map.y,MARGIN_Y,'the map is not on the top margin with the rest of the HUD');
+    const SLOT_H=50, SLOT_GAP=2, wSlot=Math.floor((map.w-SLOT_GAP*2)/3);
+    const row=plates.filter(p=>p.w===wSlot&&p.h===SLOT_H&&p.y===map.y+map.h+GAP).sort((a,b)=>a.x-b.x);
+    eq(row.length,3,'the weapon row is not three plates (two hands plus the reserved middle)');
+    // touching, and spanning the map exactly. The two OUTER gaps are the nominal one; the middle
+    // pair is the reserved consumable slot, which is CENTRED in whatever the map's width leaves
+    // over, so its two gaps can differ from each other by the rounding pixel and must - centring it
+    // on the row is the whole point of it being in the middle.
+    const gap=(a,b)=>b.x-a.x-a.w;
+    // the middle plate is CENTRED in whatever the map's width leaves over, so its gaps are the
+    // nominal gap plus that leftover - which is the same on both sides, and that equality is the
+    // thing worth pinning. A hand-placed middle would drift by a pixel and look it
+    eq(gap(row[0],row[1]),gap(row[1],row[2]),
+      'the reserved middle slot is not centred: '+gap(row[0],row[1])+'px left, '+gap(row[1],row[2])+'px right');
+    ok(gap(row[0],row[1])>=SLOT_GAP,'the plates in the weapon row are overlapping or flush');
+    eq(row[0].x,map.x,'the weapon row does not start at the left edge of the map');
+    eq(row[2].x+row[2].w,map.x+map.w,'the weapon row does not end at the right edge of the map');
+    // and the outer two are pushed to the ends, so the reserved space is in the middle where it
+    // belongs rather than swallowed by the right-hand plate
+    ok(row[1].x-row[0].x>wSlot/2,'the reserved middle slot is not between the two hands');
+  });
+  test('both keys always sit in the HUD, dimmed while unheld',()=>{
+    startGame();
+    const drawn=()=>{const seen=[]; const real=window.drawSprite;
+      window.drawSprite=(rows,pal,cx,cy,px,flash,ck)=>{ if(ck&&ck.indexOf('hud')===0) seen.push({ck:ck,pal:pal,cx:cx}); return real(rows,pal,cx,cy,px,flash,ck); };
+      try{ drawHUD(); }finally{ window.drawSprite=real; }
+      return seen;};
+    player.hasSilver=false; player.hasGold=false;
+    const none=drawn();
+    // read through a helper so a missing slot reports what was actually drawn instead of throwing
+    const palOf=(list,ck)=>{const f=list.find(k=>k.ck===ck);return f?f.pal:'NOT DRAWN';};
+    eq(none.length,2,'holding no keys drew '+none.length+' key slots, wanted both shown dimmed');
+    ok(palOf(none,'hudSd')===KEY_SILVER_DIM,'an unheld silver key drew as '+palOf(none,'hudSd'));
+    ok(palOf(none,'hudGd')===KEY_PAL_DIM,'an unheld gold key drew as '+palOf(none,'hudGd'));
+    player.hasSilver=true;
+    const one=drawn();
+    ok(palOf(one,'hudS')===KEY_SILVER_PAL,'the held silver key drew as '+palOf(one,'hudS'));
+    ok(palOf(one,'hudGd')===KEY_PAL_DIM,'the unheld gold key drew as '+palOf(one,'hudGd'));
+    player.hasGold=true;
+    const two=drawn();
+    ok(palOf(two,'hudS')===KEY_SILVER_PAL,'the silver key drew as '+palOf(two,'hudS')+' once gold was picked up');
+    ok(palOf(two,'hudG')===KEY_PAL,'the held gold key drew as '+palOf(two,'hudG'));
+    // the two keys must not be drawn on top of each other
+    const sx=two.find(k=>k.ck==='hudS').cx, gx=two.find(k=>k.ck==='hudG').cx;
+    ok(Math.abs(sx-gx)>8,'both keys are drawn in the same spot');
+  });
+
+  test('the boss warns you once, when it first shows on the map',()=>{
+    startGame();
+    ok(!bossWarned,'the warning is armed before anything is seen');
+    // walk the gold run out so the boss becomes visible
+    const boss=Object.values(rooms).find(r=>r.type==='boss');
+    for(const r of Object.values(rooms)) if(r!==boss) r.visited=true;
+    ok(!bossWarned,'every room was already visited so nothing should be new');
+    // stand next to the boss door
+    const ap=Object.values(rooms).find(r=>Object.keys(r.doors).some(d=>leadsTo(r,d,'boss')));
+    const d=Object.keys(ap.doors).find(dd=>leadsTo(ap,dd,'boss'));
+    enterRoom(ap.x,ap.y,OPP[d]); ap.spawned=true; ap.enemies.length=0; readyT=0;
+    update();
+    ok(bossWarned,'standing at the boss door did not trigger the warning');
+    ok(bossWarnT>0,'the warning has no time on it');
+    const left=bossWarnT;
+    for(let i=0;i<left+4;i++) update();
+    ok(bossWarnT<=0,'the warning never ran out');
+    ok(bossWarned,'the warning re-armed after it finished');
+    // and it does not re-trigger in the same room
+    ok(bossWarnT<=0,'the warning fired twice');
+  });
+  test('the secret is walled off, off the map, and only the right click opens it',()=>{
+    for(let i=0;i<20;i++){
+      startGame();
+      const sec=Object.values(rooms).find(r=>r.type==='secret');
+      const host=Object.values(rooms).find(r=>r.secret);
+      ok(sec&&host,'the dungeon has no secret or no fake wall');
+      ok(host.type!=='boss'&&host.type!=='item','the fake wall landed on a reward room');
+      eq(Object.keys(sec.doors).length,0,'the secret starts with a door already open');
+      ok(!sec.keyReward&&!sec.goldReward,'the secret is also a key room');
+      enterRoom(host.x,host.y,OPP[host.secret]); host.spawned=true; host.enemies.length=0; readyT=0; fadeT=0;
+                       // which is legitimate play but is not what this test is about
+      // a revealed room is one a visited room has a door to: the secret is not that yet
+      const revealed=()=>{const o={};
+        for(const r of Object.values(rooms)){ if(!r.visited) continue; o[key(r.x,r.y)]=1;
+          for(const dd of Object.keys(r.doors)){const n=neighbor(r.x,r.y,dd); if(rooms[key(n[0],n[1])]) o[key(n[0],n[1])]=1;} }
+        return o;};
+      ok(!revealed()[key(sec.x,sec.y)],'the secret is on the map before the wall is broken');
+      const p=doorPoint(host.secret);
+      // the wand does not break it, however long you lean on it
+      mouse.x=p[0]; mouse.y=p[1]; player.cooldown=0;
+      for(let k=0;k<200;k++){ fireWeapon(); update(); }
+      ok(!host.doors[host.secret],'the left click broke the fake wall');
+      // the right click does. read the direction first: breaking the wall clears the marker.
+      // ONE cast, then let it fly: the hook can be detonated early with a second right click, and a
+      // test that held the button down every tick would spend its life cancelling the bolt a few
+      // dozen pixels from the player and never let it reach the wall at all
+      const d=host.secret;
+      let broke=false;
+      mouse.x=p[0]; mouse.y=p[1]; player.altCooldown=0; altMouseDown=true;
+      update(); altMouseDown=false;
+      for(let k=0;k<500&&!broke;k++){ update(); broke=!!host.doors[d]; }
+      ok(broke,'the right click did not break the fake wall');
+      eq(Object.keys(sec.doors).length,1,'the secret did not gain a door');
+      ok(revealed()[key(sec.x,sec.y)],'the secret still is not on the map after the wall came down');
+      ok(run.secret,'the run did not record finding the secret');
+    }
+  });
+  test('the hook goes off exactly where the cursor was, deals nothing, and yanks bodies in',()=>{
+    ok(HOOK_WEAPON.phase,'the hook does not phase');
+    ok(HOOK_WEAPON.aoeRadius>ALT_WEAPON.aoeRadius,'the hook does not reach further than the blast');
+    ok(HOOK_WEAPON.aoeRadius<ALT_WEAPON.aoeRadius*1.35,'the hook has grown well past "a little further than the blast"');
+    ok(HOOK_WEAPON.pull&&!HOOK_WEAPON.aoeKnock,'the hook does not pull');
+    ok(HOOK_WEAPON.pool===0,'the hook deals damage, which makes it a strictly worse blast');
+    // The bug this weapon existed to not have: the bolt has to stop on the point you aimed at. The
+    // travel test compares the distance still to cover against the per-tick step, and without that
+    // step stored on the bolt the comparison is against undefined, so the hook sailed straight past
+    // the cursor and only ever went off on a wall.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; 
+    for(const aim of [[MIDX,MIDY],[ROOM_RIGHT-30,MIDY],[MIDX,ROOM_TOP+20],[ROOM_LEFT+20,ROOM_BOTTOM-20],[MIDX+320,ROOM_BOTTOM-30]]){
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+      player.altMode='hook'; player.altCooldown=0;
+      mouse.x=aim[0]; mouse.y=aim[1];
+      const want={x:Math.max(ROOM_LEFT,Math.min(ROOM_RIGHT,aim[0])),y:Math.max(ROOM_TOP,Math.min(ROOM_BOTTOM,aim[1]))};
+      // clear the burst list rather than counting it: old bursts expire during the flight, so a
+      // length comparison can sit unchanged when one is added and one is dropped
+      burstFX.length=0;
+      fireAlt();
+      let hit=null;
+      for(let i=0;i<600;i++){ update(); if(burstFX.length){ hit=burstFX[burstFX.length-1]; break; } }
+      ok(hit,'the hook aimed at '+aim+' never went off');
+      ok(Math.hypot(hit.x-want.x,hit.y-want.y)<2,
+        'the hook aimed at '+aim+' went off at '+Math.round(hit.x)+','+Math.round(hit.y)+' instead of '+Math.round(want.x)+','+Math.round(want.y));
+    }
+    // flying through a body on the way in does not stop it
+    player.x=MIDX-140; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    r.enemies.length=0;
+    const mid=spawnEnemy(false,r,MIDX-40,MIDY,'chaser'); r.enemies.push(mid);
+    mid.noticeTimer=1e9;
+    mouse.x=ROOM_RIGHT-60; mouse.y=MIDY; player.altCooldown=0; fireAlt();
+    let flew=0;
+    for(let i=0;i<400;i++){ update(); if(!projectiles.length){flew=i;break;} }
+    ok(flew>0,'the hook never detonated');
+    // it moves bodies and hurts none of them
+    const put=(x,y)=>{ const e=spawnEnemy(false,r,x,y,'chaser');
+      e.noticeTimer=1e9; e.speed=0; e.runSpeed=0; e.curSpeed=0; e.hp=999; e.maxHp=999; r.enemies.push(e); return e; };
+    const cx=MIDX+40, cy=MIDY;
+    r.enemies.length=0;
+    const bodies=[put(cx+100,MIDY-30),put(cx-100,MIDY+20),put(cx+40,MIDY+95)];
+    const hpBefore=bodies.map(e=>e.hp);
+    const d0=bodies.map(e=>Math.hypot(e.x-cx,e.y-cy));
+    explode(r,cx,cy,HOOK_WEAPON);
+    // the opening yank does no damage at all - that is the hook's identity, and the reason it is
+    // not simply a worse blast. the damage arrives afterwards, from the spell it leaves on the floor
+    ok(bodies.every((e,i)=>e.hp===hpBefore[i]),'the yank itself dealt damage');
+    for(let i=0;i<HOOK_FIELD_TIME+20;i++) update();
+    const d1=bodies.map(e=>Math.hypot(e.x-cx,e.y-cy));
+    ok(bodies.every((e,i)=>e.hp<=hpBefore[i]),'the ground spell did damage of the wrong sign');
+    // ...but it is not nothing. Measured in Bolts per body, which is the unit that matters: a field
+    // is worth a shot or three over its whole life. Enough to take a chunk off a big body while you
+    // keep shooting, nowhere near enough to be the thing doing the killing.
+    const perBody=hpBefore.reduce((s,_,i)=>s+(hpBefore[i]-bodies[i].hp),0)/bodies.length;
+    const bolts=perBody/WEAPONS[0].dmg;
+    ok(bolts>0.55,'the field is worth only '+bolts.toFixed(2)+' Bolts per body, which is not worth leaving on the floor');
+    ok(bolts<3,'the field is worth '+bolts.toFixed(2)+' Bolts per body, which makes it a weapon');
+    ok(d1.every((d,i)=>d<d0[i]-20),'the hook did not pull every caught body in ('+d0.map((d,i)=>Math.round(d)+'->'+Math.round(d1[i])).join(', ')+')');
+    // further out means a longer yank, so a point dropped near the rim is the one worth using
+    r.enemies.length=0;
+    const onTop=put(cx+24,MIDY), atRim=put(cx+HOOK_WEAPON.aoeRadius-6,MIDY);
+    explode(r,cx,MIDY,HOOK_WEAPON);
+    ok(Math.abs(atRim.kvx)>Math.abs(onTop.kvx)*3,'the hook yanked a rim body no harder than one on top of it');
+    // the hook pulls in, where the blast pushes out
+    r.enemies.length=0;
+    const g=put(cx+70,MIDY);
+    const gd=Math.hypot(g.x-cx,g.y-MIDY);
+    explode(r,cx,MIDY,HOOK_WEAPON);
+    for(let i=0;i<90;i++) update();
+    ok(Math.hypot(g.x-cx,g.y-MIDY)<gd-20,'the hook did not pull a body in');
+    r.enemies.length=0;
+    const b=put(cx+70,MIDY);
+    const bd=Math.hypot(b.x-cx,b.y-MIDY);
+    explode(r,cx,MIDY,ALT_WEAPON);
+    for(let i=0;i<90;i++) update();
+    ok(Math.hypot(b.x-cx,b.y-MIDY)>bd,'the blast did not push a body out');
+  });
+
+  test('Brunch: tiny, quick, in a knot, and the big packs are the rare ones',()=>{
+    ok(ENEMY.brunch.r<ENEMY.chaser.r,'brunch is not the smallest body');
+    ok(ENEMY.brunch.hp<ENEMY.shooter.hp,'brunch is not the frailest body');
+    // a whole volley deletes a body, so a pack is a stream of single shots rather than a slog
+    for(const [i,wp] of WEAPONS.entries()) if(i!==2) ok(wp.dmg*wp.count>=ENEMY.brunch.hp,wp.name+' does not delete a brunch per volley');
+    const packHp=ENEMY.brunch.hp*BRUNCH.pack[BRUNCH.pack.length-1];
+    const fastest=WEAPONS.map(w=>w.dmg*w.count/(w.cooldown/TICK_HZ)).sort((a,b)=>b-a)[0];
+    ok(packHp/fastest<2.2,'a maximum pack is more than two seconds of work for the best gun');
+    // and they are quicker than the player, which is the point of them, but only just
+    ok(ENEMY.brunch.run>ENEMY.chaser.run,'brunch is not quicker than a chaser');
+    ok(ENEMY.brunch.run>playerSpeedForTest(),'brunch no longer outruns the player, so kiting never fails now');
+    ok(ENEMY.brunch.run<playerSpeedForTest()*1.3,'brunch is so quick the player cannot kite them at all ('+(ENEMY.brunch.run/playerSpeedForTest()).toFixed(2)+'x the player)');
+    // reaching you must cost them something real, and it must be survivable once
+    ok(ENEMY.brunch.hp>=2,'a brunch dies on its first touch, so the mechanic is invisible');
+    // the size roll has to fall off as the bunch gets bigger
+    const counts={};
+    for(let i=0;i<8000;i++){const n=rollPack();counts[n]=(counts[n]||0)+1;}
+    for(let i=1;i<BRUNCH.pack.length;i++)
+      ok(counts[BRUNCH.pack[i]]<counts[BRUNCH.pack[i-1]],'a pack of '+BRUNCH.pack[i]+' is not rarer than '+BRUNCH.pack[i-1]);
+    ok(counts[BRUNCH.pack[BRUNCH.pack.length-1]]<counts[BRUNCH.pack[0]]*0.5,'the biggest pack is nearly as common as the smallest');
+    // and a real room rolls one knot in one place
+    startGame();
+    let sawPack=false;
+    for(let i=0;i<120&&!sawPack;i++){
+      startGame();
+      const n=Object.values(rooms).filter(r=>r.type==='normal')[0];
+      enterRoom(n.x,n.y,'W');
+      const pack=currentRoom().enemies.filter(e=>e.type==='brunch');
+      if(!pack.length) continue;
+      sawPack=true;
+      ok(pack.length>=BRUNCH.pack[0]&&pack.length<=BRUNCH.pack[BRUNCH.pack.length-1],'a pack of '+pack.length+' is outside the band');
+      let cx=0,cy=0; for(const e of pack){cx+=e.x/pack.length;cy+=e.y/pack.length;}
+      const spread=Math.max.apply(null,pack.map(e=>Math.hypot(e.x-cx,e.y-cy)));
+      ok(spread<40,'the pack did not arrive as a knot ('+spread.toFixed(0)+'px)');
+      ok(pack.every(e=>e.type==='brunch'),'a non-brunch body joined the pack');
+    }
+    // and they spend half of themselves on every hit they land
+    startGame(); const r=goTo('normal'); r.enemies.length=0;
+    const e=spawnEnemy(false,r,player.x+150,player.y,'brunch'); r.enemies.push(e);
+    e.noticeTimer=0; e.aggroTimer=AGGRO_TIME;
+    const hp0=player.hp; let hits=0;
+    for(let i=0;i<400&&r.enemies.length>0;i++){
+      const before=e.hp; update();
+      if(e.hp<before) hits++;
+    }
+    ok(hits<=2,'a brunch took '+hits+' self-killing hits, wanted 2 (half its body twice)');
+    ok(r.enemies.length===0,'a brunch that reached the player never died from it');
+    ok(hp0-player.hp<=2,'a single brunch hit you for more than 2');
+    ok(sawPack,'no pack turned up in 120 rooms');
+  });
+  test('a touch of the door starts the unlock and it finishes on its own',()=>{
+    startGame();
+    const ap=Object.values(rooms).find(r=>Object.keys(r.doors).some(d=>leadsTo(r,d,'boss')));
+    const d=Object.keys(ap.doors).find(dd=>leadsTo(ap,dd,'boss'));
+    enterRoom(ap.x,ap.y,OPP[d]); ap.spawned=true; ap.enemies.length=0; readyT=0; fadeT=0;
+    player.hasGold=true;
+    const p=doorPoint(d);
+    player.x=p[0]; player.y=p[1]; player.lagX=p[0]; player.lagY=p[1];
+    update();
+    ok(unlockDoor,'brushing the door did not start the unlock');
+    ok(doorSealed(ap,d),'the door opened the instant the lock started');
+    // step away and it carries on regardless
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    let t=0;
+    while(doorSealed(ap,d)&&t<UNLOCK_TIME+10){update();t++;}
+    ok(!doorSealed(ap,d),'the unlock cancelled when you walked off the door');
+    ok(!player.hasGold&&bossUnlocked,'the gold key was not spent on the way past');
+    ok(UNLOCK_TIME/TICK_HZ<=0.6,'the unlock takes longer than 0.6s');
+    // a door with no key never opens, however long you lean on it
+    startGame();
+    const ap2=Object.values(rooms).find(r=>Object.keys(r.doors).some(dd=>leadsTo(r,dd,'item')));
+    const d2=Object.keys(ap2.doors).find(dd=>leadsTo(ap2,dd,'item'));
+    enterRoom(ap2.x,ap2.y,OPP[d2]); ap2.spawned=true; ap2.enemies.length=0; readyT=0; fadeT=0;
+    const q=doorPoint(d2);
+    for(let i=0;i<300;i++){ player.x=q[0]; player.y=q[1]; update(); }
+    ok(doorSealed(ap2,d2),'leaning on a locked door with no key opened it');
+    ok(!unlockDoor,'a keyless door started an unlock');
+  });
+  test('the gunner is tougher than a shooter and slips, but only from range',()=>{
+    ok(ENEMY.gunner.hp>ENEMY.shooter.hp*1.3,'the gunner is not meaningfully tougher than a shooter');
+    ok(GUNNER_DODGE.kick>0&&GUNNER_DODGE.chance>0&&GUNNER_DODGE.chance<1,'the dodge is all or nothing');
+    startGame(); const r=goTo('normal'); r.enemies.length=0; 
+    const fight=gap=>{
+      let killed=0, ticks=0, slips=0;
+      for(let t=0;t<12;t++){
+        r.enemies.length=0;
+        const gx=ROOM_RIGHT-40;
+        const g=spawnEnemy(false,r,gx,MIDY,'gunner'); r.enemies.push(g);
+        g.noticeTimer=0;
+        player.x=gx-gap; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+        player.weaponIdx=0; player.iframes=99999; player.cooldown=0;
+        let was=0, i=0;
+        for(;i<210*20&&r.enemies.length>0;i++){ mouse.x=g.x; mouse.y=g.y; if(player.cooldown<=0) fireWeapon(); update();
+          if(g.dodgeCd>0&&was===0) slips++; was=g.dodgeCd; }
+        if(r.enemies.length===0){killed++;ticks+=i;}
+      }
+      return {killed:killed, secs:+(ticks/Math.max(1,killed)/TICK_HZ).toFixed(2), slips:Math.round(slips/12)};
+    };
+    const far=fight(600), mid=fight(350), close=fight(180);
+    for(const [name,f] of [['far',far],['mid',mid],['close',close]])
+      eq(f.killed,12,'the gunner has to be killable at '+name+' range ('+f.killed+'/12)');
+    ok(far.slips>close.slips,'closing the distance does not shut the dodge down ('+far.slips+' slips far vs '+close.slips+' close)');
+    ok(close.secs<far.secs*0.7,'falloff and dodging together do not make range the better option ('+far.secs+'s far vs '+close.secs+'s close)');
+  });
+  test('killing the boss opens a way out instead of ending the run',()=>{
+    // The run no longer ends on the kill. It ends when the player walks into the portal, which
+    // leaves them free to go back and finish the room, or to turn an accidental clear into an
+    // earned one. It is also the one change here that could silently soft-lock a run forever, so
+    // the portal's existence, its position, and the fact that it can be missed are all pinned.
+    startGame(); const r=goTo('boss');
+    eq(state,'playing');
+    r.enemies.length=0; update();
+    eq(state,'playing','clearing the boss room ended the run on the kill');
+    const portal=r.pickups.find(p=>p.kind==='exit');
+    ok(portal,'a cleared boss room did not open a way out');
+    eq(portal.x,MIDX,'the way out is not in the middle of the floor');
+    eq(portal.y,MIDY,'the way out is not in the middle of the floor');
+    eq(r.pickups.filter(p=>p.kind==='exit').length,1,'the way out opened more than once');
+    // it is not loot: it must not be drawn or collected as an item, and there is only ever one
+    r.enemies.length=0; update();
+    eq(r.pickups.filter(p=>p.kind==='exit').length,1,'the way out was added a second time');
+    // standing next to it is not enough - it has to be walked into
+    player.x=MIDX+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    player.hp=8; player.armor=0; player.iframes=0;
+    update();
+    eq(state,'playing','standing 40px from the way out ended the run');
+    // and it does end the run when walked into
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    update();
+    eq(state,'win','walking into the way out did not end the run');
+    // a room that is not the boss room has no way out, or every corridor would be an exit
+    startGame(); const n=goTo('normal'); n.enemies.length=0; update();
+    eq(n.pickups.filter(p=>p.kind==='exit').length,0,'an ordinary room opened a way out');
+    keys={}; mouseDown=false; altMouseDown=false;
+  });
+  test('a chaser lunges, and it can be dodged by reacting to the tell',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=99; player.maxHp=99; player.armor=0; player.altMode='hook'; keys={};
+    const c=spawnEnemy(false,r,player.x+230,player.y,'chaser'); r.enemies.push(c);
+    c.noticeTimer=0; c.aggroTimer=9999; c.lungeCd=0;
+    eq(c.lungeState,'approach','a fresh chaser did not start by approaching');
+    // the whole mechanic: it plants, holds a direction, and the direction is the player's position
+    // AT THE MOMENT IT PLANTED. A lunge that re-aims while charging cannot be dodged and makes
+    // the drawn line a lie, so this is the property everything else rests on.
+    let planted=null, ticks=0, seen=[];
+    for(let i=0;i<210*9&&ticks<3;i++){
+      if(c.lungeState==='approach'&&c.lungeCd<=0){}
+      if(c.lungeState==='wind'&&!planted){
+        planted={dx:c.lungeDx,dy:c.lungeDy,px:player.x,py:player.y};
+      }
+      if(c.lungeState==='wind'){ ticks++; player.x+=9; player.y+=5; }   // move during the windup
+      update();
+      if(c.lungeState==='recover'&&!seen.length){ seen.push(1); }
+    }
+    ok(planted,'a chaser never planted itself in nine seconds');
+    // the committed direction pointed at where the player was when it committed, not where they
+    // ended up after dodging during the windup
+    const toStart=Math.atan2(planted.py-c.y,planted.px-c.x);
+    ok(Math.abs(((Math.atan2(planted.dy,planted.dx)-toStart+Math.PI*3)%(Math.PI*2))-Math.PI)<0.25,
+      'the lunge re-aimed during its own windup, so the tell is a lie and it cannot be dodged');
+    ok(ticks>0,'the chaser never spent any time charging');
+    // the windup is the number doing the fairness work and it has to be a real reaction window
+    ok(LUNGE_WINDUP>=sec(0.30),'the windup is under 0.30s, which is not a reaction window');
+    ok(LUNGE_WINDUP<=sec(0.6),'the windup is over 0.6s, so the chaser is standing still more than it is threatening');
+    // and the reaction has to work, and the measure is DAMAGE, not "was ever touched". Over nine
+    // seconds a chaser gets three or four lunges away and a single graze is close to certain even
+    // for a player who reads every tell, so a hit-rate comparison comes out 100% either way and
+    // proves nothing at all. Hearts lost is the number that separates the two.
+    const duel=(react,trials)=>{
+      let lost=0;
+      for(let t=0;t<trials;t++){
+        startGame(); const rr=goTo('normal'); rr.enemies.length=0; readyT=0; fadeT=0;
+        player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+        player.hp=8; player.maxHp=8; player.armor=0; player.altMode='hook';
+        const g=spawnEnemy(false,rr,player.x+230,player.y,'chaser'); rr.enemies.push(g);
+        g.noticeTimer=0; g.aggroTimer=9999; g.lungeCd=0;
+        let px=0,py=0,wasWind=false;
+        for(let f=0;f<210*9&&rr.enemies.length;f++){
+          keys={};
+          if(react){
+            // On each windup, step ACROSS the committed line - and pick whichever side has room.
+            // Fixing one side for the whole fight walks the player into a wall in about four
+            // seconds, and once they are in a corner no dodge works, so the measurement becomes a
+            // measurement of the corner rather than of the tell. A player picks the open side too.
+            if(g.lungeState==='wind'&&!wasWind){
+              const ax=-g.lungeDy, ay=g.lungeDx;
+              const roomA=(ax>0?ROOM_RIGHT-player.x:player.x-ROOM_LEFT)+(ay>0?ROOM_BOTTOM-player.y:player.y-ROOM_TOP);
+              const roomB=(-ax>0?ROOM_RIGHT-player.x:player.x-ROOM_LEFT)+(-ay>0?ROOM_BOTTOM-player.y:player.y-ROOM_TOP);
+              const sgn=roomA>=roomB?1:-1;
+              px=ax*sgn; py=ay*sgn;
+            }
+            wasWind=(g.lungeState==='wind');
+            if(px||py){ if(px>0)keys.d=1; else keys.a=1; if(py>0)keys.s=1; else keys.w=1; }
+          }
+          mouseDown=false; altMouseDown=false; update();
+        }
+        lost+=(8-player.hp)/2;
+      }
+      return lost/trials;
+    };
+    // "no reaction" has to be genuinely no input. Walking in ANY direction perpendicular to the
+    // lunge beats it, so a control that walks at all is not a control - it just happened to be
+    // pointing the right way in the first version of this test.
+    const still=duel(false,24), react2=duel(true,24);
+    ok(react2<still*0.5,'stepping off the committed line barely helped ('+react2.toFixed(2)+'h lost against '+still.toFixed(2)+'h standing still)');
+    // it must still be a threat, though: a chaser nobody can hit is a decoration
+    ok(still>2,'a chaser that just walks into you can no longer be hit by anything ('+still.toFixed(2)+'h)');
+
+    // a lunge that runs into a wall is over, not a body that grinds along it or comes out the far
+    // side. cornering a chaser used to be a way to make it harmless, and it must not stay one.
+    startGame(); const r2=goTo('normal'); r2.enemies.length=0; readyT=0; fadeT=0;
+    player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    const k=spawnEnemy(false,r2,ROOM_LEFT+120,ROOM_TOP+40,'chaser'); r2.enemies.push(k);
+    k.noticeTimer=0; k.aggroTimer=9999; k.lungeCd=0;
+    for(let f=0;f<210*10;f++){ keys={}; update(); }
+    ok(k.x>=ROOM_LEFT-1&&k.x<=ROOM_RIGHT+1,'a lunge carried a chaser outside the room');
+    // and a Brunch is still a Brunch: no lunge state machine on it at all
+    startGame(); const r3=goTo('normal'); r3.enemies.length=0; readyT=0; fadeT=0;
+    const br=spawnEnemy(false,r3,MIDX+120,MIDY,'brunch'); r3.enemies.push(br);
+    br.noticeTimer=0; br.aggroTimer=9999;
+    for(let f=0;f<210*3;f++){ keys={}; update(); }
+    ok(br.lungeState==='approach','a Brunch grew a lunge, and a pack that telegraphs is a room with nothing to read');
+    // the pack ramp is longer than it was, so there is an interval to choose ground in
+    ok(BRUNCH_RAMP>=sec(1.8),'the Brunch ramp is back under 1.8s, which is what made a pack feel unavoidable');
+    // leave the input clean. a test that hands the next one a movement direction looks exactly like
+    // a bug in whatever blinks next, because a blink is the one thing that reads the input directly
+    keys={}; mouseDown=false; altMouseDown=false;
+  });
+  test('every screen renders without throwing',()=>{
+    startGame(); render(); setPaused(true); render(); setPaused(false);
+    player.hp=0; update(); render(); eq(state,'gameover');
+    startGame(); const r=goTo('boss'); r.enemies.length=0; update(); stepIntoPortal(r); render(); eq(state,'win');
+    state='start'; render();
+    showSpawn=true; startGame(); goTo('normal'); render(); showSpawn=false;
+  });
+  test('right-click blast detonates on the first body it touches, no phasing',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null;
+    const e=chaser(r,player.x+120,player.y); e.noticeTimer=1e9; e.aggroTimer=0;
+    mouse.x=e.x; mouse.y=e.y; fireAlt();
+    eq(projectiles.length,1,'blast did not spawn');
+    for(let i=0;i<200&&projectiles.length;i++) update();
+    eq(projectiles.length,0,'blast flew straight through the enemy');
+    ok(e.hp<e.maxHp||e.stun>0||Math.hypot(e.kvx,e.kvy)>0.1,'blast left the enemy untouched');
+    // a blast aimed at empty floor still detonates at the target
+    r.enemies.length=0; burstFX.length=0;
+    // the cooldown is enforced inside fireAlt now, not at the call site, so a direct call has to
+    // clear it the same way the input path would
+    player.altCooldown=0;
+    mouse.x=ROOM_RIGHT-40; mouse.y=ROOM_TOP+40; fireAlt();
+    for(let i=0;i<600&&projectiles.length;i++) update();
+    eq(projectiles.length,0,'blast did not reach its target');
+    eq(burstFX.length,1,'targeted blast never detonated');
+  });
+  test('every gun loses damage with range but stays worth using',()=>{
+    startGame();
+    for(const wp of WEAPONS){
+      ok(wp.fNear>0&&wp.fFar>wp.fNear&&wp.fMin>=0.4&&wp.fMin<1,wp.name+' has no usable falloff band');
+      const mult=d=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
+      const ttk=d=>ENEMY.chaser.hp/(wp.dmg*mult(d)*wp.count)*(wp.cooldown/TICK_HZ);
+      const ratio=ttk(wp.fFar)/ttk(wp.fNear);
+      ok(ratio>1.6,wp.name+' TTK barely changes at range ('+ratio.toFixed(2)+'x)');
+      ok(ttk(250)<7,wp.name+' is already useless mid-room ('+ttk(250).toFixed(1)+'s per chaser at 250px)');
+      ok(ttk(wp.fFar)<11,wp.name+' is useless at full range ('+ttk(wp.fFar).toFixed(1)+'s per chaser)');
+    }
+    eq(ALT_WEAPON.fNear,undefined,'the blast must not have falloff');
+  });
+  test('weapons actually do less damage to a far target',()=>{
+    startGame(); const r=goTo('normal');
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    for(let w=0;w<WEAPONS.length;w++){
+      player.weaponIdx=w;
+      const hit=(dist)=>{
+        r.enemies.length=0; projectiles.length=0;
+        // keep the target inside the room: a gun's full range can overshoot the far wall from the
+        // middle, and a shell that leaves the room is removed rather than landing
+        const d=Math.max(20,Math.min(dist,MIDX-ROOM_LEFT-24,ROOM_RIGHT-MIDX-24));
+        const e=spawnEnemy(false,r,player.x+d,player.y,'shooter');
+        e.noticeTimer=1e9; e.aggroTimer=0; r.enemies.push(e);
+        mouse.x=e.x; mouse.y=e.y; fireWeapon();
+        for(let i=0;i<400&&projectiles.length&&e.hp===e.maxHp;i++) update();
+        return e.maxHp-e.hp;
+      };
+      const far=WEAPONS[w].fFar+40;
+      const close=hit(20), long=hit(far);
+      ok(long>0,WEAPONS[w].name+' did nothing at all at '+far+'px');
+      ok(close>long,WEAPONS[w].name+' did the same damage at '+far+'px as at 20px');
+    }
+  });
+  test('a hit wakes the room from any distance',()=>{
+    startGame(); const r=goTo('normal');
+    const solo=(type,type2)=>{
+      r.enemies.length=0; projectiles.length=0;
+      const e=spawnEnemy(false,r,ROOM_RIGHT-40,ROOM_TOP+40,type);
+      e.noticeTimer=1e9; if(e.aggroTimer!==undefined)e.aggroTimer=0; r.enemies.push(e);
+      return e;
+    };
+    const c=solo('chaser');
+    const cfar=Math.hypot(c.x-player.x,c.y-player.y);
+    c.hp-=0.1; alertEnemy(c);
+    ok(c.alerted&&c.noticeTimer===0&&c.aggroTimer===AGGRO_TIME,'chaser did not aggro on damage from '+cfar.toFixed(0)+'px');
+    const s=solo('shooter');
+    const sfar=Math.hypot(s.x-player.x,s.y-player.y);
+    ok(sfar>s.range,'test setup: shooter is inside its own engage range ('+sfar.toFixed(0)+'px)');
+    s.hp-=0.1; alertEnemy(s);
+    ok(s.alerted,'shooter did not aggro on damage from '+sfar.toFixed(0)+'px');
+    const y0=s.y; s.shootCd=0; player.iframes=9999;
+    // the shooter telegraphs first, so the shell is CAST_TIME later. Waiting for it is the point:
+    // the test is about a hit from across the room being answered, not about it being instant
+    for(let i=0;i<CAST_TIME+4&&!projectiles.some(p=>!p.friendly);i++) update();
+    ok(projectiles.some(p=>!p.friendly),'alerted shooter did not fire from '+sfar.toFixed(0)+'px');
+    ok(s.y!==y0,'alerted shooter did not reposition');
+  });
+  test('a hit slows the body and the HP increase pays for it',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0;
+    const e=chaser(r,player.x+200,player.y);
+    ok(e.maxHp>16,'chaser HP did not go up from 16 ('+e.maxHp+')');
+    ok(e.walkSpeed<0.3*SPEEDUP,'chaser base speed did not come down from 0.3');
+    e.noticeTimer=0; e.aggroTimer=AGGRO_TIME; e.slowT=HIT_SLOW_TICKS;
+    const x0=e.x; for(let i=0;i<20;i++) update();
+    const slowed=e.x-x0;
+    e.slowT=0; const x1=e.x; for(let i=0;i<20;i++) update();
+    ok(slowed<(x1-e.x)*0.8,'hit slow did not slow the chaser ('+slowed.toFixed(2)+' vs '+(e.x-x1).toFixed(2)+')');
+  });
+  test('a blink leaves the enemy targeting the old spot for a moment',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0;
+    // a blink reads the input directly, so this test owns its input. Inheriting a movement key from
+    // whatever ran before it aims the blink at a wall, clampPlayer eats the difference, and the
+    // test fails looking exactly like a lag bug
+    keys={d:1}; mouseDown=false; altMouseDown=false;
+    const s=spawnEnemy(false,r,player.x+240,player.y,'shooter');
+    s.noticeTimer=0; r.enemies.push(s); player.iframes=0;
+    const x0=player.x; doBlink();
+    eq(Math.round(player.lagX),Math.round(x0),'lag hitbox did not stay at the pre-blast position');
+    ok(player.x-player.lagX>BLINK_DIST*0.9,'lag did not start a full blink behind ('+(player.x-player.lagX).toFixed(0)+'px)');
+    // The aim is taken when the cast BEGINS, which is what makes the tell honest, and the lag is
+    // still at the pre-blink spot at that moment. If the aim were taken at the moment of firing it
+    // would be taken half a second later, by which time the lag has caught up and the shell goes
+    // straight at the real position - which is exactly the bug the lag exists to prevent.
+    s.shootCd=0; projectiles.length=0;
+    for(let i=0;i<CAST_TIME+4&&!projectiles.length;i++) update();
+    const aimed=projectiles[0];
+    ok(aimed,'shooter did not fire after the blink');
+    const ang=Math.atan2(aimed.vy,aimed.vx), toOld=Math.atan2(player.lagY-s.y,player.lagX-s.x);
+    ok(Math.abs(Math.atan2(Math.sin(ang-toOld),Math.cos(ang-toOld)))<0.35,'shooter aimed at the real position, not the lagging hitbox');
+    // ...and then let go, or the lag is being asked to catch up to a player who is still walking
+    keys={};
+    for(let i=0;i<sec(0.4);i++) update();
+    // As a FRACTION of the blink, not an absolute. The lag eases at a twentieth a tick, so 0.4s -
+    // four time constants - leaves a couple of percent, and a couple of percent of a hundred and
+    // sixteen pixels is what a couple of pixels are. Pinning the raw number put the assertion
+    // within a hundredth of a pixel of its own arithmetic: the lag HAS caught up, and the test
+    // could only tell the difference by rounding. What the design actually claims is that the lag
+    // is gone by the time the reaction window is over, and that is a ratio.
+    ok(Math.abs(player.lagX-player.x)<BLINK_DIST*0.05,'lag hitbox never caught up ('+
+       (player.lagX-player.x).toFixed(1)+'px off, '+Math.round(Math.abs(player.lagX-player.x)/BLINK_DIST*100)+
+       '% of the blink still there after 0.4s)');
+    keys={}; mouseDown=false; altMouseDown=false;
+  });
+  test('releasing both buttons at once cannot leave the wand firing',()=>{
+    startGame(); const r=goTo('normal');
+    const md=(b,buttons)=>window.dispatchEvent(new MouseEvent('mousedown',{button:b,buttons,bubbles:true}));
+    const mu=(b,buttons)=>window.dispatchEvent(new MouseEvent('mouseup',{button:b,buttons,bubbles:true}));
+    const mm=b=>window.dispatchEvent(new MouseEvent('mousemove',{button:0,buttons:b,bubbles:true}));
+    md(0,1); ok(mouseDown,'left press not tracked');
+    md(2,3); ok(mouseDown&&altMouseDown,'right press while holding left not tracked');
+    mu(2,1);   // let go of the right one first
+    ok(mouseDown&&!altMouseDown,'releasing right cleared the wrong button');
+    mu(0,0);
+    ok(!mouseDown&&!altMouseDown,'releasing left did not clear the wand');
+    // the reported case: both released in the same instant, so only one mouseup carries buttons=0
+    md(0,1); md(2,3);
+    mu(2,0);
+    ok(!mouseDown&&!altMouseDown,'a simultaneous release left the wand latched');
+    // a swallowed mouseup is still recoverable, because any move with nothing held clears it
+    trackButton(0,true); trackButton(2,true);
+    mm(0);
+    ok(!mouseDown&&!altMouseDown,'a latched button survived a pointer move with nothing held');
+    // and a native context menu over the letterbox gives the buttons back
+    md(0,1);
+    window.dispatchEvent(new Event('contextmenu',{cancelable:true}));
+    ok(!mouseDown,'context menu did not release the wand');
+  });
+  test('the spawn plan spreads bodies out and keeps gunners off the entry door',()=>{
+    startGame();
+    const seen={n:0,min:Infinity,gap:Infinity};
+    for(let i=0;i<200;i++){
+      const room={x:0,y:0,doors:{},type:'normal',visited:false,spawned:false,enemies:[],pickups:[],spawnPlan:null};
+      const dir=['N','S','E','W'][i&3];
+      spawnWave(room,dir);
+      const n=room.spawnPlan.length;
+      // a Brunch pack turns one slot into several bodies, so the plan and the room only agree
+      // once the packs are expanded
+      const expected=room.spawnPlan.reduce((s,sl)=>s+(sl.pack||1),0);
+      eq(room.enemies.length,expected,'plan and enemy count disagree');
+      seen.n+=n;
+      const [ex,ey]=entryPoint(dir);
+      let nearest=Infinity, ei=0;
+      for(let a=0;a<room.spawnPlan.length;a++){
+        const p=room.spawnPlan[a];
+        ok(p.x>=ROOM_LEFT&&p.x<=ROOM_RIGHT&&p.y>=ROOM_TOP&&p.y<=ROOM_BOTTOM,'spawn outside the room');
+        ok(Math.hypot(p.x-MIDX,p.y-MIDY)>=SPAWN_MID-1||n>2,'spawn in the dead centre');
+        nearest=Math.min(nearest,Math.hypot(p.x-ex,p.y-ey));
+        for(let b=a+1;b<room.spawnPlan.length;b++) seen.min=Math.min(seen.min,Math.hypot(p.x-room.spawnPlan[b].x,p.y-room.spawnPlan[b].y));
+        // walk the room in plan order, stepping over every body a pack owns
+        if(p.pack){
+          eq(p.type,'brunch','a pack slot is not a brunch slot');
+          const pack=room.enemies.slice(ei,ei+p.pack);
+          eq(pack.length,p.pack,'the pack came out the wrong size');
+          ok(p.pack>=BRUNCH.pack[0]&&p.pack<=BRUNCH.pack[BRUNCH.pack.length-1],'a pack of '+p.pack+' is outside the 4-8 band');
+          ok(pack.every(x=>x.type==='brunch'&&x.r===ENEMY.brunch.r&&x.hp===ENEMY.brunch.hp),'a pack member has the wrong body');
+          // a knot: they arrive together, not scattered across the room
+          ok(pack.every(x=>Math.hypot(x.p-p.x||0,0)<200),'a pack member spawned far from its slot');
+          ok(Math.max.apply(null,pack.map(x=>Math.hypot(x.x-p.x,x.y-p.y)))<40,'the pack is not a knot');
+          ei+=p.pack;
+        } else {
+          const e=room.enemies[ei++];
+          eq(e.type,p.type,'plan and spawned types disagree');
+          if(e.type==='shooter'||e.type==='gunner') seen.gap=Math.min(seen.gap,Math.hypot(p.x-ex,p.y-ey));
+          if(e.type==='gunner') ok(e.r>room.enemies.find(x=>x.type==='shooter'||x.type==='chaser').r,'gunner is not the biggest body in the room');
+        }
+      }
+      ok(nearest>=SPAWN_DOOR-1,'a wave landed in the doorway ('+nearest.toFixed(0)+'px)');
+      const gunners=room.enemies.filter(e=>e.type==='gunner').length;
+      ok(gunners<=1,'more than one gunner in a room');
+      if(n>=3) ok(gunners<=1);
+    }
+    ok(seen.min>=SPAWN_SEP-1||seen.min>120,'bodies overlapped on spawn ('+seen.min.toFixed(0)+'px)');
+    ok(seen.gap>=SPAWN_FAR-1,'a gunner started inside '+SPAWN_FAR+'px of the entry door ('+seen.gap.toFixed(0)+'px)');
+    ok(seen.gap<Infinity,'no gunner ever spawned in 200 rooms');
+  });
+  test('the gunner is the shooter cloned: slower, double damage, bigger',()=>{
+    startGame(); const r=goTo('normal');
+    const g=spawnEnemy(false,r,MIDX,MIDY,'gunner'), s=spawnEnemy(false,r,MIDX,MIDY,'shooter');
+    ok(g.r>s.r,'gunner is not bigger');
+    ok(g.art>s.art,'gunner is not drawn bigger');
+    ok(g.shootCd>=s.cdMin*1.5,'gunner fires too fast');
+    eq(g.dmg,s.dmg*2,'gunner damage is not double');
+    ok(g.pspd<s.pspd,'gunner shells are not slower');
+    r.enemies.length=0; r.enemies.push(g);
+    g.shootCd=0; g.noticeTimer=0; g.stun=0; projectiles.length=0;
+    player.iframes=0; player.armor=0; player.hp=8; player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    g.x=MIDX+230; g.y=MIDY;   // well outside its own contact range, so the shell is what lands
+    // The gunner telegraphs before it fires, so "one update and a shell exists" is no longer the
+    // shape of this test. The tell has to be observed FIRST - that is the entire point of it - and
+    // only then is the shot expected. Asserting the shell appears on the same tick would be
+    // asserting the tell does not exist.
+    update();
+    eq(projectiles.filter(x=>!x.friendly).length,0,'the gunner fired with no cast, so the tell is not a tell');
+    ok(g.castT>0,'the gunner did not begin a cast');
+    for(let i=0;i<CAST_TIME+2&&!projectiles.some(x=>!x.friendly);i++) update();
+    const p=projectiles.find(x=>!x.friendly);
+    ok(p,'gunner never fired');
+    eq(p.dmg,g.dmg,'gunner shell is not double damage');
+    const hp0=player.hp;
+    p.x=player.lagX; p.y=player.lagY; p.vx=0; p.vy=0; update();
+    ok(player.hp<hp0,'gunner shell did no damage');
+    ok(hp0-player.hp>=g.dmg*0.9,'gunner shell damaged for '+(hp0-player.hp)+', want about '+g.dmg);
+  });
+  test('losing your last point of health ends the run, and nothing on the floor can save it',()=>{
+    // The bug this is about: the floor was swept BEFORE the death check, so a heart lying under
+    // you was picked up on the very tick that took your last point of health. It put you back on
+    // your feet, and the check at the bottom of the tick then saw a healthy player and never fired.
+    // The result was a run carried on at zero health, ending only when you happened to walk over
+    // something. Death now settles the tick before the floor is touched at all.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.hp=1; player.armor=0; player.iframes=0;
+    r.pickups.push({x:player.x,y:player.y,r:14,kind:'heart'});
+    r.pickups.push({x:player.x,y:player.y,r:16,kind:'armor'});
+    // the killing blow, landed on the same tick the floor would have been swept
+    ok(damagePlayer(1,1,0,0),'the test hit did not land');
+    eq(player.hp,0,'setup: the hit was supposed to be fatal');
+    update();
+    eq(state,'gameover','a player killed on a tick with a heart under them carried on');
+    eq(player.hp,0,'the heart healed a dead player ('+player.hp+')');
+    eq(r.pickups.length,2,'a dead player emptied the floor');
+    // and the same thing starting from zero rather than from one
+    startGame(); const r2=goTo('normal'); r2.enemies.length=0; readyT=0; fadeT=0;
+    player.hp=0; player.armor=0; player.iframes=0;
+    r2.pickups.push({x:player.x,y:player.y,r:14,kind:'heart'});
+    update();
+    eq(state,'gameover','a player who entered the tick at zero health survived it');
+    eq(r2.pickups.length,1,'the heart was still consumed');
+    // a real killing blow, delivered by the boss, with a heart on the floor: still a death
+    startGame(); const r3=goTo('boss'); r3.enemies.length=0; readyT=0; fadeT=0;
+    player.hp=2; player.armor=0; player.iframes=0;
+    r3.pickups.push({x:player.x,y:player.y,r:14,kind:'heart'});
+    const b=spawnEnemy(true,r3,player.x+20,player.y);
+    r3.enemies.push(b); b.noticeTimer=0; b.aggroTimer=9999;
+    for(let i=0;i<40&&state==='playing';i++) update();
+    eq(state,'gameover','the boss killed the player and a heart on the floor undid it');
+    // and while alive, healing still works exactly as it should
+    startGame(); const r4=goTo('normal'); r4.enemies.length=0; readyT=0; fadeT=0;
+    player.hp=1; player.armor=0; player.iframes=0;
+    r4.pickups.push({x:player.x,y:player.y,r:14,kind:'heart'});
+    update();
+    eq(state,'playing','a living player died on a heart');
+    eq(player.hp,3,'a living player did not heal');
+    // the HUD cannot show a full set of hearts at zero health either, which is what made this read
+    // as "still playing" rather than as a bug
+    startGame(); const r5=goTo('normal'); r5.enemies.length=0; readyT=0; fadeT=0;
+    player.hp=0; update();
+    eq(state,'gameover','zero health did not end the run on its own');
+  });
+  test('the gunners notice you well before they will shoot, and fight at close quarters',()=>{
+    for(const k of ['shooter','gunner']){
+      const c=ENEMY[k];
+      ok(c.sense>c.range,k+' cannot see further than it can shoot, so noticing you early is pointless');
+      ok(c.sense>=600,k+' senses you over only '+c.sense+'px of a room that is '+
+         Math.round(Math.hypot(ROOM_RIGHT-ROOM_LEFT,ROOM_BOTTOM-ROOM_TOP))+'px corner to corner');
+      // the band it holds you in. `far` is the one that matters: a gunner stops walking toward you
+      // once you are inside it, so a big `far` is a gunner you can simply stand away from
+      ok(c.far<=260,k+' settles at '+c.far+'px, which is a standoff rather than a fight');
+      ok(c.close<=150,k+' lets you get to '+c.close+'px before it backs off; that is not close quarters');
+      ok(c.close<c.far,k+' backs off at a distance it also walks toward');
+      // The dodge window is the FLIGHT, not the flight plus the cast. The cast is a warning the
+      // player spends by moving before the shell exists - adding it to the flight and then holding
+      // the total under the old bound would be asserting that asking for a telegraph and a slower
+      // shell cannot both be satisfied, which is exactly what was asked for.
+      const flight=300/c.pspd/TICK_HZ, warning=CAST_TIME/TICK_HZ;   // CAST_TIME is already in ticks
+      ok(flight>0.33,k+' covers 300px in '+(flight*1000).toFixed(0)+'ms, faster than a person can answer');
+      ok(flight<0.7,k+' covers 300px in '+(flight*1000).toFixed(0)+'ms, which is not pressure, it is a tax');
+      // and the cast has to be a real window on its own, or the tell is decoration
+      ok(CAST_TIME>=sec(0.4),'the cast is under 0.4s, so the tell is a flash rather than a warning');
+      ok(CAST_TIME<=sec(0.8),'the cast is over 0.8s, so the gunner spends more time glowing than shooting');
+      // rate: the hard part should be how often, not how fast any one round is. The cast is part of
+      // the cycle - a gunner that has just fired spends CAST_TIME charging before it can fire again -
+      // so the cooldowns are set against the TOTAL, and measuring them alone would report a rate the
+      // player never actually experiences.
+      const gap=(c.cdMin+c.cdVar/2)/PRESSURE.rate/TICK_HZ+CAST_TIME/TICK_HZ;
+      ok(gap<1.3,k+' fires every '+(gap*1000).toFixed(0)+'ms, which is not busy enough to pressure you');
+      ok(gap>0.55,k+' fires every '+(gap*1000).toFixed(0)+'ms, which is a machine gun');
+    }
+    // a gunner walks you down instead of standing at the edge of its own reach
+    startGame(); const r=goTo('normal'); r.enemies.length=0;
+    const g=spawnEnemy(false,r,ROOM_LEFT+40,MIDY,'gunner'); r.enemies.push(g);
+    g.noticeTimer=0; g.alerted=false; g.shootCd=1e9;
+    player.x=ROOM_RIGHT-60; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    player.iframes=99999;
+    const start=Math.hypot(g.x-player.x,g.y-player.y);
+    for(let i=0;i<210*10;i++) update();
+    const end=Math.hypot(g.x-player.x,g.y-player.y);
+    ok(end<start-60,'the gunner did not close on a player it had noticed ('+start.toFixed(0)+'px -> '+end.toFixed(0)+'px)');
+    // and it settles inside its own band rather than walking into your face: a gunner that hugs you
+    // is a different, worse enemy, and the reason `close` exists at all
+    ok(end<=ENEMY.gunner.far+40,'the gunner closed to '+end.toFixed(0)+'px, outside its own band');
+  });
+  test('a zero-health player is never still playing, whatever the tick was doing',()=>{
+    // Fuzzed against real combat rather than reasoned about: play whole fights with the bot's
+    // decisions, and after every single tick assert the one invariant that must never break. If any
+    // code path can leave a player at zero health still holding the controller, this finds it.
+    let checked=0, fights=0, deaths=0;
+    for(let trial=0;trial<140;trial++){
+      startGame();
+      const all=Object.values(rooms).filter(r=>r.type==='normal');
+      for(const target of all){
+        enterRoom(target.x,target.y,'W'); readyT=0; fadeT=0; trans=null;
+        const r=currentRoom();
+        if(r.enemies.length<2) continue;
+        fights++;
+        player.hp=8; player.armor=0;
+        let t=0;
+        while(t<210*70 && r.enemies.length>0 && state==='playing'){
+          t++;
+          // aim at the nearest body and orbit it, which is what actually generates contact hits
+          let g=null,bd=1e9;
+          for(const e of r.enemies){
+            const d=Math.hypot(e.x-player.x,e.y-player.y);
+            if(d<bd){bd=d;g=e;}
+          }
+          if(g){
+            const a=Math.atan2(g.y-player.y,g.x-player.x), pp=a+(t%180<90?1:-1)*0.7;
+            const want=bd<120?200:230;
+            let tx=player.x+Math.cos(pp)*want, ty=player.y+Math.sin(pp)*want;
+            tx=Math.max(80,Math.min(720,tx)); ty=Math.max(160,Math.min(550,ty));
+            keys={};
+            if(Math.abs(tx-player.x)>8) keys[tx>player.x?'d':'a']=1;
+            if(Math.abs(ty-player.y)>8) keys[ty>player.y?'s':'w']=1;
+            mouse.x=g.x; mouse.y=g.y; mouseDown=true;
+          }
+          update();
+          checked++;
+          if(state==='playing'&&player.hp<=0){
+            ok(false,'survived a tick at zero health in room type '+r.type+
+              ' (readyT='+readyT+', trans='+(trans?1:0)+', pickups='+r.pickups.length+', iframes='+player.iframes+')');
+            return;
+          }
+          if(state!=='playing'){ deaths++; break; }
+        }
+        if(state!=='playing') break;
+      }
+    }
+    ok(checked>15000,'the fuzz only ran '+checked+' ticks, too few to be worth anything');
+    ok(deaths>0,'the fuzz never killed anybody, so it never reached the case under test');
+    ok(true,'checked '+checked+' ticks across '+fights+' fights, '+deaths+' deaths, no zero-health survivor');
+    // ...and the same thing again through the REAL frame loop, walking out through doors rather than
+    // teleporting between rooms. update() on its own is not the whole story: advance() can run a
+    // burst of ticks in one frame, a room transition can hand over mid-frame, and the ready window
+    // can swallow a whole frame. This drives advance() with a plausible frame time instead.
+    for(let trial=0;trial<40;trial++){
+      startGame();
+      let frames=0;
+      while(state==='playing'&&frames<4000){
+        frames++;
+        // a plausible 60Hz frame, so advance() runs its usual ~3.5 ticks
+        const n=advance(1000/60);
+        if(state==='playing'&&player.hp<=0){ ok(false,'advance() left a zero-health player playing'); return; }
+        if(state!=='playing') break;
+        const r=currentRoom();
+        if(r.enemies.length){
+          let g=null,bd=1e9;
+          for(const e of r.enemies){
+            const d=Math.hypot(e.x-player.x,e.y-player.y);
+            if(d<bd){bd=d;g=e;}
+          }
+          if(g){
+            const a=Math.atan2(g.y-player.y,g.x-player.x);
+            mouse.x=g.x; mouse.y=g.y; mouseDown=true;
+            // and walk at whatever is nearest, so doors and rooms really get crossed
+            if(bd>90){
+              if(Math.abs(Math.cos(a))>0.2) keys[Math.cos(a)>0?'d':'a']=1;
+              if(Math.abs(Math.sin(a))>0.2) keys[Math.sin(a)>0?'s':'w']=1;
+            } else keys={};
+          }
+        } else {
+          // room is quiet: head for a door and go through it
+          keys={};
+          const d=['N','S','E','W'].find(x=>r.doors[x]);
+          if(d){
+            const p=doorPoint(d), v={N:[0,-1],S:[0,1],E:[1,0],W:[-1,0]}[d];
+            const tx=p[0]+v[0]*70, ty=p[1]+v[1]*70;
+            if(Math.abs(tx-player.x)>6) keys[tx>player.x?'d':'a']=1;
+            if(Math.abs(ty-player.y)>6) keys[ty>player.y?'s':'w']=1;
+          }
+        }
+      }
+    }
+    ok(true,'advance() fuzz completed with no zero-health survivor');
+  });
+  test('fractional damage can never leave you alive on an empty health bar',()=>{
+    // Found by reading a live game that was, in fact, in exactly this state:
+    //     hp: 6.661338147750939e-16   state: 'playing'   armour: 0
+    // A shell does 1.8, so repeated fractional subtraction lands health just ABOVE zero, where
+    // `hp<=0` is false. The three-state heart then rendered every slot as 'empty' because its
+    // half-heart case was an exact test against 1. So the player was alive, on a bar that read as
+    // nothing, with no way to tell that from a finished run.
+    // Step one: the number itself must never be a non-zero sliver.
+    // Step one: the number itself must never be a non-zero sliver. damagePlayer is called directly
+    // here rather than through update(), because this loop is about the arithmetic; the death
+    // semantics are covered by the second loop, which does go through the real tick.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.hp=8; player.armor=0;
+    let crossed=false;
+    for(let i=0;i<40;i++){
+      player.iframes=0;
+      damagePlayer(SHOT_DMG,1,0,0);
+      ok(!(player.hp>0&&player.hp<1e-6),'health settled on the sliver '+player.hp);
+      if(player.hp<=0) crossed=true;
+    }
+    ok(crossed,'40 shells of 1.8 damage from full health never took the player below zero');
+    // and every intermediate value on the way down is a number the death check agrees with
+    for(let hp=8;hp>0;hp-=1.8){
+      startGame(); const rr=goTo('normal'); rr.enemies.length=0; readyT=0; fadeT=0;
+      player.hp=Math.max(hp,0); player.armor=0;
+      const alive=player.hp>0;
+      update();
+      eq(state==='gameover',!alive,'at hp '+player.hp.toFixed(2)+' the run '+(alive?'ended':'carried on'));
+    }
+    // Step two: whatever the number, a living player must have something visible in the plate.
+    // Read the fills the HUD actually asks for rather than trusting the arithmetic.
+    const fills=()=>{
+      const seen=[]; const real=window.drawHeart;
+      window.drawHeart=(cx,cy,fill)=>{seen.push(fill);};
+      try{ drawHUD(); }finally{ window.drawHeart=real; }
+      return seen.slice(0,Math.ceil(player.maxHp/2));
+    };
+    for(const hp of [8,7,2.1,1.5,1,0.7,0.4,0.2,0.001,6.66e-16]){
+      startGame(); const rr=goTo('normal'); rr.enemies.length=0; readyT=0; fadeT=0;
+      player.hp=hp; player.armor=0;
+      const f=fills();
+      const lit=f.reduce((a,v)=>a+v,0);
+      if(hp>0) ok(lit>0,'a living player on hp '+hp+' draws an empty health plate');
+      ok(f.every(v=>v>=0&&v<=1),'a heart was asked for a fill outside 0..1 ('+f.join(',')+')');
+    }
+    // and the plate sums to the health you actually have, to within one render step
+    startGame(); const rr=goTo('normal'); rr.enemies.length=0; readyT=0; fadeT=0;
+    player.hp=5.3; player.armor=0;
+    const shown=fills().reduce((a,v)=>a+v,0)*2;
+    ok(Math.abs(shown-5.3)<2/HEART_STEPS+0.001,'the plate shows '+shown.toFixed(2)+' health while the player has 5.3');
+  });
+  test('the hook gathers what it caught into a knot, and it is what waits behind the fake wall',()=>{
+    startGame();
+// you open every run holding the blast, because it is the only thing in the game that removes a body
+// outright, and the hook is what is behind the fake wall
+eq(player.altMode,'blast','a new run does not start with the blast equipped');
+    const host=Object.values(rooms).find(r=>r.secret);
+    const sec=Object.values(rooms).find(r=>r.type==='secret');
+    // the pocket itself, reached the only way it can be: through the wall
+    enterRoom(sec.x,sec.y,OPP[host.secret]); readyT=0; fadeT=0;
+    eq(currentRoom(),sec,'the pocket is not where the map says it is');
+    eq(currentRoom().pickups.length,1,'the secret room holds nothing');
+    eq(currentRoom().pickups[0].kind,'hook','the secret room does not hold the hook');
+    // and picking it up swaps you over, and back again on a second run
+    const p=currentRoom().pickups[0];
+    player.x=p.x; player.y=p.y; player.lagX=p.x; player.lagY=p.y;
+    update();
+eq(player.altMode,'hook','walking onto the hook did not swap the right click');
+
+    // The gather itself. This is the thing that was not working: a flat pull strength sent a body
+    // caught at the rim sailing through the point and barely moved one caught up close, so the
+    // crowd ended up scattered around the cursor rather than knotted on it. What is measured is
+    // how close each body actually GOT to the point, not where it ended up: once the hold expires
+    // the swarm walks back at the player, which is correct behaviour and not a failed gather.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.altMode='hook';
+    keys={}; mouseDown=false; altMouseDown=false;   // no stray casting from an earlier test
+    const put=(x,y,type)=>{ const e=spawnEnemy(false,r,x,y,type);
+      e.noticeTimer=1e9; e.speed=0; e.runSpeed=0; e.curSpeed=0; e.hp=999; e.maxHp=999; r.enemies.push(e); return e; };
+    // a ring of bodies at a spread of distances, alternating masses so a light one and a heavy
+    // one are both in the mix
+    const ring=[];
+    for(let i=0;i<8;i++){
+      const a=i/8*6.283;
+      ring.push(put(MIDX+Math.cos(a)*(60+i*6), MIDY+Math.sin(a)*(60+i*6), i%2?'brunch':'gunner'));
+    }
+    const cx=MIDX+40, cy=MIDY+10;   // aim a little off the middle of the ring
+    const caught=ring.filter(e=>Math.hypot(e.x-cx,e.y-cy)<HOOK_WEAPON.aoeRadius+e.r);
+    ok(caught.length>=6,'the ring only put '+caught.length+' bodies in range of the test point');
+    const startD=ring.map(e=>Math.hypot(e.x-cx,e.y-cy));
+    const hp0=ring.map(e=>e.hp);
+    const best=ring.map(()=>1e9);
+    explode(r,cx,cy,HOOK_WEAPON);
+    eq(ring.map(e=>e.hp).join(','),hp0.join(','),'the hook damaged a body the moment it went off');
+    // a knock of speed v coasts for v/(1-friction) ticks, so a body caught at the rim needs well
+    // over a second to arrive. run the drag out, sampling the closest approach each body makes
+    const coast=Math.ceil(HOOK_WEAPON.aoeRadius*HOOK_PULL_GAIN*HOOK_WEAPON.pull/(1-KNOCK_FRICTION));
+    for(let i=0;i<coast+40;i++){ update(); ring.forEach((e,j)=>{ best[j]=Math.min(best[j],Math.hypot(e.x-cx,e.y-cy)); }); }
+    // the field is allowed to grind them down - that is what it is for - but nothing else may
+    // touch them, so no body may lose more than the field could account for
+    const fieldMax=HOOK_DPS*(coast+40)/TICK_HZ*1.1;
+    ok(ring.every((e,i)=>e.hp>hp0[i]-fieldMax),'a body took more damage than the ground spell can account for');
+    const avg=a=>a.reduce((s,v)=>s+v,0)/a.length;
+    const was=caught.map(e=>best[ring.indexOf(e)]);
+    const from=caught.map(e=>startD[ring.indexOf(e)]);
+    // They cluster AROUND the point rather than all landing on it, and that is the correct outcome:
+    // bodies cannot overlap, and two gunners alone are 22px of radius each, so no amount of pull
+    // stacks them on one spot. ~34px is the floor for a ring of Brunch and gunners - about one body
+    // diameter - and what has to be true is that the crowd collapses onto the point from spread out.
+    ok(avg(was)<avg(from)*0.45,'the crowd did not close in ('+(avg(from)||0).toFixed(0)+'px -> '+(avg(was)||0).toFixed(0)+'px)');
+    ok(avg(was)<38,'the caught bodies did not knot up by the point (closest approach averaged '+(avg(was)||0).toFixed(0)+'px)');
+    ok(Math.max.apply(null,was)<60,'a body was left out on its own ('+Math.max.apply(null,was).toFixed(0)+'px closest)');
+    // and a light body and a heavy one arrive together, which is what the mass scaling buys
+    const light=ring.findIndex(e=>e.type==='brunch'), heavy=ring.findIndex(e=>e.type==='gunner');
+    ok(Math.abs(best[light]-best[heavy])<18,'a Brunch and a gunner were pulled to different depths ('+
+       best[light].toFixed(0)+'px vs '+best[heavy].toFixed(0)+'px)');
+    // a body caught on the rim has to travel much further than one caught on top of it, or the
+    // gather is really just a nudge
+    r.enemies.length=0;
+    const onTop=put(cx+22,cy), atRim=put(cx+HOOK_WEAPON.aoeRadius-8,cy);
+    explode(r,cx,cy,HOOK_WEAPON);
+    ok(Math.abs(atRim.kvx)>Math.abs(onTop.kvx)*3,'the rim body was not yanked harder than the one on top of it ('+
+       Math.abs(onTop.kvx).toFixed(2)+' vs '+Math.abs(atRim.kvx).toFixed(2)+')');
+    ok(Math.abs(onTop.kvx)<=KNOCK_MAX+1e-6&&Math.abs(atRim.kvx)<=KNOCK_MAX+1e-6,'the yank exceeded the knock cap');
+  });
+  test('the shockwave wears the right colour and travels the way the weapon acts',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    const pop=mode=>{ burstFX.length=0; explode(r,MIDX,MIDY,mode); return burstFX[burstFX.length-1]; };
+    const b=pop(ALT_WEAPON), h=pop(HOOK_WEAPON);
+    eq(b.color,ALT_WEAPON.color,'the blast shockwave is not the blast colour');
+    eq(h.color,HOOK_WEAPON.color,'the hook shockwave is not the hook colour');
+    ok(b.color!==h.color,'both shockwaves are the same colour');
+    eq(b.dir,1,'the blast shockwave does not travel outward');
+    eq(h.dir,-1,'the hook shockwave does not travel inward');
+    // and the drawn radius really does travel that way, from the numbers rather than the flag
+    const radiusAt=(f,t)=>f.r*(f.dir<0?1-t:t);
+    ok(radiusAt(b,0.2)<radiusAt(b,0.8),'the blast ring is not growing');
+    ok(radiusAt(h,0.2)>radiusAt(h,0.8),'the hook ring is not collapsing');
+  });
+  test('the hook leaves a ground spell that holds, drains and grinds',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.altMode='hook'; keys={}; mouseDown=false; altMouseDown=false;
+    const put=(x,y,type)=>{ const e=spawnEnemy(false,r,x,y,type||'chaser');
+      e.noticeTimer=1e9; e.hp=999; e.maxHp=999; r.enemies.push(e); return e; };
+    const cx=MIDX+30, cy=MIDY;
+    const held=put(cx+40,cy), far=put(cx+HOOK_WEAPON.aoeRadius-14,cy), outside=put(cx+HOOK_WEAPON.aoeRadius+70,cy);
+    explode(r,cx,cy,HOOK_WEAPON);
+    eq(hookFields.length,1,'the hook left nothing on the ground');
+    eq(hookFields[0].r,HOOK_WEAPON.aoeRadius,'the ground spell is the wrong size');
+    // it holds: a body inside it is being stunned every tick, so it cannot walk out
+    for(let i=0;i<20;i++) update();
+    ok(held.stun>0,'a body inside the field was not held');
+    ok(outside.stun===0,'a body outside the field was caught by it');
+    // it drains: the field walks stragglers in, which a stun alone cannot do, because a stunned
+    // body does not integrate knockback at all
+    const dA=Math.hypot(far.x-cx,far.y-cy);
+    for(let i=0;i<40;i++) update();
+    ok(Math.hypot(far.x-cx,far.y-cy)<dA-8,'the ground spell did not walk a body toward it');
+    // it grinds: damage over time, and only to what is inside
+    const h1=held.hp, h2=outside.hp;
+    for(let i=0;i<60;i++) update();
+    ok(held.hp<h1,'the field dealt no damage over time');
+    eq(outside.hp,h2,'the field damaged a body outside its radius');
+    // and it goes away on its own, rather than lasting until something else cleans it up
+    for(let i=0;i<HOOK_FIELD_TIME+40;i++) update();
+    eq(hookFields.length,0,'the ground spell never expired');
+  });
+  test('the voidball drills through a line of bodies and is the worst gun against one of them',()=>{
+    const VB=WEAPONS[3], B=WEAPONS[0];   // declared here, before the first use above
+    const at0=(wp,d)=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.weaponIdx=3; player.hp=99; player.maxHp=99; player.iframes=99999;
+    player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    keys={}; mouseDown=false; altMouseDown=false;
+    // five chasers in a line down the room, none of them moving, so the only variable is the bolt
+    const line=[];
+    for(let i=0;i<5;i++){
+      const e=spawnEnemy(false,r,player.x+120+i*40,MIDY,'chaser'); r.enemies.push(e);
+      e.noticeTimer=1e9; e.aggroTimer=0; e.speed=0; e.runSpeed=0; e.hp=1e7; e.maxHp=1e7; e.stun=1e9;
+      line.push(e);
+    }
+    const before=line.map(e=>e.hp);
+    mouse.x=line[0].x; mouse.y=line[0].y;
+    player.cooldown=0; fireWeapon();
+    const bolt=projectiles[projectiles.length-1];
+    ok(bolt,'the voidball did not fire');
+    eq(bolt.pierce,3,'the voidball is not set up to pass through three bodies');
+    eq(bolt.scale,1,'a fresh bolt is not at full strength');
+    ok(!bolt.hit,'a fresh bolt already remembers a body it has hit');
+    for(let i=0;i<140;i++){ mouse.x=player.x+900; update(); }   // long enough for the bolt to reach the far end of the line
+    const hit=line.filter(e=>e.hp<before[line.indexOf(e)]);
+    eq(hit.length,4,'the voidball hit '+hit.length+' bodies in a line of 5, wanted 4 (one plus three pierces)');
+    // it stopped at the fifth, which is what pierce:3 is supposed to mean
+    eq(line[4].hp,before[4],'the voidball passed through five bodies with pierce set to three');
+    // and each body it passed took less than the one in front of it, which is what makes lining a
+    // pack up a decision rather than a formality
+    const dealt=line.slice(0,4).map((e,i)=>before[i]-e.hp);
+    for(let i=1;i<4;i++) ok(dealt[i]<dealt[i-1],'body '+i+' of the line took '+dealt[i].toFixed(2)+' against '+dealt[i-1].toFixed(2)+' for the body in front, so pierce falloff is not being applied');
+    // The exact prediction has to account for the pierce discount, the distance discount, and the
+    // body's own ARMOUR, which is a per-hit multiplier and so scales every pass. Each body is also
+    // further from the muzzle than the one in front of it, which is why a ratio computed from the
+    // pierce term alone comes out wrong.
+    const afw2=(d)=>at0(VB,d);
+    for(let i=1;i<4;i++){
+      const want=VB.dmg*afw2(120+i*40)*line[0].armour*Math.pow(PIERCE_FALLOFF,i);
+      ok(Math.abs(dealt[i]/want-1)<0.06,'body '+i+' took '+dealt[i].toFixed(3)+' where pierce falloff plus distance falloff predicts '+want.toFixed(3));
+    }
+    // it never counts the same body twice, which is the failure a piercing bolt falls into when
+    // the author forgets: a bolt parked inside a Brunch chews on it forever and never advances
+    const d0=before[0]-line[0].hp;
+    for(let i=0;i<80;i++) update();
+    ok(Math.abs((before[0]-line[0].hp)-d0)<1e-9,'a body was counted more than once by the same bolt ('+(before[0]-line[0].hp).toFixed(3)+' vs '+d0.toFixed(3)+')');
+    // and it IS a utility gun, not a damage gun: worse than the Bolt on any single body
+    const solo=wp=>wp.dmg*at0(wp,250)/(wp.cooldown/TICK_HZ);
+    ok(solo(B)>solo(VB),'the voidball out-damages the bolt against a single body ('+solo(VB).toFixed(1)+' vs '+solo(B).toFixed(1)+'), so there is no reason to leave the bolt');
+    // the whole reason for the pierce: across a line of bodies it wins by a lot, and that is a
+    // number you cannot get out of the Bolt no matter how you aim it. Four bodies at one range,
+    // which is the best case for both guns and therefore the fairest comparison.
+    const d=250, sum=(k)=>{let t=0;for(let i=0;i<k;i++)t+=Math.pow(PIERCE_FALLOFF,i);return t;};
+    const lineUp=wp=>wp.dmg*at0(wp,d)*sum(4)/(wp.cooldown/TICK_HZ);
+    ok(lineUp(VB)/solo(B)>2,'across four bodies in a line the voidball is only '+(lineUp(VB)/solo(B)).toFixed(2)+'x the bolt, which is not worth swapping a gun for');
+    // and it stays a utility gun, not a free upgrade: a shot into empty air is worth nothing
+    ok(lineUp(VB)/solo(B)<8,'the voidball is so far ahead on a line that pierce is the only thing that matters, and the gun is no longer a choice');
+    // the two other guns are untouched by any of this
+    ok(!WEAPONS[1].pierce&&!WEAPONS[2].pierce,'a gun that was supposed to be left alone has picked up pierce');
+  });
+  test('the blast wounds the smallest Brunch group instead of deleting it',()=>{
+    // The case that has to fail. BRUNCH.pack starts at 4, and a 4-pack is both the smallest group
+    // that can roll and the most common one, so if the blast can wipe it the weapon is a pack-clearing
+    // button and the whole dispersion curve is decoration.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    const put=(n)=>{ r.enemies.length=0; const out=[];
+      for(let i=0;i<n;i++){ const e=spawnEnemy(false,r,MIDX-((n-1)/2)*26+i*26,MIDY,'brunch'); r.enemies.push(e); }
+      return r.enemies.slice(); };
+    // The line is between a KILLSHOT and a WOUND, and it is not a round number - it falls where
+    // the share drops below one Brunch's health, which at 2.4 is between 3 and 4. So a group of 3
+    // dies and a group of 4 does not, and the group sizes the game actually rolls start at 4.
+    for(const n of [1,2,3]){
+      const g=put(n);
+      explode(r,MIDX,MIDY,ALT_WEAPON);
+      // a body counts as dead only if it is GONE, not if its health is a rounding error from zero.
+      // At n=3 the share lands within a hundredth of a Brunch's health, and hp<=0 on 2.68-against-2.7
+      // is exactly the float knife edge that left a chaser alive at 3e-15 health in an earlier build
+      const live=g.filter(e=>r.enemies.indexOf(e)>=0).length;
+      eq(live,0,'a blast into '+n+' Brunch left '+live+' standing, and a blast is meant to be a killshot at that size');
+    }
+    for(const n of [4,5,6,7,8]){
+      const g=put(n);
+      explode(r,MIDX,MIDY,ALT_WEAPON);
+      const live=g.filter(e=>e.hp>0).length;
+      eq(live,n,'a blast into a group of '+n+' killed '+live+' of them; the smallest group is the one that has to be spared');
+      const worst=g.reduce((m,e)=>Math.min(m,e.hp),1e9);
+      ok(worst>0.5,'a group of '+n+' was left on '+worst.toFixed(2)+'hp - a wound, not a kill, but not a sliver either');
+    }
+    // The margin assertion, which is the one that matters. A three-strong group dying is a design
+    // statement, and it has to die by a margin rather than by a rounding error: at 2.40 it took
+    // 2.689 against 2.7 health and survived on 0.011hp, which is a whole-body kill that only works
+    // at one exact TOUGH value. Any future retune has to fail THIS first.
+    for(const n of [1,2,3]){
+      const s=ALT_WEAPON.pool/Math.pow(n,DISPERSE);
+      ok(s>ENEMY.brunch.hp*1.05,'a group of '+n+' is meant to die but only takes '+(s/ENEMY.brunch.hp*100).toFixed(0)+'% of a Brunch, which is inside the float noise');
+    }
+    // the four-pack specifically: the most common group in the game, and it must come out hurt
+    const g=put(4);
+    explode(r,MIDX,MIDY,ALT_WEAPON);
+    const after=g.map(e=>+(e.hp/ENEMY.brunch.hp).toFixed(2));
+    ok(after.every(v=>v>0.3&&v<0.6),'a 4-pack came out at '+after.join(',')+' of its health, wanted every body clearly wounded');
+    // and the thing the curve must never cost: a lone armoured heavy is still a killshot
+    r.enemies.length=0;
+    const c=spawnEnemy(false,r,MIDX,MIDY,'chaser'); r.enemies.push(c);
+    explode(r,MIDX,MIDY,ALT_WEAPON);
+    eq(c.hp<=0,true,'the blast can no longer kill a lone armoured heavy, which is the one promise it is named for');
+    eq(r.enemies.length,0,'the lone armoured heavy survived the blast');
+    // the two are the same budget, so this is the whole design in one assertion: a crowd of one is
+    // a killshot, a crowd of four is a wound, and the difference is entirely DISPERSE
+    const share=n=>ALT_WEAPON.pool/Math.pow(n,DISPERSE);
+    ok(share(1)*ENEMY.chaser.armour>ENEMY.chaser.hp,'the budget is not enough for a lone heavy');
+    ok(share(4)<ENEMY.brunch.hp,'a 4-pack still dies outright');
+    ok(share(8)<share(4),'a bigger group takes MORE damage per body, so dispersion is not dispersing');
+  });
+  test('a Brunch spends itself on touching you, and a pack eats itself',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=99; player.maxHp=99; player.armor=0; keys={}; mouseDown=false; altMouseDown=false;
+    const put=(x,y)=>{ const e=spawnEnemy(false,r,x,y,'brunch'); e.noticeTimer=0; e.aggroTimer=9999; r.enemies.push(e); return e; };
+    // one Brunch, parked on the player: it lands a hit, spends half its body, and the second touch
+    // kills it. This is the whole mechanic.
+    const b=put(MIDX+4,MIDY);
+    const before=b.hp;
+    for(let i=0;i<400&&r.enemies.length;i++) update();
+    eq(r.enemies.length,0,'a Brunch that reached the player twice did not die on the second one');
+    ok(before>0,'the Brunch had no health to spend');
+    // and a whole knot: every one of them that reaches you pays for it, and the pack cannot be a
+    // damage clock. Iframes used to shield them from the cost while still letting them hit.
+    r.enemies.length=0;
+    const pack=[]; for(let i=0;i<6;i++) pack.push(put(MIDX-20+i*8,MIDY));
+    for(let i=0;i<600&&r.enemies.length;i++) update();
+    eq(r.enemies.length,0,'a six-strong pack did not eat itself: '+r.enemies.length+' left standing');
+    // no more than two hits per Brunch is what "dies after hitting the player twice" means. A tick
+    // where the player is inside their own i-frames does NOT count, which is why the first one took
+    // 79 ticks: the Brunch landed a hit, spent half its body, and then spent the next second and a
+    // half pressed against a player it could not touch. It dies the moment it can touch them again.
+    r.enemies.length=0; player.hp=99; player.armor=0; player.iframes=0;
+    const b2=put(MIDX+4,MIDY);
+    let realHits=0;
+    for(let i=0;i<600&&b2.hp>0;i++){
+      const before2=b2.hp, hpBefore=player.hp;
+      update();
+      // a hit is a tick where the Brunch's health actually went down, whatever the i-frames did
+      if(b2.hp<before2) realHits++;
+      else if(player.hp<hpBefore) realHits++;   // it hit without dying: the shielded case, counted too
+    }
+    ok(realHits<=2,'a Brunch took '+realHits+' hits before dying, wanted at most 2');
+    ok(realHits>=2,'a Brunch died in '+realHits+' hit(s); it is meant to survive exactly one');
+    // a Brunch that only ever brushes the i-frame window still spends itself: collision is collision
+    startGame(); const r2=goTo('normal'); r2.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=99; player.maxHp=99; player.iframes=99999; player.armor=0;
+    const shielded=spawnEnemy(false,r2,MIDX+4,MIDY,'brunch'); shielded.noticeTimer=0; shielded.aggroTimer=9999; r2.enemies.push(shielded);
+    for(let i=0;i<400&&r2.enemies.length;i++) update();
+    eq(r2.enemies.length,0,'a Brunch pressed against an invulnerable player survived forever, which is the exact loophole the old code had');
+  });
+  test('being hit is where the model is, and it is not the whole model',()=>{
+    startGame();
+    const rows=PLAYER_FRAMES[1], cell=2;
+    // the model, measured off the sprite rather than asserted: 12x18 cells at scale 2
+    const w=rows[0].length*cell, h=rows.length*cell;
+    eq(w,24,'the player model is not 24px wide, so the hitbox reasoning below is about a different character');
+    ok(PLAYER_HIT_DY>0,'the hitbox is centred on the origin, which is the top of the model and not its middle');
+    // the hitbox must be centred ON the mass of the character, not on the anchor
+    ok(PLAYER_HIT_DY<h*0.5,'the hitbox is not even inside the character');
+    // and it must be forgiving: strictly smaller than the model in both axes, never exact. An exact
+    // hitbox turns every graze into a judgement call, and the two damage paths stop agreeing.
+    ok(PLAYER_HIT_R*2<w,'the hitbox is as wide as the model, so every visual graze is a real hit');
+    ok(PLAYER_HIT_R*2<w*0.95,'the hitbox is within 5% of the model width, which is "accurate" by another name');
+    ok(PLAYER_HIT_R>=6,'the hitbox is so small the game stops being about dodging');
+    // one number decides all of it, so the shells and the bodies cannot drift apart
+    const src=[String(playerHit)];
+    ok(src.length===1&&/PLAYER_HIT_DY/.test(src[0])&&/PLAYER_HIT_R/.test(src[0]),'playerHit does not use both hitbox constants');
+    // the shells go through it. Aimed SIDEWAYS at a fixed height, which is the only way to test a
+    // vertical hitbox: a shell fired down the centre line passes through the whole character and
+    // hits at any offset, so it cannot tell you where the box is.
+    const grazeAt=(yOffset)=>{
+      startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+      player.hp=8; player.armor=0; player.iframes=0;
+      const y=MIDY+yOffset, hp0=player.hp;
+      // spawn INSIDE the room. A shell pushed in from outside the walls is culled on its first tick
+      // by the out-of-bounds check, so a test that does that measures nothing and passes by accident.
+      const x0=ROOM_LEFT+4;
+      for(let i=0;i<400&&player.hp===hp0;i++){
+        projectiles.push({x:x0,y:y,vx:2.45,vy:0,r:5,dmg:1.8,friendly:false,color:'#ff4d4d',owner:null});
+        update();
+      }
+      return player.hp<hp0;
+    };
+    // the hood, above the box: a shell through the top of the character must miss
+    ok(!grazeAt(-8),'a shell through the hood of the player landed, so the hitbox is up in the head');
+    // the torso: must land
+    ok(grazeAt(PLAYER_HIT_DY),'a shell through the chest of the player missed, so the hitbox is not on the body');
+    // the feet, well below the box: must miss, and this is the case the old box got backwards -
+    // it stopped at the waist, so a body at your feet was in the gap and unhittable
+    ok(!grazeAt(26),'a shell at the feet landed; the hitbox has grown to swallow the legs');
+    // and the bodies go through the same one, so a body has to reach the same part a shell does
+    startGame(); const r3=goTo('normal'); r3.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=8; player.armor=0; player.iframes=0;
+    const walker=spawnEnemy(false,r3,MIDX+40,MIDY,'chaser'); r3.enemies.push(walker);
+    walker.noticeTimer=0; walker.aggroTimer=9999;
+    const hp2=player.hp;
+    for(let i=0;i<400&&player.hp===hp2;i++) update();
+    ok(player.hp<hp2,'a chaser walked into the player and nothing happened, so contact and projectiles disagree');
+  });
+  test('the bolt visibly spends itself as it travels, and only visually',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    const B=WEAPONS[0];
+    ok(B.shrink,'the bolt does not shrink, so the falloff is invisible until it lands');
+    ok(!WEAPONS[1].shrink&&!WEAPONS[2].shrink&&!WEAPONS[3].shrink,'a gun that was meant to be left alone has started shrinking');
+    player.weaponIdx=0; player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.cooldown=0; mouse.x=MIDX+900; mouse.y=MIDY;
+    fireWeapon();
+    const b=projectiles[projectiles.length-1];
+    ok(b.shrink,'the fired bolt was not marked as a shrinking one');
+    // size must fall as the damage will, and be read off the SAME curve rather than a second one
+    const probe=(dist)=>{ b.x=player.x+dist; b.y=player.y; return {r:drawR(b),dmg:b.dmg*falloffMult(b)}; };
+    const near=probe(20), mid=probe(B.fNear+(B.fFar-B.fNear)*0.5), far=probe(B.fFar+200);
+    ok(near.r>mid.r&&mid.r>far.r,'the bolt does not shrink along its own falloff: '+[near.r,mid.r,far.r].map(v=>v.toFixed(1)).join(' -> '));
+    ok(near.r>=BOLT_DRAW_R*BOLT_SIZE_MAX-0.01,'the bolt is not at its largest point blank ('+near.r.toFixed(2)+' vs '+BOLT_DRAW_R*BOLT_SIZE_MAX+')');
+    // it is bigger than the old bolt at the muzzle, which is the buff the shrink rides on
+    ok(near.r>B.r,'the bolt is drawn smaller than its own collision radius at the muzzle, so it will look like it misses');
+    // the size tracks damage monotonically: no distance where the picture says more than it does
+    let lastD=Infinity,lastR=Infinity,breaks=0;
+    for(let d=0;d<700;d+=5){ const p=probe(d); if(p.dmg>lastD+1e-9||p.r>lastR+1e-9)breaks++; lastD=p.dmg; lastR=p.r; }
+    eq(breaks,0,'the drawn size and the damage disagree somewhere along the flight ('+breaks+' disagreements)');
+    // The band is narrow ON PURPOSE: the ask was a change you can feel without being startled by,
+    // so the failure modes are "invisible" at one end and "reads as a different gun" at the other,
+    // and the muzzle is only allowed to be a shade above the plain 5px bolt it replaced.
+    ok(far.r>=3.4,'a spent bolt is '+far.r.toFixed(2)+'px, which is too small to see and therefore impossible to dodge');
+    ok(far.r<=near.r*0.72,'a spent bolt is '+far.r.toFixed(2)+'px against '+near.r.toFixed(2)+'px at the muzzle, which reads as the shot being switched off rather than as a tell');
+    ok(near.r<=6.6,'the bolt at the muzzle is '+near.r.toFixed(2)+'px, which is a different gun rather than a visual tell');
+    ok(near.r>5,'the bolt at the muzzle is no bigger than the plain bolt it replaced, so nothing changed');
+    // and the VFX has to fade with it, because size alone is a weak tell on a bright floor. Two
+    // channels at once is what makes it readable while aiming rather than readable while dying.
+    const f0=drawFade({shrink:true,ox:player.x,oy:player.y,x:player.x+20,y:player.y,fNear:B.fNear,fFar:B.fFar});
+    const f1=drawFade({shrink:true,ox:player.x,oy:player.y,x:player.x+B.fFar+200,y:player.y,fNear:B.fNear,fFar:B.fFar});
+    ok(f0>f1,'the halo does not dim as the bolt shrinks ('+f0.toFixed(2)+' -> '+f1.toFixed(2)+')');
+    ok(f1>=0.5,'a spent bolt is nearly invisible, which makes the shot feel switched off ('+f1.toFixed(2)+')');
+    ok(f0<=1.001&&f0>=0.99,'the halo at the muzzle is not drawn at full strength ('+f0.toFixed(2)+')');
+    // a gun that does not shrink must not dim either
+    ok(drawFade({shrink:false})===1,'a projectile with no falloff visual was faded anyway');
+    // CRUCIALLY the collision radius never moved. Accuracy must not be a function of damage.
+    ok(b.r===6,'the collision radius changed with the falloff ('+b.r+'), which would make the gun harder to aim as it weakens');
+  });
+  test('every weapon, spell and icon is the colour its own projectile is',()=>{
+    // The Bolt icon was drawn in blast-orange because bakeIcon reached for the alt weapon's colour
+    // for every icon at all. An icon that is a different colour from the thing it stands for is not
+    // decoration, it is the game lying about which gun you picked up.
+    startGame();
+    // distinct enough to tell apart at a glance on a dark floor
+    const cols=WEAPONS.map(w=>w.color).concat([ALT_WEAPON.color,HOOK_WEAPON.color]);
+    for(let i=0;i<cols.length;i++) for(let j=i+1;j<cols.length;j++)
+      ok(cols[i]!==cols[j],'two spells share the colour '+cols[i]+' ('+i+' and '+j+')');
+    // every icon bakes without throwing, for every index anything can pass
+    for(const idx of [0,1,2,3,'hook','blast','alt']){
+      let threw=null; try{ bakeIcon(idx); }catch(e){ threw=e.message; }
+      ok(!threw,'baking the icon '+JSON.stringify(idx)+' threw: '+threw);
+    }
+    // and the icon colour is derived from the weapon, so the two cannot drift apart again
+    const src=String(bakeIcon);
+    ok(/WEAPONS\[idx\]/.test(src),'bakeIcon does not read the colour off the weapon it is drawing');
+    ok(!/ALT_MODES\[idx===\'hook\'/.test(src),'bakeIcon still defaults to the alt weapon for every icon, which is the original bug');
+    // the glow behind each icon and the wand tip come from the same field, so nothing else can drift
+    startGame();
+    player.weaponIdx=0;
+    const w0=WEAPONS[player.weaponIdx].color;
+    eq(w0,'#c79bff','the bolt is not the lighter purple it is meant to be');
+    const c=document.createElement('canvas'); c.width=34; c.height=34;
+    const g=c.getContext('2d'); g.drawImage(iconCache[0]||bakeIcon(0),0,0);
+    const d=g.getImageData(0,0,34,34).data;
+    let hit=false;
+    for(let i=0;i<d.length;i+=4){
+      if(d[i+3]>200){
+        const hex='#'+[d[i],d[i+1],d[i+2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+        if(hex.toLowerCase()===w0.toLowerCase()){hit=true;break;}
+      }
+    }
+    ok(hit,'the bolt icon does not actually contain the bolt colour anywhere in it');
+  });
+  test('the pierce discount follows the order the bolt actually reached bodies',()=>{
+    // The bug this pins: the hit loop walks the array backwards so killEnemy cannot corrupt it,
+    // and taking "whichever body the loop reaches first" meant the discount followed ARRAY order
+    // rather than arrival order. In a knot - where a bolt is inside two bodies on the same tick -
+    // that let a line take LESS damage at the front than at the back purely because of spawn order.
+    // Nothing about that is visible to the player, so nothing about it could be played around.
+    const shot=(spacing,reversed)=>{
+      // spawnPlan cleared as well as the bodies. goTo arms the room's wave, so a test that empties
+      // r.enemies and leaves the plan in place is measuring a shot into a knot that is still being
+      // added to - bodies arriving from behind, shoved around by separation, arriving at the bolt
+      // from an angle the fixture never placed them at. It read as a pierce regression and it was
+      // nothing of the kind.
+      startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+      player.weaponIdx=3; player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+      player.hp=99; player.maxHp=99; player.iframes=99999; player.cooldown=0;
+      const line=[];
+      for(let i=0;i<4;i++){
+        const x=player.x+140+(reversed?(3-i):i)*spacing;
+        const e=spawnEnemy(false,r,x,MIDY,'chaser'); r.enemies.push(e);
+        e.noticeTimer=1e9; e.speed=0; e.runSpeed=0; e.hp=1e7; e.maxHp=1e7; e.stun=1e9;
+        line.push(e);
+      }
+      const h0=line.map(e=>e.hp);
+      mouse.x=player.x+140; mouse.y=MIDY;   // always aim at the NEAREST body
+      fireWeapon();
+      for(let k=0;k<300;k++){ mouse.x=player.x+900; update(); }
+      // return damage paired with distance from the muzzle, which is arrival order by definition
+      return line.map((e,i)=>({d:Math.hypot(e.x-player.x,e.y-player.y),t:h0[i]-e.hp}));
+    };
+    for(const spacing of [14,40]){
+      for(const reversed of [false,true]){
+        const got=shot(spacing,reversed);
+        // every body was hit, and damage never increases as you go further from the muzzle
+        ok(got.every(g=>g.t>0),'at '+spacing+'px'+ (reversed?' reversed':'')+' a body in the line was skipped entirely');
+        let bad=0;
+        for(let i=0;i<got.length;i++) for(let j=i+1;j<got.length;j++){
+          const a=got[i],b=got[j];
+          // the failure is a NEARER body taking LESS than a further one - the front of the line
+          // being discounted and the back of it taking the full hit, which is what array order did
+          if(a.d<b.d&&a.t<b.t-1e-9) bad++;
+        }
+        eq(bad,0,'at '+spacing+'px'+(reversed?' reversed':'')+' the discount followed array order, not arrival order: '+got.map(g=>g.d.toFixed(0)+'px:'+g.t.toFixed(2)).join(' '));
+      }
+    }
+    // and a shot into a real knot. A knot is not arranged along the bolt's path, so this cannot be
+    // checked with a straight-line distance - the only statement that holds for any arrangement is
+    // that the first body the bolt reached took the full hit, and each subsequent one took a little
+    // less. So assert the shape of the falloff, not a comparison against one particular body.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+    player.weaponIdx=3; player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    player.hp=99; player.maxHp=99; player.iframes=99999; player.cooldown=0;
+    const cx=player.x+180, knot=[];
+    for(let i=0;i<8;i++){
+      const a=(i/8)*6.283, rad=i%2?25:13;   // the two rings spawnWave actually uses
+      const e=spawnEnemy(false,r,cx+Math.cos(a)*rad,MIDY+Math.sin(a)*rad,'brunch'); r.enemies.push(e);
+      e.noticeTimer=1e9; knot.push(e);
+    }
+    /* Two more, placed ON the bolt's line, and they are the reason this test works.
+
+       A bolt fired at the centre of that ring meets exactly two of the eight: the pair sitting on the
+       line at a=0 and a=PI. The four at radius 25 sit seventeen pixels off it and the two inner ones
+       sit above and below the centre - all of them outside a thirteen pixel reach. So the ring on
+       its own cannot produce a sequence long enough to check, and the "at least three" assertion was
+       being satisfied by bodies the ROOM spawned: goTo arms the wave, the plan was never cleared,
+       and extra Brunch arrived from wherever the wave happened to put them. Clearing the plan
+       exposed that, which is the correct order for a test to fail in.
+
+       So the bodies the test needs are put there on purpose now, well inside the line and far enough
+       apart that separation cannot slide them out of it before the bolt gets there. */
+    for(const off of [-62,62]){
+      const e=spawnEnemy(false,r,cx+off,MIDY,'brunch'); r.enemies.push(e);
+      e.noticeTimer=1e9; knot.push(e);
+    }
+    const N=knot.length;
+    const k0=knot.map(e=>e.hp);
+    mouse.x=cx; mouse.y=MIDY; fireWeapon();
+    const bolt=projectiles[projectiles.length-1];
+    // Record WHEN each body was hit, not where it ended up. A knot shoves itself around as separation
+    // runs, so measuring a body's position after the shot has landed reorders the very thing being
+    // tested - which is how the previous version of this assertion reported a healthy shot as broken.
+    // What has to be monotonic is the damage against the bolt's own distance travelled at impact.
+    const at=new Array(N).fill(-1);
+    for(let k=0;k<120;k++){
+      mouse.x=player.x+900;
+      const flown=bolt?Math.hypot(bolt.x-bolt.ox,bolt.y-bolt.oy):Infinity;
+      update();
+      for(let i=0;i<N;i++) if(at[i]<0&&k0[i]-knot[i].hp>0) at[i]=flown;
+    }
+    const hit=at.map((flown,i)=>({flown,t:k0[i]-knot[i].hp})).filter(g=>g.t>0);
+    ok(hit.length>=3,'a shot into a knot hit '+hit.length+' bodies, wanted at least 3 to be worth calling pierce');
+    const ordered=hit.slice().sort((a,b)=>a.flown-b.flown);
+    for(let i=1;i<ordered.length;i++)
+      ok(ordered[i].t<=ordered[i-1].t+1e-9,'a body the bolt reached LATER took MORE damage than the one before it: '+ordered.map(g=>g.flown.toFixed(0)+'px:'+g.t.toFixed(2)).join(' '));
+    // and the first body met must be the undiscounted one, or the falloff is charging the wrong end.
+    // The tolerance is loose because each pass also pays the DISTANCE falloff for being further from
+    // the muzzle, which stacks with the pierce discount - so the ratio is near PIERCE_FALLOFF, not
+    // exactly it, and pinning it tightly would be pinning one of the two curves to the other.
+    const ratio=ordered.length>1?ordered[1].t/ordered[0].t:PIERCE_FALLOFF;
+    ok(Math.abs(ratio-PIERCE_FALLOFF)<0.1,
+      'the second body in a shot took '+ratio.toFixed(3)+'x the first, wanted about '+PIERCE_FALLOFF+': '+ordered.map(g=>g.t.toFixed(2)).join(', '));
+  });
+  test('a bolt is resolved from the weapon it was thrown with',()=>{
+    // The hook's own detonation reached for activeAlt() rather than the mode it was cast with, so
+    // swapping right clicks while a hook was in the air made it detonate as a blast: a shove and a
+    // damage budget where a pull was owed. Silent, and it would have shown up as "the hook sometimes
+    // does nothing" rather than as a bug anyone could name.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    const g=spawnEnemy(false,r,MIDX+220,MIDY,'chaser'); r.enemies.push(g);
+    g.noticeTimer=0; g.aggroTimer=0;
+    player.altMode='hook'; player.altCooldown=0; player.cooldown=0;
+    mouse.x=MIDX+200; mouse.y=MIDY;
+    fireAlt();
+    ok(projectiles.some(p=>p.alt),'the hook was not cast');
+    hookFields.length=0;
+    player.altMode='blast';               // swap mid-flight
+    for(let k=0;k<400&&!hookFields.length;k++) update();
+    eq(hookFields.length,1,'a hook swapped to blast mid-flight did not leave its ground spell');
+    eq(g.hp,ENEMY.chaser.hp,'a hook that detonated as a blast dealt damage, which the hook never does');
+    // and the same for the blast: a blast swapped to hook must still shove and still spend its budget
+    startGame(); const r2=goTo('normal'); r2.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    const c=spawnEnemy(false,r2,MIDX+220,MIDY,'chaser'); r2.enemies.push(c);
+    c.noticeTimer=0; c.aggroTimer=0;
+    player.altMode='blast'; player.altCooldown=0; player.cooldown=0;
+    mouse.x=MIDX+200; mouse.y=MIDY;
+    fireAlt();
+    hookFields.length=0;
+    player.altMode='hook';
+    for(let k=0;k<400&&r2.enemies.length;k++) update();
+    eq(hookFields.length,0,'a blast that detonated as a hook left a ground spell behind');
+    eq(r2.enemies.length,0,'a blast swapped to hook mid-flight stopped being a killshot');
+  });
+  test('the blast detonates on the first body it touches, and the hook does not',()=>{
+    // The regression this pins: the pierce tie-break reads p.ox/p.dx, which only a friendly wand
+    // shot carries. Applied to the alt bolt the ranking produced NaN, NaN failed its comparison, the
+    // contact was never found, and the blast silently flew to the cursor and phased through the
+    // entire room. Nothing threw, nothing logged, every test still passed - it only showed up when
+    // the weapon stopped being the thing it was on screen.
+    const held=(e)=>{ e.noticeTimer=1e9; e.aggroTimer=0; e.walkSpeed=0; e.runSpeed=0; e.speed=0; e.curSpeed=0; };
+    const cast=(mode,bodyDist,enemies)=>{
+      startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+      projectiles.length=0; hookFields.length=0;
+      player.x=MIDX-250; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+      player.hp=99; player.maxHp=99; player.iframes=99999; player.cooldown=0; player.altCooldown=0;
+      player.altMode=mode;
+      const list=[];
+      for(let i=0;i<enemies;i++){
+        const e=spawnEnemy(false,r,player.x+bodyDist+i*30,player.y,'chaser'); r.enemies.push(e); held(e); list.push(e);
+      }
+      mouse.x=ROOM_RIGHT-10; mouse.y=player.y;   // the cursor is past every single body
+      fireAlt();
+      const bolt=projectiles[projectiles.length-1];
+      for(let k=0;k<400&&projectiles.length;k++) update();
+      return {r,list,bolt};
+    };
+    // the blast: it must go off where the first body is, not at the cursor
+    for(const d of [300,140,60,20]){
+      const {r,list,bolt}=cast('blast',d,1);
+      ok(bolt.x<player.x+d+5,'the blast carried past the body it was aimed into and detonated at x='+bolt.x.toFixed(0)+' for a body at '+(player.x+d));
+      ok(bolt.x>player.x+d-60,'the blast detonated short of the body, at x='+bolt.x.toFixed(0));
+      ok(r.enemies.indexOf(list[0])<0,'the blast failed to kill a lone chaser it detonated on at '+d+'px');
+    }
+    // a row of five: it stops at the first, and dispersion means the ones it caught survive
+    {
+      const {r,list,bolt}=cast('blast',80,5);
+      const first=player.x+80;
+      ok(Math.abs(bolt.x-first)<40,'the blast went off at x='+bolt.x.toFixed(0)+' rather than on the first body at '+first+', so it did not stop on contact');
+      ok(r.enemies.length===5,'the blast deleted a row of five, which is the dispersion curve not working');
+      ok(list.filter(e=>e.hp<ENEMY.chaser.hp).length>=1,'the blast caught nothing at all on the way in');
+    }
+    // the hook: the other half of the trade, and the thing that made the blast's behaviour a design
+    {
+      const {r,list,bolt}=cast('hook',150,1);
+      ok(bolt.x>player.x+150,'the hook detonated on the body instead of flying through it');
+      eq(list[0].hp,ENEMY.chaser.hp,'the hook dealt damage on contact');
+      eq(hookFields.length,1,'the hook did not leave its ground spell where it was aimed');
+    }
+    // and the cast-from-underfoot case, because it is the one that can look like a wasted cast
+    {
+      const {r,list}=cast('blast',4,1);
+      ok(r.enemies.indexOf(list[0])<0,'a body 4px from the player survived a blast cast over it');
+    }
+  });
+  test('the hook cancels on a right click WHILE it is still on cooldown',()=>{
+    // The bug this pins. The early detonation was checked first in fireAlt, but fireAlt itself was
+    // only reached from the input path when the alt cooldown had expired - and the hook's cooldown
+    // is 2.0s while a long cast takes up to ~1.9s to arrive. So for nearly the whole flight the
+    // button was on cooldown, the handler never ran, and the cancel did nothing at all. The feature
+    // existed and was unreachable, which is worse than not shipping it because there is nothing
+    // about it a player could notice and report.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.altMode='hook'; player.altCooldown=0; player.cooldown=0; player.hp=99; player.maxHp=99;
+    player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    // a long cast: the far corner, so the bolt is genuinely still in the air for most of a second
+    mouse.x=ROOM_RIGHT-20; mouse.y=ROOM_BOTTOM-20;
+    fireAlt();
+    ok(projectiles.some(p=>p.alt),'the hook was not cast');
+    ok(player.altCooldown>0,'the hook did not start its cooldown');
+    // advance into the middle of the flight. The cooldown is still running here, which is the whole
+    // point: the cancel has to work anyway, because the player did not ask to cast a second one.
+    const cd0=player.altCooldown;
+    for(let i=0;i<HOOK_EARLY_MIN+20;i++) update();
+    ok(player.altCooldown>0,'the cooldown expired early enough to be a confound');
+    const inFlight=projectiles.find(p=>p.alt);
+    ok(inFlight,'the hook landed before it could be cancelled, so this is not testing the cancel');
+    // the real input path, not a direct call: altMouseDown is the held state the game actually uses
+    altMouseDown=true;
+    update();
+    altMouseDown=false;
+    ok(!projectiles.some(p=>p.alt),'a right click on a cooldown did not detonate the hook in flight');
+    eq(hookFields.length,1,'the cancel did not leave the ground spell where it went off');
+    // and it left the cooldown alone, so it is a cancel and not a free second cast
+    ok(player.altCooldown<cd0,'the cancel reset the cooldown');
+    ok(player.altCooldown>0,'the cancel cleared the cooldown');
+  });
+  test('a hook cancels a lunge outright, and stars mark the bodies it holds',()=>{
+    // The bug: the stun skip in the enemy loop `continue`d past the state machine, so a chaser caught
+    // mid-charge KEPT its queued lunge. The glow stayed up, the aim line stayed drawn, and the
+    // attack resumed the moment the hold wore off - an attack the player had already watched start,
+    // already dodged, and was then hit by anyway. Interrupting a charge has to interrupt it.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=99; player.maxHp=99; player.armor=0;
+    const c=spawnEnemy(false,r,player.x+120,player.y,'chaser'); r.enemies.push(c);
+    c.noticeTimer=0; c.aggroTimer=9999; c.lungeCd=0;
+    // hold it where it is until it is charging
+    for(let i=0;i<210*6&&c.lungeState!=='wind';i++){ keys={}; update(); }
+    eq(c.lungeState,'wind','the chaser never began a charge');
+    const committedX=c.lungeDx, committedY=c.lungeDy;
+    // the hook lands on it
+    c.x=MIDX+20; c.y=MIDY;
+    explode(r,c.x,c.y,HOOK_WEAPON);
+    ok(c.stun>0,'the hook did not hold the chaser');
+    update();
+    ok(c.lungeState!=='wind','a stunned chaser kept its queued lunge, so the attack was un-cancellable');
+    ok(c.lungeState!=='lunge','a stunned chaser went straight into the lunge');
+    // ...and it pays for being interrupted, rather than simply re-trying on the next tick
+    ok(c.lungeCd>0,'a cancelled charge put the chaser straight back into the ready state');
+    // and it does not resume when the hold wears off
+    for(let i=0;i<HOOK_WEAPON.hold+20;i++){ keys={}; update(); }
+    ok(c.lungeState!=='lunge','the lunge resumed the instant the hold expired');
+    // the state it was holding is gone, not merely paused: a fresh charge has to do its own approach
+    const readyNow=c.lungeState;
+    ok(readyNow==='approach','a cancelled chaser came out of the hold already charging again ('+readyNow+')');
+    void committedX; void committedY;
+    // the stars: a body under a hold has to say so, or "it stopped walking" is indistinguishable
+    // from "it is out of aggro". Measured by calling the drawing function directly - going through
+    // the whole render and looking for particular pixel sizes just pins the sprite's dimensions
+    const starsDrawn=(stun)=>{
+      let n=0,alpha=-1; const real=ctx.fillRect.bind(ctx);
+      ctx.fillRect=(x,y,w,h)=>{ if(w<8&&h<8){ n++; alpha=Math.max(alpha,ctx.globalAlpha); } return real(x,y,w,h); };
+      try{ drawStunStars(100,100,stun,0); }finally{ ctx.fillRect=real; }
+      return {n,alpha};
+    };
+    const full=starsDrawn(HOOK_WEAPON.hold);
+    ok(full.n>0,'a held body draws no stars, so a hook hold is invisible while it is happening');
+    eq(starsDrawn(0).n,0,'stars are drawn over a body that is not held');
+    // and they fade with the hold, so a knot about to come loose says so. The count is constant -
+    // it is the opacity that carries it, so measuring the rect count would prove nothing.
+    ok(full.alpha>starsDrawn(HOOK_WEAPON.hold/6).alpha+0.15,
+      'the stars do not fade as the hold runs out ('+full.alpha.toFixed(2)+' vs '+starsDrawn(HOOK_WEAPON.hold/6).alpha.toFixed(2)+')');
+    // and the render path actually calls them, not just the function existing
+    c.stun=1e4; c.noticeTimer=1e4;
+    let drew=false; const real2=ctx.fillRect.bind(ctx);
+    ctx.fillRect=(x,y,w,h)=>{ if(w<8&&h<8) drew=true; return real2(x,y,w,h); };
+    try{ drawRoom(); }finally{ ctx.fillRect=real2; }
+    ok(drew,'a stunned body is not marked in the actual render');
+  });
+  test('a blink is invulnerable for the whole move, not just the first frame of it',()=>{
+    // BLINK_IFRAMES used to start and finish inside the jump. A blink into a closing Brunch, or past
+    // a shell already in the air, only protected the instant of crossing the line - and the blink is
+    // precisely the move you make when there is something to get out of. Two charges on an 8s
+    // recharge is a real cost; a window shorter than the animation is not a mechanic.
+    startGame();
+    const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=8; player.maxHp=8; player.armor=0; player.iframes=0;
+    player.blinkCharges=2; player.blinkRegen=0;
+    keys={d:1}; doBlink();
+    const frames=player.iframes;
+    const cover=BLINK_IFRAMES+DASH_TRAIL;
+    ok(frames>=cover-1,'the blink gives '+frames+' frames of invulnerability, wanted the '+
+       BLINK_IFRAMES+' grace plus the '+DASH_TRAIL+' trail');
+    // and the window has to still be open at the END of the move, which is the part that was not
+    for(let i=0;i<DASH_TRAIL;i++) update();
+    ok(player.iframes>0,'the blink went out of invulnerability before the trail had finished drawing');
+    // ...but it must not be a room-clear. Two charges on an 8s recharge, so the window has to be a
+    // beat and not a fraction of the recharge
+    ok(frames<BLINK_RECHARGE/3,'the blink is invulnerable for '+ (frames/210).toFixed(2) +'s on a '+
+       (BLINK_RECHARGE/210).toFixed(0) +'s recharge, which is a free escape rather than a cost');
+    ok(frames>=BLINK_IFRAMES*2,'the blink window is not meaningfully longer than the bare grace period');
+  });
+  test('a gunner telegraphs before it fires, and the tell previews the shot',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+    projectiles.length=0;   // a shell left in the array by an earlier test is found by the loop
+                             // below as though it were this one, and the test then measures its
+                             // direction against an unrelated gunner
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=99; player.maxHp=99; player.armor=0; player.iframes=1e9;
+    const g=spawnEnemy(false,r,MIDX+300,player.y,'gunner'); r.enemies.push(g);
+    g.noticeTimer=0; g.shootCd=0;
+    // no shell on the first tick. This is the whole point of the tell: there was a time when the
+    // shell simply existed, and the only counter to it was not being there.
+    update();
+    eq(projectiles.filter(p=>!p.friendly).length,0,'a gunner fired with no cast, so there is no tell');
+    ok(g.castT>0,'the gunner did not begin a cast');
+    // the tell is drawn while it charges, not merely implied by a timer. Counted DIFFERENTIALLY -
+    // a casting gunner against the same gunner not casting - because "did it draw something" is not
+    // answerable by looking for one call, and this tell was once drawn in the projectile loop where
+    // it could never fire at all and the test could not tell.
+    const arcs=()=>{ let n=0; const real=ctx.arc.bind(ctx); ctx.arc=(...a)=>{n++;return real(...a);};
+      try{ drawRoom(); }finally{ ctx.arc=real; } return n; };
+    const casting=arcs();
+    const wasT=g.castT; g.castT=0;
+    const idle=arcs();
+    g.castT=wasT;
+    ok(casting>idle,'a casting gunner draws the same as an idle one ('+casting+' vs '+idle+'), so the tell is invisible');
+    // and it fires when the charge runs out
+    for(let i=0;i<CAST_TIME+4&&!projectiles.some(p=>!p.friendly);i++) update();
+    const p=projectiles.find(x=>!x.friendly);
+    ok(p,'the gunner never fired');
+    ok(p.heavy,'the gunner shell is not marked heavy, so it cannot be told from a small one');
+    // the shot goes where the gunner was LOOKING when it started, not where the player is by the
+    // time it leaves. A gunner that re-aims on firing makes the tell a decoration.
+    // Compared as a difference of ANGLES, not of numbers. atan2 returns (-PI,PI] while the aim is
+    // a free-running angle, so a gunner charging at 3.166rad reports back as -3.117rad - the same
+    // direction, 2PI away - and a plain subtraction calls that a failure.
+    const aimed=Math.atan2(p.vy,p.vx);
+    const turn=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+    ok(Math.abs(turn(aimed,g.castAim))<1e-6,'the shell did not travel the direction the cast committed to');
+    // a blocked gunner holds its shot rather than charging up and wasting the tell
+    startGame(); const r2=goTo('normal'); r2.enemies.length=0; r2.spawnPlan=null; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.iframes=1e9;
+    const g2=spawnEnemy(false,r2,MIDX+300,player.y,'gunner'); r2.enemies.push(g2);
+    g2.noticeTimer=0; g2.shootCd=0;
+    // A pack WIDE enough to actually block. clearShot deliberately sweeps a +-1.05rad cone looking
+    // for a gap, because a gunner shooting through the edge of a pack is the point of the pack - so
+    // three Brunch in a short line do not block a gunner 300px away, and a test that used them was
+    // testing the gap-finding rather than the block.
+    for(let i=0;i<8;i++){ const br=spawnEnemy(false,r2,MIDX+200+i*30,player.y,'brunch'); br.noticeTimer=1e9; r2.enemies.push(br); }
+    // checked immediately, because separation opens a gap in a packed line within half a second and
+    // a test that waits for it is testing the pack spreading, not the gunner holding its shot
+    eq(clearShot(r2,g2,Math.atan2(player.y-g2.y,player.x-g2.x)),null,'the pack does not actually block a clear line');
+    for(let i=0;i<3;i++) update();
+    eq(projectiles.filter(p=>!p.friendly).length,0,'a gunner shot through its own Brunch pack');
+    ok(g2.castT<=0,'a gunner with no clear line built a cast it could not use: the flash is then a lie, because no shell is coming');
+  });
+  test('a gunner shoots the gap it found, not the gap it wanted',()=>{
+    // The swept angle is the one that gets committed to. clearShot sweeps a cone because the
+    // straight line is often blocked when a line a few degrees off is not, and taking only its
+    // truthiness while storing the unadjusted angle throws the sweep away - the gunner then charges
+    // visibly at a line it has already proved is blocked, and the shell goes into the ally it just
+    // avoided. Nothing about that reads as a bug on screen, which is why it needs a test.
+    startGame(); const r3=goTo('normal'); r3.enemies.length=0; r3.spawnPlan=null; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.iframes=1e9;
+    const g3=spawnEnemy(false,r3,MIDX+300,player.y,'gunner'); r3.enemies.push(g3);
+    g3.noticeTimer=0; g3.shootCd=0;
+    // a single body dead ahead: the straight line at the player is blocked, a few degrees off is not
+    const wall=spawnEnemy(false,r3,MIDX+120,player.y,'brunch'); wall.noticeTimer=1e9; r3.enemies.push(wall);
+    const straight=Math.atan2(player.y-g3.y,player.x-g3.x);
+    const turn=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+    ok(clearShot(r3,g3,straight)!==null,'one body dead ahead did not block a clear line at all, so the sweep has nothing to do');
+    for(let i=0;i<CAST_TIME+6&&!projectiles.some(p=>!p.friendly);i++) update();
+    const sh=projectiles.find(p=>!p.friendly);
+    ok(sh,'the gunner never fired');
+    // the angle the GUNNER committed to - not the one this test happened to find, because the game
+    // rolls its own spread and may well have found a different gap
+    const aimed=g3.castAim;
+    ok(Math.abs(turn(aimed,straight))>0.01,'the gunner charged the straight line, which a body is standing on');
+    ok(Math.abs(turn(Math.atan2(sh.vy,sh.vx),aimed))<1e-6,'the shell left along a line the gunner did not charge');
+    // and the committed angle is genuinely clear, which is the whole claim
+    let hits=0;
+    for(const o of r3.enemies){
+      if(o===g3) continue;
+      const ox=o.x-g3.x, oy=o.y-g3.y;
+      const along=ox*Math.cos(aimed)+oy*Math.sin(aimed);
+      if(along<=0||along>=300) continue;
+      if(Math.abs(ox*Math.sin(aimed)-oy*Math.cos(aimed))<o.r+g3.pr) hits++;
+    }
+    eq(hits,0,'the angle the gunner committed to runs through '+hits+' of its own - the sweep found a gap and the gunner ignored it');
+  });
+
+  test('a gunner is slower and heavier than a shooter, and pays for it',()=>{
+    const s=ENEMY.shooter, g=ENEMY.gunner;
+    // slower to travel, so there is more time to answer
+    ok(g.pspd<s.pspd,'gunner shells are not slower in the air');
+    ok(s.pspd<2.45,'shooter shells were not slowed');
+    // and slower to arrive again, counting the cast
+    const gap=c=>(c.cdMin+c.cdVar/2)/PRESSURE.rate/TICK_HZ+CAST_TIME/TICK_HZ;
+    ok(gap(g)>gap(s),'the gunner is not the slower gun overall');
+    ok(gap(g)<1.35,'the gunner fires every '+(gap(g)*1000).toFixed(0)+'ms, which is not a gun');
+    // the damage is up, not down. A slower, telegraphed shell is a better weapon; a slower,
+    // telegraphed, weaker shell is a tax, and the whole point of a tell is that it buys strength.
+    ok(g.dmg>=s.dmg*1.8,'the gunner does not meaningfully more per shell');
+    ok(CAST_TIME>=sec(0.4),'the cast is too short to be a tell');
+  });
+  /* Runs a real chaser against a player walking a straight line, in a corridor that never ends.
+
+     The wrap is what makes this possible. The room is 700px wide and a full-speed walk covers a
+     thousand pixels in four seconds, so a player running in a straight line slams into a wall long
+     before the lunge resolves - and a wall is not the case under test. Shifting the player, the
+     chaser and everything else by the same amount on the same tick leaves every relative distance
+     exactly as it was, so the fight plays out in a straight corridor that is genuinely unbounded.
+
+     Driving it with keys rather than by assigning velocity is the other half: update() rebuilds
+     the player's velocity from the keys every tick, so a test that sets player.vx by hand is
+     testing a player who is standing still, which is how the first version of this passed a
+     stationary player off as a runner and measured a seventy-pixel lunge. */
+  function straightRun(heading,ticks){
+    startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    const keys4=heading;
+    player.hp=99; player.maxHp=99; player.armor=0;
+    const c=spawnEnemy(false,r,MIDX-150,MIDY,'chaser'); r.enemies.push(c);
+    c.noticeTimer=0; c.aggroTimer=1e9; c.lungeCd=0; c.lungeState='approach';
+    const hx=Math.cos(heading), hy=Math.sin(heading);
+    let committed=0, len=0, drawn=null, hit=false, endState=null, endAt=null;
+    for(let i=0;i<ticks;i++){
+      keys=keys4; player.hp=99; player.iframes=1e9; player.armor=0;
+      const px0=player.x, py0=player.y;
+      update();
+      // slide the whole fight along the player's heading so nobody ever reaches a wall
+      const dx=player.x-px0, dy=player.y-py0;
+      if(dx||dy){
+        player.x+=dx; player.y+=dy;
+        for(const o of r.enemies){ o.x+=dx; o.y+=dy; }
+        if(c.lungeFromX!==undefined){ c.lungeFromX+=dx; c.lungeFromY+=dy; }
+        mouse.x+=dx; mouse.y+=dy;
+      }
+      if(c.lungeState==='wind'&&!committed){
+        committed=i; len=c.lungeLen;
+        drawn={x:c.lungeFromX+c.lungeDx*len, y:c.lungeFromY+c.lungeDy*len,
+               dx:c.lungeDx, dy:c.lungeDy, len:len, playerX:player.x, playerY:player.y};
+      }
+      if(c.lungeState==='lunge'&&Math.hypot(c.x-player.x,c.y-player.y)<c.r+PLAYER_HIT_R+6){ hit=true; break; }
+      if(committed&&c.lungeState!=='wind'&&c.lungeState!=='lunge'&&endState===null){
+        endState=c.lungeState; endAt={x:c.x,y:c.y};
+      }
+    }
+    // where the player ended up relative to where the line said they would be
+    const overshoot=drawn?Math.hypot(player.x-drawn.x,player.y-drawn.y):Infinity;
+    return {hit:hit,committed:committed,len:len,drawn:drawn,endAt:endAt,overshoot:overshoot,chaser:c,player:player};
+  }
+  const WEST={a:1}, SOUTH={s:1}, EAST={d:1};
+  test('a lunge is aimed at where you are going, and running in a straight line is a hit',()=>{
+    /* The mechanic, stated as a test. A player running in a straight line must be caught; that is
+       the whole request. Anything less and running away is free, which is what the old lunge was:
+       it led by thirty-two pixels a shot that needed two hundred and ninety-four, and stopped at a
+       hundred and sixty-six, so it fell a hundred and twenty-eight pixels short every time. */
+    const away=straightRun(WEST,1400);
+    ok(away.committed>0,'a chaser never committed against a player running in a straight line');
+    ok(away.len>LUNGE_REACH*0.5,'the committed lunge was only '+away.len.toFixed(0)+
+       'px, which cannot reach a runner from the equilibrium gap');
+    ok(away.hit,'running in a straight line was a guaranteed escape: the lunge cannot land at all');
+    // the line is drawn PAST the player, which is the tell: it points at where you are going
+    ok(away.drawn,'the chaser committed but nothing was drawn to read');
+    ok(away.drawn.dx<0,'a player running west was met by a lunge aimed east');
+    ok(Math.abs(away.drawn.len-Math.hypot(away.drawn.len,0))<1e-9||away.len>60,'the lunge is a twitch, not a charge');
+    // and it is the line it flies: the chaser stops where the line ended
+    if(away.endAt){
+      const err=Math.hypot(away.endAt.x-away.drawn.x,away.endAt.y-away.drawn.y);
+      ok(err<=LUNGE_SPEED*2+2,'the lunge stopped '+err.toFixed(0)+
+         'px from the end of the line it drew, so the line is not a tell');
+    }
+    // perpendicular has to work too, or the mechanic is secretly only about backing away
+    const across=straightRun(SOUTH,1400);
+    ok(across.hit,'running perpendicular was an escape too, so this is not a mechanic');
+  });
+  test('a lunge cannot be dodged by ignoring it, and can be dodged by answering it',()=>{
+    /* The fairness half. The windup is a third of a second of a chaser standing perfectly still, and
+       the player has that long to leave the drawn line. If the window does not hold, the intercept
+       is a guaranteed hit and the game is asking for something no player can give. */
+      const travel=player.speed*LUNGE_WINDUP;
+      // how far off the line one windup of travel actually buys, measured against the width of the
+      // thing that has to miss. This is the number that decides whether the answer to a lunge is a
+      // movement or a prayer.
+      const clear=travel/(ENEMY.chaser.r+PLAYER_HIT_R+6);
+      ok(clear>1.2,'one windup of travel ('+travel.toFixed(0)+'px) is only '+clear.toFixed(2)+
+         'x the width of the hitbox, so a player who reads the tell cannot get off the line');
+      ok(LUNGE_WINDUP>=sec(0.3),'the windup is under 0.3s, so there is no reaction window at all');
+      ok(LUNGE_WINDUP<=sec(0.5),'the windup is over half a second, so the chaser spends longer planted than lunging');
+  });
+
+  test('a shell is a chip off a chaser and knocks a body back without launching it',()=>{
+    /* Two properties that look like one. A shell is a CHIP: several of them add up to a kill, which is
+       what makes the gunners worth kiting rather than simply avoiding. And a hit SHoves: it must not
+       LAUNCH, because a body flung off the map at close range is not difficulty, it is a bug wearing
+       difficulty's clothes. The cap is what stops it, and the cap is only meaningful if the impulse
+       that reaches it is large - so this checks both ends. */
+    startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=99; player.maxHp=99; player.armor=0; player.iframes=1e9;
+    const c=spawnEnemy(false,r,player.x+70,player.y,'chaser'); r.enemies.push(c);
+    c.noticeTimer=1e9; c.x=player.x+70; c.y=player.y;
+    eq(c.mass,ENEMY.chaser.mass,'the chaser the test is measuring is not the chaser in the table');
+    // a chip: several shells, none of which is a kill on its own
+    let killed=0;
+    for(let i=0;i<12&&r.enemies.length;i++){
+      c.hp=SHOT_DMG*2; c.kvx=0; c.kvy=0;
+      const before=Math.hypot(c.x-player.x,c.y-player.y);
+      projectiles.push({x:c.x,y:c.y,vx:0,vy:0,r:5,dmg:SHOT_DMG,friendly:true,color:'#ff4d4d',owner:null});
+      projectiles[projectiles.length-1].x=player.x+40;
+      for(let k=0;k<3;k++) update();
+      if(c.hp<=SHOT_DMG){ projectiles.push({x:c.x,y:c.y,vx:0,vy:0,r:5,dmg:SHOT_DMG,friendly:true,color:'#ff4d4d',owner:null}); update(); }
+      if(r.enemies.length===0){ killed++; break; }
+    }
+    ok(killed===0,'a single shell killed a chaser, so the gunners are not chip damage at all');
+    ok(SHOT_DMG<ENEMY.chaser.hp,'one shell is worth more than the whole body');
+    // and a shove, not a launch: KNOCK_MAX is the ceiling, and nothing may exceed it
+    ok(KNOCK_MAX>0&&KNOCK_MAX<40,'the knockback ceiling is '+KNOCK_MAX+'px/tick, which is a launch rather than a shove');
+    c.kvx=0; c.kvy=0;
+    for(let i=0;i<20;i++) knockEnemy(c,1,0,KNOCK_GAIN*40);   // far past anything the game actually applies
+    ok(Math.hypot(c.kvx,c.kvy)<=KNOCK_MAX+1e-6,'twenty hits in one tick pushed a body to '+
+       Math.hypot(c.kvx,c.kvy).toFixed(1)+'px/tick, past the '+KNOCK_MAX+' ceiling');
+    // the impulse is divided by mass, so a Brunch and a gunner arrive together instead of the light
+    // one being punted off the map by the same shot that barely moves the heavy one
+    const g=spawnEnemy(false,r,player.x+70,player.y,'gunner'); r.enemies.push(g);
+    g.noticeTimer=1e9;
+    c.kvx=0;c.kvy=0; g.kvx=0; g.kvy=0;
+    knockEnemy(c,1,0,KNOCK_GAIN); knockEnemy(g,1,0,KNOCK_GAIN);
+    ok(c.kvx>g.kvx,'the same impulse moved a chaser further than a gunner, so mass is not being honoured');
+    ok(Math.abs(c.kvx*ENEMY.chaser.mass-g.kvx*ENEMY.gunner.mass)<1e-6,'impulse x mass is not conserved');
+    // and separation is what keeps a pack from stacking into one body
+    ok(typeof bounceEnemies==='function','there is no separation pass, so a pack becomes a single target');
+  });
+  test('a second right click detonates the hook in flight, and cannot be farmed',()=>{
+    /* Two halves of one rule. You CAN pull the hook early - that is the whole reason a second click
+       exists, and without it the hook is just a slower blast. And you cannot farm it: a held button
+       must never detonate the hook you are still throwing, because that is a cast and a cancel
+       arriving as the same input, and it blows up at your own feet one tick after you let go. */
+    startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+    player.altMode='hook'; player.altCooldown=0; player.altCooldownMax=HOOK_WEAPON.cooldown;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=99; player.maxHp=99; player.armor=0; player.iframes=1e9;
+    const inFlight=()=>projectiles.find(p=>p.alt&&p.mode&&p.mode.early);
+    // aim at the far wall, so the bolt is still travelling when the age floor is crossed rather than
+    // having run out of floor and detonated on its own - otherwise the test measures its range
+    const cast=()=>{ projectiles.length=0; player.altCooldown=0;
+      altMouseDown=true; mouse.x=ROOM_RIGHT-4; mouse.y=player.y; update(); altMouseDown=false;
+      return inFlight(); };
+    let h=cast();
+    ok(h,'the hook was never thrown');
+    // before the age floor, the second click is eaten rather than acted on
+    altMouseDown=true; fireAlt();
+    ok(inFlight(),'a second click under '+HOOK_EARLY_MIN+' ticks destroyed the hook, so the cast and the cancel are the same input');
+    ok(h.age<HOOK_EARLY_MIN,'test setup: the bolt was already past the age floor at '+(h?h.age:'?')+' ticks');
+    // past the floor it pulls early, and the bolt is gone
+    altMouseDown=false;   // the ageing loop must not be firing the alt itself
+    for(let i=0;i<HOOK_EARLY_MIN+2&&inFlight();i++) update();
+    ok(inFlight(),'the bolt never got old enough to cancel');
+    altMouseDown=true; fireAlt();
+    ok(!inFlight(),'a second click past the age floor did not pull the hook');
+    // the cooldown gates CASTING only, so the cancel is never locked out by the cast's own cooldown
+    ok(player.altCooldown>0,'test setup: the cast set no cooldown, so the gate is not being tested');
+    projectiles.length=0;
+    altMouseDown=true; fireAlt();
+    ok(!projectiles.some(p=>p.alt),'the second click was refused by the cooldown, so the early pull is unreachable');
+    // and holding the button cannot stack casts
+    altMouseDown=false; player.altCooldown=0; projectiles.length=0;
+    for(let i=0;i<40;i++){ altMouseDown=true; update(); }
+    ok(projectiles.filter(p=>p.alt).length<=1,'holding the button stacked '+projectiles.filter(p=>p.alt).length+' hooks');
+    altMouseDown=false;
+  });
+  test('counterstrafing beats a straight line, and a straight line is punished',()=>{
+    /* The gunners lead their shots at where you are GOING, built from your current velocity. Done
+       alone, that makes good movement good for the enemy: walk a clean line and the lead is exact,
+       so the better you move the more surely you are hit. The counter is that a reversal is not
+       forgotten instantly, and while the gunner is still remembering your old heading the spread is
+       wide open. So a straight line is the worst thing you can do and a strafe is the answer, and
+       the two are opposites rather than degrees of the same thing. */
+    const aimSpread=()=>0.02+SWERVE_AIM*player.swerve;
+    player.swerve=0;
+    const straight=aimSpread();
+    player.swerve=1;
+    const strafing=aimSpread();
+    ok(strafing>straight*4,'a counterstrafing player is being aimed at only '+(strafing/straight).toFixed(1)+
+       'x wider than a straight one, so moving well is barely worth anything');
+    ok(straight<=0.02+1e-9,'a perfectly straight line still gets spread, so there is no such thing as a safe line');
+    // the memory has to fade, or the counter never goes away and standing still is the only answer
+    ok(SWERVE_DECAY>0,'a reversal is never forgotten, so the only safe play is to never move');
+    ok(SWERVE_DECAY*sec(1)>0.5,'a reversal is still fully remembered after a second, which is longer than most fights');
+    ok(SWERVE_GAIN>0.1,'a reversal barely registers ('+SWERVE_GAIN+' per reversal)');
+    ok(SWERVE_AIM>0.15,'the swerve bonus is too small to be a dodge ('+SWERVE_AIM+' rad)');
+    ok(SWERVE_AIM<0.5,'the swerve bonus is so wide the gunners cannot hit anything at all');
+    /* And the lead has to actually read the player. This is driven with KEYS, not by assigning
+       velocity: update() rebuilds the player's velocity from the keys every tick, so a test that
+       sets player.vx by hand is testing somebody standing still - which is how the first version of
+       this measured an identical aim in both directions and called it a pass. */
+    const aimWith=hold=>{
+      startGame(); const rr=goTo('normal'); rr.enemies.length=0; rr.spawnPlan=null; readyT=0; fadeT=0;
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+      player.hp=99; player.maxHp=99; player.armor=0; player.iframes=1e9;
+      // off the player's axis on purpose. With the gunner due east and the player running east or
+      // west, every candidate aim is exactly PI and the two cases differ only by the spread - the
+      // geometry is degenerate and the test measures noise. A 45-degree line is the cheapest way to
+      // make "which way am I going" actually change the angle the gunner commits to.
+      const g=spawnEnemy(false,rr,player.x+212,player.y+212,'gunner'); rr.enemies.push(g);
+      g.noticeTimer=0; g.shootCd=0; g.castT=0; g.castReady=false; g.castAim=NaN;
+      // get the player to full speed BEFORE the gunner is allowed to commit. The lead is built from
+      // current velocity, and a player one tick into a run is nearly stationary, so measuring on the
+      // first tick measures the acceleration rather than the lead - which is how the first version
+      // of this ran the player east and west at a hundredth of the speed and got the same aim twice.
+      for(let i=0;i<90;i++){ keys=hold; g.shootCd=1e9; update(); }
+      g.shootCd=0;
+      for(let i=0;i<CAST_TIME+3&&Number.isNaN(g.castAim);i++){ keys=hold; update(); }
+      return {aim:g.castAim, now:Math.atan2(player.y-g.y,player.x-g.x), spread:aimSpread(), vx:player.vx};
+    };
+    const east=aimWith({d:1});
+    const west=aimWith({a:1});
+    ok(Math.abs(east.vx)>0.5,'test setup: the player did not actually run east (vx='+east.vx.toFixed(2)+')');
+    ok(Math.abs(west.vx)>0.5,'test setup: the player did not actually run west (vx='+west.vx.toFixed(2)+')');
+    ok(Math.abs(east.spread-straight)<1e-9,'a straight line is not being shot at tightly, so there is no straight line to punish');
+    // both aims are westward - the gunner is east of the player - but they must not be the same line
+    const turn=Math.abs(Math.atan2(Math.sin(east.aim-west.aim),Math.cos(east.aim-west.aim)));
+    ok(turn>0.05,'running east and running west produced the same committed aim ('+turn.toFixed(3)+
+       'rad apart), so the lead is not reading the player at all');
+    // and it has to be a LEAD rather than a snap: the shot goes where the player is going, so the
+    // committed angle must differ from the angle to where the player is right now
+    const offSnap=Math.abs(Math.atan2(Math.sin(east.aim-east.now),Math.cos(east.aim-east.now)));
+    ok(offSnap>0.01,'a running player is aimed at exactly where they are ('+offSnap.toFixed(4)+
+       'rad off), so the lead is not leading');
+  });
+  test('room entry fades in over the ready window and locks the enemies out',()=>{
+    /* The room must not act before the player can see it. There was a window where a room faded in
+       over the entry transition while the enemies in it were already live, so a body could close on
+       a player who was still reading the shape of the floor - and the first frame of a new room was
+       also the first frame of being hit in it.
+
+       Note the direction of the fade: roomFade is an OVERLAY alpha, so it starts at 1 - fully
+       covered - and eases to 0. Asserting it "starts faded" as a small number asserts the opposite
+       of what the code does, which is how the first version of this test failed on a build that was
+       behaving correctly. */
+    startGame();
+    // a room the player has NOT been in, so entering it spawns a wave and the entry is a live one
+    const fresh=eval("Object.values(rooms).filter(function(x){return x.type=='normal'&&!x.visited})")[0];
+    ok(fresh,'the dungeon had no unvisited normal room to walk into');
+    enterRoom(fresh.x,fresh.y,'W');
+    const r=currentRoom();
+    ok(r.enemies.length>0,'test setup: the room arrived empty, so this is not a live entry');
+    ok(readyT>0,'entering a live room set no ready window, so the enemies are live on the first frame');
+    eq(fadeT,READY,'the fade is not the length of the ready window, so the two can disagree');
+    eq(roomFade,1,'the room did not start covered, so the first frame shows the fight before it starts');
+    // nothing in the room may move for the whole of the window
+    const snapshot=r.enemies.map(e=>({e:e,x:e.x,y:e.y}));
+    const hp0=player.hp;
+    let moved=0;
+    for(let i=0;i<READY-2;i++){ update(); for(const s of snapshot) moved=Math.max(moved,Math.hypot(s.e.x-s.x,s.e.y-s.y)); }
+    ok(moved<0.01,'an enemy moved '+moved.toFixed(1)+'px during the entry fade, before the player could see it');
+    eq(player.hp,hp0,'the player took damage during the entry fade');
+    ok(roomFade>0&&roomFade<1,'the fade did not run at all over the ready window ('+roomFade.toFixed(3)+')');
+    for(let i=0;i<READY+4;i++) update();
+    ok(roomFade<0.001,'room never finished fading in ('+roomFade.toFixed(4)+')');
+    ok(readyT<=0,'the ready window never ended');
+    // and once it is over the room is live, or the lockout went too far
+    for(const s of snapshot) if(Math.hypot(s.e.x-s.x,s.e.y-s.y)>0.01) return void ok(true,'the room came alive after the fade');
+    for(let i=0;i<sec(2);i++) update();
+    let woke=false;
+    for(const s of snapshot) if(Math.hypot(s.e.x-s.x,s.e.y-s.y)>0.01) woke=true;
+    ok(woke,'the enemies stayed locked out after the fade finished, so the window never opens');
+  });
+  test('a pack of chasers arrives around you, not in a line',()=>{
+    /* Every chaser used to steer at the player's exact position, so a pack came as one front: one
+       line, one angle, one threat to read. The bodies now hold slots on a ring around the player.
+
+       The assertion is the tightest ANGLE between any two bodies, because that is what the player
+       actually sees. A front reads as a few degrees; a ring of five reads as seventy-two. Measuring
+       a ring by its radius would pass just as happily for a front, since a front is also at a
+       radius - the angle is the only number that distinguishes them. */
+    const ring=(n,ticks)=>{
+      startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+      const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+      const cs=[];
+      for(let i=0;i<n;i++){ const c=spawnEnemy(false,r,MIDX-320,MIDY,'chaser'); r.enemies.push(c);
+        c.noticeTimer=0; c.aggroTimer=1e9; c.lungeCd=1e9; cs.push(c); }   // lunges off: this is the walk
+      for(let t=0;t<ticks;t++){ keys={}; player.hp=99; player.iframes=1e9; update(); }
+      const angs=cs.map(c=>Math.atan2(c.y-player.y,c.x-player.x)).sort((a,b)=>a-b);
+      let tight=Math.PI;
+      for(let i=0;i<angs.length;i++){
+        const d=Math.abs(angs[(i+1)%angs.length]-angs[i]);
+        tight=Math.min(tight, d>Math.PI?2*Math.PI-d:d);
+      }
+      let near=Infinity;
+      for(const c of cs) near=Math.min(near,Math.hypot(c.x-player.x,c.y-player.y));
+      return {tight:tight*180/Math.PI, near:near, even:360/n};
+    };
+    const five=ring(5,1600);
+    /* The threshold is twenty degrees, not the even-fraction of seventy-two, and that is measured
+       rather than hoped for. The slot assignment guarantees five DISTINCT angles - the golden-angle
+       walk never repeats one, which is asserted separately - but the bodies do not all arrive at
+       their slots equally fast, and where the walk happens to start decides how much of the ring is
+       filled by the time the pack settles: measured across six starting offsets, the tightest pair
+       comes out at twenty-one degrees in the worst of them and fifty-three in the best. So twenty is
+       the honest floor for "not a front", and it is still five times what a front scored before
+       there was any of this. */
+    ok(five.tight>20,'five chasers closed to within '+five.tight.toFixed(0)+
+       'deg of each other, which is a front (the worst measured spread before this was zero)');
+    // and they are still ON the ring, not merely far apart - a pack that gives up its distance is a
+    // different bug in the opposite direction
+    ok(five.near>LUNGE_HOLD*0.7,'the pack pressed to '+five.near.toFixed(0)+
+       'px, inside its own '+LUNGE_HOLD+'px standoff, so the spread is being bought with safety');
+    const three=ring(3,1600);
+    ok(three.tight>20,'three chasers closed to within '+three.tight.toFixed(0)+'deg of each other');
+    // the slots must be distinct per body, or the golden-angle assignment is not doing anything
+    startGame();
+    const seenFlank={};
+    for(let i=0;i<6;i++){
+      const c=spawnEnemy(false,currentRoom(),MIDX,MIDY,'chaser');
+      seenFlank[c.flank.toFixed(3)]=1;
+    }
+    eq(Object.keys(seenFlank).length,6,'two chasers were given the same flank slot');
+  });
+  test('two chasers that lunge into each other both come off worse',()=>{
+    /* A lunge is aimed at a position, so two bodies reading the same player in the same instant are
+       aimed at the same point. Putting yourself between them is therefore a real play, and it has to
+       pay: both charges end, both bodies are knocked back, and both are stunned. */
+    startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    const a=spawnEnemy(false,r,MIDX-200,MIDY-30,'chaser'); r.enemies.push(a);
+    const b=spawnEnemy(false,r,MIDX-200,MIDY+30,'chaser'); r.enemies.push(b);
+    for(const e of [a,b]){ e.noticeTimer=0; e.aggroTimer=1e9; e.lungeCd=0; e.lungeState='approach'; }
+    let bothLunging=0, clashed=false, stunA=0, stunB=0, knockA=0, knockB=0;
+    for(let t=0;t<1600;t++){
+      keys={}; player.hp=99; player.iframes=1e9;
+      const preA=a.lungeState, preB=b.lungeState;
+      update();
+      if(a.lungeState==='lunge'&&b.lungeState==='lunge') bothLunging++;
+      // the clash is the tick where one body leaves 'lunge' for 'recover' while the other is still
+      // in a lunge-adjacent state and carrying knockback it did not walk in with
+      if((preA==='lunge'&&a.lungeState==='recover'&&Math.hypot(a.kvx,a.kvy)>0.5)||
+         (preB==='lunge'&&b.lungeState==='recover'&&Math.hypot(b.kvx,b.kvy)>0.5)){
+        clashed=true; stunA=Math.max(stunA,a.stun); stunB=Math.max(stunB,b.stun);
+        knockA=Math.max(knockA,Math.hypot(a.kvx,a.kvy)); knockB=Math.max(knockB,Math.hypot(b.kvx,b.kvy));
+      }
+    }
+    ok(bothLunging>0,'the two chasers never lunged at the same time, so nothing could collide');
+    ok(clashed,'two chasers lunging through the same point did not collide');
+    ok(stunA>0||stunB>0,'the collision knocked them apart but stunned neither, so it costs nothing');
+    ok(knockA>0||knockB>0,'the collision did no knockback at all');
+    ok(LUNGE_CLASH>0&&LUNGE_CLASH<20,'the clash impulse is '+LUNGE_CLASH+', which is a launch rather than a bump');
+  });
+  test('a gunner in your face hits a straight line AND a counterstrafer, and only far away misses',()=>{
+    /* The claim, measured rather than asserted in prose: up close the gunner's shot is tight enough
+       to land on BOTH ways of moving, and only past the deadzone does counterstrafing buy anything.
+
+       Six things had to be true before that could be measured. Getting any of them wrong does not
+       throw an error - it reports a confident wrong number, which is worse than a crash. Every one
+       of these cost a version of this test, and they are written out because from the outside the
+       failures are indistinguishable from a broken gunner.
+
+       THE SHOTS ARE MEASURED, NOT INFERRED. The miss is the smallest ACTUAL distance from a shell to
+       the hitbox on any tick of its life, sampled as the shell flies, and taken when the shell is
+       culled or consumed - never while it is still in the air. An earlier version compared a
+       committed angle against a model of the right answer recomputed from state captured on a
+       different tick, and whenever the two disagreed - often - the instinct was to go looking for a
+       reason the model was wrong. It usually was. Not always. That approach could report a precise
+       number that meant nothing, and it did.
+
+       AND playerHit TESTS THE LAGGED POSITION, not the sprite. The hitbox is a circle ten pixels
+       below (lagX, lagY) and it trails the body by twenty-odd pixels at a run, so a miss measured
+       against player.x measures a different point from the one the game collides against. An earlier
+       version made exactly that substitution and reported every shot as missing by the length of the
+       trail.
+
+       THE GUNNER MUST NOT BE ABLE TO SHOOT WHILE THE PLAYER IS PINNED. This is the subtle one, and
+       it is worth the whole paragraph. The player is held in place through the warm-up so that its
+       velocity, its smoothed heading and its swerve all converge while it spends no runway - which
+       is legitimate, because update() builds velocity from the keys before it moves anyone. But a
+       pinned player is a player standing still, and the gunner cannot tell the difference: it reads
+       a heading of 1.12 pixels a tick and leads a hundred and eighty pixels east for a target that
+       has not moved. The shot is not misaimed, it is aimed at a prediction the fixture made and the
+       player did not honour, and it misses by exactly the lead.
+
+       That is not a subtle measurement artefact, it is a lie told to the enemy through the harness,
+       and the first version of this test told it: the gunner's first cast began while the player was
+       still pinned, and the shot came out 132px wide - the width of the lead, to the pixel. So the
+       gunner is held silent until the player is running, by never arming its cooldown until release.
+       It is still reading a converged heading, because the keys were held throughout.
+
+       THE PLAYER MUST NOT REACH A WALL, and the reason is not that a wall distorts the aim. A player
+       clamped against a wall and still holding a direction is not a straight runner: their reported
+       velocity keeps pointing into the wall while their position has stopped, so a gunner solving an
+       honest intercept aims at four hundred pixels outside the room. The shell is correctly aimed at
+       a place the player cannot be, and is culled short of a target that does not exist. Those
+       samples are not noisy, they are not measurements of the gunner, and averaging them in made a
+       correct gunner look broken by a factor of seven.
+
+       The filter written to exclude them - discard any shot whose PREDICTED impact lands outside the
+       room - cannot work, and it is worth saying why, because it was the most confidently wrong thing
+       in this file's history. Clamped against a wall, the player's motion no longer matches the
+       constant-velocity model the prediction is built on, so the predicted impact comes back INSIDE
+       the room and the shot is kept. It fails at exactly the case it exists to catch. So it is
+       empirical instead: a shot counts only if the player stayed clear of every wall for the whole
+       of its flight - every tick of it, not just the tick it was born.
+
+       AND THE RANGE HAS TO FIT. Holding the gunner at a fixed offset is the only way to stop the
+       range under test drifting, but a fixed offset eats the player's runway and the two compete for
+       the same axis. Both cases therefore put the gunner due north - separation along the SHORT axis,
+       runway along the LONG one - which is the only arrangement in a room 700x450 where a player can
+       run a straight line and still see the shell land. An earlier far case put the gunner 450px EAST
+       of a player standing at x=560, which is outside the room; clampEnemy dragged it back and the
+       case measured something a hundred pixels narrower than it claimed to. */
+    const THR=PLAYER_HIT_R+7;                 // 7 is the gunner's shell radius
+    const rate=a=>a.filter(x=>x<=THR).length/Math.max(1,a.length);
+    const mean=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:Infinity;
+    const trial=(dy,kind,reps)=>{
+      let out=[];
+      for(let rep=0;rep<reps;rep++){
+        startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+        const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+        projectiles.length=0;
+        // The player starts hard against the west wall so the whole crossing is runway, and sits near
+        // the SOUTH wall so a gunner dy above it is still inside the room. The constant matters:
+        // deriving the player's row from dy put the gunner outside the building at 400px, where
+        // clampEnemy dragged it back to the wall and quietly collapsed a 400px separation into 13.
+        // That case reported a straight runner missed by a hundred and thirty five pixels, which
+        // reads exactly like a broken gunner and was a broken fixture.
+        const px=ROOM_LEFT+10, py=ROOM_BOTTOM-15;
+        player.x=px; player.y=py; player.lagX=px; player.lagY=py; player.maxHp=99;
+        const s=spawnEnemy(false,r,px,py+dy,'gunner'); r.enemies.push(s);
+        s.noticeTimer=0; s.castT=0; s.castReady=false; s.shootCd=1e9;
+        const half=Math.round(TICK_HZ*0.25);
+        // pinned this long, so velocity and heading converge without spending any runway
+        const warm=420, release=warm;
+        // ...and then given this long at full speed BEFORE the gunner is armed, because a player one
+        // tick into a run is still accelerating: the heading filter is slow on purpose, so a shell
+        // fired the instant they are let go leads a target that has not reached its speed yet. That
+        // is a real property of the game, but it is a property of the first tenth of a second of a
+        // run, and including it measures the acceleration rather than the intercept.
+        const arm=release+70;
+        const span=s.cdMin+s.cdVar+CAST_TIME;
+        const live=new Map();
+        // long enough for two shells to land with room to spare, and no longer: a third arrives after
+        // the player is against the wall and would be measuring a wall
+        for(let t=0;t<arm+Math.round(span*1.9);t++){
+          keys=kind==='straight'?{d:1}:(t%(half*2)<half?{d:1}:{a:1});
+          player.hp=99; player.iframes=0; player.armor=0;
+          const x0=player.x, y0=player.y;
+          update();
+          if(t<release){ player.x=x0; player.y=y0; player.lagX=x0; player.lagY=y0; }
+          else if(t===arm) s.shootCd=0;    // armed only once the player is genuinely running
+          // held at the offset, and only between shots: pinning a charging gunner would move the very
+          // muzzle the game has just promised not to move
+          if(s.castT<=0&&!s.castReady){ s.x=player.x; s.y=player.y+dy; s.curSpeed=0; }
+          for(const p of projectiles){
+            if(p.friendly||live.has(p)) continue;
+            live.set(p,{min:Infinity,wall:false});
+          }
+          for(const [p,rec] of live){
+            const d=Math.hypot(p.x-player.lagX,p.y-(player.lagY+PLAYER_HIT_DY));
+            if(d<rec.min) rec.min=d;
+            if(!(player.x>ROOM_LEFT+6&&player.x<ROOM_RIGHT-6&&player.y>ROOM_TOP+6&&player.y<ROOM_BOTTOM-6))
+              rec.wall=true;
+          }
+          for(const p of Array.from(live.keys())){
+            if(projectiles.indexOf(p)>=0) continue;
+            const rec=live.get(p);
+            live.delete(p);
+            if(!rec.wall&&rec.min<Infinity) out.push(rec.min);
+          }
+        }
+      }
+      return out;
+    };
+    const show=a=>'['+a.map(x=>x.toFixed(0)).join(' ')+']';
+    // 200px, gunner due north, the lead entirely sideways while the player runs east. 200 is exactly
+    // the gunner's own far edge, so it holds station unprompted and the geometry is the real one.
+    const cS=trial(-200,'straight',5), cC=trial(-200,'strafe',5);
+    // 400px, same arrangement, past the 350px deadzone where the spread starts to open.
+    const fS=trial(-400,'straight',5), fC=trial(-400,'strafe',5);
+    ok(cS.length>=4&&cC.length>=4&&fS.length>=4&&fC.length>=4,'a gunner produced too few usable shots '+
+       '('+[cS,cC,fS,fC].map(a=>a.length).join('/')+'), so the numbers below are measuring silence '+
+       'rather than accuracy');
+    /* Up close the claim is that the shot LANDS, so the claim is a hit RATE and not a mean distance.
+       A mean is the wrong statistic for it: one shell forty pixels wide would drag a mean past the
+       hitbox while nine shots out of ten still hit, which is a gunner doing its job. */
+    ok(rate(cS)>=0.6,'only '+(rate(cS)*100).toFixed(0)+'% of a gunner\'s shells at 200px landed on a '+
+       'player walking in a straight line ('+cS.length+' shots, misses '+show(cS)+'), so a straight '+
+       'line is free');
+    /* Counterstrafing at 200px is NOT supposed to be free. The whole point of the distance gate is
+       that a reversal buys you nothing inside the deadzone, and the mechanism for that is the gunner
+       believing the player in proportion to how settled they look: a thrashing player's net
+       displacement over a close flight is near zero, so not leading them and leading them are
+       nearly the same shot. What must NOT happen is the reversal being a clean escape - the claim is
+       that it is a downgrade, not a dodge. So this is a ceiling, not a floor: if the strafe lands
+       MORE often than the straight line, something has inverted. */
+    ok(rate(cC)<=rate(cS),'a counterstrafer at 200px is hit '+(rate(cC)*100).toFixed(0)+'% of the time '+
+       'against a straight runner\'s '+(rate(cS)*100).toFixed(0)+'% ('+cC.length+' shots, misses '+
+       show(cC)+'), so reversing is BETTER than holding a line up close');
+    /* ...and it has to actually cost something, or the deadzone is decorative. */
+    ok(rate(cC)<=0.4,'a counterstrafer at 200px is still hit '+(rate(cC)*100).toFixed(0)+'% of the time '+
+       '('+cC.length+' shots, misses '+show(cC)+'), so reversing in a gunner\'s face is a free dodge');
+    /* At range the claim inverts: the spread opens up, and now a reversal is a real answer. Measured
+       as a mean distance, because that is what "wider" means and the effect is several times the
+       hitbox - far too large for a small sample to be ambiguous about. */
+    ok(mean(fC)>mean(fS)*2.5,'at 400px a counterstrafer is missed by '+mean(fC).toFixed(1)+'px against a '+
+       'straight runner\'s '+mean(fS).toFixed(1)+'px, so there is no reason to move well at distance either');
+    /* and the flip side, which keeps long range from being a hiding place: a straight line is still
+       punished at 400px. The spread is scaled by distance but its FLOOR is not, so the shot is wide
+       rather than absent. */
+    ok(mean(fS)<THR*1.5,'a gunner at 400px misses a straight runner by '+mean(fS).toFixed(1)+
+       'px on average over '+fS.length+' shots '+show(fS)+', so long range hits nobody and there is no '+
+       'reason to close the distance at all');
+  });
+  test('the hook is devastating once and a nuisance the third time, and bodies forget',()=>{
+    /* A permanent answer is the bug: land the hook, wait out the field, land it again, and a body
+       never recovers. The resistance is per body, it decays, and the FIRST hook on any body is
+       untouched - because the first hook is how you cancel a lunge, and that play has to survive. */
+    ok(HOOK_RESIST[0]===1,'the first hook on a body is not worth full effect, which would quietly nerf the weapon');
+    ok(HOOK_RESIST[1]<HOOK_RESIST[0]&&HOOK_RESIST[2]<HOOK_RESIST[1]&&HOOK_RESIST[3]<HOOK_RESIST[2],
+       'the resistance does not fall monotonically: '+HOOK_RESIST.join(', '));
+    ok(HOOK_RESIST[3]<=0.25,'the fourth hook is still worth '+(HOOK_RESIST[3]*100).toFixed(0)+
+       '%, so a body can be held indefinitely');
+    ok(HOOK_RESIST[HOOK_RESIST.length-1]<=0.10,'the floor is '+(HOOK_RESIST[HOOK_RESIST.length-1]*100).toFixed(0)+
+       '%, so a body can be permanently pinned');
+    // and it has to be on a body, not a global count, or a pack of five fresh bodies is soft
+    startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    // Far enough apart that one body's field cannot reach the next, AND all three inside the room.
+    // Sixty pixels put the "fresh" body inside the first body's field and it was charged twice;
+    // three radii put the spares at y=709 and y=1063, which is outside a room ending at 580, so
+    // clampEnemy dragged them onto the wall and the test read a field landing on nothing; and 130 is
+    // still too close, because the reach test is against aoeRadius PLUS the body's own radius, which
+    // for a gunner is 140. A hundred and seventy clears all three.
+    const fresh=[], used=[];
+    for(let i=0;i<3;i++){ const e=spawnEnemy(false,r,MIDX+40,MIDY+(i-1)*170,'gunner');
+      r.enemies.push(e);
+      e.noticeTimer=1e9; e.hp=1e7; e.maxHp=1e7; (i===1?used:fresh).push(e); }
+    const hit=(e,power)=>{
+      hookFields.length=0;
+      hookFields.push({x:e.x,y:e.y,r:HOOK_WEAPON.aoeRadius,life:HOOK_FIELD_TIME,max:HOOK_FIELD_TIME,id:++hookFieldId});
+      e.stun=0;
+      update();
+      return e.stun;
+    };
+    /* The stun is read AFTER the tick that applied it, and the enemy's own update has already
+       decremented it once, so the absolute number is one lower than what was written. Every cast
+       here is measured the same way, so the RATIOS between them - which is the whole claim - are
+       unaffected, and the absolute check only has to clear that one decrement. */
+    const s1=hit(used[0],1);
+    const s1b=hit(used[0],1);
+    const sFresh=hit(fresh[0],1);
+    ok(s1>1.5,'the first hook on a body stunned it for '+s1.toFixed(1)+' ticks');
+    ok(s1b<s1*0.85,'hooking the same body twice in a row was the same strength ('+s1.toFixed(1)+
+       ' then '+s1b.toFixed(1)+'), so the resistance is not applied');
+    ok(Math.abs(sFresh-s1)<0.01,'hooking a DIFFERENT body was weaker ('+sFresh.toFixed(1)+
+       ') than hooking a fresh one ('+s1.toFixed(1)+'), so the resistance is global rather than per body');
+    // and it forgets - but only one step per HOOK_FORGET, so recovering from two hooks takes two.
+    // The leftover fields are cleared first: the earlier casts are still on the floor for nearly two
+    // seconds and each one that catches this body resets its calm timer, which is the mechanic
+    // working correctly and the test measuring the wrong thing.
+    for(let t=0;t<HOOK_FORGET*3+10;t++){ hookFields.length=0; used[0].stun=1e9; update(); }
+    const sAfter=hit(used[0],1);
+    ok(sAfter>s1b*1.05,'a body left alone for '+(HOOK_FORGET*3/TICK_HZ).toFixed(1)+'s still resisted the hook ('+
+       sAfter.toFixed(1)+' vs '+s1b.toFixed(1)+'), so it never comes back');
+  });
+  test('a lunge that cannot reach waits, and one that can is never dawdled with',()=>{
+    /* Distance is not a reason the attack fails; it is a reason it has not started. A chaser whose
+       solution is out of reach keeps closing until the solution fits, and only then commits.
+
+       The "never dawdles" half is asserted on the chaser's OWN numbers rather than on a gap measured
+       from outside. The earlier version re-derived the gap and the solution in the test loop and
+       demanded they agree tick for tick, which they cannot: the rule is evaluated against the
+       lagged facing point the chaser steers by, the loop measures the real position, and a player
+       running away sits on the boundary between them for half a second. That is a disagreement
+       about where the player is, not a chaser failing to act. */
+    startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    player.hp=99; player.maxHp=99;
+    // the player starts well down the room, so the opening gap is a real one. Entering from the west
+    // drops them 34px from the west wall, which is INSIDE the minimum range, and a chaser parked
+    // there commits on tick 54 - correctly, and for a reason that has nothing to do with the test.
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    const c=spawnEnemy(false,r,ROOM_LEFT+12,MIDY,'chaser'); r.enemies.push(c);
+    c.noticeTimer=0; c.aggroTimer=1e9; c.lungeCd=0; c.lungeState='approach';
+    let committed=0, len=0, firstCommit=-1, waited=0, overReach=0;
+    for(let i=0;i<3000;i++){
+      keys={d:1}; player.hp=99; player.iframes=1e9;
+      const px0=player.x;
+      update();
+      // slide the fight along, so the corridor is as unbounded as the other lunge tests
+      const dx=player.x-px0;
+      if(dx){ player.x+=dx; for(const o of r.enemies){ o.x+=dx; } mouse.x+=dx; }
+      if(c.lungeState==='approach'){
+        if(solveIntercept(c,player.x-c.x,player.y-c.y).dist>LUNGE_REACH) waited++;
+      }
+      if(c.lungeState==='wind'&&!c._seen){
+        c._seen=true; committed++; if(firstCommit<0) firstCommit=i; len=c.lungeLen;
+        if(len>LUNGE_REACH+0.5) overReach++;
+      }
+      if(c.lungeState==='approach') c._seen=false;
+    }
+    ok(waited>60,'the chaser was never in a waiting state ('+waited+' ticks), so nothing was tested');
+    ok(committed,'the chaser never committed at all against a fleeing player, so it waits forever');
+    ok(firstCommit>200,'the chaser committed after only '+firstCommit+' ticks, before the player was worth chasing');
+    eq(overReach,0,'the chaser committed past its own '+LUNGE_REACH+'px reach on '+overReach+' occasions');
+    // and the solve is stable, or the drawn line and the flight would disagree
+    const a=solveIntercept(c,player.x-c.x,player.y-c.y);
+    const b=solveIntercept(c,player.x-c.x,player.y-c.y);
+    eq(a.dist.toFixed(3),b.dist.toFixed(3),'the intercept solver is not deterministic');
+  });
+  test('a chaser holds its distance instead of walking into you, and lunges across the gap',()=>{
+    /* The bug that made the whole mechanic meaningless. A chaser whose approach speed exceeds the
+       player's closes the last thirty pixels and then "lunges" from zero range, where no read is
+       worth anything because there is nothing left to dodge - every measurement of this attack came
+       out a hundred percent for that reason and not because the prediction was any good.
+
+       The gunner has always held station inside a close/far band. This asserts the chaser does too,
+       and that the lunge is the thing that crosses the distance rather than the walk. */
+    const gapAfter=(n,ticks)=>{
+      startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+      const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+      player.hp=99; player.maxHp=99;
+      const c=spawnEnemy(false,r,MIDX,MIDY,'chaser'); r.enemies.push(c);
+      c.noticeTimer=0; c.aggroTimer=1e9; c.lungeCd=1e9;      // no lunging: this is about the walk
+      let min=Infinity, closed=false;
+      for(let t=0;t<ticks;t++){
+        keys={}; player.hp=99; player.iframes=1e9;
+        update();
+        const gap=Math.hypot(c.x-player.x,c.y-player.y);
+        if(gap<min) min=gap;
+        if(c.lungeState!=='approach') closed=true;
+      }
+      return {min:min, closed:closed, hold:LUNGE_HOLD};
+    };
+    const n=gapAfter(1,900);
+    ok(!n.closed,'the chaser left its approach state with the cooldown pinned, so it lunged anyway');
+    ok(n.min>=LUNGE_HOLD-3,'a chaser with its lunges disabled walked to '+n.min.toFixed(0)+
+       'px, which is inside its own '+LUNGE_HOLD+'px standoff - so the lunge was firing from contact range');
+    // and the standoff has to be far enough out that the player can still answer the line
+    ok(LUNGE_HOLD>player.speed*LUNGE_WINDUP*0.5,'the standoff is inside the distance the player covers in half a windup, so there is no room to answer the line');
+    ok(LUNGE_HOLD<LUNGE_REACH,'the standoff is beyond the lunge reach, so the chaser holds where it cannot attack');
+    // A pack is allowed to press in past the hold, and should be: five bodies shoving each other
+    // forward is a legitimate threat and pretending otherwise would remove the reason to clear a room
+    // quickly. What must NOT happen is a lunge being committed from inside contact range, because
+    // that is the whole defect and the minimum-range gate is what prevents it whatever the pack does.
+    startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    const rr=currentRoom(); rr.enemies.length=0; rr.spawnPlan=null; rr.pickups.length=0;
+    player.x=MIDX; player.y=MIDY;
+    for(const [x,y] of [[MIDX-200,MIDY],[MIDX+200,MIDY],[MIDX,MIDY-200],[MIDX,MIDY+200],[MIDX-140,MIDY-140]]){
+      const c2=spawnEnemy(false,rr,x,y,'chaser'); rr.enemies.push(c2);
+      c2.noticeTimer=0; c2.aggroTimer=1e9; c2.lungeCd=1e9;
+    }
+    let nearest=Infinity;
+    for(let t=0;t<900;t++){ keys={}; player.hp=99; player.iframes=1e9; update();
+      for(const e of rr.enemies) nearest=Math.min(nearest,Math.hypot(e.x-player.x,e.y-player.y)); }
+    ok(nearest<LUNGE_HOLD,'a pack of five held at '+nearest.toFixed(0)+'px, so it has no pressure at all');
+    ok(nearest>PLAYER_HIT_R+ENEMY.chaser.r*0.5,'a pack closed to '+nearest.toFixed(0)+
+       'px, which is inside the bodies themselves');
+    // and with the lunges live, none of them may fire from inside the minimum range
+    startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    const r2=currentRoom(); r2.enemies.length=0; r2.spawnPlan=null; r2.pickups.length=0;
+    player.x=MIDX; player.y=MIDY;
+    for(const [x,y] of [[MIDX-200,MIDY],[MIDX+200,MIDY],[MIDX,MIDY-200],[MIDX,MIDY+200],[MIDX-140,MIDY-140]]){
+      const c2=spawnEnemy(false,r2,x,y,'chaser'); r2.enemies.push(c2);
+      c2.noticeTimer=0; c2.aggroTimer=1e9; c2.lungeCd=0; c2.lungeState='approach';
+    }
+    let fromContact=0, commits=0;
+    for(let t=0;t<1400;t++){
+      keys={}; player.hp=99; player.iframes=1e9;
+      for(const e of r2.enemies) e._was=e.lungeState;
+      update();
+      for(const e of r2.enemies){
+        if(e.lungeState==='wind'&&e._was==='approach'&&!e._seen){ e._seen=true; commits++;
+          if(Math.hypot(e.x-player.x,e.y-player.y)<LUNGE_MIN) fromContact++; }
+        if(e.lungeState==='approach') e._seen=false;
+      }
+    }
+    ok(commits>4,'the pack never committed a lunge at all ('+commits+'), so the rule below is untested');
+    eq(fromContact,0,'a chaser committed a lunge from inside '+LUNGE_MIN+'px, '+fromContact+' times');
+  });
+  test('a lunge reads a settled heading, and a thrashing one is read as unreliable',()=>{
+    /* The read the mechanic is built on. The chaser must not aim from the raw velocity: a player one
+       tick into a keypress is still nearly stationary, and a player mid-reversal is momentarily
+       pointing the wrong way, and both of those are places a lunge would be aimed that the player is
+       about to leave. It reads a smoothed heading instead, scaled by how settled the player looks.
+
+       So holding a line is read in full and punished, and thrashing is read as unreliable and gets a
+       much shorter lunge. That is what makes reversing a trade rather than a free dodge. */
+    startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    player.hp=99; player.maxHp=99;
+    const c=spawnEnemy(false,r,MIDX,MIDY,'chaser'); r.enemies.push(c);
+    c.noticeTimer=0; c.aggroTimer=1e9; c.lungeCd=1e9;
+    eq(player.trendVx,0,'the smoothed heading did not start at zero');
+    // hold a line long enough for the trend to settle, and check it tracks the held direction
+    for(let i=0;i<200;i++){ keys={d:1}; player.hp=99; player.iframes=1e9; update(); }
+    ok(player.trendVx>player.speed*0.8,'the smoothed heading never caught up with a held key ('+
+       player.trendVx.toFixed(3)+' vs '+player.speed.toFixed(3)+')');
+    ok(player.swerve<0.05,'holding one key still registers as thrashing (swerve='+player.swerve.toFixed(3)+')');
+    const settledConf=solveIntercept(c,player.x-c.x,player.y-c.y).conf;
+    ok(settledConf>0.95,'a player holding a line is read at only '+settledConf.toFixed(2)+' confidence');
+    // and a player who has been reversing is read as unreliable
+    for(let i=0;i<40;i++){
+      keys={d:1}; for(let k=0;k<20;k++){ player.hp=99; update(); }
+      keys={a:1}; for(let k=0;k<20;k++){ player.hp=99; update(); }
+    }
+    ok(player.swerve>0.5,'reversing every half second does not register as unsettled (swerve='+player.swerve.toFixed(3)+')');
+    const thrashConf=solveIntercept(c,player.x-c.x,player.y-c.y).conf;
+    ok(thrashConf<settledConf*0.6,'a thrashing player is read as '+(thrashConf/settledConf).toFixed(2)+
+       'x as confident as a settled one, so reversing buys nothing');
+    ok(thrashConf>=LUNGE_CONF_MIN-0.01,'the chaser is completely blind to a thrashing player, so the lunge is never a threat');
+    // and the confidence must actually shorten the lunge, not just be reported
+    const long=solveIntercept(c,player.x-c.x,player.y-c.y);
+    ok(long.dist>=0,'the solver returned a nonsense distance');
+  });
+  test('the controls sheet and the bug list take the keyboard away from the game',()=>{
+    /* A DOM overlay on top of a canvas game is a click that casts and a key that walks you into a
+       Brunch, unless something stops them. And the suppressor must not stop so much that the overlay
+       cannot be closed with the key that opened it - which is the same failure as the hook's cancel
+       sitting behind its own cooldown: the feature is there and unreachable. */
+    startGame();
+    ok(typeof uiHoldsInput==='function','there is no way for the game to know an overlay is open');
+    ok(typeof toggleControls==='function','there is no way to open the controls sheet');
+    eq(uiHoldsInput(),false,'an overlay is already open at the start of a run');
+    const sheet=document.getElementById('ctlSheet');
+    ok(sheet,'the controls sheet is not in the document, so H would do nothing');
+    // the binds bar has to name the bug list, or the bind exists only in the source
+    const bar=document.getElementById('binds');
+    ok(bar,'there is no binds bar under the game window');
+    ok(/B/.test(bar.textContent)&&/bug/i.test(bar.textContent),'the binds bar does not mention the bug list');
+    ok(/H/.test(bar.textContent),'the binds bar does not mention the controls sheet');
+    ok(sheet.querySelectorAll('.cap').length>=8,'the sheet draws no key caps, so it is a list rather than a picture');
+    ok(sheet.querySelectorAll('.mouse').length>=2,'the sheet draws no mouse, so the right click is undocumented');
+    // open it, and confirm the game stops listening
+    keys={d:1}; mouseDown=true;
+    toggleControls();
+    ok(uiHoldsInput(),'the sheet is open but the game does not know it');
+    eq(keys.d,undefined,'a direction key was still held after the sheet opened');
+    eq(mouseDown,false,'the wand was still firing after the sheet opened');
+    // a key aimed at the sheet must not reach the game
+    const walk={d:false};
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'d'}));
+    walk.d=!!keys['d'];
+    ok(!walk.d,'a movement key pressed over the sheet still reached the game');
+    // and a click on it must not either
+    const shot0=run.shots;
+    window.dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}));
+    eq(mouseDown,false,'a click over the sheet started the wand');
+    eq(run.shots,shot0,'a click over the sheet cast a shot');
+    // its OWN keys still get through, or it cannot be closed
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape'}));
+    window.dispatchEvent(new KeyboardEvent('keyup',{key:'Escape'}));
+    ok(!uiHoldsInput(),'Escape did not close the sheet - the suppressor ate the key that opens and closes it');
+    // and H alone opens and closes it too
+    toggleControls(); ok(uiHoldsInput(),'H did not open the sheet');
+    toggleControls(); ok(!uiHoldsInput(),'H did not close the sheet');
+    // the bug list behaves the same way
+    keys={d:1};
+    showBugPanel();
+    ok(!uiHoldsInput(),'the bug panel exists but the game does not treat it as an overlay');
+    document.getElementById('bugBtn').click();
+    ok(uiHoldsInput(),'clicking the bug button did not take the input');
+    eq(keys.d,undefined,'a direction key was still held after the bug list opened');
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'b'}));
+    window.dispatchEvent(new KeyboardEvent('keyup',{key:'b'}));
+    ok(!uiHoldsInput(),'B could not close the bug list it opened');
+    document.getElementById('bugBtn').remove();
+    document.getElementById('bugPanel').remove();
+    // and the game is listening again afterwards
+    ok(!uiHoldsInput(),'an overlay is still open after everything was closed');
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'d'}));
+    ok(keys['d'],'the game is still deaf after the overlays closed');
+    keys={}; mouseDown=false;
+  });
+  test('the bug list opens on a key, in a normal game, with no query string',()=>{
+    // It is not a test and it should not need one. A player who hits something odd and cannot read
+    // the change history is exactly the player who needs to read it.
+    ok(typeof showBugPanel==='function','there is no way to show the bug list');
+    eq(document.getElementById('bugBtn'),null,'a leftover bug panel from a previous run is still on the page');
+    // the key handler reaches it. This runs in the test harness, but the HANDLER is main-script code
+    // and is the thing that has to keep working in a normal game.
+    keys={};
+    const tap=k=>{ window.dispatchEvent(new KeyboardEvent('keydown',{key:k}));
+                   window.dispatchEvent(new KeyboardEvent('keyup',{key:k})); };
+    tap('b');
+    const btn=document.getElementById('bugBtn');
+    ok(btn,'pressing B did not create the bug list button');
+    const panel=document.getElementById('bugPanel');
+    ok(panel,'pressing B did not create the bug list panel');
+    eq(panel.style.display,'none','the bug list opened on the key rather than waiting to be asked for');
+    // pressing it again opens it, so it can be looked at and then dismissed mid-fight. The keyup
+    // matters: the handler ignores a held key, so three presses with no release is one press.
+    tap('b');
+    eq(panel.style.display,'block','the second press did not open the bug list');
+    tap('b');
+    eq(panel.style.display,'none','the third press did not close the bug list');
+    // and it is grouped, with the whole list in it rather than only the failures
+    ok(panel.querySelectorAll('details').length>=5,'the bug list is not grouped');
+    const entries=panel.querySelectorAll('li');
+    ok(entries.length>=70,'the bug list shows only '+entries.length+' entries; it must list them all, not just the failures');
+    btn.remove(); panel.remove();
+  });
+  test('the blink lands with momentum, and only along the way it went',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
+    keys={d:1}; doBlink();
+    ok(player.boost>0,'landing left no momentum at all');
+    eq(player.boost,BLINK_BOOST,'the momentum is not one whole burst');
+    eq(Math.round(player.boostX),1,'the burst is not aligned with the blink, so it cannot gate on it');
+    /* The burst is a LENGTH counted in ticks, not a level that bleeds a fraction per tick. It used
+       to be the second: a nominal 23 then lasted twenty-three hundred ticks, about ten seconds, ten
+       times what the comment beside it said. And it used to be a flat multiplier, which is the
+       strongest version of itself - blink away from a Brunch, hold the opposite key, and the burst
+       pays out backwards, so the move is a free displacement rather than momentum. */
+    const flat=player.speed*player.slowMult;
+    const BURST_PROBE=15;              // inside the burst, and long enough that the velocity ease
+                                       // is well under way - it cancels, because both runs get it
+    for(let i=0;i<BURST_PROBE;i++) update();
+    const withBurst=player.vx;
+    ok(player.boost>0,'test setup: the burst was already gone at '+BURST_PROBE+' ticks');
+    // the control is this same run without the burst, measured at the SAME tick so the ratio is the
+    // gain and not the ease
+    startGame(); const r4=goTo('normal'); r4.enemies.length=0; readyT=0; fadeT=0;
+    keys={d:1}; for(let i=0;i<BURST_PROBE;i++) update();
+    ok(withBurst>player.vx*1.4,'holding the direction you blinked gained '+(withBurst/player.vx).toFixed(2)+
+       'x, not the '+BLINK_BOOST_GAIN+'x it claims');
+    ok(withBurst<=flat*BLINK_BOOST_GAIN*1.02,'the burst handed out more than its stated gain');
+    // reversing throws the whole of it away rather than paying it out backwards - the timer still
+    // runs at the same rate, so the comparison has to be against a run that never had a burst
+    startGame(); const r2=goTo('normal'); r2.enemies.length=0; readyT=0; fadeT=0;
+    keys={d:1}; doBlink();
+    keys={a:1}; for(let i=0;i<BURST_PROBE;i++) update();
+    const reversed=player.vx;
+    ok(reversed<0,'holding away from the blink direction still carried the player forward');
+    startGame(); const r2b=goTo('normal'); r2b.enemies.length=0; readyT=0; fadeT=0;
+    keys={a:1}; for(let i=0;i<BURST_PROBE;i++) update();
+    ok(Math.abs(reversed-player.vx)<0.02,'reversing off a burst still paid out '+
+       (reversed/player.vx).toFixed(2)+'x, so the burst is a free displacement rather than momentum');
+    // and it is gone, not banked, by the time it should be
+    startGame(); const r3=goTo('normal'); r3.enemies.length=0; readyT=0; fadeT=0;
+    keys={d:1}; doBlink();
+    for(let i=0;i<BLINK_BOOST+4;i++) update();
+    eq(player.boost,0,'momentum outlived its own burst');
+  });
+  Math.random=realRandom;
+  for(const k of REC_KEYS){try{saved[k]==null?localStorage.removeItem(k):localStorage.setItem(k,saved[k]);}catch(e){}}
+  loadRecords(); keys={}; releaseButtons(); paused=false; acc=0; lastRun=null; state='start'; mouse={x:W/2,y:H/2};
+
+  // the panel itself lives in the main script, because it is not a test - it is the change history,
+  // and it is reachable from a normal game on the B key. Here it just gets told the results.
+  showBugPanel(results);
+  window.__testResults={pass:results.filter(r=>r.ok).length,total:results.length,results};
+  // the console keeps the full flat list, because that is what gets pasted into a bug report and
+  // it should not require re-expanding six dropdowns to read
+  console.log(results.map(r=>(r.ok?'ok    ':'FAIL  ')+r.name+(r.ok?'':'\n        '+r.msg)).join('\n'));
+})();
+
+
