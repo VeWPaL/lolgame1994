@@ -53,8 +53,12 @@ function doBlink(){
 }
 
 function startGame(){
-  // every stat is rebuilt from base, so a new run can never inherit a modifier from the last one
-  Stats.reset();
+  /* A new run starts from nothing, and that means the BUILD and not merely the numbers. This used to
+     call Stats.reset() alone, which zeroed every stat while leaving loadout.items populated - so after
+     pressing R the character sheet listed the previous run's items with none of their effects
+     applied. The same lie as an inert stat, in the other order: the sheet and the game disagreed, and
+     the sheet was the one that had been right a moment earlier. */
+  if(typeof Items!=='undefined') Items.reset(); else Stats.reset();
   generateDungeon();
   cur={x:START,y:START};
   player={x:MIDX,y:MIDY,r:13,speed:0.935*PLAYER_MOVE,vx:0,vy:0,kvx:0,kvy:0,lagX:MIDX,lagY:MIDY,hp:8,maxHp:8,armor:0,weaponIdx:0,cooldown:0,cooldownMax:WEAPONS[0].cooldown/TEMPO.rate,altCooldown:0,altCooldownMax:ALT_WEAPON.cooldown/TEMPO.rate,altMode:'blast',iframes:0,hasSilver:false,hasGold:false,
@@ -63,6 +67,7 @@ function startGame(){
   unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
   entryDir='N';
   roomFade=1; fadeTicks=sec(0.4); fadeT=fadeTicks;
+  applyVitals();   // after the player exists, so a Vigor item and a fresh body agree
   run={ticks:0,kills:0,dmgTaken:0,shots:0,hits:0,secret:false,hook:false}; lastRun=null;
   paused=false; acc=0;
   state='playing';

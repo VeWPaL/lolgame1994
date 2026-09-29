@@ -185,7 +185,7 @@ const WEAPONS=[
   // worth swings hard with range: up close it is the biggest thing you own, across the room it is
   // pellets, not the width of the cone, so eight of them at 0.045 is a cone about 18 degrees wide
   {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:1.8,count:8,spread:0.045,fNear:80,fFar:300,fMin:0.45},
- {name:'Arcane Beam',color:'#3fa9ff',cooldown:5.2*SPEEDUP,speed:4,dmg:0.84,count:1,spread:0.16,spreadFromLuck:true,r:4,fNear:170,fFar:470,fMin:0.6},
+ {name:'Arcane Beam',color:'#3fa9ff',cooldown:5.2*SPEEDUP,speed:4,dmg:0.84,count:1,spread:0.16,spreadFromPrecision:true,r:4,fNear:170,fFar:470,fMin:0.6},
   {name:'Voidball',color:'#3f8a4a',cooldown:24*SPEEDUP,speed:3.2,dmg:3.4,count:1,spread:0.02,fNear:150,fFar:440,fMin:0.55,pierce:3},
 ];
 // What each pass through a body is worth, as a fraction of the first. A pierced bolt that does full
@@ -355,7 +355,7 @@ const MOMENTUM_SPEED=0.10, MOMENTUM_ACCEL=0.55;
 // finished winding up. One number for the build, one for the world, both visible and both tunable.
 const SPEED_CAP=0.15, MOVE_SPEED_HARD_CAP=0.22;
 
-/* LUCK TIGHTENS THE ARCANE BEAM, in fifths, and the floor is the point.
+/* PRECISION TIGHTENS THE ARCANE BEAM, in fifths, and the floor is the point.
 
    The beam is the fastest gun in the game and it lands one body at a time, so its whole identity is
    that a shot is very nearly always a hit. At zero luck it is a CONE: wide enough that a body inside
@@ -372,9 +372,9 @@ const SPEED_CAP=0.15, MOVE_SPEED_HARD_CAP=0.22;
    This is also the first thing in the game driven by a DERIVED stat rather than by a constant, which
    is the whole reason the stat model had to be additive and rebuilt from base. If Luck were stored as
    a multiplier on a live value, this would be the line that could not be written. */
-const BEAM_LUCK_STEP=0.20, BEAM_SPREAD_FLOOR=0.04;
-function luckSpread(base){
-  return base*Math.max(BEAM_SPREAD_FLOOR,1-BEAM_LUCK_STEP*Math.max(0,Stats.value('luck')));
+const PRECISION_STEP=0.20, PRECISION_SPREAD_FLOOR=0.04;
+function preciseSpread(base){
+  return base*Math.max(PRECISION_SPREAD_FLOOR,1-PRECISION_STEP*Math.max(0,Stats.value('precision')));
 }
 
 /* ROOM PRESSURE ----------------------------------------------------------------------------------

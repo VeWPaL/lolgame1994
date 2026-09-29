@@ -44,7 +44,7 @@
    ========================================================================================= */
 
 const Stats=(function(){
-  const ORDER=['strength','speed','momentum','intelligence','luck','vigor'];
+  const ORDER=['strength','speed','momentum','intelligence','luck','vigor','precision'];
 
   const DEFS={
     /* flat damage, added BEFORE falloff. Flat and not multiplicative on purpose: falloff is what
@@ -84,6 +84,21 @@ const Stats=(function(){
        consumables would have to be smuggled in as flat healing. */
     vigor:{label:'VIGOR',kind:'add',base:0,cap:Infinity,
       blurb:'Maximum health, and how much a heart returns.'},
+
+    /* PRECISION: how narrowly a shot leaves the wand. It was on LUCK, which was wrong twice over.
+
+       Luck is a weight on a distribution - it decides what the dungeon contains and nothing else.
+       Bolting "and your aim" onto it made one number mean two unrelated things, so a player could
+       not reason about either: a Lucky Coin quietly became a damage item, and the stat that was
+       meant to be about the run started being about the wand. Split, each can be tuned on its own
+       curve, because they no longer have to move together.
+
+       The lever lives in its own constants in 00-balance rather than inline in the firing code,
+       because it is a LEVER and there will be more than one thing on it: the beam uses it now, and
+       anything else wanting a stat-driven cone should read preciseSpread() rather than open-code
+       its own, so there is exactly one place where "what does precision buy" is decided. */
+    precision:{label:'PRECISION',kind:'add',base:0,cap:Infinity,
+      blurb:'Narrows the Arcane Beam a fifth each. Luck finds better loot; this finds the gap.'}
   };
 
   const base={}, flat={}, earned={}, value={};
@@ -202,4 +217,31 @@ function moveSpeedBonus(){
    looking at on the first tick of a run and it should not read as a feature that has not arrived. */
 const loadout={items:[]};
 
+/* VIGOR IS MAXIMUM HEALTH, and this is where that stops being a lie.
+
+   It was a stat with a name, a bar, a row on the character sheet and a blurb - and nothing read it.
+   player.maxHp was the literal 8, written into the player object at spawn, so Iron Ribs put +2 Vigor
+   on the sheet and changed nothing at all. That is the exact failure this file was built to make
+   impossible, and it survived because the sheet renders from Stats while the game reads a constant,
+   and nobody checked that those were the same number.
+
+   Derived here rather than in the items module, because it is a stat about the player rather than
+   about the build - but it is derived for the same reason and in the same place, so there is one
+   answer to "what is this character's health" and it is not written down twice.
+
+   Losing the current health when the ceiling drops is deliberate rather than convenient: an item
+   that takes Vigor away should cost you hearts now, because a build that can be made worse by
+   picking something up has to be able to do that visibly. */
+const BASE_HP=8;
+function applyVitals(){
+  // there may be no player yet: the test harness resets the build before the first startGame, and
+  // resetting a build is a thing you can do to nothing. typeof rather than a try, because player is
+  // a module-scope let and touching it in its temporal dead zone throws rather than reading undefined.
+  if(!player) return;   // undefined before the first startGame, and never null - but not worth betting on
+  const max=BASE_HP+Math.max(0,Stats.value('vigor'));
+  if(max!==player.maxHp){
+    player.maxHp=max;
+    if(player.hp>max) player.hp=max;
+  }
+}
 Stats.reset();

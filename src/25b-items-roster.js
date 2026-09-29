@@ -56,8 +56,24 @@ Items.define('swift_boots',{
 Items.define('lucky_coin',{
   name:'Lucky Coin', use:'passive', slot:'sigil', rarity:'uncommon', tags:['fortune'],
   glyph:'LC', color:'#e0c07a',
-  blurb:'+1 Luck. Narrows the Arcane Beam a fifth, and shifts what the dungeon offers you.',
+  blurb:'+1 Luck. Shifts what the dungeon offers you toward the unusual, and nothing else.',
   fx:{stats:{luck:1}}
+});
+
+/* Precision is its own stat, so the item that feeds it is its own item. When the cone rode on Luck,
+   Lucky Coin was quietly also a damage item, and the two could not be tuned apart. */
+Items.define('steady_hand',{
+  name:'Steady Hand', use:'passive', slot:'sigil', rarity:'common', tags:['aim'],
+  glyph:'SH', color:'#b8c4d4',
+  blurb:'+1 Precision. Narrows the Arcane Beam a fifth. Five of them and the beam is a line.',
+  fx:{stats:{precision:1}}
+});
+
+Items.define('weighted_grip',{
+  name:'Weighted Grip', use:'passive', slot:'sigil', rarity:'rare', tags:['aim'],
+  glyph:'WG', color:'#8fa6c4',
+  blurb:'+2 Precision. Two fifths off the beam in one pickup, which is most of what a laser costs.',
+  fx:{stats:{precision:2}}
 });
 
 Items.define('hunters_mark',{

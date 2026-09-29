@@ -205,13 +205,12 @@ function uiAllows(k){ return UI_KEYS.indexOf(String(k).toLowerCase())>=0; }
    THE BARS ARE NOTCHED, and the notch count is the scale. Momentum is capped at 1 and Speed at 15% -
    a smooth bar with no graduations cannot answer "how much of this have I used", and for a stat whose
    whole design is a ceiling that cannot be exceeded, the ceiling is the interesting part. */
-const CHAR_NOTCHES=20;
 
 /* How wide a full bar is, per stat. For a stat with a real ceiling the ceiling IS the bar, so a
    nearly-full bar is visibly nearly full - which is the entire point of a capped stat, and the reason
    a bar is notched rather than smooth. For an uncapped one this is "as big as it usefully gets": a
    Vigor bar that can fill only at 400 health stops being information after the third pickup. */
-const STAT_SPAN={strength:12,speed:1,momentum:1,intelligence:5,luck:6,vigor:14};
+const STAT_SPAN={strength:12,speed:1,momentum:1,intelligence:5,luck:6,vigor:14,precision:6};
 const statSpan=s=>STAT_SPAN[s.key]||10;
 /* asPct is declared on the definition, not guessed from the kind: Strength and Speed are both `add`
    and one of them prints as 3 while the other prints as 6%, and a number that changes units

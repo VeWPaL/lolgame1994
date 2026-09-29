@@ -90,12 +90,17 @@ const Items=(function(){
       const d=Content.get('item',slot.id);
       const fx=d.fx||{};
       for(const s in (fx.stats||{})) Stats.flat(s,fx.stats[s]);
-      if(fx.hooks&&fx.hooks.luck_spread) Stats.mult('luck',0);
     }
     // artifacts are a property, not a type, so they are applied here rather than at definition time
     for(const slot of loadout.items){
       const d=Content.get('item',slot.id);
-      if(d.unlocks&&d.unlocks.length) run.unlocked[d.unlocks[0]]=true;
+      if(d.unlocks&&d.unlocks.length&&run) run.unlocked[d.unlocks[0]]=true;
+    /* Vitals last, and from the same rebuild. Vigor is maximum health, and the character's health is
+       a derived value like any other - which it was not, until this: maxHp was the literal 8 written
+       into the player at spawn, so an item that raised Vigor appeared on the sheet and did nothing.
+       Because rebuild() is the ONLY path by which a build changes, putting it here means there is
+       no way to pick something up and forget to recompute the body it was picked up for. */
+    applyVitals();
     }
   }
 
@@ -202,8 +207,7 @@ const Items=(function(){
 
   function reset(){
     loadout.items.length=0;
-    delete run.unlocked;
-    run.unlocked={};
+    if(run){ delete run.unlocked; run.unlocked={}; }
     Stats.reset();
   }
 

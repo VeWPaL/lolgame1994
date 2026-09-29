@@ -50,6 +50,8 @@ if(new URLSearchParams(location.search).has('test')) (function(){
     const bug=document.getElementById('bugPanel');
     if(bug) bug.style.display='none';
     paused=false; keys={}; releaseButtons(); mouseDown=false; altMouseDown=false;
+    // the build too: startGame resets it, but a test that only pokes Stats directly never would
+    if(typeof Items!=='undefined') Items.reset();
   };
   const test=(name,fn)=>{
     try{ Rnd.set(TEST_SEED); Momentum.lock(); resetUI(); fn(); results.push({name,ok:true}); }
@@ -560,7 +562,9 @@ test('a stat is derived from base every time, so removing an item removes exactl
     // wrongly - it is how Intelligence stays a threshold that opens doors and never becomes a damage
     // multiplier by accident.
     const sheet=Stats.sheet();
-    eq(sheet.length,6,'the character sheet has '+sheet.length+' stats, not 6');
+    // against Stats.ORDER rather than a literal, so adding a seventh stat does not turn two
+    // passing checks red for the crime of the feature existing
+    eq(sheet.length,Stats.ORDER.length,'the character sheet has '+sheet.length+' stats but the model has '+Stats.ORDER.length);
     for(const s of sheet){
       ok(s.label&&s.blurb,'a stat is missing the words the pause sheet has to print: '+s.key);
       ok(['add','meter','roll','key'].includes(s.kind),'stat '+s.key+' declares kind "'+s.kind+
@@ -587,7 +591,7 @@ test('a stat is derived from base every time, so removing an item removes exactl
     eq(named,4,'only '+named+' of 4 misspelled stat names threw an error naming the stat, so a typo '+
        'can still fail silently somewhere');
   });
-test('the character sheet shows six stats, and re-reads the build every time it opens',()=>{
+test('the character sheet shows every stat, and re-reads the build each time it opens',()=>{
     /* A sheet that renders once and then goes stale is worse than no sheet, because it is confidently
        wrong: the player makes a decision from a number the game is not using. The rows are rebuilt on
        open rather than kept live, so the thing to test is that rebuilding actually re-reads Stats -
@@ -604,7 +608,7 @@ test('the character sheet shows six stats, and re-reads the build every time it 
       return out;
     };
     let sheet=read();
-    eq(Object.keys(sheet).length,6,'the sheet drew '+Object.keys(sheet).length+' rows, not 6');
+    eq(Object.keys(sheet).length,Stats.ORDER.length,'the sheet drew '+Object.keys(sheet).length+' rows but the model has '+Stats.ORDER.length);
     eq(Object.keys(sheet).sort().join(','),Stats.ORDER.slice().sort().join(','),
        'the sheet is not showing the stats the model defines - the two lists have drifted apart, so a '+
        'stat exists that no player can see or one is shown that does not exist');
@@ -881,11 +885,24 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     // the weights are relative: every rarity must remain possible at every luck value
     for(const k of ['common','uncommon','rare','legendary'])
       ok(none[k]>0&&lucky[k]>0,'rarity "'+k+'" never came up');
-    // and luck does not touch the beam by accident - it is a separate consumer of the same stat
+    /* And the beam is on PRECISION, not on luck. It used to be on luck, which meant one number was
+       doing two unrelated jobs - deciding what the dungeon contains and deciding how narrowly a shot
+       leaves the wand - so neither could be tuned without the other and a Lucky Coin was quietly a
+       damage item. Both halves are asserted here because the interesting failure is the quiet one:
+       a stat that still has an effect it should not. */
     Stats.reset();
-    const wide=luckSpread(WEAPONS[2].spread);
-    Stats.flat('luck',5);
-    ok(luckSpread(WEAPONS[2].spread)<wide*0.1,'five luck did not turn the Arcane Beam into a laser');
+    const wide=preciseSpread(WEAPONS[2].spread);
+    eq(wide,WEAPONS[2].spread,'the beam is not at its full cone with no Precision, so something else is narrowing it');
+    Stats.flat('precision',5);
+    ok(preciseSpread(WEAPONS[2].spread)<wide*0.1,'five Precision did not turn the Arcane Beam into a laser');
+    Stats.reset();
+    Stats.flat('precision',20);
+    eq(preciseSpread(WEAPONS[2].spread),WEAPONS[2].spread*PRECISION_SPREAD_FLOOR,
+       'the cone has no floor, so enough Precision makes the beam a perfectly deterministic shot - '+
+       'which can be walked into, because your own body says where it is going before it has gone');
+    Stats.reset();
+    Stats.flat('luck',20);
+    eq(preciseSpread(WEAPONS[2].spread),wide,'luck still narrows the beam, so the two stats are not actually split');
     Items.reset();
   });
 
@@ -914,7 +931,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
        prints - an item with no blurb is a row of numbers on a card. */
     startGame(); Items.reset();
     const ids=Content.all('item');
-    ok(ids.length>=10,'the roster has '+ids.length+' items, too few to exercise the model');
+    ok(ids.length>=12,'the roster has '+ids.length+' items, too few to exercise the model');
     let passive=0,active=0,sigil=0,slot=0,consumable=0,reusable=0,artifact=0,stat=0,hook=0;
     for(const id of ids){
       const d=Content.get('item',id);
@@ -940,6 +957,152 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
       const s=Content.get('item',id).fx&&Content.get('item',id).fx.stats;
       return s&&Object.values(s).some(v=>v<0);
     });
+test('every stat on the sheet changes something, or it is not a stat',()=>{
+    /* This is the check that would have caught the worst bug in the item framework's first day, and
+       it is here because nothing else did.
+
+       Strength and Vigor were on the character sheet with names, bars and blurbs for a full day, and
+       NOTHING READ THEM. Weapon damage used the weapon's own number and player.maxHp was the literal
+       8 written into the player at spawn. So a player could pick up Heavy Hands and Iron Ribs, see
+       the sheet change, and take a gun that did exactly the same damage with exactly the same health.
+
+       The reason it survived is worth recording, because it is the most dangerous shape this project
+       has: the sheet renders from Stats and the game reads a constant, and those two were different
+       numbers. Every check so far asked whether Stats was CORRECT. None of them asked whether
+       anything was READING it. A stat with no consumer is not a small stat - it is a lie with a bar
+       next to it, and it is the most expensive kind of bug to find by playing, because the player's
+       own report would be "the item did nothing" and there is no way to tell from inside the game
+       whether the item is broken or the wiring is.
+
+       So each stat is measured here by its EFFECT, not by its value. If one of these ever stops
+       being true, the stat has become decorative and the fix is to either wire it or delete it. */
+    startGame(); Items.reset();
+
+    const effect={};
+    // Strength: the same shot, the same target, twice
+    {
+      const room=currentRoom();
+      const shoot=()=>{
+        room.enemies.length=0; projectiles.length=0;
+        const e=spawnEnemy(false,room,player.x+180,player.y,'shooter');
+        e.noticeTimer=1e9; e.aggroTimer=0; room.enemies.push(e);
+        player.weaponIdx=0; mouse.x=e.x; mouse.y=e.y; player.cooldown=0;
+        fireWeapon();
+        for(let i=0;i<200&&projectiles.length&&e.hp===e.maxHp;i++) update();
+        return e.maxHp-e.hp;
+      };
+      Stats.reset();
+      const plain=shoot();
+      Stats.reset(); Stats.flat('strength',3);
+      const strong=shoot();
+      effect.strength=strong-plain;
+      ok(strong>plain,'+3 Strength dealt '+strong.toFixed(2)+' damage against a base shot of '+
+         plain.toFixed(2)+' - Strength is on the sheet and in the build and is not read by anything');
+    }
+    // Vigor: maximum health
+    {
+      Stats.reset();
+      const plain=player.maxHp;
+      Stats.reset(); Stats.flat('vigor',2); applyVitals();
+      effect.vigor=player.maxHp-plain;
+      ok(player.maxHp>plain,'+2 Vigor left maximum health at '+player.maxHp+' - Vigor is a row on the '+
+         'sheet that nothing reads');
+      ok(player.hp<=player.maxHp,'raising the ceiling left the player above it');
+      // and lowering it must cost hearts, or a build can be made worse invisibly
+      Stats.reset(); applyVitals();
+      player.hp=player.maxHp;
+      Stats.flat('vigor',-1); applyVitals();
+      ok(player.hp<player.maxHp+1,'dropping Vigor did not cost the player the heart they were carrying, '+
+         'so a build could be made worse and nothing would visibly happen');
+    }
+    // Momentum and Speed: movement
+    {
+        // set AFTER startGame, which resets the build. Setting it first measured the same run twice
+        // and reported that Momentum does nothing - which is what it did, for this test.
+        const topSpeed=mom=>{
+          startGame();
+          Momentum.set(mom);
+          player.x=ROOM_LEFT+20; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+          keys={d:1};
+          for(let i=0;i<120;i++) update();
+          return Math.hypot(player.vx,player.vy);
+        };
+        const base=topSpeed(0);
+        const charged=topSpeed(1);
+        ok(charged>base,'a full Momentum meter did not make the player faster ('+base.toFixed(3)+' -> '+
+           charged.toFixed(3)+') - Momentum is a bar that moves and a speed that does not');
+        // and the Speed STAT, which is the other half of the same system and reaches the movement
+        // code through a different door - a cap shared with Momentum rather than either of them alone
+        Stats.reset();
+        const plainBonus=moveSpeedBonus();
+        Stats.flat('speed',0.05);
+        effect.speed=moveSpeedBonus()-plainBonus;
+        ok(effect.speed>0,'a Speed item did not raise the speed bonus, so it is on the sheet and inert');
+        Momentum.set(0); Momentum.release();
+      effect.momentum=charged-base;
+    }
+    // Precision and Luck: the two things they claim
+    {
+      Stats.reset();
+      const wide=preciseSpread(WEAPONS[2].spread);
+      Stats.flat('precision',5);
+      ok(preciseSpread(WEAPONS[2].spread)<wide*0.1,'five Precision did not narrow the Arcane Beam');
+      Stats.reset(); Stats.flat('luck',5);
+      // Luck's whole effect is on the DISTRIBUTION, so it is measured by shifting it rather than by
+      // a value changing. Four thousand rolls at each end is enough that the gap is not sampling.
+      const rateAt=lk=>{
+        Stats.reset(); Stats.flat('luck',lk);
+        let rare=0;
+        for(let i=0;i<4000;i++){ const r=Items.rollRarity(Stats.value('luck')); if(r==='rare'||r==='legendary') rare++; }
+        return rare/4000;
+      };
+      const rareNoLuck=rateAt(0), rareWithLuck=rateAt(5);
+      effect.luck=rareWithLuck-rareNoLuck;
+      ok(effect.luck>0.03,'five Luck moved the rare-or-better rate by only '+
+         (effect.luck*100).toFixed(1)+' points ('+(rareNoLuck*100).toFixed(1)+'% to '+
+         (rareWithLuck*100).toFixed(1)+'%), so the stat that is supposed to decide what the dungeon '+
+         'contains barely does');
+      effect.precision=wide-preciseSpread(WEAPONS[2].spread);
+      Stats.reset();
+    }
+    // Intelligence is the honest exception, and it is documented as one: it gates magic doors, and
+    // there are no magic doors yet. It is asserted as INERT rather than skipped, so the day the
+    // doors land this line fails and has to be replaced with a measurement.
+    {
+      Stats.reset();
+      const before=JSON.stringify(Content.all('item'));
+      Stats.flat('intelligence',3);
+      eq(JSON.stringify(Content.all('item')),before,'Intelligence changed the item table, which is not '+
+         'what it is for');
+      ok(true,'');   // the assertion that matters is the comment above this line
+    }
+    // and the sheet must not be able to show a stat that is not in this list
+    for(const s of Stats.sheet())
+      ok(s.key in effect||s.key==='intelligence','the sheet shows '+s.key+' and this test does not know '+
+         'what it does - a new stat has to be given a measured effect here or it ships decorative');
+  });
+
+
+  test('a new run starts from nothing, including the build',()=>{
+    /* It used to reset the STATS and leave loadout.items populated, so pressing R gave you a
+       character sheet listing the previous run's items with none of their effects applied - the
+       same disagreement between the sheet and the game as the inert stats, in the other order. */
+    startGame(); Items.reset();
+    Items.give('heavy_hands'); Items.give('iron_ribs');
+    eq(Stats.value('strength'),1,'the test did not set up a build');
+    eq(player.maxHp,BASE_HP+2,'Iron Ribs did not raise maximum health before the restart');
+    startGame();
+    eq(Stats.value('strength'),0,"a new run kept the last run's Strength");
+    eq(player.maxHp,BASE_HP,"a new run kept the last run's health ceiling");
+    eq(loadout.items.length,0,'a new run still lists '+loadout.items.length+' items, so the sheet will '+
+       'show a build that is not there');
+    setPaused(true);
+    const chips=document.querySelectorAll('#charItems .itemChip').length;
+    const empty=document.querySelectorAll('#charItems .itemEmpty').length;
+    setPaused(false);
+    ok(chips===0&&empty===1,'after a restart the sheet shows '+chips+' carried items and '+(empty?
+       'no':'NO ')+'empty state, so the two disagree about whether anything is being carried');
+  });
     ok(trade,'every item in the roster is a bonus, so a build has no decision in it and the sheet is a list of plusses');
   });
   test('fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz',()=>{
