@@ -775,6 +775,220 @@ function fmtHearts(half){const h=half/2;return h+(h===1?' heart':' hearts');}
 
 /* end-of-run summary: paper sheet on a wood plate, same materials as the HUD */
 const INK='#3a2616', INK_SOFT='#7a6040', INK_NEW='#b3261e';
+/* ---- the weapon bench (F1) ------------------------------------------------------------------------
+   A panel for swapping guns mid-playtest without going back to the title screen for each attempt.
+
+   WHY IT EXISTS, in one line: weapon balance could not be judged because every attempt at a new
+   gun cost a run, and a run costs twenty minutes. The numbers below are the ones the balance
+   argument is actually about, so the panel shows them rather than making the player remember them.
+
+   THE NUMBERS ARE LIVE. Every figure reads the current build - the weapon's own damage PLUS
+   Stats.value('strength'), which is the term that decides how a gun behaves under a buff. A bench
+   that printed each weapon's own damage would have said the Arcane Beam was weak when the real
+   complaint is that a flat +4 Strength nearly triples it while it barely touches the Bolt. Showing
+   the buffed figure next to the base one is the whole point of the panel.
+
+   THE GEOMETRY IS COMPUTED ONCE, here, and both the drawing and the click handler read it. The
+   boss gate was broken for a week because the gate and the doorway each had their own copy of the
+   same rectangle and they drifted apart; a hit box that is calculated a second time at the click
+   site is that exact bug waiting to happen, and it fails silently - the button draws, the click
+   lands somewhere else, and it looks like the game is not listening. */
+
+function devLayout(){
+  /* Every vertical position in the panel is a band measured from the top of the card, and the card is
+     tall enough to hold them all with air between. The first version of this panel overlapped itself
+     three ways - the subtitle ran into the held-weapon block, the column headers sat on the first row,
+     and the footer fought the ESC hint - because the numbers were written into each draw call as it
+     was needed instead of being budgeted once. So they are budgeted once, here, and every band is
+     named. Nothing below is allowed to invent a y coordinate.
+
+       head    the title, and what is held, on the same baseline
+       sub     two lines of explanation, clear of the head's right-hand column
+       colHdr  the column titles, above the rule and above the first row
+       rows    four of them, 60px each
+       foot    the keys and the build readout, below a rule
+   */
+  const pw=608, ph=464, px=Math.round((W-pw)/2), py=Math.round((H-ph)/2);
+  const rowH=58, rowX=px+26, rowW=pw-52;
+  const head=py+34, sub=py+72, colHdr=py+112, listY=py+128;
+  // The footer band is measured from its TALLEST element, not its rule. It used to be budgeted from
+  // the rule, which put the ESC key cap three pixels past the bottom edge of the card - and the gap
+  // check that should have caught it was measuring the rule too, so it agreed with itself. The two
+  // tallest things down there are the caps (17px) and the baseline 13px under the last one.
+  const footRule=py+370, foot=py+386;
+  return {pw:pw,ph:ph,px:px,py:py,rowH:rowH,rowX:rowX,rowW:rowW,listY:listY,
+          head:head,sub:sub,colHdr:colHdr,foot:foot,footRule:footRule,
+          rowY:i=>listY+i*rowH, rowH2:rowH-6};
+}
+
+/* A key cap, drawn to match the .cap caps in the binds bar under the window: a dark plate with a
+   hairline top and a heavier bottom edge, so it reads as a physical key rather than a label in a
+   box. It is baked per label because the width is measured from the text. */
+const devCapCache={};
+function devCap(label,on){
+  const k=label+'|'+(on?1:0);
+  let c=devCapCache[k];
+  if(c) return c;
+  const g=document.createElement('canvas').getContext('2d');
+  g.font='11px monospace';
+  const tw=Math.ceil(g.measureText(label).width);
+  const w=tw+12, h=17;
+  c=document.createElement('canvas'); c.width=w; c.height=h;
+  const x=c.getContext('2d');
+  // the well the cap sits in, one shade darker than the card behind it
+  x.fillStyle=on?'#241a10':'#15181f';
+  x.fillRect(0,0,w,h);
+  // hairline on three sides, heavy along the bottom: the shading that makes it a key
+  x.fillStyle=on?'#6b5636':'#3c4453';
+  x.fillRect(0,0,w,1); x.fillRect(0,0,1,h); x.fillRect(w-1,0,1,h);
+  x.fillStyle=on?'#8a7048':'#525b6c';
+  x.fillRect(0,h-2,w,2);
+  x.font='11px monospace'; x.textAlign='center'; x.textBaseline='middle';
+  x.fillStyle=on?'#ffe9b0':'#c3ccdb';
+  x.fillText(label,w/2,h/2+0.5);
+  devCapCache[k]=c;
+  return c;
+}
+/* how far this weapon's damage falls off, as the game computes it. One copy of the rule, because a
+   panel that reimplemented the curve would eventually disagree with the gun it is describing. */
+function devFalloff(w,d){
+  if(d>=w.fFar) return w.fMin;
+  if(d<=w.fNear) return 1;
+  return 1-(1-w.fMin)*((d-w.fNear)/(w.fFar-w.fNear));
+}
+function drawDevMenu(){
+  if(!devOpen) return;
+  const G=devLayout();
+  ctx.fillStyle='rgba(6,8,12,0.80)';ctx.fillRect(0,0,W,H);
+  ctx.drawImage(woodPlate(G.pw,G.ph),G.px,G.py);
+  drawInset(G.px+8,G.py+8,G.pw-16,G.ph-16,null);
+  ctx.drawImage(paperTex(G.pw-20,G.ph-20),G.px+10,G.py+10);
+
+
+  // Read once, before anything is drawn. All three are the panel's spine: which gun is held, what
+  // the current build adds to every hit, and which gun is strongest at the range that matters - the
+  // last one because RELATIVE is a bar, and a bar needs something to be measured against.
+  const held=WEAPONS[player.weaponIdx];
+  const str=Stats.value('strength');
+  let bestDps=-1;
+  for(const w of WEAPONS){
+    const d=devDps(w,str,250);
+    if(d>bestDps) bestDps=d;
+  }
+  const L=G.px+26, R=G.px+G.pw-26;
+
+  // the head: title on the left, what is held on the right, both on the SAME baseline so they read
+  // as two ends of one line rather than as a title and a caption that drifted together
+  ctx.textAlign='left';
+  ctx.font='bold 15px monospace';ctx.fillStyle=INK;
+  ctx.fillText('WEAPON BENCH',L,G.head);
+  ctx.textAlign='right';ctx.font='11px monospace';ctx.fillStyle=INK_SOFT;
+  ctx.fillText('holding',R,G.head);
+  ctx.font='bold 15px monospace';ctx.fillStyle=held.color;
+  ctx.fillText(held.name,R,G.head+18);
+  ctx.textAlign='left';
+
+  // the subtitle gets its own band, BELOW the head rather than beside it. The two lines are the
+  // whole reason this panel exists - that it is not saved, and that the figures are buffed - and
+  // putting them beside a right-aligned column meant the longer line ran underneath it.
+  ctx.font='11px monospace';ctx.fillStyle=INK_SOFT;
+  ctx.fillText('Swap a gun without losing the run. Nothing here is saved.',L,G.sub);
+  ctx.fillText('Every figure includes your current Strength - that is what decides how a gun behaves buffed.',L,G.sub+15);
+
+  // the column titles, in a band of their own with a rule under them, so they cannot land on a row
+  ctx.textAlign='center';ctx.font='bold 10px monospace';ctx.fillStyle=INK_SOFT;
+  ctx.fillText('DMG/PULL',G.px+152,G.colHdr);
+  ctx.fillText('PULLS/S',G.px+238,G.colHdr);
+  ctx.fillText('DPS @100',G.px+312,G.colHdr);
+  ctx.fillText('@250',G.px+374,G.colHdr);
+  ctx.fillText('TTK @250',G.px+448,G.colHdr);
+  ctx.textAlign='right';ctx.fillText('RELATIVE',R,G.colHdr);
+  ctx.textAlign='left';
+  ctx.fillStyle='rgba(90,60,30,0.35)';ctx.fillRect(L,G.colHdr+8,G.pw-52,1);
+
+  for(let i=0;i<WEAPONS.length;i++){
+    const w=WEAPONS[i];
+    const y=G.rowY(i), equipped=player.weaponIdx===i;
+    const hovered=(mouse.x>=G.rowX&&mouse.x<G.rowX+G.rowW&&mouse.y>=y&&mouse.y<y+G.rowH);
+    // the row is a plate of its own, not a gap between rules: a list you can aim at has to look
+    // like a list of things rather than four lines of text with a border round the lot
+    ctx.fillStyle=equipped?'rgba(120,88,40,0.30)':hovered?'rgba(90,110,140,0.20)':'rgba(40,44,54,0.16)';
+    ctx.fillRect(G.rowX,y,G.rowW,G.rowH2);
+    ctx.strokeStyle=equipped?'#8a7048':'rgba(80,90,108,0.55)';ctx.lineWidth=1;
+    ctx.strokeRect(G.rowX+0.5,y+0.5,G.rowW-1,G.rowH2-1);
+    if(equipped){
+      // a gold spine down the equipped edge, so the current gun is findable without reading it
+      ctx.fillStyle=w.color;ctx.fillRect(G.rowX+1,y+1,3,G.rowH2-2);
+    }
+
+    drawIcon(i,G.rowX+34,y+G.rowH2/2,1.05);
+    const cap=devCap(String(i+1),equipped);
+    ctx.drawImage(cap,G.rowX+G.rowW-14-cap.width,y+G.rowH2/2-cap.height/2);
+
+    const tx=G.rowX+62;
+    ctx.font='bold 13px monospace';ctx.fillStyle=w.color;
+    ctx.fillText(w.name,tx,y+20);
+    ctx.font='10px monospace';ctx.fillStyle=INK_SOFT;
+    // cone in degrees, because "0.16 rad" is a number nobody can feel, and 18 degrees against 6 is
+    // the difference between a gun you can aim and one you cannot
+    const deg=(w.spread*(w.spreadFromPrecision?preciseSpread(w.spread):w.spread)*2*180/Math.PI).toFixed(1);
+    ctx.fillText('cone '+deg+'deg  ·  floor '+(w.fMin*100).toFixed(0)+'%  ·  '+
+      (w.count>1?(w.count+' pellets'):'single hit')+(w.pierce?'  ·  pierces '+w.pierce:''),tx,y+35);
+    const base=w.dmg*w.count;
+    ctx.fillStyle=str>0?'#d8a23c':INK_SOFT;
+    ctx.fillText(str>0?('base '+base.toFixed(2)+'  →  with +'+str+' Strength  '+(base+str*w.count).toFixed(2))
+                 :('base '+base.toFixed(2)+' a pull, single target'),tx,y+48);
+
+    const dps100=devDps(w,str,100), dps250=devDps(w,str,250);
+    const pulls=TICK_HZ/(w.cooldown/TEMPO.rate);
+    const per=(w.dmg+str)*w.count;
+    const col=10;
+    ctx.textAlign='center';ctx.font='11px monospace';
+    ctx.fillStyle=INK;ctx.fillText(per.toFixed(2),G.px+150,y+28);
+    ctx.fillText(pulls.toFixed(1),G.px+238,y+28);
+    ctx.fillStyle=dps250>=bestDps-0.01?'#5ee27a':INK;ctx.fillText(dps100.toFixed(1),G.px+310,y+28);
+    ctx.fillStyle=dps250>=bestDps-0.01?'#5ee27a':INK;ctx.fillText(dps250.toFixed(1),G.px+372,y+28);
+    ctx.fillText((18*TOUGH/dps250).toFixed(2)+'s',G.px+446,y+28);
+    // REL is a bar, not a number: "is this one stronger" is a comparison and a bar answers it at a
+    // glance, where four numbers in a column have to be read against each other one at a time
+    const bw=54, bx=R-bw, by=y+22;
+    ctx.fillStyle='rgba(20,24,32,0.9)';ctx.fillRect(bx,by,bw,8);
+    ctx.fillStyle=w.color;ctx.fillRect(bx,by,bw*(dps250/bestDps),8);
+    ctx.strokeStyle='#5a4630';ctx.lineWidth=1;ctx.strokeRect(bx+0.5,by+0.5,bw-1,7);
+    ctx.textAlign='left';
+  }
+
+  // footer: the two keys and a heal, because a playtest that has to be restarted every time you
+  // spend your charges is a playtest you stop doing
+  const fy=G.foot;   // the band devLayout budgeted, not a second guess at where the footer is
+  ctx.fillStyle='rgba(90,60,30,0.35)';ctx.fillRect(L,fy-12,G.pw-52,1);
+  ctx.font='11px monospace';
+  const cap=(label,x,on)=>{const c=devCap(label,on);ctx.drawImage(c,x,fy+4);return x+c.width+5;};
+  ctx.fillStyle=INK_SOFT;
+  let x=L;
+  x=cap('G',x,player.hasGold);ctx.fillStyle=player.hasGold?'#ffd23d':INK_SOFT;
+  ctx.fillText(player.hasGold?'gold key held':'give gold key',x,fy+17);x+=130;
+  x=cap('S',x,player.hasSilver);ctx.fillStyle=player.hasSilver?'#d8dee9':INK_SOFT;
+  ctx.fillText(player.hasSilver?'silver key held':'give silver key',x,fy+17);x+=140;
+  x=cap('H',x,false);ctx.fillStyle=INK_SOFT;
+  ctx.fillText('refill heart and cooldowns',x,fy+17);
+
+  ctx.textAlign='right';ctx.fillStyle=INK_SOFT;ctx.font='10px monospace';
+  ctx.fillText('strength '+str+'   ·   tempo '+TEMPO.rate.toFixed(2)+'x   ·   tick '+TICK_HZ+'Hz',R,fy+30);
+  ctx.font='bold 11px monospace';ctx.fillStyle=INK;
+  const c=devCap('ESC',false);ctx.drawImage(c,R-c.width,fy+44);
+  ctx.fillStyle=INK_SOFT;ctx.font='10px monospace';
+  ctx.fillText('or F1 to close',R-c.width-6,fy+57);
+  ctx.textAlign='left';
+}
+/* hearts per second for a weapon at a range, under the current build. This is the number the balance
+   argument is about and the panel exists to show it, so it is derived from the same terms the game
+   fires with: base damage plus Strength, times pellets, times rate, times the same falloff the
+   projectile itself uses. */
+function devDps(w,str,dist){
+  const pulls=TICK_HZ/(w.cooldown/TEMPO.rate);
+  return pulls*(w.dmg+str)*w.count*devFalloff(w,dist);
+}
 function drawRunSummary(){
   const s=lastRun; if(!s) return;
   ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,H);
@@ -821,10 +1035,14 @@ function render(){
     drawRoom(); drawHUD();
     if(roomFade>0){ctx.fillStyle='rgba(0,0,0,'+roomFade+')';ctx.fillRect(0,0,W,H);}
     drawBossWarning();   // over the fade, so a room transition cannot swallow the warning
+    // the bench is drawn over everything, after the fade and the boss warning, because it is the one
+    // thing that has to be readable at any moment - and it carries its own dim, so the PAUSED
+    // overlay beneath it would be a second dim layer and two of those read as a rendering fault
+    if(devOpen) drawDevMenu();
     if(state==='gameover'||state==='win') drawRunSummary();
     // no canvas PAUSED overlay while the character sheet is up: the sheet's own backdrop already dims
     // the whole screen, and two dim layers stacked reads as a rendering fault rather than a pause
-    else if(paused&&!uiSheetOpen) drawOverlay('PAUSED','Esc / P or click to resume','R restarts this run · time '+fmtTime(run.ticks));
+    else if(paused&&!uiSheetOpen&&!devOpen) drawOverlay('PAUSED','Esc / P or click to resume','R restarts this run · time '+fmtTime(run.ticks));
   }
   if(showPerf&&perfSamples.length){
     let sum=0,ups=0,worst=0;
@@ -838,7 +1056,11 @@ function render(){
 
 // run as many fixed TICK_HZ ticks as the elapsed time covers; returns how many ran
 function advance(dt){
-  if(paused){acc=0;return 0;}
+  // panel the player READS, and a fight that keeps running underneath numbers they are trying to
+  // read is a fight they lose for having tried to understand the weapon. It is deliberately not
+  // routed through setPaused, because that opens the character sheet and two cards stacked is worse
+  // than either alone.
+  if(paused||devOpen){acc=0;return 0;}
   acc+=Math.min(dt,MAX_CATCHUP_MS);
   let n=0;
   while(acc>=STEP_MS-STEP_TOL){update();acc-=STEP_MS;n++;}

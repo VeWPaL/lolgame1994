@@ -237,6 +237,37 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
 
 ---
 
+## Parked, with the measurements that produced it
+
+**The Arcane Beam.** The user reported its "raw TTK is way below the Bolt". Measured over 10 seconds
+of held fire against a dummy, it is not — it is *slower* at every range, and strongest past 250px:
+
+| weapon | pulls/s | dmg/pull | TTK @100px | @250px | @380px |
+|---|---|---|---|---|---|
+| Bolt | 2.40 | 7.00 | 1.45s | 1.86s | 2.69s |
+| Scatter | 1.40 | 14.40 | 1.27s | 2.10s | 2.68s |
+| Arcane Beam | 16.20 | 0.84 | 1.79s | 2.00s | 2.48s |
+| Voidball | 3.80 | 3.40 | 1.88s | 2.23s | 2.92s |
+
+So the perception is not dps. The two real distortions, both measured:
+
+- **It is the only sub-1-damage gun in the game.** A lunge does 2, a shell 1.8. The Beam does 0.84, so
+  a 24 HP body takes **29 hits**, each independently dodgeable or interruptible. That is the "no chunk"
+  feel, and it is what item interactions (knockback, stun, on-hit procs) multiply against.
+- **`dmg = w.dmg + Stats.value('strength')` is flat, so a low base is pathological under buffs.** A
+  flat +4 Strength is +57% on the Bolt and **+476%** on the Beam. Raising the Beam's damage without
+  fixing this makes the problem worse, not better.
+
+The proposed fix, held until the user has playtested: raise the base *and* lower the rate together
+(`dmg` up, `cooldown` up), so dps holds, per-hit chunk rises, and the Strength multiplier shrinks.
+Narrow the cone from 0.16 rad — the widest in the roster, and it scales with Precision. Leave the
+falloff alone; the best long-range retention in the game is the Beam's identity.
+
+**Undecided:** buff the Beam or nerf the Bolt, and whether to put a floor under weapon damage
+(no hit below 1.0) rather than special-casing one gun.
+
+---
+
 ## Current state
 
 - `depths.html` — a shell loading fourteen modules from `src/`. Playable, double-clickable.

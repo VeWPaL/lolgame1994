@@ -178,7 +178,35 @@ function uiOverlay(){
    key reaching the input at all, and a text field whose every keystroke is eaten accepts nothing,
    silently. The field has to be let through before the suppressor decides anything. */
 const seedTyping=e=>{const t=e.target;return !!(t&&t.id==='seedInput');};
-function uiHoldsInput(){ return !!uiOverlay(); }
+/* ---- the weapon bench, input side ----------------------------------------------------------------
+   F1 opens it, 1-4 swap, Escape or F1 closes, clicking a row swaps. It HOLDS INPUT and freezes the
+   simulation while it is up, because the numbers on it are the point and a number you cannot read
+   because you were hit is not a number.
+
+   It does not set paused, and that is deliberate. setPaused opens the character sheet, so reusing it
+   would stack two cards and leave the player dismissing one to find the other. So the bench has its
+   own flag and advance() asks about both - see the comment there.
+
+   Swapping is deliberately instant rather than "next weapon": a bench that cycles needs three
+   presses to reach the fourth gun and every one of those is a press you might fat-finger while a
+   fight is waiting. Number keys go straight there, and so does clicking the row. */
+let devOpen=false;
+function toggleDev(force){
+  devOpen=(force===undefined)?!devOpen:!!force;
+  if(devOpen){ keys={}; releaseButtons(); }
+}
+/* give the gun without pretending the player found it: the cooldown comes from the weapon rather than
+   from whatever the previous one left behind, which is the same reasoning fireWeapon uses, so a
+   bench swap behaves exactly like a pickup does. */
+function devSwap(i){
+  if(i<0||i>=WEAPONS.length) return false;
+  player.weaponIdx=i;
+  player.cooldown=WEAPONS[i].cooldown/TEMPO.rate;
+  player.cooldownMax=player.cooldown;
+  player.muzzleTimer=0;
+  return true;
+}
+function uiHoldsInput(){ return !!uiOverlay()||devOpen; }
 /* The keys the overlays answer to. They have to get past the suppressor below, or the bug list
    cannot be closed with the key that opened it - the same class of bug as a cancel you cannot
    reach, and exactly the mistake the hook's cooldown gate used to be. */
@@ -191,7 +219,7 @@ function uiHoldsInput(){ return !!uiOverlay(); }
    on pause, and then the suppressor ate the resume. Three tests failed and then left the sheet open,
    which broke the five after them. An overlay that traps its own dismiss key does not fail one test,
    it poisons the rest of the run. */
-const UI_KEYS=['escape','h','b','s','p','r'];
+const UI_KEYS=['escape','h','b','s','p','r','f1','1','2','3','4'];
 function uiAllows(k){ return UI_KEYS.indexOf(String(k).toLowerCase())>=0; }
 // Anything aimed at the overlay is consumed on the way down, before the game sees it.
 /* ---- the character sheet -----------------------------------------------------------------------
@@ -553,6 +581,20 @@ function toggleBugPanel(){
 window.addEventListener('keydown',e=>{
   if(uiHoldsInput()&&!uiAllows(e.key)) return;
   const k=e.key.toLowerCase(), first=!e.repeat&&!keys[k];
+  // The weapon bench answers BEFORE the game does, and before the overlays below, because it is
+  // the one panel whose keys are also game keys: 1-4 are the bench, but they are not movement, and
+  // F1 is nothing at all to the game. It has to be asked first or a swap silently also fires the
+  // wand at whatever is under the cursor.
+  if(devOpen){
+    if(k==='escape'||k==='f1'){ toggleDev(false); return; }
+    if(first&&k>='1'&&k<='4'){ devSwap(parseInt(k,10)-1); return; }
+    if(first&&k==='g'){ player.hasGold=true; return; }
+    if(first&&k==='s'){ player.hasSilver=true; return; }
+    if(first&&k==='h'){ player.hp=player.maxHp; player.cooldown=0; player.altCooldown=0;
+      player.blinkCharges=2; player.blinkRegen=0; return; }
+    return;
+  }
+  if(k==='f1'&&first&&player){ toggleDev(true); return; }
   if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','shift'].includes(k)) e.preventDefault();
   keys[k]=true;
   if(k==='f'&&first) showPerf=!showPerf;
@@ -597,7 +639,26 @@ canvas.addEventListener('mousemove',e=>{
 // on the whole window, not just the canvas: the canvas is letterboxed, and a context menu opened
 // over the dead space around it eats the mouseup that should have released the wand
 window.addEventListener('contextmenu',e=>{e.preventDefault(); releaseButtons();});
+/* A click on the weapon bench selects a row. It is handled here, on window, rather than on the
+   canvas, for one reason: the bench is a canvas panel and there is no element to listen on, so the
+   hit test has to live where the pointer already is. The rectangle it tests against comes from
+   devLayout() - the same call the drawing uses - so a button cannot be drawn in one place and
+   clicked in another, which is how the boss gate spent a week broken.
+
+   The bench consumes the click rather than letting it fall through to trackButton, or dismissing
+   the panel would also cast the wand at whatever was under the cursor. */
 window.addEventListener('mousedown',e=>{
+  if(devOpen){
+    const G=devLayout();
+    if(mouse.x<G.px||mouse.x>G.px+G.pw||mouse.y<G.py||mouse.y>G.py+G.ph){ toggleDev(false); return; }
+    for(let i=0;i<WEAPONS.length;i++){
+      const y=G.rowY(i);
+      if(mouse.x>=G.rowX&&mouse.x<G.rowX+G.rowW&&mouse.y>=y&&mouse.y<y+G.rowH){
+        devSwap(i); return;
+      }
+    }
+    return;
+  }
   if(uiHoldsInput()) return;
   if(state==='start'){startGame();return;}
   if(paused){setPaused(false);return;}   // the resume click does not cast
