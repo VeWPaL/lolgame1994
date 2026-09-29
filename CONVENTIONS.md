@@ -89,6 +89,25 @@ repetition is a coin flip rather than a sample, and a threshold on twelve of the
 coincidence. Raise the repetition count until it settles into a rate, then assert the rate — and
 assert the number, not merely that something happened.
 
+**Geometry that more than one file needs belongs in exactly one place.** The door rectangle was
+written out three times: once drawing the frame, once for the boss gate, once for the unlock sweep.
+The gate's copy had the bottom wall's y baked into its vertical case, so the E and W portcullises
+were drawn 254px below the doors they seal — on the floor, in the corner — while those doors showed
+nothing but a padlock. The unlock sweep's copy had the mirror fault, drawing a horizontal band
+through the thickness of a vertical wall.
+
+Two copies agreed with each other and with the collision code, so the broken one was the odd one out
+of three and readable from no single file. It only appeared when all four sides were drawn at once,
+which a layout almost never does, because the feature is one door in a room. One copy now lives in
+`doorRect(d,wt)` and is read by all three, and a test asks about **all four sides** rather than the
+one that happens to be reachable.
+
+**Test the states your code deliberately runs in.** The refill-flash clock lives above
+`if(state!=='playing') return` because the flash fires during a room transition. That also makes it
+run on the title screen, where `player` is `undefined` — and 128 tests missed the resulting
+per-frame throw because every one of them called `startGame()` first. When a line is placed outside
+the state machine on purpose, a test must stand in the state that placement exposes it to.
+
 ---
 
 ## Architecture
