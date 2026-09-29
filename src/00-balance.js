@@ -461,28 +461,20 @@ function roomPressure(live){
    fair. A hidden accuracy ramp on a lone enemy is indistinguishable from the game cheating. */
 const PRESSURE_CLOSURE=0.85, PRESSURE_CADENCE=0.4;
 
-/* HOW LONG THE COOLDOWN-RESTORED FLASH LIVES, and how dark the screen may be while it does.
+/* HOW LONG THE BLINK BAR TAKES TO FILL AFTER A DOOR, in ticks.
 
-   RESTORE_FX_TICKS is 34, about half a second of wall clock. It has to fit inside the READY window
-   (158 ticks) with room to spare, which it does comfortably.
+   RESTORE_FX_SPAN is deliberately READY, the length of the arrival itself. The bar therefore reaches
+   full on the same tick the player regains control, which is the only moment a full bar is worth
+   anything to them - and it means the drawn value and the real value agree on every single frame of
+   the animation, because the real value is always full and only the drawing is behind it.
 
-   RESTORE_FX_FADE is the half of this that actually mattered, and getting it wrong is why the flash
-   never appeared at all in play. The refill is fired by enterRoom, which runs DURING the room fade -
-   and the fade is 1-smooth(p), which is at its flattest at the START. Measured over the flash's life:
-
-       tick  0   roomFade 1.000    the HUD is 0% visible
-       tick 32   roomFade 0.894    the HUD is 13% visible
-
-   So the whole 34-tick flash played out against a screen that was 87-100% black. It was drawn
-   correctly every frame and then painted over by the fade, and it looked like a feature that simply
-   did not fire. The clock therefore does not start until the fade has lifted past
-   RESTORE_FX_FADE, which puts the flash in the last fifth of the fade where the room is legible.
-
-   Worth recording how this survived: the test asserted the clock counted down from 34 to 0, and it
-   did. It never asked whether anybody could see it. Measuring that a thing happens is not measuring
-   that it is observable, and for a VFX the second is the only one that counts. There is now a test
-   that fails if the flash is ever spent on a black screen again. */
-const RESTORE_FX_TICKS=34, RESTORE_FX_FADE=0.30;
+   This replaces a ring that flashed on the wand and the alt. It is gone because a ring on a bar that
+   has already snapped to full is decoration: the player saw the jump and the ring then announced
+   something that had already happened. The ring was also invisible for its entire first life - the
+   fade is flattest at its start, so roomFade was still 0.89 after a third of the arrival and the HUD
+   was under 13% visible - which is worth remembering as the shape of the mistake: the test asserted
+   the clock counted down and it did, and nobody asked whether anyone could see it. */
+const RESTORE_FX_SPAN=READY;
 
 /* HOW FAR a ranged body will actually have walked in N ticks, given the standoff rule it obeys.
    It is emphatically not speed*N, and finding that out cost a day of a shooter missing a straight

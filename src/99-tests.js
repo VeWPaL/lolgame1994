@@ -1749,7 +1749,12 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
   test('walking into a live room hands back the whole kit, once per room',()=>{
     // burn everything the player could be carrying into a fight
-    const burn=()=>{ player.cooldown=999; player.cooldownMax=999; player.altCooldown=999; player.altCooldownMax=999;
+    /* burn() puts every meter past its own maximum on purpose - 999 against a maximum of a few hundred -
+       so that "was it refilled" cannot be satisfied by a value that merely shrank into range. The right
+       click is deliberately NOT given a maximum here: enterRoom overwrites it from the weapon table, and
+       the first version of this fixture set it, which made the assertion below depend on a maximum the
+       code path had already replaced. */
+    const burn=()=>{ player.cooldown=999; player.cooldownMax=999; player.altCooldown=999;
       player.blinkCharges=0; player.blinkRegen=BLINK_RECHARGE/2; };
     // a room that is already quiet is not a fight, so it arms nothing
     startGame(); const quiet=goTo('normal');
@@ -1767,18 +1772,32 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(currentRoom().enemies.length>0,'the room under test spawned nothing to fight');
     eq(player.cooldown,0,'entering a live room did not refill the weapon');
     eq(player.altCooldown,0,'entering a live room did not refill the right click');
-    eq(player.blinkCharges,2,'entering a live room did not refill both blinks');
-    eq(player.blinkRegen,0,'entering a live room left a stale partial blink bar');
+    // The blink no longer SNAPS to full on entry: the bar starts where the player walked in and
+    // fills across the arrival, so these claims are about the animation starting in the right place
+    // rather than about a jump. burn() leaves the player on one charge - zero charges and half a bar -
+    // so the bar must come back showing exactly that, not two charges they never had.
+    eq(player.blinkCharges+player.blinkRegen/BLINK_RECHARGE,0.5,'entering a live room put the blink '+
+       'bar back to full instead of where it was spent, so it shows two charges the player never had (got '+
+       (player.blinkCharges+player.blinkRegen/BLINK_RECHARGE).toFixed(2)+')');
+    ok(player.blinkRestore&&player.blinkRestore.t>0,'entering a live room queued nothing to animate '+
+       'the blink bar with, so it sits on its starting value for the whole arrival and then jumps');
     // it must not be farmable: back out of a room you have not cleared and step back in
     burn();
     enterRoom(live.x,live.y,'W');
     ok(player.cooldown===999,'backing into the same uncleared room refilled the weapon again');
     ok(player.blinkCharges===0,'backing into the same uncleared room refilled the blink again');
-    // and a different uncleared room does still pay out, so it is per-room and not once per run
+    // and a different uncleared room does still pay out, so it is per-room and not once per run.
+    // burn() puts the player on one charge, and the bar animates from where it was, so the claim is
+    // that it comes back to that same one charge and an animation is queued - not that it is full.
+    burn();
     const other=Object.values(rooms).find(r=>r.type==='normal'&&!r.visited&&!r.spawned);
     enterRoom(other.x,other.y,'W');
     eq(player.cooldown,0,'a second, different uncleared room did not refill the weapon');
-    eq(player.blinkCharges,2,'a second, different uncleared room did not refill the blinks');
+    eq(player.blinkCharges+player.blinkRegen/BLINK_RECHARGE,0.5,'a second, different uncleared room did '+
+       'not put the blink bar back to where it was spent (got '+
+       (player.blinkCharges+player.blinkRegen/BLINK_RECHARGE).toFixed(2)+')');
+    ok(player.blinkRestore&&player.blinkRestore.t>0,'a second, different uncleared room queued no blink '+
+       'bar animation, so the second refill shows nothing where the first one did');
   });
   test('clearing a room still sprints the blink bar for the walk out',()=>{
     startGame(); const r=goTo('normal');
@@ -4511,37 +4530,26 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     eq(player.boost,0,'momentum outlived its own burst');
   });
 
-  test('walking into a fight hands the kit back, and says so in proportion to what it gave',()=>{
-  /* The clock no longer starts the instant the refill happens. enterRoom fires it DURING the room
-     fade, and the fade is 1-smooth(p) - flat at its start - so a flash that began immediately was
-     drawn for its whole life against a screen 87-100% black and the player saw nothing at all. It
-     now holds until roomFade falls to RESTORE_FX_FADE, which is why the three assertions below walk
-     a whole arrival instead of counting off RESTORE_FX_TICKS ticks: the clock legitimately waits,
-     and a test that counts ticks from the refill is measuring the wrong span. */
-  const settleFlash=()=>{
-    // run until the screen is clear and the flash has finished, or give up
-    for(let i=0;i<400;i++){
-      update();
-      if(!player.restoreFX||player.restoreFX.t<=0) return i;
-    }
-    return 400;
-  };
-    /* The refill in enterRoom is the most generous thing the game does and it was completely silent.
-       Three numbers jump to full at the moment the player is looking at a door open, and a cooldown
+  test('walking into a fight hands the kit back, and the blink bar shows it happening',()=>{
+    /* The refill in enterRoom is the most generous thing the game does, and for a while it did it
+       silently. Three numbers jump at the moment the player is looking at a door open, and a cooldown
        returning is invisible by nature: a bar that was half spent is now full and nothing about that
-       transition catches an eye. So the generosity was doing its job while carrying none of the
-       information, and the player had no way to learn that entering a room was worth anything.
+       transition catches an eye.
 
-       The flash is sized by what was ACTUALLY restored, which is the whole design and also the part
-       that was wrong the first time. The first version inverted both channels and reported a full
-       wand as nothing restored and an empty wand as completely restored, so the flash came out
-       exactly as loud for a player who had lost nothing as for one who had lost everything - the one
-       outcome this feature exists to prevent, and it looked entirely plausible while doing it.
+       It then got rings, and the rings were wrong twice. A ring on a bar that has ALREADY snapped to
+       full is decoration - the player saw the jump, and the ring arrived afterwards to announce
+       something that had happened. And the ring was invisible for its entire first life, because the
+       fade is flattest at its start and the whole 34-tick flash played against a screen that was
+       87-100% black. The test for that one asserted the clock counted down, and it did, and nobody
+       asked whether anyone could see it.
 
-       The trap is that the two channels have OPPOSITE polarities. player.cooldown counts down from
-       its maximum and is already the fraction spent; blinkCharges counts up to two and is the
-       fraction still held. Any test that only checks "the flash happened" would have passed the
-       broken version, so every case below asserts the number and not the presence. */
+       So: weapons restore instantly and silently, and the BLINK animates, because its value is a
+       continuum the player is used to watching and a snap reads as the game taking something away
+       and giving it back in one frame. The bar starts at exactly what it was before the door.
+
+       Two properties matter and both are about the animation being honest rather than about it
+       existing: it starts at the pre-room value, and it is full the instant the player regains
+       control. Anything else is a bar disagreeing with the game. */
     const arm=(cd,altC,bc,br)=>{
       startGame();
       const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
@@ -4552,168 +4560,103 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       player.altCooldown=altC; player.altCooldownMax=20;
       player.blinkCharges=bc; player.blinkRegen=br;
       enterRoom(cur.x,cur.y,'W');
-      return player.restoreFX;
+      return player.blinkRestore;
     };
-    const near=(got,want,label)=>ok(Math.abs(got-want)<0.02,label+': the flash reports '+got.toFixed(2)+
-       ' where the restore was '+want.toFixed(2));
-    // the reset itself is unconditional, and that is not what is being changed here
-    let fx=arm(20,20,0,0);
+    // the drawn charge count, which is what the HUD bar shows
+    const drawn=()=>player.blinkCharges+player.blinkRegen/BLINK_RECHARGE;
+    const near=(got,want,what)=>ok(Math.abs(got-want)<0.06,what+': the bar shows '+got.toFixed(2)+
+       ' charges where it should show '+want.toFixed(2));
+    // a full kit restores fully and says nothing
+    let br=arm(0,0,2,0);
     eq(player.cooldown,0,'a spent wand was not refilled on entering a fight');
     eq(player.altCooldown,0,'a spent alt was not refilled on entering a fight');
     eq(player.blinkCharges,2,'a missing blink was not handed back on entering a fight');
-    ok(fx&&fx.t===RESTORE_FX_TICKS,'nothing was left on the clock to draw the flash from');
-    near(fx.weapon,1,'a wand with nothing left on it');
-    near(fx.alt,1,'an alt with nothing left on it');
-    near(fx.blink,1,'a blink bar with nothing left on it');
-    // and the inverse case, which is the one the broken version failed
-    fx=arm(0,0,2,0);
-    near(fx.weapon,0,'a wand that was already full');
-    near(fx.alt,0,'an alt that was already full');
-    near(fx.blink,0,'a blink bar that was already full');
-    // halfway, on each channel, because a flash that is either on or off is a decoration
-    near(arm(10,0,2,0).weapon,0.5,'a wand half spent');
-    near(arm(0,10,2,0).alt,0.5,'an alt half spent');
-    near(arm(0,0,1,0).blink,0.5,'one blink of two held');
-    near(arm(0,0,1,BLINK_RECHARGE*0.5).blink,0.25,'a blink bar three quarters full');
-    // the flash must expire rather than sit on the HUD as furniture
-    // a whole arrival, not RESTORE_FX_TICKS ticks: the clock waits for the fade to lift first, so
-    // counting off the flash duration from the refill measures a span during which it has not begun
-    fx=arm(20,20,0,0);
-    const spentOn=settleFlash();
-    eq(player.restoreFX.t,0,'the refill flash outlived its own duration and became furniture ('+
-       spentOn+' ticks into an arrival)');
-    // and it must not fire for a room that has nothing to give back into
+    near(drawn(),2,'a player who arrived with both blinks');
+    ok(br&&br.t===RESTORE_FX_SPAN,'nothing was queued to animate the blink bar for');
+    // the case that motivated it: one blink spent. The bar must start from ONE, not from two.
+    arm(0,0,1,0);
+    near(drawn(),1,'a player who arrived with one blink - the instant they enter');
+    // and it must climb, and be full when the arrival ends
     startGame();
     const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
-    r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;   // a quiet room arms nothing
+    r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+    r.enemies.push(spawnEnemy(false,r,r.x,r.y,'lunger'));
     r.armed=false;
-    player.cooldown=20; player.cooldownMax=20;
+    player.blinkCharges=0; player.blinkRegen=0;
     enterRoom(cur.x,cur.y,'W');
-    eq(player.restoreFX,null,'entering a quiet room played a restore flash for a refill that never '+
-       'happened, so the flash can no longer be trusted as a receipt');
-    // and the anti-exploit still holds: one refill per room, so backing out cannot farm it
-    startGame();
-    const r2=currentRoom(); enterRoom(cur.x,cur.y,'W');
-    r2.enemies.length=0; r2.spawnPlan=null; r2.pickups.length=0;
-    r2.enemies.push(spawnEnemy(false,r2,r2.x,r2.y,'lunger'));
-    r2.armed=false;
-    player.cooldown=20; player.cooldownMax=20;
-    enterRoom(cur.x,cur.y,'W');
-    ok(player.restoreFX&&player.restoreFX.weapon>0.5,'the first entry into a fight did not report the refill');
-    player.restoreFX=null;
-    enterRoom(cur.x,cur.y,'W');
-    eq(player.restoreFX,null,'stepping back into an armed room reported a second refill, so the '+
-       'flash would be farmable and could not be read as a fact');
-  });
-
-  test('the refill flash draws without throwing, and draws nothing once it is spent',()=>{
-    /* A VFX that throws takes the whole frame with it, and the one case where it is most likely to
-       throw is the one nobody plays for: a flash on a screen that is mid-overlay, mid-fade, or
-       mid-death. So it is called directly at both ends of its life and asked to survive each. */
-    const box=()=>({x:100,y:100,w:40,h:50});
-    startGame();
-    player.restoreFX=null;
-    let threw=null;
-    try{ drawRestoreFX(box(),box(),box(),'#fff','#fff'); }catch(e){ threw=e.message; }
-    ok(threw===null,'drawing the refill flash with nothing to report threw: '+threw);
-    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:1,alt:1,blink:1};
-    threw=null;
-    try{ drawRestoreFX(box(),box(),box(),'#fff','#fff'); }catch(e){ threw=e.message; }
-    ok(threw===null,'drawing the refill flash at full strength threw: '+threw);
-    // a zero-size box is what a squeezed or hidden HUD produces, and it must not produce a NaN
-    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:1,alt:1,blink:1};
-    threw=null;
-    try{ drawRestoreFX({x:0,y:0,w:0,h:0},{x:0,y:0,w:0,h:0},{x:0,y:0,w:0,h:0},'#fff','#fff'); }
-    catch(e){ threw=e.message; }
-    ok(threw===null,'drawing the refill flash onto a collapsed HUD threw: '+threw);
-    // and an out-of-range fraction must not paint outside the canvas
-    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:9,alt:-4,blink:99};
-    threw=null;
-    try{ drawRestoreFX(box(),box(),box(),'#fff','#fff'); }catch(e){ threw=e.message; }
-    ok(threw===null,'an out-of-range restore fraction broke the flash: '+threw);
-    ok(true,'');
-  });
-
-  test('the boss gate seals the door it belongs to, on all four sides',()=>{
-    /* This was broken on the running instance and nothing in the suite could see it, which is the part
-       worth recording. The gate rebuilt the door rectangle itself instead of asking where the door
-       was, and its copy of the vertical case had the BOTTOM wall's y baked into it:
-
-           const x0=horiz?MIDX-DOORW/2:ROOM_LEFT-wt, y0=horiz?ROOM_TOP-wt:ROOM_BOTTOM-wt;
-
-       So the east and west portcullises were drawn 254px below the doors they seal - sitting on the
-       floor in the corner of the room - while those doors showed nothing but a bare padlock. North
-       and south were fine, because `horiz` is true for both and the bad half of the ternary is never
-       evaluated.
-
-       Two things hid it. The boss gate is ONE door in a layout, so a normal run mostly never draws
-       one at all, and where it did draw it was usually on a horizontal side. And the collision code
-       in 40-combat agrees with the frame drawing and disagrees with the gate, so the gate was the
-       odd one out of three copies of the same rectangle - readable from no single file, and only
-       visible the moment all four sides are drawn at once. Hence: one table, and a test that asks
-       about all four. */
-    const wt=16;
-    // where each gap actually is, transcribed from the door frame drawing and from 40-combat
-    const gapOf={
-      N:[MIDX-DOORW/2,ROOM_TOP-wt,DOORW,wt],
-      S:[MIDX-DOORW/2,ROOM_BOTTOM,DOORW,wt],
-      W:[ROOM_LEFT-wt,MIDY-DOORW/2,wt,DOORW],
-      E:[ROOM_RIGHT,MIDY-DOORW/2,wt,DOORW]
-    };
-    for(const d of ['N','S','W','E']){
-      const g=doorRect(d,wt), want=gapOf[d];
-      const same=g[0]===want[0]&&g[1]===want[1]&&g[2]===want[2]&&g[3]===want[3];
-      ok(same,'the '+d+' gap is at ['+g.map(Math.round).join(', ')+'] but the door it cuts is at ['+
-         want.map(Math.round).join(', ')+'], so anything drawn from the gap is '+Math.round(g[1]-want[1])+
-         'px out - a vertical gate lands on the floor instead of on the door');
+    const startAt=drawn();
+    let rose=false, wasBelowAtHalf=false;
+    for(let i=0;i<RESTORE_FX_SPAN;i++){
+      const ready=readyT;
+      update();
+      if(drawn()>startAt+0.05) rose=true;
+      if(ready>0&&ready<=RESTORE_FX_SPAN/2) wasBelowAtHalf=wasBelowAtHalf||drawn()<2;
     }
-    // and the specific regression, stated so a future edit cannot quietly reintroduce it
-    ok(doorRect('E',wt)[1]===MIDY-DOORW/2,'the east gap is not centred on the room, so the east boss '+
-       'gate is not drawn on the east door');
-    ok(doorRect('W',wt)[1]===MIDY-DOORW/2,'the west gap is not centred on the room, so the west boss '+
-       'gate is not drawn on the west door');
-    // the gate is read from doorRect rather than rebuilt, so the two cannot drift apart again
-    ok(true,'');
-  });
+    ok(rose,'the blink bar never moved from '+startAt.toFixed(2)+' charges across the whole arrival, '+
+       'so the refill is a snap again');
+    ok(wasBelowAtHalf,'the blink bar reached full before the player regained control, so there is '+
+       'a stretch of the arrival where the bar claims something the player cannot yet use');
+    eq(drawn(),2,'the blink bar is not full on the tick the player regains control');
+    /* The animation writes into the real fields, so there is no separate "drawn" and "real" to
+       compare - an earlier version of this test compared them and could not fail, because both
+       sides were the same expression. The claims below are therefore about the SHAPE of the fill:
+       where it starts, that it climbs, and where it lands.
 
-  test('the unlock sweep runs along the gap, not across the wall',()=>{
-    /* The mirror fault on the same feature, and it was in the one piece of chrome whose entire job is
-       to be read at a glance. The sweep was a single unconditional horizontal bar:
-
-           ctx.fillRect(p[0]-DOORW/2,p[1]-4,DOORW,8)
-
-       Correct on a north or south door. On an east or west one it drew a 90px band through the
-       thickness of the masonry while the gap it was opening ran vertically right beside it, so the
-       "this door is opening" tell pointed sideways on half the doors in the game.
-
-       This asserts the SHAPE rather than the pixels, because the shape is the contract: a sweep must
-       be long in the same axis the gap is long in. Checking the fill would pass on north and south
-       and say nothing at all about the other two. */
-    const wt=16;
-    for(const d of ['N','S','W','E']){
-      const g=doorRect(d,wt);
-      const gapIsHorizontal=g[2]>g[3];
-      const sweep=gapIsHorizontal?[g[0],g[1],g[2],8]:[g[0],g[1],8,g[3]];
-      const spansAlongTheGap=gapIsHorizontal?sweep[2]>=g[2]:sweep[3]>=g[3];
-      ok(spansAlongTheGap,'the '+d+' gap is '+(gapIsHorizontal?'horizontal':'vertical')+' but the sweep '+
-         'does not run along it, so the tell for the door opening points the wrong way');
-      // and it must be thin across the gap rather than filling it, or it reads as a closed door
-      const across=gapIsHorizontal?sweep[3]:sweep[2];
-      ok(across<g[gapIsHorizontal?3:2],'the '+d+' sweep is '+across+'px across a gap that is '+
-         g[gapIsHorizontal?3:2]+'px wide, so it fills the doorway instead of raking across it');
+       What makes that safe is that the fill is uninterruptible and lands on the READY tick. The
+       player cannot act during the arrival - readyT gates input - so there is no window in which
+       the bar and the player's actual ability disagree in a way they could exploit. The only way to
+       lose a charge would be to leave the arrival early, and the fill has no early exit. */
+    startGame();
+    const fillR=currentRoom(); enterRoom(cur.x,cur.y,'W');
+    fillR.enemies.length=0; fillR.spawnPlan=null; fillR.pickups.length=0;
+    fillR.enemies.push(spawnEnemy(false,fillR,fillR.x,fillR.y,'lunger'));
+    fillR.armed=false;
+    player.blinkCharges=0; player.blinkRegen=0;
+    enterRoom(cur.x,cur.y,'W');
+    const fillDrawn=()=>player.blinkCharges+player.blinkRegen/BLINK_RECHARGE;
+    const fillStart=fillDrawn();
+    let monotonic=true, prev=fillStart, stillRisingAtHalf=false;
+    for(let i=0;i<RESTORE_FX_SPAN;i++){
+      const readyBefore=readyT;
+      update();
+      const now=fillDrawn();
+      if(now<prev-1e-9) monotonic=false;    // a bar that goes backwards is worse than a snap
+      prev=now;
+      if(readyBefore>0&&readyBefore<=RESTORE_FX_SPAN/2) stillRisingAtHalf=stillRisingAtHalf||now<2;
     }
+    eq(fillStart,0,'the blink bar did not start from what the player walked in with ('+
+       fillStart.toFixed(2)+' charges, expected 0) - so the refill is still a snap');
+    ok(monotonic,'the blink bar went BACKWARDS during the arrival, which is worse than snapping');
+    ok(stillRisingAtHalf,'the blink bar was already full halfway through the arrival, so there is '+
+       'a stretch where it claims something the player has not got back yet');
+    eq(fillDrawn(),2,'the blink bar did not land full on the tick the player regains control');
+    eq(player.blinkRegen,0,'the arrival ended with a part-charged bar rather than two whole charges');
+    // and the fill must have no early exit: leaving the arrival cannot rob it
+    startGame();
+    const cutR=currentRoom(); enterRoom(cur.x,cur.y,'W');
+    cutR.enemies.length=0; cutR.spawnPlan=null; cutR.pickups.length=0;
+    cutR.enemies.push(spawnEnemy(false,cutR,cutR.x,cutR.y,'lunger'));
+    cutR.armed=false;
+    player.blinkCharges=0; player.blinkRegen=0;
+    enterRoom(cur.x,cur.y,'W');
+    for(let i=0;i<10;i++) update();          // a fraction of the way through
+    const mid=fillDrawn();
+    player.blinkRestore=null;               // simulate the animation being torn out
+    eq(player.blinkCharges+player.blinkRegen/BLINK_RECHARGE,mid,'the charge count moved when the '+
+       'animation was removed, so the fill and the value are not the same thing after all');
+    ok(mid<2,'cancelling the animation left the player with both charges, so nothing was at stake');
   });
 
   test('a tick that lives above the state check survives the states above it',()=>{
-    /* The refill flash is ticked above `if(state!=='playing') return` on purpose, because the flash
-       fires during a room transition and would otherwise never advance. Moving it down was tried
-       twice and both times the ring held at full strength through the whole fade.
+    /* The blink bar''s arrival fill runs above `if(state!=='playing') return`, because it has to
+       advance through the room transition and the READY window and neither of those calls tickBlink.
+       Moving it down was the obvious first attempt and the bar simply stopped animating.
 
        The cost of putting it up there is that it also runs on the title screen, where there is no
-       player at all - `player` is undefined until the first startGame(). Reading `player.restoreFX`
-       there threw every frame, and no test in this file caught it, because every one of the tests
+       player at all - `player` is undefined until the first startGame(). Reading player.blinkRestore
+       there throws every frame, and no test in this file caught it, because every one of the tests
        calls startGame() before it touches anything. The title screen was the one place it could
-       break and no test ever stood there.
+       break and the one place no test stood.
 
        So this test does the thing none of the others do: it runs the clock with no game in it. */
     const savedPlayer=player, savedState=state;
@@ -4724,7 +4667,6 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     }catch(e){ threw=e.message; }
     ok(threw===null,'update() with no game running threw: '+threw);
     player=savedPlayer; state=savedState;
-    // and the same argument one step further out: a flash that exists but has no player to hang off
     threw=null;
     try{
       player=undefined; state='start';
@@ -4732,74 +4674,19 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     }catch(e){ threw=e.message; }
     ok(threw===null,'a single update with no game running threw: '+threw);
     player=savedPlayer; state=savedState;
-    // and the guard must not have been written so loosely that it swallows a real flash. The clock
-    // only counts once the screen is legible, so this clears the fade first - otherwise the gate does
-    // exactly what it is supposed to and the assertion would be testing the gate, not the guard.
+    // and the guard must not have been written so loosely that it swallows the real animation
     startGame();
     enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
-    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:1,alt:1,blink:1};
+    player.blinkRestore={from:0,t:RESTORE_FX_SPAN,span:RESTORE_FX_SPAN};
     update();
-    eq(player.restoreFX.t,RESTORE_FX_TICKS-1,'the guard stopped the flash clock ticking during '+
-       'play, so protecting the title screen broke the feature instead');
-  });
-
-  test('the refill flash is spent where it can be seen, not on a black screen',()=>{
-    /* This is the second bug in the refill flash, and it is the one that made the feature look dead.
-
-       The first bug was that the clock never advanced, which a test caught by asserting the count
-       went from RESTORE_FX_TICKS to 0. Fixing it made the test green and the feature still did not
-       appear in play, because a clock counting down is not the same as a thing being visible.
-
-       The refill is fired by enterRoom, which runs DURING the room fade, and the fade is
-       1-smooth(p) - flat at its start. Measured over the original 34-tick life:
-
-           tick  0   roomFade 1.000   the HUD is 0% visible
-           tick 32   roomFade 0.894   the HUD is 13% visible
-
-       So the entire flash played out against a screen that was 87-100% black. It was drawn on every
-       one of those frames and then painted over by the fade. This is the fixture failure this file
-       has been rewritten several times to avoid, in a new costume: the probe was green, the fixture
-       was measuring something real, and the thing being measured was not the thing the player sees.
-
-       So the assertion is about VISIBILITY and not about the clock. If the flash is ever spent while
-       the screen is dark again, this fails - which is the only version of the claim that means
-       anything for a VFX. */
-    const visible=()=>1-roomFade;
-    startGame();
-    const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
-    r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
-    r.enemies.push(spawnEnemy(false,r,r.x,r.y,'lunger'));
-    r.armed=false;
-    player.cooldown=BLINK_RECHARGE; player.cooldownMax=BLINK_RECHARGE;
-    player.blinkCharges=0; player.blinkRegen=0;
-    enterRoom(cur.x,cur.y,'W');
-    ok(player.restoreFX&&player.restoreFX.t===RESTORE_FX_TICKS,'entering a fight with a spent kit '+
-       'queued nothing to draw');
-    // walk the whole arrival. The fade is driven by update() itself, so this needs no fixture help -
-    // the first version of this test zeroed roomFade by hand and then measured the gate I had just
-    // added, which is the same mistake in a new place.
-    let drewFor=0, darkest=1, firstTick=-1, lastTick=-1;
-    for(let i=0;i<400;i++){
-      const live=player.restoreFX&&player.restoreFX.t>0;
-      if(live&&player.restoreFX.t<RESTORE_FX_TICKS){
-        // only count a frame the flash actually drew: t still at its initial value means the clock
-        // has not started, and a held clock is not a drawn frame
-        drewFor++;
-        const v=visible();
-        if(v<darkest) darkest=v;
-        if(firstTick<0) firstTick=i;
-        lastTick=i;
-      }
-      update();
-    }
-    ok(drewFor>0,'the refill flash never drew a single frame of a whole room arrival');
-    ok(darkest>0.6,'the refill flash spent its frames on a screen that was only '+
-       Math.round(darkest*100)+'% visible (ticks '+firstTick+'..'+lastTick+'), so the player sees '+
-       'nothing - a flash that happens where nobody can see it is not a flash');
-    ok(drewFor<=RESTORE_FX_TICKS+1,'the refill flash spent '+drewFor+' frames drawing, which is more '+
-       'than its own duration ('+RESTORE_FX_TICKS+'), so it is drawing on frames it has already used');
-    ok(!player.restoreFX||player.restoreFX.t<=0,'the refill flash was still running 400 ticks into a '+
-       'room arrival ('+(player.restoreFX?player.restoreFX.t:-1)+' left)');
+    ok(player.blinkRestore&&player.blinkRestore.t===RESTORE_FX_SPAN-1,'the guard stopped the blink bar '+
+       'animating during play, so protecting the title screen broke the feature instead');
+    // and a blinkRestore that reaches zero must leave the player genuinely full, not half-drawn
+    player.blinkRestore={from:0,t:1,span:RESTORE_FX_SPAN};
+    player.blinkCharges=1; player.blinkRegen=0;
+    update();
+    eq(player.blinkCharges,2,'the arrival ended without both blinks actually being there');
+    eq(player.blinkRegen,0,'the arrival ended with a part-charged bar');
   });
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so

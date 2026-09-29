@@ -313,36 +313,43 @@ function enterRoom(nx,ny,fromDir){
     r.armed=true;
     const wp=WEAPONS[player.weaponIdx], altNow=activeAlt();
 
-    /* WHAT THE RESTORE IS WORTH, measured BEFORE it happens.
+    /* THE BLINK BAR FILLS ACROSS THE ARRIVAL, and nothing else about the refill is animated.
 
-       The refill below is unconditional and silent: three numbers jump to full at a moment the player
-       is already looking at a door opening, and a cooldown coming back is invisible by nature - a bar
-       that was half spent is now full, and nothing about that transition catches an eye. So a player
-       walks into a room, blinks, fires, and never learns the kit was handed back, which means the
-       generosity is doing its job while carrying none of the information.
+       The weapons are restored instantly and silently. They were getting rings, and a ring on a bar
+       that has already snapped to full is decoration at best: the player saw the bar jump and the
+       ring arrived afterwards to announce something that had already happened. The cooldown is
+       simply there when they next look at it.
 
-       Each channel records the FRACTION THAT WAS ACTUALLY RESTORED, sampled first, because a player
-       who walks into a room at full charge restores nothing and should not be shown a flash for it, and
-       a player who entered with one blink and a half-spent wand should see something smaller than one
-       who entered with nothing. The numbers drive the VFX and nothing else: the reset stays
-       unconditional and the flash reports a fact rather than granting or withholding one.
+       The blink is different because its value is a CONTINUUM the player is used to watching. A
+       half-spent blink snapping to two full charges reads as the game taking something away and
+       giving it back in the same frame, which is why it looked wrong even after the fade bug was
+       fixed. So the blink bar animates: it starts at exactly what it was before the door and fills
+       to full across the whole arrival.
 
-       THE TWO POLARITIES ARE OPPOSITE, which is why this is spelled out instead of folded into one
-       expression, and why the first version of it was silently backwards. player.cooldown counts DOWN
-       from its maximum, so it is already the fraction that was SPENT and needs no inversion, whereas
-       blinkCharges counts UP to two and so is the fraction still HELD. The first attempt inverted both,
-       and therefore reported a full wand as nothing restored and an empty one as completely restored:
-       the flash came out exactly as loud for a player who had lost nothing as for one who had lost
-       everything, which is the one thing the whole feature exists to avoid. */
-    const spentWeapon=player.cooldownMax>0?player.cooldown/player.cooldownMax:0
-    const spentAlt=player.altCooldownMax>0?player.altCooldown/player.altCooldownMax:0
-    const heldBlink=(player.blinkCharges+player.blinkRegen/BLINK_RECHARGE)/2
+       Timed to end on RESTORE_FX_SPAN, which is the READY window - the same number of ticks the fade
+       takes. So the bar reaches full on the exact tick the player regains control, which is the only
+       moment the full value is of any use to them. They never get a fraction of a second in which
+       the bar says one thing and the game does another.
+
+       The charges are NOT held back and filled over time, and that direction matters: if the real
+       value were behind the drawing, a player could reach the end of a corridor with no blink
+       because they walked through the door four ticks early, and the generosity would quietly
+       depend on frame timing - interruptible, losable, impossible to reason about.
+
+       So the real value is always the true one and the animation can never make it a lie. For the
+       length of the arrival the bar shows what was spent while the player is actually holding both,
+       so the one thing it ever under-reports is a gift already in their hands - and the instant they
+       can act, it is exactly true. Nothing about the fill can be interrupted, spammed or lost. */
+    const heldBlink=player.blinkCharges+player.blinkRegen/BLINK_RECHARGE;
     player.cooldown=0; player.cooldownMax=wp.cooldown/TEMPO.rate;
     player.altCooldown=0; player.altCooldownMax=altNow.cooldown/TEMPO.rate;
-    player.blinkCharges=2; player.blinkRegen=0;
-    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,
-      weapon:Math.max(0,Math.min(1,spentWeapon)), alt:Math.max(0,Math.min(1,spentAlt)),
-      blink:Math.max(0,Math.min(1,1-heldBlink))};
+    // and the drawn value starts HERE rather than on the next tick, so the bar is already showing
+    // what the player walked in with during the frame the door finishes opening. Setting it in the
+    // animation instead showed a full bar for one frame first, which is exactly the snap the whole
+    // change was made to remove - just one frame later.
+    player.blinkCharges=Math.min(2,Math.floor(heldBlink));
+    player.blinkRegen=(heldBlink-player.blinkCharges)*BLINK_RECHARGE;
+    player.blinkRestore={from:Math.max(0,Math.min(2,heldBlink)),t:RESTORE_FX_SPAN,span:RESTORE_FX_SPAN};
   }
   roomFade=1; fadeTicks=uncleared?READY:FADE_CLEAR; fadeT=fadeTicks; readyT=uncleared?READY:0;
 }
