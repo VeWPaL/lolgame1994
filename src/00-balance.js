@@ -220,8 +220,43 @@ const WEAPONS=[
   // four times the old one so you cannot lean on it. Per-pellet damage is small, so what it is
   // worth swings hard with range: up close it is the biggest thing you own, across the room it is
   // pellets, not the width of the cone, so eight of them at 0.045 is a cone about 18 degrees wide
-  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:1.8,count:8,spread:0.045,fNear:80,fFar:300,fMin:0.45},
- {name:'Arcane Beam',color:'#3fa9ff',cooldown:5.2*SPEEDUP,speed:4,dmg:0.84,count:1,spread:0.16,spreadFromPrecision:true,r:4,fNear:170,fFar:470,fMin:0.6},
+  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:2.6,count:8,spread:0.045,fNear:80,fFar:300,fMin:0.45},
+
+/* THE ARCANE BEAM RAISED 0.84 -> 1.55, and the reasoning is worth keeping because two earlier
+   diagnoses were wrong.
+
+   The report was that the beam took six to seven seconds of near-perfect tracking against one lunger,
+   that every shot landed, and that it was by far the worst weapon in the game. The spread was ruled
+   out by the player directly and again by measurement - tightening the cone from 0.16 to 0.08 rad moves
+   the time from 3.04s to 2.75s, which is inside the spread error bar and nowhere near the complaint.
+   Raising the projectile speed was measured too, because the beam flying at 4.0 px/tick against a
+   lunger lunging at 4.2 looked like a genuine race it could not win. It is real, and it is worth
+   almost nothing: 4.0 -> 9.0 px/tick changed the time by 3.04s -> 3.10s, because time-to-kill is set by
+   how many shots LAND and the gun fires on a cooldown either way.
+
+   Falloff was checked three ways and is applied once, correctly, from the muzzle. It is not the cause
+   either, and the beam is in fact the best long-range gun in the roster: fMin 0.60 against the Bolt's
+   0.50, so at 450px it keeps 60% of its damage where the Bolt keeps half.
+
+   What the buff is really buying is CHUNK. 0.84 was the only sub-one-damage number in the game - a
+   lunger lunge does 2, a shell 1.8 - so a 24 HP body took twenty-nine hits to kill, and a gun that
+   asks for twenty-nine hits is a gun whose time-to-kill is dominated by how long you can afford to
+   stand still. 1.55 takes it to sixteen, and it lands the beam in the same window as the others when
+   the fight is the one that was described: a target, a melee lunger, a gunner behind, dodging. Measured
+   there, at 250px and 350px:
+
+       dmg 0.84   3.53s / 3.60s     (the Bolt, same scenario: 2.97s / 3.00s)
+       dmg 1.55   2.28s / 2.73s     (the Bolt: 3.39s / 3.00s)
+
+   It also eases a distortion the old number caused. Strength is added FLAT, so a +4 is +476% on a 0.84
+   gun and +258% on a 1.55 one. The beam was the weapon a single item broke, which is the opposite of
+   what a low base is supposed to do.
+
+   The cone is deliberately unchanged. 0.16 rad is the widest in the roster and it is what the beam is:
+   Precision narrows it from 9.2 degrees to 0.4, a twenty-three-fold range that no other gun has, and
+   that range is the whole reason Precision exists as a stat. Tightening it would have cost the weapon
+   its identity to buy a tenth of a second. */
+ {name:'Arcane Beam',color:'#3fa9ff',cooldown:5.2*SPEEDUP,speed:4,dmg:1.55,count:1,spread:0.16,spreadFromPrecision:true,r:4,fNear:170,fFar:470,fMin:0.6},
   {name:'Voidball',color:'#3f8a4a',cooldown:24*SPEEDUP,speed:3.2,dmg:3.4,count:1,spread:0.02,fNear:150,fFar:440,fMin:0.55,pierce:3},
 ];
 // What each pass through a body is worth, as a fraction of the first. A pierced bolt that does full
