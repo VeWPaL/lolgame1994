@@ -100,12 +100,19 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
 
 ## Code structure
 
-1. **Modifiers are derived, never written back.** A stat is recomputed from base values plus the
-   active item set on every change — `effective = base + sum(flat) * prod(1 + mult)` — and nothing
+1. **Modifiers are derived, never written back — and additive only.** A stat is recomputed from base
+   plus the active item set on every change: `value = min(cap, base + sum(flat) + earned)`. Nothing
    ever does `player.speed *= 1.1` in place. This is *the* classic stacking bug in the genre: after
    twenty items the value has been multiplied in an order nobody can reproduce, removing one item
-   does not remove its effect, and the build cannot be explained or saved. Cheap to state, expensive
-   to retrofit, and it is the foundation the whole item system stands on.
+   does not remove its effect, and the build cannot be explained or saved.
+
+   **No multiplicative stat kind. This is a correction, and it cost a real bug.** The usual form is
+   `(base + flat) * product(1 + mult)`, and it has a silent degenerate case: a stat whose base is 0
+   multiplied by anything is still 0. Speed's base *is* 0, because the real base is `PLAYER_MOVE` and
+   it lives on the player — so a Speed item was equipped, named on the character sheet, and did
+   literally nothing. Nothing threw; the bar just never moved. A rule with a silent failure mode is
+   worse than a rule that is merely limited, and here the limit costs nothing: a genuinely
+   multiplicative effect is a *rate*, and rates belong in named hooks.
 
 2. **Content is data; behaviour is a named hook.** A definition is numbers, flags and hook *names*
    resolved through a table. Never behaviour in the definition. A hundred items must stay a hundred
@@ -128,31 +135,41 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
    gunner.
 
 7. **A new mechanic is measured before it is balanced.** Build the measurement first, tune second.
-   This session's whole value came from doing it the other way round and paying for it.
+   This session's whole value came from doing it the other way round and paying for it. Concretely:
+   the first measurement of Momentum against the gunner said the mechanic was catastrophic (100% →
+   50% at 200px). It was the *fixture* — a wall filter tighter than the player's own radius. Measure
+   the fixture before believing the number.
+
+8. **Anything an overlay needs to receive must be exempted from the input suppressor by name.** The
+   suppressor runs in the capture phase on `window`, ahead of every element, so its
+   `stopPropagation` is total. It has eaten three separate things: every keystroke aimed at a text
+   field, the click that dismisses the pause sheet, and the key that closes it. There is no way to
+   write it so new UI is safe by default, which is the real lesson — and the same applies to keys: a
+   key that opens an overlay must be in the allowed list or that overlay is a one-way door.
 
 ## Game design
 
-8. **Items bend the existing verbs; they do not add a third button.** Four guns plus Blast and Hook
+1. **Items bend the existing verbs; they do not add a third button.** Four guns plus Blast and Hook
    is tight and complete. Adding a verb changes the hand position, the muscle memory and the
    difficulty budget all at once. The interesting space is *which* body you shoot first, *when* you
    spend a charge, *where* you stand — not another key. *This is the proposal I am least sure of and
    most want argued about.*
 
-9. **Every item must change a decision, not a number you never think about.** +5% damage is invisible.
+2. **Every item must change a decision, not a number you never think about.** +5% damage is invisible.
    An item that makes the room's problem different is a build. If a player cannot describe what an
    item makes them *do* differently, it is not an item — it is tax.
 
-10. **Tension beats stacking.** The real reason twenty items feel like two hundred is that they
+3. **Tension beats stacking.** The real reason twenty items feel like two hundred is that they
     exclude each other: strong with Bolt, poor with Scatter; a build that wants to stand still
     against one that wants to blink. Additive-only items are a slider, and a slider is played once.
 
-11. **Rarity is a cost, not a size.** A legendary should be build-defining and slightly awkward.
+4. **Rarity is a cost, not a size.** A legendary should be build-defining and slightly awkward.
     Otherwise "rarer" only means "a bigger number", and the roll stops mattering.
 
-12. **Nothing is added to the pause menu unless a decision depends on it.** Six stats and a build
+5. **Nothing is added to the pause menu unless a decision depends on it.** Six stats and a build
     list is a lot of screen. Every element there is a thing the player must learn to read.
 
-13. **Difficulty comes from rate and density, never from an unreadable threat.** Keep human reaction
+6. **Difficulty comes from rate and density, never from an unreadable threat.** Keep human reaction
     time intact. The gunner at 200px is 100% lethal and that is *correct* — it is a commitment you
     must respect, not a bullet to dodge.
 
