@@ -4688,6 +4688,122 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     eq(player.blinkCharges,2,'the arrival ended without both blinks actually being there');
     eq(player.blinkRegen,0,'the arrival ended with a part-charged bar');
   });
+
+  test('the weapon bench swaps guns, and freezes the run while it is open',()=>{
+    /* F1 exists because weapon balance could not be judged: every attempt at a new gun cost a run,
+       and a run costs twenty minutes. So the two things this has to get right are that a swap
+       actually changes the gun, and that the numbers on the panel are the numbers the game fires
+       with - a bench that disagreed with the game would be worse than no bench, because it would
+       be believed. */
+    startGame();
+    const was=player.weaponIdx;
+    toggleDev(true);
+    ok(devOpen,'F1 did not open the weapon bench');
+    // and the run must stop, or a player reading numbers is a player who gets hit for reading them
+    const t0=run.ticks;
+    advance(1000);
+    eq(run.ticks-t0,0,'the simulation kept running while the bench was open, so the numbers on it '+
+       'were being read during a fight');
+    ok(!paused,'opening the bench set the pause flag, which opens the character sheet as well and '+
+       'stacks two cards on top of each other');
+    for(let i=0;i<WEAPONS.length;i++){
+      ok(devSwap(i),'devSwap('+i+') refused a weapon that exists');
+      eq(player.weaponIdx,i,'devSwap('+i+') did not equip '+WEAPONS[i].name);
+    }
+    ok(devSwap(-1)===false,'the bench swapped to a weapon before the first one');
+    ok(devSwap(WEAPONS.length)===false,'the bench swapped to a weapon past the last one');
+    devSwap(was);
+    // a swap must hand over a gun that is ready, not one inheriting the last gun's cooldown -
+    // otherwise swapping to test a weapon means testing it while it is still recovering
+    devSwap(0);
+    devSwap(2);
+    eq(player.cooldownMax,WEAPONS[2].cooldown/TEMPO.rate,'swapping left the new weapon with the cooldown ceiling of the gun it replaced, so a swap to test a weapon is a swap to a weapon still recovering');
+    toggleDev(false);
+    ok(!devOpen,'F1 did not close the weapon bench');
+  });
+
+  test('the bench reports the gun the game actually fires, including under Strength',()=>{
+    /* The panel exists to settle an argument about whether a gun is weak, and it settles it by
+       showing figures. If the figures are not the ones fireWeapon uses, it does the opposite of what
+       it was built for - so this recomputes each one the way the game does and compares.
+
+       The term that matters is Stats.value('strength'), added FLAT to the weapon's own damage. That
+       is the distortion the panel was built to expose: a flat +4 is +57% on the Bolt and +476% on the
+       Arcane Beam, so the Beam's base being low does not mean it is weak, it means it is unusually
+       sensitive to a buff. */
+    startGame();
+    const check=(str,dist)=>{
+      for(let i=0;i<WEAPONS.length;i++){
+        const w=WEAPONS[i];
+        // exactly the game's own terms: cooldown divided by tempo, damage plus strength, times pellets,
+        // times the same falloff the projectile applies to itself
+        const want=(TICK_HZ/(w.cooldown/TEMPO.rate))*((w.dmg+str)*w.count)*devFalloff(w,dist);
+        ok(Math.abs(devDps(w,str,dist)-want)<0.01,'the bench says '+WEAPONS[i].name+' does '+
+           devDps(w,str,dist).toFixed(2)+' dps at '+dist+'px with '+str+' Strength, but the terms '+
+           'the game fires with give '+want.toFixed(2));
+      }
+    };
+    check(0,100); check(0,250); check(0,380);
+    // and the buffed case, which is the one the panel is really for
+    Stats.reset();
+    Stats.flat('strength',4);
+    const got=Stats.value('strength');
+    ok(got>=4,'a flat +4 Strength did not register as at least 4 ('+got+')');
+    check(got,100); check(got,250); check(got,380);
+    // the panel has to reflect the build rather than a fixed number, so a buff must move the figure
+    const beam=WEAPONS[2];
+    const before=devDps(beam,0,250), after=devDps(beam,got,250);
+    ok(after>before*3,'with +'+got+' Strength the beam only went from '+before.toFixed(1)+' to '+
+       after.toFixed(1)+' dps, so the panel would not be showing the distortion it exists to show');
+    Stats.reset();
+  });
+
+  test('the bench draws, and nothing on it falls outside the card',()=>{
+    /* The first version of this panel overlapped itself in three places and put a key cap three
+       pixels past the bottom edge of the card. None of that threw, so "does not throw" was never
+       going to catch it - and the gap check that did exist was measuring the same number the drawing
+       used, which is agreement, not verification.
+
+       So this asserts the two things that actually decide whether a panel is usable: it draws without
+       throwing, and every element's baseline sits inside the panel. The bands are all named in
+       devLayout, and the list below is those names - if a band is moved, this is what notices. */
+    startGame();
+    toggleDev(true);
+    const G=devLayout();
+    let err=null;
+    try{ drawDevMenu(); }catch(e){ err=e.message; }
+    ok(err===null,'drawing the weapon bench threw: '+err);
+    // nothing may be drawn when the bench is closed, or it leaks onto the game
+    toggleDev(false);
+    err=null;
+    try{ drawDevMenu(); }catch(e){ err=e.message; }
+    ok(err===null,'drawing the weapon bench with it closed threw: '+err);
+    // and every band it uses must land inside the panel, including the tallest element in the
+    // footer - a rule 12px above a baseline is not the bottom of anything
+    toggleDev(true);
+    const CAP=17;
+    const named=[['head',G.head],['head + held name',G.head+18],['sub',G.sub],
+                 ['sub line 2',G.sub+15],['column header',G.colHdr],['column rule',G.colHdr+8],
+                 ['last row third line',G.listY+(WEAPONS.length-1)*G.rowH+48],
+                 ['foot rule',G.footRule],['foot key caps bottom',G.foot+4+CAP],
+                 ['foot strength line',G.foot+30],['foot ESC cap bottom',G.foot+44+CAP]];
+    for(const [name,y] of named){
+      ok(y>=G.py+10&&y<=G.py+G.ph-10,'the '+name+' band sits at y='+Math.round(y)+', outside the '+
+         'panel that runs from '+G.py+' to '+(G.py+G.ph)+' - the panel is taller than its contents or '+
+         'a band has been moved without the card growing');
+    }
+    // the rows must also not run into the footer
+    const rowsEnd=G.listY+WEAPONS.length*G.rowH;
+    ok(rowsEnd<=G.footRule,'the last row ends at '+Math.round(rowsEnd)+' and the footer rule is at '+
+       Math.round(G.footRule)+', so the rows and the footer overlap');
+    // and the click target has to be the row the player can see
+    for(let i=0;i<WEAPONS.length;i++){
+      const y=G.rowY(i);
+      ok(y>=G.py&&y+G.rowH<=G.py+G.ph,'weapon row '+i+' ('+WEAPONS[i].name+') is drawn at y='+
+         Math.round(y)+', which is not on the card');
+    }
+    toggleDev(false);
+  });
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so
   results.push({name:'every draw in game code names its stream - no raw Math.random survives',
