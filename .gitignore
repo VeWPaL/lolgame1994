@@ -1,9 +1,10 @@
-# The game is a shell that loads ten plain <script> files. They must never be ignored, and
-# they must never have their line endings rewritten: every file here is LF-only by design, and a
-# CRLF pass would break the byte-level encoding the middle-dot canary depends on. core.autocrlf
-# is off in this repo for the same reason.
+# The game is a shell that loads plain <script> files, and the C# port lives beside it. Both
+# must never be ignored, and neither must ever have its line endings rewritten: every file here is
+# LF-only by design, and a CRLF pass would break the byte-level encoding the middle-dot canary
+# depends on. core.autocrlf is off in this repo for the same reason.
 *
 !.gitignore
+!CONVENTIONS.md
 !depths.html
 !src/
 src/*

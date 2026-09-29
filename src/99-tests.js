@@ -17,6 +17,7 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   for(const k of REC_KEYS){try{saved[k]=localStorage.getItem(k);}catch(e){}}
   const realRandom=Math.random;
   let seed=12345;   // mulberry32, so every run of the suite sees the same dungeons
+
   Math.random=function(){seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
   const results=[];
   const test=(name,fn)=>{try{fn();results.push({name,ok:true});}catch(err){results.push({name,ok:false,msg:err.message});}};
@@ -31,6 +32,117 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const clearRecords=()=>{for(const k of REC_KEYS){try{localStorage.removeItem(k);}catch(e){}} loadRecords();};
   const playerSpeedForTest=()=>0.935*PLAYER_MOVE;
 
+  test('the content registry is the single place content is enumerated',()=>{
+    // The registry exists so that adding an enemy, a weapon or an item stops being a code change.
+    // These are the properties the rest of the content system - items, then mods - is built on, so
+    // they are pinned here rather than assumed.
+    startGame();
+    eq(Content.validate().length,0,'the shipped content does not validate: '+Content.validate().join('; '));
+
+    // every kind is enumerable, and the ids are stable, readable strings
+    ok(Content.all('enemy').includes('chaser'),'enemies are not enumerable by id');
+    ok(Content.all('enemy').includes('gunner'),'the gunner is missing from the enemy registry');
+    // weapons are stored in an ARRAY and identified by a derived id, because fifteen call sites
+    // depend on the index and the derived id is what a mod author can guess
+    eq(Content.all('weapon').length,WEAPONS.length,'the weapon registry and the weapon array disagree');
+    ok(Content.has('weapon','bolt'),'a weapon is not addressable by a readable id');
+    ok(Content.has('weapon','arcane_beam'),'"Arcane Beam" does not derive the id a mod would guess');
+
+    // and get() returns the SAME object the game already reads, so nothing downstream changes
+    eq(Content.get('enemy','chaser'),ENEMY.chaser,'the registry handed back a copy, not the live table');
+    eq(Content.get('weapon','bolt'),WEAPONS[0],'a weapon id does not resolve to its own definition');
+  });
+  test('the registry fails loudly on a missing id rather than returning undefined',()=>{
+    // A missing id used to be `undefined` flowing silently into a stat read and becoming a NaN
+    // three frames later, somewhere else entirely. The whole reason this exists as a function is
+    // that the failure happens HERE, with the id in the message, where the mistake is.
+    let threw='';
+    try{ Content.get('enemy','dragon'); }catch(err){ threw=String(err.message); }
+    ok(threw.includes('dragon'),'a missing id did not throw, or threw without naming it: '+threw);
+    threw='';
+    try{ Content.get('sorcery','ward'); }catch(err){ threw=String(err.message); }
+    ok(threw.includes('sorcery'),'an unknown kind did not throw, or threw without naming it: '+threw);
+  });
+
+  test('a mod can add content, override it, and be removed cleanly',()=>{
+    // Mods are the cheapest possible source of new content, and they are only cheap if the overlay
+    // is honest: a mod must be able to ADD, to PATCH a built-in in place, and to be removed again
+    // with the game's own content untouched underneath.
+    startGame();
+    Content.resetMods();
+    const gunnerBefore=ENEMY.gunner.hp, boltIndex=WEAPONS.indexOf(WEAPONS[0]);
+
+    let m=Content.loadMods([{name:'testmod',defs:[{
+      enemy:{drake:{mass:2,r:26,art:2,bar:30,hp:30*TOUGH,walk:0.3,run:0.8}},
+      weapon:{'heavy_bolt':{name:'Heavy Bolt',color:'#fff',cooldown:40,dmg:12,count:1,spread:0.05,fNear:130,fFar:400}},
+    }]}]);
+
+    eq(m.errors.length,0,'a well-formed mod reported problems: '+m.errors.join('; '));
+    ok(Content.has('enemy','drake'),'the mod did not add its enemy');
+    ok(Content.has('weapon','heavy_bolt'),'the mod did not add its weapon');
+    // a mod that only adds a weapon must not renumber the array, because fifteen call sites index it
+    eq(WEAPONS.indexOf(WEAPONS[0]),boltIndex,'adding a weapon moved the built-in ones out from under their indices');
+    ok(Content.get('weapon','heavy_bolt').dmg===12,'the added weapon did not come through intact');
+
+    // now a second mod that PATCHES a built-in, rather than shadowing it
+    m=Content.loadMods([{name:'patcher',defs:[{enemy:{gunner:{mass:2.4,r:22,art:3,bar:32,hp:99,base:0.3,armour:ARMOUR}}}]}]);
+    eq(m.errors.length,0,'a patch mod reported problems: '+m.errors.join('; '));
+    eq(ENEMY.gunner.hp,99,'a mod could not patch a built-in enemy');
+    ok(Content.has('enemy','drake'),'loading a second mod dropped the first mod\'s content');
+
+    // and removing everything puts the game back exactly as it was
+    Content.resetMods();
+    ok(!Content.has('enemy','drake'),'resetting left a mod enemy behind');
+    ok(!Content.has('weapon','heavy_bolt'),'resetting left a mod weapon behind');
+    eq(ENEMY.gunner.hp,gunnerBefore,'resetting did not restore the built-in gunner');
+    eq(WEAPONS.length,4,'resetting left a mod weapon in the array');
+    eq(Content.validate().length,0,'the registry does not validate after a reset');
+  });
+
+  test('a broken mod is isolated rather than taking the game down with it',()=>{
+    // A friend with a typo in one file must get a warning, not a game that will not start. This is
+    // the reason loadMods collects problems instead of throwing, and it is the difference between
+    // mods being a feature and mods being a hazard.
+    startGame();
+    Content.resetMods();
+    const m=Content.loadMods([{name:'halfbroken',defs:[
+      {enemy:{wraith:{mass:1,r:12,art:1,bar:20,hp:9,walk:0.3,run:0.7}}},
+      {enemy:{wight:{mass:1,art:1}}},                          // missing hp, mass, r
+      {item:{ghostly:{name:'Ghostly',stats:{damage:'lots'}}}},  // a stat that is not a number
+      {sorcery:{ward:{}}},                                      // not a kind that exists
+    ]}]);
+
+    ok(m.errors.length>=3,'three separate faults produced '+m.errors.length+' errors, so some are being swallowed');
+    ok(m.errors.some(e=>e.includes('wight')),'a definition missing required fields was accepted silently');
+    ok(m.errors.some(e=>e.includes('damage')),'a non-numeric stat was accepted silently');
+    ok(m.errors.some(e=>e.includes('sorcery')),'a definition of an unknown kind was accepted silently');
+    // ...and the good one still loaded, which is the point of collecting rather than throwing
+    ok(Content.has('enemy','wraith'),'one bad definition cost the player the good one beside it');
+    Content.resetMods();
+  });
+
+  test('an item is data, and its effect is a named hook rather than code',()=>{
+    // This is the seam the whole item system is built on. A mod can add an item that changes a
+    // number with no code at all; a mod that wants something complicated names a hook that already
+    // exists. If this ever stops being true, a hundred items becomes a hundred files.
+    startGame();
+    Content.resetMods();
+    // one real hook, standing in for the set that the item system will grow
+    HOOKS.on_hit_bonus_damage=function(){ return 0; };
+    let m=Content.loadMods([{name:'items',defs:[{item:{
+      'heavy_hands':{name:'Heavy Hands',stats:{damage:0.2}},
+      'glass_wands':{name:'Glass Wands',stats:{damage:0.5},hooks:{on_hit_bonus_damage:1}},
+    }}]}]);
+    eq(m.errors.length,0,'well-formed items reported problems: '+m.errors.join('; '));
+    ok(Content.has('item','heavy_hands'),'a stats-only item did not load, and it needs no code at all');
+    ok(Content.has('item','glass_wands'),'an item naming a hook did not load');
+    eq(Content.get('item','glass_wands').hooks.on_hit_bonus_damage,1,'the hook payload did not survive');
+    // an item naming a hook nobody wrote is a mod author's typo, and must be reported not ignored
+    m=Content.loadMods([{name:'typo',defs:[{item:{'bad_item':{name:'Bad',hooks:{on_hit_bonus_damag:1}}}}]}]);
+    ok(m.errors.some(e=>e.includes('on_hit_bonus_damag')),'a hook name that does not exist was accepted silently');
+    Content.resetMods();
+    delete HOOKS.on_hit_bonus_damage;
+  });
   test('fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz',()=>{
     state='start'; paused=false;
     for(const hz of [30,60,75,120,144,165,240]){
