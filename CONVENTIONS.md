@@ -12,10 +12,36 @@ than relying on a conversation.
 settles engine licensing permanently: Unity Personal is free under any circumstance we could reach,
 so the revenue threshold is irrelevant. Do not re-open this.
 
-**`depths.html` is LF-only with no BOM.** Verified after every write. The middle dot is an encoding
-canary: `Â·` must never appear. The `write` tool emits UTF-8 *with* a BOM and PowerShell's
-`Set-Content -Encoding UTF8` adds one too — strip with
+**`depths.html` is LF-only with no BOM.** Verified after every write. The canary is a
+**U+00B7 MIDDLE DOT** (bytes `C2 B7`): if you see it preceded by `C3` — that is, a U+00C2
+LATIN CAPITAL LETTER A WITH ACUTE, then the character in between — the file has been decoded as
+UTF-8 and re-encoded as Latin-1, and it is double-encoded. That two-character sequence must never
+appear in a source file.
+
+*This file deliberately does not contain the sequence itself.* It used to, because it named the
+canary literally — which quietly destroyed the check: a grep for the sequence then matched the one
+file that explains it, and real corruption in this file became indistinguishable from the
+documentation. Describe the canary; do not reproduce it.
+
+The `write` tool emits UTF-8 *with* a BOM, and PowerShell's `Set-Content -Encoding UTF8` adds one
+too — strip with
 `[System.IO.File]::WriteAllText($p, $t, (New-Object System.Text.UTF8Encoding($false)))`.
+
+Run this after every write. It is the whole encoding contract in one line, and the first
+non-blank column is the first thing wrong with the file:
+
+```powershell
+Get-ChildItem .\src\*.js,.\depths.html,.\CONVENTIONS.md | ForEach-Object {
+  $b=[System.IO.File]::ReadAllBytes($_.FullName); $t=[System.IO.File]::ReadAllText($_.FullName)
+  $why=if($b[0] -eq 239 -and $b[1] -eq 187){'BOM'}
+       elseif($t.Contains("`r")){'CRLF'}
+       elseif($t -match ([char]0xC2+[char]0xB7)){'DOUBLE-ENCODED'}
+       else {'ok'}
+  '{0,-16} {1,7}b  {2}' -f $_.Name,$b.Length,$why }
+```
+
+`DOUBLE-ENCODED` is spelled out rather than printing the sequence, so this script can live in a
+file without becoming the thing it is looking for.
 
 **`core.autocrlf=false`, `core.eol=lf` in git.** A CRLF pass would silently break the canary. Do not
 "fix" these.
