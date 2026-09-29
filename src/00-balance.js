@@ -290,7 +290,32 @@ let hookFieldId=0;
 // mass, which knockEnemy divides straight back out, so a Brunch and a gunner arrive together.
 const HOOK_PULL_GAIN=1-KNOCK_FRICTION;
 // counterstrafing: how fast a reversal is forgotten, and how much a reversal widens a gunner's aim
-const SWERVE_GAIN=0.22, SWERVE_DECAY=0.011, SWERVE_AIM=0.30;
+/* SWERVE: the signal that says how UNSETTLED the player's movement is, and the only thing both
+   ranged enemies read to decide how much to believe a lead.
+
+   The decay was 0.011, which is a half-life of sixty-three ticks - about a third of a second. That
+   number looks reasonable and is badly wrong, because it is only right about a rhythm no human has.
+   Measured, holding a single direction and reversing every N ticks:
+
+     reversal period   average swerve   a shooter's shells that landed at 300px
+        none (straight)      0.000                    67%   (and 100% once the fixture was fixed)
+        0.12s                0.851                   100%
+        0.25s                0.167                    13%
+        0.38s                0.111                     0%
+        0.95s                0.043                     0%
+
+   So the enemies were reading a player who reversed four times a second almost perfectly, and a
+   player reversing at a human rhythm barely at all. A third of a second of memory is not enough to
+   hold a signal across a reversal that takes half a second to come back from. At 0.0035 the
+   half-life is a hundred and ninety-eight ticks, and the same measurement gives 0.91 at 0.25s and
+   0.84 at 0.38s - the rhythm a person actually moves at is now the rhythm the enemies can read.
+
+   The knock-on is the point rather than a side effect. SWERVE also scales how far a long-range
+   gunner's aim opens up, so this does not merely make reversing costlier: it makes a settled
+   straight line MORE readable and a reversing player MORE predictable, everywhere, for the chaser's
+   lunge lead and the shooter's lead as well as the gunner's spread. One number, three consumers, and
+   they had all been quietly agreeing about a player who does not exist. */
+const SWERVE_GAIN=0.22, SWERVE_DECAY=0.0035, SWERVE_AIM=0.30;
 
 /* --- how the player actually moves, and the Momentum meter -------------------------------------
    The movement model already has two separate levers, which is the fact the whole stat design rests
@@ -329,9 +354,52 @@ const MOMENTUM_SPEED=0.10, MOMENTUM_ACCEL=0.55;
 // of a good build and a full meter produces a player who crosses rooms before the gunner has
 // finished winding up. One number for the build, one for the world, both visible and both tunable.
 const SPEED_CAP=0.15, MOVE_SPEED_HARD_CAP=0.22;
+
+/* ROOM PRESSURE ----------------------------------------------------------------------------------
+   One number, from one thing: how many bodies are still standing in this room. It is HIGH when the
+   count is LOW, because the last body in a room is the one that has to do all the work.
+
+   This is the player's read on the shooter, and the measurement supports it. A ranged enemy with
+   four bodies still alive is content to hold its 250px standoff and take its time, because the count
+   is already doing the work. Alone in a room it has to come and get you - and a shell fired from
+   150px has a flight short enough that reversing inside it is not an answer, which is the whole
+   reason a lone shooter used to be free to stare at you indefinitely.
+
+   It is a MERCY buffer as much as a threat, which is the part worth being deliberate about. Most
+   rubber bands make a losing position worse; this one makes it sloppier, so the room you are losing
+   is the room where the last body starts taking risks and a good player can still punish it. That is
+   what keeps a bad room survivable long enough to be played properly rather than merely survived.
+
+   It reads the ROOM and never the player - not their stats, not their build, not how well they are
+   doing. Difficulty in this game is a function of DEPTH, and that system does not exist yet (there
+   is no floor number anywhere in the game; TOUGH and PRESSURE.rate are flat constants), so nothing
+   here may read the player until it does. This is about the shape of the last thirty seconds of one
+   room, which is a different question from how hard the floor is. */
+const PRESSURE_SPAN=4, PRESSURE_FLOOR=0.25;
+function roomPressure(live){
+  if(!(live>=1)) return 1;                 // an empty room is maximum pressure: nobody is stopping you
+  if(live===1) return 1;
+  if(live>=PRESSURE_SPAN+1) return PRESSURE_FLOOR;
+  return PRESSURE_FLOOR+(1-PRESSURE_FLOOR)*(PRESSURE_SPAN+1-live)/PRESSURE_SPAN;
+}
+/* How much of its preferred standoff a pressured shooter gives up, and how much of its cooldown.
+   Both are VISIBLE - it walks at you, and it shoots more often - which is the only reason this is
+   fair. A hidden accuracy ramp on a lone enemy is indistinguishable from the game cheating. */
+const PRESSURE_CLOSURE=0.85, PRESSURE_CADENCE=0.4;
 // How far away a gunner has to be before counterstrafing buys anything. Half the width of the room
 // is the line, and the bonus is fully open by the time a body is a room-and-a-half away.
-const SWERVE_DEADZONE=Math.round((ROOM_RIGHT-ROOM_LEFT)/2), SWERVE_FULL=SWERVE_DEADZONE+220;
+/* Where the counterstrafe answer switches on, and where it is fully open.
+
+   The deadzone is HALF THE ROOM WIDTH less fifty, not the half width itself. It has to clear the
+   gunner's own 200px standoff with room to spare, or a gunner would spend the fight inside its own
+   deadzone and never widen its aim at all - and at exactly half the width, the far case the suite
+   measures (400px) was only 23% of the way up the ramp, so "a reversal is a real answer at range"
+   was being asserted about a point where the design says the effect is still barely open. The
+   spread could not be widened to compensate: the suite deliberately caps SWERVE_AIM below 0.5 rad so
+   that a reversing player stays hittable, and that cap is the right thing to protect. So the ramp
+   moves instead, and the number that is actually being tuned is where the benefit arrives - not how
+   wide it gets at the far end. */
+const SWERVE_DEADZONE=Math.round((ROOM_RIGHT-ROOM_LEFT)/2)-50, SWERVE_FULL=SWERVE_DEADZONE+130;
 // The gunner's cast tell. This is the whole of the change: the shell used to leave the instant the
 // gunner's cooldown ran out, so the player had nothing to read and the only counter was not being
 // there. Half a second of swelling light at the muzzle turns that into a reaction. It is paid for

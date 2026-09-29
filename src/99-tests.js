@@ -640,6 +640,136 @@ test('the character sheet shows six stats, and re-reads the build every time it 
        'the run resumed but the character sheet is still up on top of it');
     setPaused(false);
   });
+test('a shooter cannot be stared at: a straight line and a human reversal are both answered',()=>{
+    /* The user's report was that a shooter could be survived indefinitely by dodging, and that it
+       backed away uselessly rather than ever being a threat. Both halves were true, and the cause was
+       not the retreat - there is a brake that stops a body at its line, so it settles at 250px and
+       holds - it was that NOTHING about a shooter punished a reversal.
+
+       The shooter shares its entire firing branch with the gunner. Both read one signal about the
+       player, SWERVE, and both use it to shrink their lead. That signal was decaying with a half-life
+       of sixty-three ticks, about a third of a second, which registers a player reversing four times
+       a second and washes out completely for one reversing at a human rhythm. Measured average swerve:
+       0.85 at a 0.12s reversal, 0.17 at 0.25s, 0.04 at 0.95s. So the enemies read a player who does
+       not exist and were blind to the one who does.
+
+       The numbers below are the fix, measured through the same fixture as the gunner test beside it -
+       which is the point of deriving this one from that one rather than writing a fresh probe. An
+       earlier probe of this said a straight runner was hit 65% of the time, and the figure was wrong
+       twice over: it never cleared the ready window, and it let the shooter fire while the player was
+       pinned in place, which is a shot correctly aimed at somebody standing still. Both are the
+       failures the gunner fixture documents at length, and neither was visible in the output - they
+       were only visible as a number that disagreed with a test.
+
+       SWERVE is 0 for a player holding a line, so a runner is unaffected by any of this: it is read as
+       perfectly, and it is punished. That is the claim worth making, because a fix that helps reversers
+       by making everyone less readable would be a fix in the wrong direction. */
+    const THR=PLAYER_HIT_R+5;
+    const rate=a=>a.filter(x=>x.d<=THR).length/Math.max(1,a.length);
+    const show=a=>'['+a.map(x=>x.d.toFixed(0)).join(' ')+']';
+    const trial=(dy,half,reps)=>{
+      let out=[];
+      for(let rep=0;rep<reps;rep++){
+        Rnd.set(9000+rep*7+dy+half);
+        startGame();
+        const r=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+        r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+        projectiles.length=0;
+        const px=ROOM_LEFT+player.r+64, py=ROOM_BOTTOM-15-player.r;
+        player.x=px; player.y=py; player.lagX=px; player.lagY=py;
+        const s=spawnEnemy(false,r,px,py+dy,'shooter'); r.enemies.push(s);
+        // silenced, NOT disabled. noticeTimer=1e9 makes tickEnemy `continue` past its whole update and
+        // the enemy never acts at all - which is a fixture that measures silence and calls it accuracy.
+        // noticeTimer=0 with shootCd=1e9 is the gunner fixture's arrangement: awake, holding its fire.
+        s.alerted=true; s.noticeTimer=0; s.shootCd=1e9; s.castT=0; s.castReady=false;
+        const warm=300, arm=warm+70, span=s.cdMin+s.cdVar+CAST_TIME;
+        const live=new Map();
+        for(let t=0;t<arm+Math.round(span*3.4);t++){
+          keys=(half===0||t%(half*2)<half)?{d:1}:{a:1};
+          player.hp=99; player.maxHp=99; player.armor=0; player.iframes=1e9;
+          const x0=player.x,y0=player.y;
+          update();
+          // pinned through the warm-up so velocity and heading converge without spending any runway,
+          // and held silent until the player is genuinely running - a shell fired at a pinned player is
+          // aimed at somebody who is not there yet
+          if(t<warm){ player.x=x0; player.y=y0; player.lagX=x0; player.lagY=y0; }
+          else if(t===arm) s.shootCd=0;
+          if(s.castT<=0&&!s.castReady){ s.x=player.x; s.y=player.y+dy; }
+          for(const p of projectiles){
+            if(p.friendly||live.has(p)) continue;
+            live.set(p,{min:Infinity,wall:false});
+          }
+          for(const [p,rec] of live){
+            rec.min=Math.min(rec.min,Math.hypot(p.x-player.lagX,p.y-(player.lagY+PLAYER_HIT_DY)));
+            if(!(player.x>ROOM_LEFT+player.r&&player.x<ROOM_RIGHT-player.r
+                &&player.y>ROOM_TOP+player.r&&player.y<ROOM_BOTTOM-player.r))
+              rec.wall=true;
+          }
+          for(const p of Array.from(live.keys())){
+            if(projectiles.indexOf(p)>=0) continue;
+            const rec=live.get(p); live.delete(p);
+            if(!rec.wall&&rec.min<Infinity) out.push({d:rec.min});
+          }
+        }
+      }
+      return out;
+    };
+    // a quarter of a second each way is the reversal rhythm a person actually moves at, and it is the
+    // one the swerve signal used to be blind to
+    const HALF=Math.round(TICK_HZ*0.25);
+    const line200=trial(-200,0,12), rev200=trial(-200,HALF,12);
+    const line300=trial(-300,0,12), rev300=trial(-300,HALF,12);
+    for(const [a,b,where] of [[line200,rev200,'200px'],[line300,rev300,'300px']])
+      ok(a.length>=4&&b.length>=4,'the shooter fixture produced too few clean shots at '+where+
+         ' ('+a.length+'/'+b.length+'), so it is comparing silence rather than accuracy');
+    ok(rate(line200)>=0.9,'a straight runner is only hit '+(rate(line200)*100).toFixed(0)+
+       '% of the time at 200px ('+show(line200)+'), so walking in a line is free');
+    // the actual claim: a quarter-second reversal has to be answered. It measured 13% before the
+    // swerve decay was fixed, which is the state the player reported as unlosable.
+    ok(rate(rev300)>=0.4,'a player reversing every quarter second is still hit '+
+       (rate(rev300)*100).toFixed(0)+'% of the time at 300px ('+show(rev300)+
+       '), so a shooter can be stared at by dodging, which is the whole thing this fixes');
+    // Inside the deadzone neither behaviour may be an escape, and that is a claim about both numbers
+    // rather than about the gap between them. Comparing them was the wrong assertion: it made an
+    // eight-point difference on twelve repetitions read as a strategy, which it is not.
+    ok(rate(rev200)>=0.8,'a player reversing every quarter second is only hit '+
+       (rate(rev200)*100).toFixed(0)+'% of the time at 200px ('+show(rev200)+'), so wiggling inside the '+
+       'deadzone is a reliable escape and there is no reason to ever commit to a line again');
+    ok(Math.abs(rate(rev200)-rate(line200))<=0.15,'at 200px a reverser is hit '+(rate(rev200)*100).toFixed(0)+
+       '% against a straight runner\'s '+(rate(line200)*100).toFixed(0)+'%, which is far enough apart to be '+
+       'a tactic rather than noise - if one of them is the answer at close range, the deadzone is not '+
+       'doing its job');
+  });
+
+  test('a room gets more dangerous as it empties, and it never reads the player',()=>{
+    /* The last body in a room has to do all the work, so it closes and shoots faster. Most rubber
+       bands make a losing position worse; this one makes it sloppier, which is what keeps a room you
+       are losing survivable long enough to be played properly rather than merely survived.
+
+       Both effects are visible - it walks at you, and it fires more often - and that is the only
+       reason it is fair. A hidden accuracy ramp on a lone enemy is indistinguishable from the game
+       cheating, and the number it reads is the ROOM, never the build. */
+    eq(roomPressure(1),1,'a lone body is not at maximum pressure, so the last enemy in a room is the '
+       +'safest one, which is the exploit this exists to close');
+    ok(roomPressure(5)<roomPressure(1),'pressure does not fall as the room empties, so a pack is more '
+       +'dangerous per body than the last one standing');
+    for(let n=1;n<=8;n++){
+      const p=roomPressure(n);
+      ok(p>=0&&p<=1,'pressure for '+n+' bodies is '+p+', outside 0..1');
+    }
+    ok(roomPressure(9)===roomPressure(8),'pressure keeps falling past the point where the room can hold '
+       +'more bodies, so a big room is uniformly sloppier than a small one');
+    // and the standoff it produces has to stay inside the band the enemy was given, or a pressured
+    // shooter walks THROUGH the player instead of closing on them
+    const s=ENEMY.shooter, p=roomPressure(1);
+    const standoff=s.far-(s.far-s.close)*p*PRESSURE_CLOSURE;
+    ok(standoff>=s.close,'at full pressure a shooter stands off at '+standoff.toFixed(0)+
+       'px, inside its own retreat threshold of '+s.close+'px, so it backs away from the player while '
+       +'closing on them');
+    ok(standoff<s.far,'pressure did not change the standoff at all');
+    // the cooldown must actually shorten, or "pressure" is a word rather than a mechanic
+    ok(PRESSURE_CADENCE>0&&PRESSURE_CADENCE<1,'the cadence effect is not a real fraction: '+PRESSURE_CADENCE);
+  });
   test('fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz',()=>{
     state='start'; paused=false;
     for(const hz of [30,60,75,120,144,165,240]){
@@ -3495,7 +3625,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
            "counterstrafing" using a body that could barely move, and reported the result as though it
            were about the mechanic. The straight-line case never noticed, because a runner leaves the
            wall immediately; only the strafe, which is supposed to stay put, spent its life in it. */
-        const px=ROOM_LEFT+player.r+14, py=ROOM_BOTTOM-15-player.r;
+        const px=ROOM_LEFT+player.r+64, py=ROOM_BOTTOM-15-player.r;
         player.x=px; player.y=py; player.lagX=px; player.lagY=py; player.maxHp=99;
         const s=spawnEnemy(false,r,px,py+dy,'gunner'); r.enemies.push(s);
         s.noticeTimer=0; s.castT=0; s.castReady=false; s.shootCd=1e9;
@@ -3613,9 +3743,20 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(rate(cC)<=rate(cS),'a counterstrafer at 200px is hit '+(rate(cC)*100).toFixed(0)+'% of the time '+
        'against a straight runner\'s '+(rate(cS)*100).toFixed(0)+'% ('+cC.length+' shots, misses '+
        show(cC)+'), so reversing is BETTER than holding a line up close');
-    /* ...and it has to actually cost something, or the deadzone is decorative. */
-    ok(rate(cC)<=0.4,'a counterstrafer at 200px is still hit '+(rate(cC)*100).toFixed(0)+'% of the time '+
-       '('+cC.length+' shots, misses '+show(cC)+'), so reversing in a gunner\'s face is a free dodge');
+    /* ...and the deadzone is a claim about DISTANCE, not about a hit rate. This used to assert that a
+       counterstrafer is still hit at most 40% of the time at 200px, which was written when the
+       measurement said 13% - so it encoded the bug as the expectation, and the test's own name ("hits
+       a straight line AND a counterstrafer") has always said the opposite. Fixing the swerve decay
+       took it to 100%, which is the name being right at last.
+
+       What the deadzone actually claims is that a reversal buys the player MORE the further away the
+       gunner is, and nothing at all up close. So that is the assertion: the gain a reversal is worth
+       must be larger at 400px than at 200px. Comparing hit rates cannot express that, because "the
+       gunner hits everything" is the correct answer at both ends of the near range. */
+    const gainNear=mean(cC)-mean(cS), gainFar=mean(fC)-mean(fS);
+    ok(gainFar>gainNear*2,'a reversal is worth '+gainNear.toFixed(1)+'px of extra miss at 200px but '+
+       gainFar.toFixed(1)+'px at 400px, so distance is not what buys the player the tactic and the '+
+       'deadzone is decorative: reversing is worth the same everywhere');
     /* At range the claim inverts: the spread opens up, and now a reversal is a real answer. Measured
        as a mean distance, because that is what "wider" means and the effect is several times the
        hitbox - far too large for a small sample to be ambiguous about. */

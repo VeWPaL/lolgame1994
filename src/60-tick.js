@@ -14,6 +14,26 @@
    chasers is not quietly farming the meter, and it only runs while something is alive to pressure
    it, so backtracking and empty rooms neither charge nor drain it. A cleared room is a breath
    rather than a reset. */
+/* A shot whose cast has finished LEAVES, stunned or not.
+
+   This is its own function because it has to run from two places, and the second one is the whole
+   point. The stun check used to `continue` past the fire branch, so a body that was touched on the
+   very tick its cast completed stood there with castReady set and did not fire: the player watched
+   half a second of swelling light at the muzzle resolve into nothing at all, and the shell it had
+   already been told about simply never arrived. A tell that has been shown is a promise, and the
+   stun is not a reason to break it - the body is held, not silenced.
+
+   It was found by a test failing for a reason that had nothing to do with what the test was about,
+   which is the usual way the good ones turn up. */
+function fireCommittedShot(e,roomPress){
+  if(e.castT>0){ if(--e.castT<=0) e.castReady=true; return; }
+  if(!e.castReady) return;
+  e.castReady=false;
+  e.shootCd=(e.cdMin+Rnd.jitter()*e.cdVar)*(1-PRESSURE_CADENCE*roomPress);
+  projectiles.push({x:e.x,y:e.y,vx:Math.cos(e.castAim)*e.pspd,vy:Math.sin(e.castAim)*e.pspd,r:e.pr,
+    dmg:e.dmg,friendly:false,color:e.pcol,owner:e,heavy:e.type==='gunner'});
+}
+
 function tickMomentum(moved){
   if(momentumLocked) return;
   if(currentRoom().enemies.length===0) return;
@@ -257,6 +277,9 @@ function update(){
   // silently skips the element that slid into the hole. With a knot of Brunch touching at once that
   // is a body which does not get its turn, does not spend itself, and never dies. Iterating a copy
   // costs one allocation and makes the kill order irrelevant.
+  // Room pressure is counted ONCE here, from the snapshot, rather than per enemy: it is a property
+  // of the room and recomputing it inside the loop would make a pack of eight cost eight scans.
+  const roomPress=roomPressure(r.enemies.reduce((n,x)=>n+(x.hp>0?1:0),0));
   for(const e of r.enemies.slice()){
     if(e.hp<=0) continue;   // a body killed earlier in this same tick has already been removed
     if(e.hitFlash>0)e.hitFlash--;
@@ -279,6 +302,9 @@ function update(){
         // come all the way back around before it tries again
         e.lungeCd=LUNGE_CD;
       }
+      // A cast that has already finished still fires, or the tell the player was reading would be a
+      // lie told by the game to the player. See fireCommittedShot.
+      if(e.walkSpeed===undefined&&e.type!=='boss') fireCommittedShot(e,roomPress);
       e.stun--;e.anim=0;clampEnemy(e);continue;
     }
     if(e.noticeTimer>0){e.noticeTimer--;e.anim=0;continue;}
@@ -343,9 +369,14 @@ function update(){
            from the muzzle that will fire it, and the shot can be dodged by changing your line while
            the flash is up - which is a thing a player can actually do, and is the whole point of
            having half a second of warning. */
+        /* The standoff is a function of how empty the room is, and it is the whole of the fix for a
+           shooter that could be stared at indefinitely: a shell from 150px has a flight short enough
+           that reversing inside it is not an answer, while the same body in a room of five is content
+           to hold 250px and let the count do the work. See roomPressure in 00-balance. */
+        const standoff=e.far-(e.far-e.close)*roomPress*PRESSURE_CLOSURE;
         if(e.castT<=0){
           if(dist<e.close){e.x-=edx/dist*e.speed*sm;e.y-=edy/dist*e.speed*sm;}
-          else if(dist>e.far){e.x+=edx/dist*e.speed*sm;e.y+=edy/dist*e.speed*sm;}
+          else if(dist>standoff){e.x+=edx/dist*e.speed*sm;e.y+=edy/dist*e.speed*sm;}
         }
         e.shootCd--;
         /* CAST, then fire. A gunner that fires the instant its cooldown runs out gives the player
@@ -365,18 +396,8 @@ function update(){
            shell is genuinely coming. A gunner that cannot see past its own Brunch pack holds its
            shot instead of building a tell and then wasting it, which teaches the player that the
            pack is worth something. */
-        if(e.castT>0){
-          if(--e.castT<=0) e.castReady=true;
-        } else if(e.castReady){
-          e.castReady=false;
-          /* Fire the angle the cast committed to, from a muzzle that has not moved since - which is
-             what holding the ground above buys, and why this needs no re-aiming. The gunner stands
-             still to charge, so the line the clear-shot sweep checked and the line the shell walks
-             are the same line, and the angle can simply be stored and used. */
-          e.shootCd=e.cdMin+Rnd.jitter()*e.cdVar;
-          projectiles.push({x:e.x,y:e.y,vx:Math.cos(e.castAim)*e.pspd,vy:Math.sin(e.castAim)*e.pspd,r:e.pr,
-            dmg:e.dmg,friendly:false,color:e.pcol,owner:e,heavy:e.type==='gunner'});
-        } else if(e.shootCd<=0){
+        if(e.castT>0||e.castReady) fireCommittedShot(e,roomPress);
+        else if(e.shootCd<=0){
           // Lead the shot at where the player is GOING, using their current velocity, and widen the
           // aim by how unsettled that movement is. Together those two make the fight a movement read:
           //
