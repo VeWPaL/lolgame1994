@@ -71,6 +71,24 @@ valuable thing in the file.
 was wrong — say so plainly and fix it. When a comment turns out to state something false, fix the
 comment.
 
+**Check the polarity of every number you sample.** Two numbers that both mean "how much of the thing
+is left" can count in opposite directions, and a shared formula applied to both will be right about
+one and exactly backwards about the other — with no error message, because the arithmetic is valid.
+The refill flash got this wrong: `player.cooldown` counts *down* from its maximum, so it is already
+the fraction spent, while `blinkCharges` counts *up* to two and is the fraction still held. The
+first version inverted both, so the flash was exactly as loud for a player who had lost nothing as
+for one who had lost everything. A test asserting only "the flash happened" would have passed it.
+
+**Presentation clocks tick above every early return.** `update()` bails out on a door transition, on
+the ready window, and on death. A countdown living in the playing branch never advances during
+exactly the transitions the countdown exists to cover. `restoreFX` sits beside `tickFX()` for this
+reason and should not be moved down.
+
+**A measurement that swings is not a rate.** If the same settings return 10%, 21% and 92%, each
+repetition is a coin flip rather than a sample, and a threshold on twelve of them asserts a
+coincidence. Raise the repetition count until it settles into a rate, then assert the rate — and
+assert the number, not merely that something happened.
+
 ---
 
 ## Architecture
@@ -177,11 +195,27 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
 
 ## Current state
 
-- `depths.html` — a shell loading twelve modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` — **109 checks**, every test seeded to an identical world. All must pass at
+- `depths.html` — a shell loading fourteen modules from `src/`. Playable, double-clickable.
+- `src/99-tests.js` — **128 checks**, every test seeded to an identical world. All must pass at
   every commit.
 - `csharp/Depths.Core` + `Depths.Tests` — 19 checks, parity-verified against the JavaScript.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
   first, because it is the only artifact the player can run, then ported.
 - Unity 6 LTS and VS2022 are installed. The port resumes at `60-tick.js` (`update()`), then the
   world generator, then the presentation layer against the finished core.
+
+### The fodder, and what each one is for
+
+Four enemy types, deliberately unequal in what they ask of the player. The lunger is the one that
+teaches; the other three exist to make a room's answer depend on which of them is in it.
+
+- **Lunger** — steers, closes, lunges. The baseline body and the only one that reads the player's
+  position directly. (Renamed from "chaser" throughout; nothing named chaser remains.)
+- **Shooter** — keeps its distance and fires a committed shell. It now **walks while it charges**,
+  which was the point: holding the ground was the gunner's trick and made a shooter a statue at a
+  fixed spot for half a second every cast. Measured: it moves on 54 of 162 charging ticks, the
+  gunner on 0 of 125. The cost is accuracy against a reversing player — 38% at 200px against a
+  straight runner's 100% — which is recorded as a floor in the suite rather than tuned away.
+- **Gunner** — the heavy committed shot. Roots itself to charge, so its accuracy is measured to be
+  exactly what it is. The type test means the movement change costs it nothing.
+- **Boss** — a placeholder. Boss design is deferred; the fodder is the priority.
