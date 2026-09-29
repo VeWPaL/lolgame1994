@@ -280,10 +280,38 @@ function enterRoom(nx,ny,fromDir){
   // and stepping back in cannot farm it, and a room that is already quiet has nothing to arm you for.
   if(uncleared&&!r.armed){
     r.armed=true;
-    const wp=WEAPONS[player.weaponIdx];
+    const wp=WEAPONS[player.weaponIdx], altNow=activeAlt();
+
+    /* WHAT THE RESTORE IS WORTH, measured BEFORE it happens.
+
+       The refill below is unconditional and silent: three numbers jump to full at a moment the player
+       is already looking at a door opening, and a cooldown coming back is invisible by nature - a bar
+       that was half spent is now full, and nothing about that transition catches an eye. So a player
+       walks into a room, blinks, fires, and never learns the kit was handed back, which means the
+       generosity is doing its job while carrying none of the information.
+
+       Each channel records the FRACTION THAT WAS ACTUALLY RESTORED, sampled first, because a player
+       who walks into a room at full charge restores nothing and should not be shown a flash for it, and
+       a player who entered with one blink and a half-spent wand should see something smaller than one
+       who entered with nothing. The numbers drive the VFX and nothing else: the reset stays
+       unconditional and the flash reports a fact rather than granting or withholding one.
+
+       THE TWO POLARITIES ARE OPPOSITE, which is why this is spelled out instead of folded into one
+       expression, and why the first version of it was silently backwards. player.cooldown counts DOWN
+       from its maximum, so it is already the fraction that was SPENT and needs no inversion, whereas
+       blinkCharges counts UP to two and so is the fraction still HELD. The first attempt inverted both,
+       and therefore reported a full wand as nothing restored and an empty one as completely restored:
+       the flash came out exactly as loud for a player who had lost nothing as for one who had lost
+       everything, which is the one thing the whole feature exists to avoid. */
+    const spentWeapon=player.cooldownMax>0?player.cooldown/player.cooldownMax:0
+    const spentAlt=player.altCooldownMax>0?player.altCooldown/player.altCooldownMax:0
+    const heldBlink=(player.blinkCharges+player.blinkRegen/BLINK_RECHARGE)/2
     player.cooldown=0; player.cooldownMax=wp.cooldown/TEMPO.rate;
-    player.altCooldown=0; player.altCooldownMax=activeAlt().cooldown/TEMPO.rate;
+    player.altCooldown=0; player.altCooldownMax=altNow.cooldown/TEMPO.rate;
     player.blinkCharges=2; player.blinkRegen=0;
+    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,
+      weapon:Math.max(0,Math.min(1,spentWeapon)), alt:Math.max(0,Math.min(1,spentAlt)),
+      blink:Math.max(0,Math.min(1,1-heldBlink))};
   }
   roomFade=1; fadeTicks=uncleared?READY:FADE_CLEAR; fadeT=fadeTicks; readyT=uncleared?READY:0;
 }

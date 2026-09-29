@@ -396,6 +396,56 @@ function drawSlot(x,y,w,idx,side,color,ready){
   drawSprite(MOUSE_ROWS,pal,x+w-5,y+h-5,2,null,'mouse'+side+color);
 }
 
+/* ---- the refill flash -----------------------------------------------------------------------------
+   Walking into an uncleared room hands the whole kit back - see enterRoom - and it did it silently,
+   which is the one thing a gift that size should never do. A cooldown returning is invisible by
+   nature: a bar that was half spent is now full, and nothing about that transition catches an eye.
+
+   So each instrument flashes, sized by what was ACTUALLY RESTORED rather than by the fact that
+   something was. enterRoom samples the pre-entry fractions and hands them over as weapon/alt/blink,
+   so a player who walked in at full charge restores nothing and is shown nothing - which is the
+   honest behaviour, because a flash on every door would be a flash that means nothing at all.
+
+   Each ring is drawn in the colour of the instrument it belongs to rather than in one flash colour,
+   because an instrument lighting up in a colour that is not its own reads as a different item. The
+   rings expand and fade over RESTORE_FX_TICKS with a squared falloff, which is bright immediately
+   and gone soon after with no tail, and there is a matching bloom on the body so the event registers
+   in peripheral vision and not only where the player happens to be looking.
+
+   The geometry arrives from drawHUD rather than being recomputed here. The blink plate is on the far
+   left of the screen and the weapon slots on the far right, and a second copy of those numbers is a
+   second chance for the flash to drift off the thing it is meant to be reporting. */
+function drawRestoreFX(slotA,slotB,blinkBox,colorA,colorB){
+  const fx=player.restoreFX;
+  if(!fx||fx.t<=0) return;
+  const k=fx.t/fx.max;                       // 1 at the moment of the refill, 0 once it is gone
+  const age=1-k;                             // 0 at the refill, 1 when finished
+  const ring=(b,amount,color)=>{
+    const a=k*k*amount;                      // squared: bright at once, then nothing, no long tail
+    if(a<=0.012) return;
+    const cx=b.x+b.w/2, cy=b.y+b.h/2;
+    const r=(Math.min(b.w,b.h)/2)*(0.52+age*1.2);
+    ctx.save();
+    ctx.globalAlpha=a;
+    ctx.strokeStyle=color; ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.stroke();
+    ctx.globalAlpha=a*0.45; ctx.lineWidth=1;   // a second, tighter ring: the cross-flare of a lens
+    ctx.beginPath();ctx.arc(cx,cy,r*0.68,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+  };
+  ring(slotA,fx.weapon,colorA);
+  ring(slotB,fx.alt,colorB);
+  ring(blinkBox,fx.blink,"#ffffff");
+  const total=fx.weapon+fx.alt+fx.blink;
+  if(total>0.05){
+    ctx.save();
+    ctx.globalAlpha=k*Math.min(1,total/3)*0.45;
+    ctx.strokeStyle="#ffe9b0"; ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(player.x,player.y,player.r+6+age*17,0,Math.PI*2);ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function drawHUD(){
   /* The HUD is one block, laid out from a single table of numbers so that nothing can drift.
 
@@ -630,7 +680,17 @@ function drawHUD(){
   ctx.textAlign='center';
   ctx.fillStyle='#e8dcc0';ctx.fillText(wp.name,mx0+slotW/2,labelY);
   ctx.fillStyle=alt.color;ctx.fillText(player.altMode==='hook'?'Hook':'Blast',mx0+pw-slotW/2,labelY);
+
+
+  // the refill flash goes on LAST, over the instruments it reports on. The blink plate sits on the
+  // left of the screen and the two weapon slots on the right, so all four numbers are handed across
+  // rather than recomputed: the same layout table that positions the plates positions the rings,
+  // which is the only way a flash can never drift off the thing it belongs to.
   ctx.textAlign='left';
+  drawRestoreFX({x:mx0,y:slotY,w:slotW,h:slotH},
+                {x:mx0+pw-slotW,y:slotY,w:slotW,h:slotH},
+                {x:barX-2,y:barY-2,w:(BAR+BAR_GAP)*2+4,h:barH+4},
+                wp.color,alt.color);
 }
 
 /* ---- the seed tag ------------------------------------------------------------------------------

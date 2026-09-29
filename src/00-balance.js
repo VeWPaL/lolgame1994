@@ -425,6 +425,13 @@ function roomPressure(live){
    fair. A hidden accuracy ramp on a lone enemy is indistinguishable from the game cheating. */
 const PRESSURE_CLOSURE=0.85, PRESSURE_CADENCE=0.4;
 
+/* HOW LONG THE COOLDOWN-RESTORED FLASH LIVES, in ticks. 34 is about a third of a second at 60Hz and
+   it has to clear the READY window: the refill happens as the room fades up, so a flash shorter than
+   the hold would spend most of itself on a black screen. It is deliberately short. This is a receipt
+   for something that already happened, not a state the player has to read, and anything that lingers
+   becomes furniture. The fractions it draws with come from enterRoom, sampled before the reset. */
+const RESTORE_FX_TICKS=34;
+
 /* HOW FAR a ranged body will actually have walked in N ticks, given the standoff rule it obeys.
    It is emphatically not speed*N, and finding that out cost a day of a shooter missing a straight
    runner by forty pixels.

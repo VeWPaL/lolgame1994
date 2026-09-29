@@ -46,6 +46,19 @@ function tickMomentum(moved){
 function update(){
   frameCount++;
   tickFX();
+  /* The refill flash is ticked HERE, above every early return in this function, and both of the two
+     places it was first written were wrong in the same way. update() bails out on a door transition,
+     on the READY window, and on death, and enterRoom fires the flash DURING a transition with a
+     ready window already running - 158 ticks against a flash of 34. A clock anywhere below those
+     returns therefore never advanced at all, so the ring the player is meant to watch fade out from
+     under the fade stayed at full strength for the entire fade and then vanished in a single frame.
+     It read as a rendering fault rather than as the gift it was meant to be, and nothing about the
+     symptom pointed at the clock.
+
+     It lives next to tickFX() because it is the same kind of thing: presentation that must keep
+     running through states where the simulation has stopped. If it is ever moved down into the
+     playing branch, it will stop working for exactly the one moment it exists to cover. */
+  if(player.restoreFX&&player.restoreFX.t>0)player.restoreFX.t--;
   // roomFade is progress-driven, not "the complement of a smoothstep": smooth() is flat at BOTH
   // ends, so 1-smooth(fadeT/ticks) jumped to 0 on the first tick and the whole fade was a cut.
   // p runs 0 -> 1 across the fade, so 1-smooth(p) starts at full black and eases out of it.

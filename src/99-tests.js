@@ -4495,6 +4495,112 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     for(let i=0;i<BLINK_BOOST+4;i++) update();
     eq(player.boost,0,'momentum outlived its own burst');
   });
+
+  test('walking into a fight hands the kit back, and says so in proportion to what it gave',()=>{
+    /* The refill in enterRoom is the most generous thing the game does and it was completely silent.
+       Three numbers jump to full at the moment the player is looking at a door open, and a cooldown
+       returning is invisible by nature: a bar that was half spent is now full and nothing about that
+       transition catches an eye. So the generosity was doing its job while carrying none of the
+       information, and the player had no way to learn that entering a room was worth anything.
+
+       The flash is sized by what was ACTUALLY restored, which is the whole design and also the part
+       that was wrong the first time. The first version inverted both channels and reported a full
+       wand as nothing restored and an empty wand as completely restored, so the flash came out
+       exactly as loud for a player who had lost nothing as for one who had lost everything - the one
+       outcome this feature exists to prevent, and it looked entirely plausible while doing it.
+
+       The trap is that the two channels have OPPOSITE polarities. player.cooldown counts down from
+       its maximum and is already the fraction spent; blinkCharges counts up to two and is the
+       fraction still held. Any test that only checks "the flash happened" would have passed the
+       broken version, so every case below asserts the number and not the presence. */
+    const arm=(cd,altC,bc,br)=>{
+      startGame();
+      const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
+      r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
+      r.enemies.push(spawnEnemy(false,r,r.x,r.y,'lunger'));
+      r.armed=false;                                  // so THIS entry is the one that refills
+      player.cooldown=cd; player.cooldownMax=20;
+      player.altCooldown=altC; player.altCooldownMax=20;
+      player.blinkCharges=bc; player.blinkRegen=br;
+      enterRoom(cur.x,cur.y,'W');
+      return player.restoreFX;
+    };
+    const near=(got,want,label)=>ok(Math.abs(got-want)<0.02,label+': the flash reports '+got.toFixed(2)+
+       ' where the restore was '+want.toFixed(2));
+    // the reset itself is unconditional, and that is not what is being changed here
+    let fx=arm(20,20,0,0);
+    eq(player.cooldown,0,'a spent wand was not refilled on entering a fight');
+    eq(player.altCooldown,0,'a spent alt was not refilled on entering a fight');
+    eq(player.blinkCharges,2,'a missing blink was not handed back on entering a fight');
+    ok(fx&&fx.t===RESTORE_FX_TICKS,'nothing was left on the clock to draw the flash from');
+    near(fx.weapon,1,'a wand with nothing left on it');
+    near(fx.alt,1,'an alt with nothing left on it');
+    near(fx.blink,1,'a blink bar with nothing left on it');
+    // and the inverse case, which is the one the broken version failed
+    fx=arm(0,0,2,0);
+    near(fx.weapon,0,'a wand that was already full');
+    near(fx.alt,0,'an alt that was already full');
+    near(fx.blink,0,'a blink bar that was already full');
+    // halfway, on each channel, because a flash that is either on or off is a decoration
+    near(arm(10,0,2,0).weapon,0.5,'a wand half spent');
+    near(arm(0,10,2,0).alt,0.5,'an alt half spent');
+    near(arm(0,0,1,0).blink,0.5,'one blink of two held');
+    near(arm(0,0,1,BLINK_RECHARGE*0.5).blink,0.25,'a blink bar three quarters full');
+    // the flash must expire rather than sit on the HUD as furniture
+    fx=arm(20,20,0,0);
+    for(let i=0;i<RESTORE_FX_TICKS+2;i++) update();
+    eq(player.restoreFX.t,0,'the refill flash outlived its own duration and became furniture');
+    // and it must not fire for a room that has nothing to give back into
+    startGame();
+    const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
+    r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;   // a quiet room arms nothing
+    r.armed=false;
+    player.cooldown=20; player.cooldownMax=20;
+    enterRoom(cur.x,cur.y,'W');
+    eq(player.restoreFX,null,'entering a quiet room played a restore flash for a refill that never '+
+       'happened, so the flash can no longer be trusted as a receipt');
+    // and the anti-exploit still holds: one refill per room, so backing out cannot farm it
+    startGame();
+    const r2=currentRoom(); enterRoom(cur.x,cur.y,'W');
+    r2.enemies.length=0; r2.spawnPlan=null; r2.pickups.length=0;
+    r2.enemies.push(spawnEnemy(false,r2,r2.x,r2.y,'lunger'));
+    r2.armed=false;
+    player.cooldown=20; player.cooldownMax=20;
+    enterRoom(cur.x,cur.y,'W');
+    ok(player.restoreFX&&player.restoreFX.weapon>0.5,'the first entry into a fight did not report the refill');
+    player.restoreFX=null;
+    enterRoom(cur.x,cur.y,'W');
+    eq(player.restoreFX,null,'stepping back into an armed room reported a second refill, so the '+
+       'flash would be farmable and could not be read as a fact');
+  });
+
+  test('the refill flash draws without throwing, and draws nothing once it is spent',()=>{
+    /* A VFX that throws takes the whole frame with it, and the one case where it is most likely to
+       throw is the one nobody plays for: a flash on a screen that is mid-overlay, mid-fade, or
+       mid-death. So it is called directly at both ends of its life and asked to survive each. */
+    const box=()=>({x:100,y:100,w:40,h:50});
+    startGame();
+    player.restoreFX=null;
+    let threw=null;
+    try{ drawRestoreFX(box(),box(),box(),'#fff','#fff'); }catch(e){ threw=e.message; }
+    ok(threw===null,'drawing the refill flash with nothing to report threw: '+threw);
+    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:1,alt:1,blink:1};
+    threw=null;
+    try{ drawRestoreFX(box(),box(),box(),'#fff','#fff'); }catch(e){ threw=e.message; }
+    ok(threw===null,'drawing the refill flash at full strength threw: '+threw);
+    // a zero-size box is what a squeezed or hidden HUD produces, and it must not produce a NaN
+    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:1,alt:1,blink:1};
+    threw=null;
+    try{ drawRestoreFX({x:0,y:0,w:0,h:0},{x:0,y:0,w:0,h:0},{x:0,y:0,w:0,h:0},'#fff','#fff'); }
+    catch(e){ threw=e.message; }
+    ok(threw===null,'drawing the refill flash onto a collapsed HUD threw: '+threw);
+    // and an out-of-range fraction must not paint outside the canvas
+    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:9,alt:-4,blink:99};
+    threw=null;
+    try{ drawRestoreFX(box(),box(),box(),'#fff','#fff'); }catch(e){ threw=e.message; }
+    ok(threw===null,'an out-of-range restore fraction broke the flash: '+threw);
+    ok(true,'');
+  });
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so
   results.push({name:'every draw in game code names its stream - no raw Math.random survives',
