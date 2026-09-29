@@ -57,8 +57,15 @@ function update(){
 
      It lives next to tickFX() because it is the same kind of thing: presentation that must keep
      running through states where the simulation has stopped. If it is ever moved down into the
-     playing branch, it will stop working for exactly the one moment it exists to cover. */
-  if(player.restoreFX&&player.restoreFX.t>0)player.restoreFX.t--;
+     playing branch, it will stop working for exactly the one moment it exists to cover.
+
+     The `player&&` guard is not defensive noise and it has to stay. This line sits deliberately above
+     the state!=='playing' return, because that is the point of it, and on the title screen there is
+     no player at all - player is undefined until the first startGame(). A tick placed above the state
+     check has to survive the states above it. The suite missed this entirely because every test calls
+     startGame() before it touches anything, so the title screen was the one place it could break and
+     no test ever stood there. */
+  if(player&&player.restoreFX&&player.restoreFX.t>0)player.restoreFX.t--;
   // roomFade is progress-driven, not "the complement of a smoothstep": smooth() is flat at BOTH
   // ends, so 1-smooth(fadeT/ticks) jumped to 0 on the first tick and the whole fade was a cut.
   // p runs 0 -> 1 across the fade, so 1-smooth(p) starts at full black and eases out of it.

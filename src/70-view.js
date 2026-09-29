@@ -7,6 +7,31 @@
    ============================================================================================== */
 // where a padlock hangs for each side: just outside the frame
 function c0(d){ return {N:[MIDX,ROOM_TOP-8],S:[MIDX,ROOM_BOTTOM+8],W:[ROOM_LEFT-8,MIDY],E:[ROOM_RIGHT+8,MIDY]}[d]; }
+
+/* THE GAP IN THE WALL FOR EACH SIDE, as [x,y,w,h].
+
+   One table, three readers: the frame fill, the boss gate, and the unlock sweep. It used to be three
+   separate tables written out side by side, and that is the whole reason the boss door was broken in
+   two different ways at once.
+
+   The gate is the one that showed. Its copy of the vertical case had the BOTTOM wall's y baked into
+   it, so the E and W portcullises were drawn 254px below the doors they were sealing - sitting on the
+   floor in the corner of the room - while those doors showed nothing but a bare padlock. The unlock
+   sweep had the mirror fault: it always drew a horizontal bar, so on a vertical door it swept across
+   the thickness of the wall rather than along the gap it was supposed to be opening.
+
+   Neither was findable by reading the code, and that is the part worth keeping. Two of the three
+   tables agreed with each other and the collision code in 40-combat agrees with those two as well, so
+   the odd one out was invisible from any single file and only appeared the moment all four sides were
+   drawn at once - which a level almost never does, since the boss gate is one door in a layout. Any
+   geometry that more than one piece of code needs belongs in exactly one place, and this is what it
+   costs to leave it in three. */
+function doorRect(d,wt){
+  return d==='N'?[MIDX-DOORW/2,ROOM_TOP-wt,DOORW,wt]
+       : d==='S'?[MIDX-DOORW/2,ROOM_BOTTOM,DOORW,wt]
+       : d==='W'?[ROOM_LEFT-wt,MIDY-DOORW/2,wt,DOORW]
+       :         [ROOM_RIGHT,MIDY-DOORW/2,wt,DOORW];
+}
 function drawFloor(type){
   let c=floorCache[type];
   if(!c){
@@ -120,10 +145,16 @@ function drawRoom(){
   ctx.fillRect(ROOM_RIGHT,ROOM_TOP-wt,wt,ROOM_BOTTOM-ROOM_TOP+wt*2);
   const bg=ROOM_BG[r.type];
   const dcolFor=d=>!doorOpen(r)?'#c93b3b':leadsToBoss(r,d)&&!bossUnlocked?'#ffd23d':leadsToItem(r,d)&&!itemUnlocked?'#d8dee9':'#5ee27a';
-  if(r.doors.N){ctx.fillStyle=bg;ctx.fillRect(MIDX-DOORW/2,ROOM_TOP-wt,DOORW,wt);ctx.fillStyle=dcolFor('N');ctx.fillRect(MIDX-DOORW/2,ROOM_TOP-wt,DOORW,4);}
-  if(r.doors.S){ctx.fillStyle=bg;ctx.fillRect(MIDX-DOORW/2,ROOM_BOTTOM,DOORW,wt);ctx.fillStyle=dcolFor('S');ctx.fillRect(MIDX-DOORW/2,ROOM_BOTTOM+wt-4,DOORW,4);}
-  if(r.doors.W){ctx.fillStyle=bg;ctx.fillRect(ROOM_LEFT-wt,MIDY-DOORW/2,wt,DOORW);ctx.fillStyle=dcolFor('W');ctx.fillRect(ROOM_LEFT-wt,MIDY-DOORW/2,4,DOORW);}
-  if(r.doors.E){ctx.fillStyle=bg;ctx.fillRect(ROOM_RIGHT,MIDY-DOORW/2,wt,DOORW);ctx.fillStyle=dcolFor('E');ctx.fillRect(ROOM_RIGHT+wt-4,MIDY-DOORW/2,4,DOORW);}
+  for(const d of ['N','S','W','E']){
+    if(!r.doors[d]) continue;
+    const g=doorRect(d,wt);
+    ctx.fillStyle=bg; ctx.fillRect(g[0],g[1],g[2],g[3]);
+    // the coloured lip sits on the OUTER edge of the wall - the side away from the room - so the door
+    // reads as a seam in the masonry rather than a panel stuck on the inside of it
+    ctx.fillStyle=dcolFor(d);
+    if(d==='N'||d==='S') ctx.fillRect(g[0],d==='N'?g[1]:g[1]+g[3]-4,g[2],4);
+    else                   ctx.fillRect(d==='W'?g[0]:g[0]+g[2]-4,g[1],4,g[3]);
+  }
 
   /* the boss gate. rather than a glow pasted over the frame, it is a portcullis of slats across
      the gap: the shutter breathes while it is shut, and it visibly lifts as the lock works, so you
@@ -131,8 +162,11 @@ function drawRoom(){
   for(const d of ['N','S','E','W']){
     if(!r.doors[d]||!leadsToBoss(r,d)||bossUnlocked) continue;
     const horiz=d==='N'||d==='S', p=doorPoint(d);
-    const x0=horiz?MIDX-DOORW/2:ROOM_LEFT-wt, y0=horiz?ROOM_TOP-wt:ROOM_BOTTOM-wt;
-    const gate={N:[x0,ROOM_TOP-wt,DOORW,wt],S:[x0,ROOM_BOTTOM,DOORW,wt],W:[ROOM_LEFT-wt,y0,wt,DOORW],E:[ROOM_RIGHT,y0,wt,DOORW]}[d];
+    // ONE source of truth for where the gap is. This used to rebuild the rect here with the bottom
+    // wall's y baked into the vertical case, which put the E and W portcullises 254px below the doors
+    // they seal. doorRect is the same table the door frame itself is drawn from, so the gate cannot
+    // disagree with the doorway even if the geometry changes.
+    const gate=doorRect(d,wt);
     const prog=unlocking(r,d)?unlockT/UNLOCK_TIME:0;
     const breathe=0.5+0.5*Math.sin(frameCount*0.07/SPEEDUP);
     const lift=prog*0.5;                                    // the slats pull back as it throws
@@ -175,9 +209,19 @@ function drawRoom(){
     const col=leadsToBoss(r,d)?'#ffd23d':'#d8dee9';
     const prog=unlocking(r,d)?unlockT/UNLOCK_TIME:0;
     if(prog>0){
-      const p=doorPoint(d);
       ctx.globalAlpha=0.3+0.4*prog;
-      ctx.fillStyle=col; ctx.fillRect(p[0]-DOORW/2,p[1]-4,DOORW,8);
+      /* The sweep runs ALONG the gap, not across the wall.
+
+         It used to be one unconditional horizontal bar, which is correct on a north or south door
+         and wrong on an east or west one: there it drew a 90px-wide band through the thickness of
+         the masonry while the gap it was supposed to be opening ran vertically beside it. The tell
+         for "this door is opening" therefore pointed the wrong way on half the doors in the game,
+         and the fix is the same one as the gate's - ask doorRect where the gap is rather than
+         assuming which way up it happens to be. */
+      const g=doorRect(d,wt);
+      ctx.fillStyle=col;
+      if(g[2]>g[3]) ctx.fillRect(g[0],g[1],g[2],8);        // a horizontal gap: a band across its width
+      else          ctx.fillRect(g[0],g[1],8,g[3]);        // a vertical gap: a band down its length
       ctx.globalAlpha=1;
     }
     const lift=prog*14;   // the shackle lifts off as the lock throws

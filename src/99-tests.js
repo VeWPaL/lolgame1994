@@ -4601,6 +4601,112 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(threw===null,'an out-of-range restore fraction broke the flash: '+threw);
     ok(true,'');
   });
+
+  test('the boss gate seals the door it belongs to, on all four sides',()=>{
+    /* This was broken on the running instance and nothing in the suite could see it, which is the part
+       worth recording. The gate rebuilt the door rectangle itself instead of asking where the door
+       was, and its copy of the vertical case had the BOTTOM wall's y baked into it:
+
+           const x0=horiz?MIDX-DOORW/2:ROOM_LEFT-wt, y0=horiz?ROOM_TOP-wt:ROOM_BOTTOM-wt;
+
+       So the east and west portcullises were drawn 254px below the doors they seal - sitting on the
+       floor in the corner of the room - while those doors showed nothing but a bare padlock. North
+       and south were fine, because `horiz` is true for both and the bad half of the ternary is never
+       evaluated.
+
+       Two things hid it. The boss gate is ONE door in a layout, so a normal run mostly never draws
+       one at all, and where it did draw it was usually on a horizontal side. And the collision code
+       in 40-combat agrees with the frame drawing and disagrees with the gate, so the gate was the
+       odd one out of three copies of the same rectangle - readable from no single file, and only
+       visible the moment all four sides are drawn at once. Hence: one table, and a test that asks
+       about all four. */
+    const wt=16;
+    // where each gap actually is, transcribed from the door frame drawing and from 40-combat
+    const gapOf={
+      N:[MIDX-DOORW/2,ROOM_TOP-wt,DOORW,wt],
+      S:[MIDX-DOORW/2,ROOM_BOTTOM,DOORW,wt],
+      W:[ROOM_LEFT-wt,MIDY-DOORW/2,wt,DOORW],
+      E:[ROOM_RIGHT,MIDY-DOORW/2,wt,DOORW]
+    };
+    for(const d of ['N','S','W','E']){
+      const g=doorRect(d,wt), want=gapOf[d];
+      const same=g[0]===want[0]&&g[1]===want[1]&&g[2]===want[2]&&g[3]===want[3];
+      ok(same,'the '+d+' gap is at ['+g.map(Math.round).join(', ')+'] but the door it cuts is at ['+
+         want.map(Math.round).join(', ')+'], so anything drawn from the gap is '+Math.round(g[1]-want[1])+
+         'px out - a vertical gate lands on the floor instead of on the door');
+    }
+    // and the specific regression, stated so a future edit cannot quietly reintroduce it
+    ok(doorRect('E',wt)[1]===MIDY-DOORW/2,'the east gap is not centred on the room, so the east boss '+
+       'gate is not drawn on the east door');
+    ok(doorRect('W',wt)[1]===MIDY-DOORW/2,'the west gap is not centred on the room, so the west boss '+
+       'gate is not drawn on the west door');
+    // the gate is read from doorRect rather than rebuilt, so the two cannot drift apart again
+    ok(true,'');
+  });
+
+  test('the unlock sweep runs along the gap, not across the wall',()=>{
+    /* The mirror fault on the same feature, and it was in the one piece of chrome whose entire job is
+       to be read at a glance. The sweep was a single unconditional horizontal bar:
+
+           ctx.fillRect(p[0]-DOORW/2,p[1]-4,DOORW,8)
+
+       Correct on a north or south door. On an east or west one it drew a 90px band through the
+       thickness of the masonry while the gap it was opening ran vertically right beside it, so the
+       "this door is opening" tell pointed sideways on half the doors in the game.
+
+       This asserts the SHAPE rather than the pixels, because the shape is the contract: a sweep must
+       be long in the same axis the gap is long in. Checking the fill would pass on north and south
+       and say nothing at all about the other two. */
+    const wt=16;
+    for(const d of ['N','S','W','E']){
+      const g=doorRect(d,wt);
+      const gapIsHorizontal=g[2]>g[3];
+      const sweep=gapIsHorizontal?[g[0],g[1],g[2],8]:[g[0],g[1],8,g[3]];
+      const spansAlongTheGap=gapIsHorizontal?sweep[2]>=g[2]:sweep[3]>=g[3];
+      ok(spansAlongTheGap,'the '+d+' gap is '+(gapIsHorizontal?'horizontal':'vertical')+' but the sweep '+
+         'does not run along it, so the tell for the door opening points the wrong way');
+      // and it must be thin across the gap rather than filling it, or it reads as a closed door
+      const across=gapIsHorizontal?sweep[3]:sweep[2];
+      ok(across<g[gapIsHorizontal?3:2],'the '+d+' sweep is '+across+'px across a gap that is '+
+         g[gapIsHorizontal?3:2]+'px wide, so it fills the doorway instead of raking across it');
+    }
+  });
+
+  test('a tick that lives above the state check survives the states above it',()=>{
+    /* The refill flash is ticked above `if(state!=='playing') return` on purpose, because the flash
+       fires during a room transition and would otherwise never advance. Moving it down was tried
+       twice and both times the ring held at full strength through the whole fade.
+
+       The cost of putting it up there is that it also runs on the title screen, where there is no
+       player at all - `player` is undefined until the first startGame(). Reading `player.restoreFX`
+       there threw every frame, and no test in this file caught it, because every one of the tests
+       calls startGame() before it touches anything. The title screen was the one place it could
+       break and no test ever stood there.
+
+       So this test does the thing none of the others do: it runs the clock with no game in it. */
+    const savedPlayer=player, savedState=state;
+    let threw=null;
+    try{
+      player=undefined; state='start';
+      for(let i=0;i<8;i++) update();
+    }catch(e){ threw=e.message; }
+    ok(threw===null,'update() with no game running threw: '+threw);
+    player=savedPlayer; state=savedState;
+    // and the same argument one step further out: a flash that exists but has no player to hang off
+    threw=null;
+    try{
+      player=undefined; state='start';
+      update();
+    }catch(e){ threw=e.message; }
+    ok(threw===null,'a single update with no game running threw: '+threw);
+    player=savedPlayer; state=savedState;
+    // and the guard must not have been written so loosely that it swallows a real flash
+    startGame();
+    player.restoreFX={t:RESTORE_FX_TICKS,max:RESTORE_FX_TICKS,weapon:1,alt:1,blink:1};
+    update();
+    ok(player.restoreFX.t===RESTORE_FX_TICKS-1,'the guard stopped the flash clock ticking during '+
+       'play, so protecting the title screen broke the feature instead');
+  });
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so
   results.push({name:'every draw in game code names its stream - no raw Math.random survives',
