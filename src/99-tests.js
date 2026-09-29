@@ -770,6 +770,178 @@ test('a shooter cannot be stared at: a straight line and a human reversal are bo
     // the cooldown must actually shorten, or "pressure" is a word rather than a mechanic
     ok(PRESSURE_CADENCE>0&&PRESSURE_CADENCE<1,'the cadence effect is not a real fraction: '+PRESSURE_CADENCE);
   });
+test('an item is applied by rebuilding from base, so taking one off takes exactly its share',()=>{
+    /* The property the whole additive stat model was built to have, exercised through a real item.
+       If this ever needs an inverse operation, the model has been quietly replaced by something that
+       multiplies into live values, and twenty items in a run will be unexplainable. */
+    startGame(); Items.reset();
+    const baseSpeed=player.speed;
+    Items.give('heavy_hands');
+    eq(Stats.value('strength'),1,'a +1 Strength item did not give 1 Strength');
+    Items.give('weighted_rod');
+    eq(Stats.value('strength'),3,'two damage items did not add to 3');
+    Items.give('swift_boots');
+    ok(Stats.value('speed')>0,'a speed item left the stat at zero - the classic zero-base bug, back again');
+    eq(player.speed,baseSpeed,'an item wrote to player.speed, so the value is no longer derived from the build');
+    Items.remove('heavy_hands');
+    eq(Stats.value('strength'),2,'removing a +1 item from a 3 Strength build left something other than 2, so '+
+       'contributions are being compounded rather than summed');
+    Items.remove('weighted_rod');
+    eq(Stats.value('strength'),0,'removing the last damage item left Strength above zero');
+    ok(Stats.value('speed')>0,'removing one item removed another item\'s contribution too');
+    Items.reset();
+    eq(Stats.value('speed'),0,'Items.reset() left a stat on the sheet');
+  });
+
+  test('a definition that would quietly do nothing is refused at the point of definition',()=>{
+    /* The failure this whole registry exists to prevent: an item that appears on the sheet, takes a
+       space in the build, and is inert. Every rule below is a shape that is easy to write by accident
+       and impossible to notice by playing. */
+    const refuses=(def,why)=>{
+      let threw='';
+      try{ Items.define('probe_'+Rnd.int(1e9).toString(36),def); }catch(err){ threw=err.message; }
+      ok(threw.length>0,'accepted an item that '+why);
+    };
+    refuses({name:'P',use:'passive',slot:'sigil',rarity:'common',fx:{hooks:{heal_self:1}}},
+      'is a passive with hooks, which can never fire because hooks run on use');
+    refuses({name:'P',use:'active',charges:2,slot:9,rarity:'common'},'sits in a slot that does not exist');
+    refuses({name:'P',use:'active',slot:0,rarity:'common'},'is active with no charges, so it can never be used');
+    refuses({name:'P',use:'passive',slot:'sigil',rarity:'mythic'},'has a rarity the pools do not know');
+    refuses({name:'P',use:'passive',slot:'sigil',rarity:'common',fx:{stats:{arcana:2}}},
+      'changes a stat the game does not have');
+    refuses({name:'P',use:'passive',slot:'sigil',rarity:'common',fx:{stats:{strength:'lots'}}},
+      'has a stat that is not a number');
+    refuses({name:'P',use:'passive',slot:'sigil',rarity:'common',fx:{hooks:{summon_a_dragon:1}}},
+      'names a hook nobody wrote');
+    refuses({name:'P',use:'active',charges:1,slot:'sigil',rarity:'common'},'is active with no slot to press from');
+    refuses({name:'P',use:'passive',slot:'sigil',rarity:'common',unlocks:'compass'},
+      'has unlocks that are not a list');
+    // and the registry as a whole still stands
+    eq(Content.validate().length,0,'the shipped roster does not validate: '+Content.validate().join('; '));
+    for(const id of Content.all('item')) eq(Items.validate(id).join('; '),'','item '+id+' is not legal');
+  });
+
+  test('charges are the difference between a consumable and a reusable, and there is no third thing',()=>{
+    /* The correction to the original five-category list, exercised. A potion and a repeatable spell
+       are the same object with a different number, and treating them as two categories is what forces
+       every future item into whichever bin is nearer. */
+    startGame(); Items.reset();
+    Items.give('tin_cup');
+    const cup=Items.equipped('tin_cup');
+    eq(cup.charges,3,'the cup did not arrive with its three charges');
+    Items.use('tin_cup');
+    eq(Items.equipped('tin_cup').charges,2,'using the cup did not spend a charge');
+    // a second copy stacks INTO the same slot rather than taking another one
+    Items.give('tin_cup');
+    eq(Items.equipped('tin_cup').charges,5,'a second cup did not add its charges');
+    eq(loadout.items.filter(s=>s.id==='tin_cup').length,1,'a second cup took a second slot instead of stacking');
+    for(let i=0;i<5;i++) Items.use('tin_cup');
+    ok(!Items.equipped('tin_cup'),'the cup is still carried after its last charge, so its slot is never freed');
+    ok(Items.use('tin_cup'),'using something you no longer carry should be refused, not silently succeed');
+    // and the reusable case is the same code path with a different number
+    Items.give('bone_whistle');
+    const w=Items.equipped('bone_whistle');
+    eq(w.charges,Infinity,'the whistle is not unlimited, so it is a consumable wearing a name');
+    for(let i=0;i<40;i++) Items.use('bone_whistle');
+    ok(Items.equipped('bone_whistle'),'a reusable item wore out');
+  });
+
+  test('three slots, and a full build refuses rather than quietly dropping the fourth thing',()=>{
+    startGame(); Items.reset();
+    eq(Items.SLOTS,3,'the slot count changed and the refusal test below no longer means anything');
+    for(const id of ['tin_cup','bone_whistle','hunters_mark']) ok(Items.give(id),'could not take '+id);
+    ok(!Items.give('lantern_friend'),'a fourth active went into a build with three slots');
+    eq(loadout.items.length,3,'the refused item was carried anyway, so a full build silently ate it');
+    // a passive is a sigil and needs no slot, which is the difference between carrying and holding
+    ok(Items.give('iron_ribs'),'a passive was refused because the slots were full - sigils are the point of them');
+    eq(Items.equipped('iron_ribs').slot,-1,'a sigil was given a slot number, so the sheet will print one');
+    // and a passive is never taken twice
+    ok(!Items.give('iron_ribs'),'a passive was taken a second time, so it applies twice');
+    eq(Stats.value('vigor'),2,'two Iron Ribs are worth four Vigor, so a duplicate doubled a passive');
+    Items.reset();
+  });
+
+  test('luck measurably shifts what the dungeon offers, and it is a weight rather than a bonus',()=>{
+    /* Measured, not asserted in prose, and the direction is the claim: luck multiplies the RARE end.
+       Adding the same amount to every weight would change nothing at all, which is the mistake a
+       "luck" stat makes most often. */
+    startGame(); Items.reset();
+    const tally=lk=>{
+      const c={common:0,uncommon:0,rare:0,legendary:0};
+      for(let i=0;i<20000;i++){ Stats.reset(); if(lk) Stats.flat('luck',lk); c[Items.rollRarity(Stats.value('luck'))]++; }
+      return c;
+    };
+    const rarePlus=c=>100*(c.rare+c.legendary)/20000;
+    const none=tally(0), lucky=tally(5);
+    ok(rarePlus(lucky)>rarePlus(none)*1.4,'luck 5 offers a rare-or-better item '+rarePlus(lucky).toFixed(1)+
+       '% of the time against '+rarePlus(none).toFixed(1)+'% at luck 0, so luck barely moves the table');
+    // and the common end must not simply vanish, or a lucky player is playing a different game
+    ok(none.common>0&&lucky.common>0,'a rarity is unreachable at some luck value, so part of the roster '+
+       'can never appear ('+none.common+' commons at luck 0, '+lucky.common+' at luck 5)');
+    // the weights are relative: every rarity must remain possible at every luck value
+    for(const k of ['common','uncommon','rare','legendary'])
+      ok(none[k]>0&&lucky[k]>0,'rarity "'+k+'" never came up');
+    // and luck does not touch the beam by accident - it is a separate consumer of the same stat
+    Stats.reset();
+    const wide=luckSpread(WEAPONS[2].spread);
+    Stats.flat('luck',5);
+    ok(luckSpread(WEAPONS[2].spread)<wide*0.1,'five luck did not turn the Arcane Beam into a laser');
+    Items.reset();
+  });
+
+  test('an artifact is a field on an item, not a category beside it',()=>{
+    /* The design started from five types with "artifact" listed as a sixth that "falls under one of
+       the previous categories" - which is a description of a FIELD, and encoding it as a category is
+       what would have produced hybrids. A Brass Compass is simultaneously a legendary passive AND an
+       artifact, and neither half is a special case. */
+    startGame(); Items.reset();
+    Items.give('brass_compass');
+    const d=Content.get('item','brass_compass');
+    eq(d.use,'passive','the artifact is not also a passive, so the two halves are not both true');
+    eq(d.rarity,'legendary','the artifact is not also a rarity');
+    ok(Array.isArray(d.unlocks)&&d.unlocks.length,'the artifact unlocks nothing, which is the whole of it');
+    ok(run.unlocked[d.unlocks[0]],'taking the artifact did not unlock its content');
+    eq(Stats.value('luck'),1,'the artifact is not also a stat item');
+    // and an item with no unlocks unlocks nothing, rather than defaulting to something
+    Items.reset(); Items.give('iron_ribs');
+    eq(Object.keys(run.unlocked).length,0,'an ordinary item unlocked something');
+    Items.reset();
+  });
+
+  test('the roster covers every part of the model, and every item says what it is for',()=>{
+    /* A framework with one kind of item in it is a framework that has only been tested one way. Each
+       axis gets at least one real item, and every definition has to carry the words the pause sheet
+       prints - an item with no blurb is a row of numbers on a card. */
+    startGame(); Items.reset();
+    const ids=Content.all('item');
+    ok(ids.length>=10,'the roster has '+ids.length+' items, too few to exercise the model');
+    let passive=0,active=0,sigil=0,slot=0,consumable=0,reusable=0,artifact=0,stat=0,hook=0;
+    for(const id of ids){
+      const d=Content.get('item',id);
+      ok(d.blurb&&d.blurb.length>20,'item '+id+' has no blurb, so the sheet would print a bare name');
+      ok(d.glyph,'item '+id+' has no glyph, so its icon would be a blank tile');
+      ok(d.color,'item '+id+' has no colour');
+      if(d.use==='passive')passive++; else active++;
+      if(d.slot==='sigil')sigil++; else slot++;
+      if(d.charges!=null&&d.charges!==Infinity)consumable++;
+      if(d.charges===Infinity)reusable++;
+      if(d.unlocks&&d.unlocks.length)artifact++;
+      if(d.fx&&d.fx.stats&&Object.keys(d.fx.stats).length)stat++;
+      if(d.fx&&d.fx.hooks&&Object.keys(d.fx.hooks).length)hook++;
+    }
+    ok(passive>0&&active>0,'the roster has no '+(passive?'active':'passive')+' items');
+    ok(sigil>0&&slot>0,'the roster has no '+(sigil?'slotted':'sigil')+' items');
+    ok(consumable>0&&reusable>0,'the roster has no '+(consumable?'reusable':'consumable')+' item, so the charges axis is untested');
+    ok(artifact>0,'no item in the roster carries unlocks, so the artifact field is untested');
+    ok(stat>0&&hook>0,'the roster has no '+(stat?'stat':'hook')+' item');
+    // and at least one item has to be a genuine trade rather than a list of plusses, or there is no
+    // decision in the build at all
+    const trade=ids.some(id=>{
+      const s=Content.get('item',id).fx&&Content.get('item',id).fx.stats;
+      return s&&Object.values(s).some(v=>v<0);
+    });
+    ok(trade,'every item in the roster is a bonus, so a build has no decision in it and the sheet is a list of plusses');
+  });
   test('fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz',()=>{
     state='start'; paused=false;
     for(const hz of [30,60,75,120,144,165,240]){
@@ -1981,6 +2153,14 @@ test('a shooter cannot be stared at: a straight line and a human reversal are bo
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
     for(let w=0;w<WEAPONS.length;w++){
       player.weaponIdx=w;
+      /* Six shots, not one. The claim is that falloff reduces damage, and a single shot cannot measure
+         it for a weapon with a cone: the Arcane Beam at zero luck throws a shot +/-52px at 326px, and
+         a 14px hitbox inside that is hit perhaps a quarter of the time, so one shot reports "this gun
+         does nothing" and the assertion below fails on a gun that is working exactly as designed. A
+         player measures falloff by holding the trigger down, which is also what a 5.2-tick cooldown
+         invites, so this is the honest shape of the measurement. The alternative - special-casing the
+         distance per weapon - would have quietly stopped testing the beam's range at all. */
+      const SHOTS=6;
       const hit=(dist)=>{
         r.enemies.length=0; projectiles.length=0;
         // keep the target inside the room: a gun's full range can overshoot the far wall from the
@@ -1988,14 +2168,17 @@ test('a shooter cannot be stared at: a straight line and a human reversal are bo
         const d=Math.max(20,Math.min(dist,MIDX-ROOM_LEFT-24,ROOM_RIGHT-MIDX-24));
         const e=spawnEnemy(false,r,player.x+d,player.y,'shooter');
         e.noticeTimer=1e9; e.aggroTimer=0; r.enemies.push(e);
-        mouse.x=e.x; mouse.y=e.y; fireWeapon();
-        for(let i=0;i<400&&projectiles.length&&e.hp===e.maxHp;i++) update();
+        for(let s=0;s<SHOTS;s++){
+          mouse.x=e.x; mouse.y=e.y; fireWeapon();
+          for(let i=0;i<400&&projectiles.length&&e.hp===e.maxHp;i++) update();
+          if(e.hp<=0){ e.hp=e.maxHp; e.hitFlash=0; }   // the body survives, so all six are measured
+        }
         return e.maxHp-e.hp;
       };
       const far=WEAPONS[w].fFar+40;
       const close=hit(20), long=hit(far);
-      ok(long>0,WEAPONS[w].name+' did nothing at all at '+far+'px');
-      ok(close>long,WEAPONS[w].name+' did the same damage at '+far+'px as at 20px');
+      ok(long>0,WEAPONS[w].name+' did nothing at all at '+far+'px over '+SHOTS+' shots');
+      ok(close>long,WEAPONS[w].name+' did the same damage at '+far+'px as at 20px ('+close+' vs '+long+')');
     }
   });
   test('a hit wakes the room from any distance',()=>{

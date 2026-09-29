@@ -146,6 +146,16 @@ const Content=(function(){
       else k.table[id]=clone(def);
     }
     k.origin[id]=fromMod?'mod':'game';
+    /* The pristine copy is the SHIPPED definition, and it is captured HERE rather than when the kind
+       was declared. The item kind is declared as an empty object and filled in by the roster in a
+       file loaded later, so a snapshot taken at declaration time was {} - and resetMods() then
+       faithfully restored every kind to its pristine state and DELETED THE ENTIRE ROSTER. The mod
+       suite calls resetMods(), so the first mod test quietly emptied the item table and every item
+       test after it failed on "no item called heavy_hands".
+
+       Only GAME content updates the snapshot. A mod overriding a built-in is origin mod, and must
+       leave the original underneath it - which is the whole reason the snapshot exists. */
+    if(!fromMod) k.pristine[id]=clone(def);
     return [];
   }
 

@@ -287,8 +287,12 @@ function activeAlt(){ return player.altMode==='hook'?HOOK_WEAPON:ALT_WEAPON; }
 function fireWeapon(){
   const w=WEAPONS[player.weaponIdx];
   const ang0=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+  // A weapon whose cone is a STAT reads it here, once, at the moment of firing - not at spawn, and
+  // not cached on the weapon, or picking up a Lucky item would not narrow the beam until the wand
+  // was swapped.
+  const spread=w.spreadFromLuck?luckSpread(w.spread):w.spread;
   for(let i=0;i<w.count;i++){
-    const off=w.count>1?(i-(w.count-1)/2)*w.spread:(Rnd.jitter()-0.5)*w.spread;
+    const off=w.count>1?(i-(w.count-1)/2)*spread:(Rnd.jitter()-0.5)*2*spread;
     const a=ang0+off;
     projectiles.push({x:player.x,y:player.y,vx:Math.cos(a)*w.speed,vy:Math.sin(a)*w.speed,r:w.r||5,dmg:w.dmg,friendly:true,color:w.color,
       ox:player.x,oy:player.y,fNear:w.fNear,fFar:w.fFar,fMin:w.fMin,shrink:!!w.shrink,
