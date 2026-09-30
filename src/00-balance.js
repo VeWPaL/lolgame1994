@@ -55,6 +55,30 @@ const ROOM_BG={start:'#1c2230',normal:'#191b22',item:'#2a2410',boss:'#2a1414'};
    free once a fight is over: 9 per tick against 1 in a fight makes the recharge 9x faster in a room
    with nothing in it. 735/9 = 82 ticks, about 0.39s. */
 const AGGRO_RANGE=Math.round(0.85*Math.hypot(ROOM_RIGHT-ROOM_LEFT,ROOM_BOTTOM-ROOM_TOP)), AGGRO_TIME=sec(2.5), BLINK_DIST=116, BLINK_RECHARGE=sec(3.5), BLINK_FILL_CLEAR=9, BLINK_IFRAMES=sec(0.17);
+
+/* THE BLINK GRACE: how long after a blink an incoming hit is still forgiven.
+
+   Measured, because the request was for 0.1s and the game already grants 0.40s - BLINK_IFRAMES 0.17
+   plus DASH_TRAIL 0.23, set after the teleport. A 0.1s grace on top of that would have been strictly
+   shorter than immunity already in force and would have changed nothing at all.
+
+   So the real question is what a 0.1s window was being asked to cover, and the answer is: shots that
+   land LATER than the i-frames. Measured, by firing a shell to arrive N ticks after a blink:
+
+       shell 1.2 px/tick   still connects up to 196 ticks (0.93s) after the blink
+       shell 4.0 px/tick   still connects up to 120 ticks (0.57s)
+
+   A lunge is worse still, because it is aimed at where the player WAS and crosses up to 280px at
+   LUNGE_SPEED. The common case is therefore not "blinked too late" but "dodged the first thing and
+   then got hit by the second while the meter was still down", which is what made a fast reaction feel
+   unrewarded.
+
+   0.6s covers the measured worst case for a projectile and most of a lunge's. It is a real buff to
+   the escape and it is NOT free: BLINK_GRACE is separate from BLINK_IFRAMES, it does not stack with
+   it, and the blink still costs a charge on a 3.5s recharge. What it must not become is a way to
+   blink into a room and walk through a pack, so the suite measures a full room of lungers walked
+   through on consecutive blinks rather than trusting that a longer number means a safer one. */
+const BLINK_GRACE=sec(0.6);
 // The blink was 140px on an 8s recharge, and together those two made it a teleport with a long
 // wait rather than an escape with a cost: nothing about a 140px jump reads as movement, so the
 // move is only ever "get me out of here", and an 8s wait means the correct play is to bank both

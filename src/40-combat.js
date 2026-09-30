@@ -28,7 +28,38 @@ function checkDoorTransition(){
 }
 
 function damagePlayer(amount,kx,ky,force){
+  /* BLINK GRACE, and it is a SEPARATE window rather than more i-frames.
+
+     The two are different things and merging them is the trap. I-frames are invulnerability: nothing
+     connects at all. The grace is forgiveness: the hit is allowed to LAND, and is then handed back.
+     That distinction is the whole safety argument - a longer i-frame window would make a blink a
+     0.6s teleport through anything, whereas a grace that forgives one hit leaves the player exposed
+     to the second one, which is exactly the situation it was built for.
+
+     Only ONE hit is forgiven per blink. Without that, a grace window in a room of four gunners is
+     four free hits and the escape stops being an escape.
+
+     It also has to be checked and cleared here rather than in the tick, because the moment that
+     matters is the moment something connects - a grace that expires on a timer would silently run out
+     during a lull and then fail to save the hit the player actually needed it for. */
   if(player.iframes>0) return false;
+  if(player.blinkGrace>0&&!player.graceSpent){
+    player.blinkGrace=0;
+    player.graceSpent=true;
+    // the hit is forgiven but the player still FEELS it: knockback stays, because being shoved by
+    // a shell you did not take damage from is correct, and the momentum meter still takes it,
+    // because the meter measures whether you are winning the trade and you did not.
+    if(force){player.kvx+=kx*force;player.kvy+=ky*force;}
+    Momentum.hit();
+    // No i-frames are granted here, and that is the load-bearing decision rather than an omission.
+    // The forgone hit is treated as a dodge, not as a hit, so it earns none of the post-hit
+    // immunity a real hit grants. Setting IFRAMES here would have turned one blink into 0.6s of
+    // grace PLUS a full second of invulnerability the moment the grace was spent - a 1.6s escape
+    // on a 3.5s recharge, which is not a dodge but a second health bar, and it is precisely how the
+    // grace would have made a room of gunners toothless. Without it the second shell of a pair
+    // lands, so the player has to answer the volley rather than press the button once.
+    return false;
+  }
   run.dmgTaken+=amount;
   let rem=amount;
   if(player.armor>0){const used=Math.min(player.armor,rem);player.armor-=used;rem-=used;}

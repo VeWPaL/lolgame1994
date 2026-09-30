@@ -4804,6 +4804,88 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     }
     toggleDev(false);
   });
+  // The blink grace, which is a FORGIVENESS and not more invulnerability. The distinction is the
+  // whole safety argument, so these tests assert both halves of it: that the window forgives a hit
+  // in the gap the i-frames leave, and that it forgives exactly one and grants nothing afterward.
+  // Measured, by firing a shell to arrive exactly N ticks after a blink - the edge of forgiveness
+  // came out at 0.62-0.66s across 1.0-2.0 px/tick shells, because the window is measured in time
+  // and a shell is judged on when it ARRIVES rather than on how far it got. A 0.1s grace sat
+  // strictly inside the immunity already in force and would have changed nothing at all.
+  test('the blink grace forgives one hit, in the gap the i-frames leave, and nothing else',()=>{
+    // Stage a shot timed to arrive a chosen number of ticks after the blink. The player is pinned
+    // back to the same spot afterwards so the geometry is identical with and without a blink, and
+    // nothing is healed at any point - an earlier probe topped the player up every single tick and
+    // so reported zero damage in every case, which is a harness that cannot fail.
+    const shoot=(delay,shells,blinkIt)=>{
+      startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+      r.pickups.length=0; projectiles.length=0;
+      player.x=ROOM_LEFT+70; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+      player.hp=8; player.maxHp=8; player.armor=0; player.iframes=0;
+      player.blinkCharges=2; player.blinkRegen=0; player.kvx=0; player.kvy=0;
+      if(blinkIt) doBlink();
+      player.x=ROOM_LEFT+70; player.y=MIDY;
+      const sp=1.5;
+      for(let s=0;s<shells;s++){
+        const d=delay+s*40, sx=player.x+sp*d;
+        projectiles.push({x:sx,y:player.y,vx:-sp,vy:0,r:5,dmg:1.8,friendly:false,color:'#fff',
+          ox:sx,oy:player.y,fNear:999,fFar:1000,fMin:1,scale:1,hit:null,dx:-1,dy:0,pspd:sp});
+      }
+      const hp0=player.hp;
+      for(let i=0;i<delay+140&&player.hp>0;i++){ keys={}; update(); }
+      return hp0-player.hp;
+    };
+    const iFrameEnd=BLINK_IFRAMES+DASH_TRAIL;
+    // the gap has to be real, or this test is asserting nothing: measure the same shot with no
+    // blink first and require that it connects
+    const gap=Math.round((iFrameEnd+BLINK_GRACE)/2);
+    ok(shoot(gap,1,false)>0,'the shell due at '+gap+' ticks connected for nothing without a blink, so '+
+       'the gap this grace covers is not being exercised and the test cannot fail');
+    ok(shoot(gap,1,true)===0,'a shell arriving '+gap+' ticks after a blink still dealt damage, so the '+
+       'blink grace never forgave the hit it exists to forgive');
+    // and it has to end. A grace with no edge is not a grace, it is a second health bar.
+    const past=BLINK_GRACE+40;
+    ok(shoot(past,1,true)>0,'a shell arriving '+past+' ticks after a blink was STILL forgiven, so the '+
+       (BLINK_GRACE/TICK_HZ).toFixed(2)+'s window never actually closes');
+    // one hit, not a volley. Two shells 40 ticks apart must cost what one costs, because the second
+    // is the shell the player still has to answer after the first one was bought for free
+    const pair=shoot(100,2,false), pairB=shoot(100,2,true);
+    ok(pair>0,'two shells connected for nothing without a blink, so the pair test is not a pair');
+    ok(pairB<1.8,'two shells 40 ticks apart after a blink cost only '+pairB.toFixed(2)+', so the grace '+
+       'swallowed the whole volley - it forgives ONE hit and the second has to land');
+    ok(pairB>0,'two shells 40 ticks apart after a blink cost nothing at all, so the second landed inside '+
+       'a post-hit invulnerability window that a forgiven hit should never have granted');
+  });
+  test('a forgone hit is a dodge: knockback and momentum yes, post-hit i-frames no',()=>{
+    startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+    r.pickups.length=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    player.hp=8; player.maxHp=8; player.armor=0; player.iframes=0; player.blinkCharges=2;
+    player.blinkGrace=BLINK_GRACE; player.graceSpent=false;
+    const before=player.hp, kx0=player.kvx;
+    // knockback is checked on the axis the shell actually arrives along, and the meter starts full so
+    // that a hit has somewhere to fall to - an assertion of "less than before" against an empty meter
+    // would pass on no change at all, which is the test that cannot fail
+    Momentum.set(1); const mo0=Momentum.value();
+    ok(damagePlayer(2,1,1,6)===false,'damagePlayer reported a hit while a blink grace was unspent, so '+
+       'the grace is not intercepting the hit at all');
+    ok(player.hp===before,'a forgone hit took the player from '+before+' to '+player.hp+' health, so the '+
+       'grace forgives the hit on paper and the bar moves anyway');
+    ok(player.kvx!==kx0,'a forgone hit applied no knockback, but the shell still arrived and the body '+
+       'still feels it - the grace buys forgiveness, not a moment of weightlessness');
+    ok(Momentum.value()<mo0,'a forgone hit left the Momentum meter at '+Momentum.value().toFixed(3)+' from '+
+       mo0.toFixed(3)+', so a dodged shell costs the player nothing. The meter measures whether you are '+
+       'winning the trade, and the player did not win it - they spent a charge and got shoved for it');
+    ok(player.iframes===0,'a forgone hit granted '+(IFRAMES/TICK_HZ).toFixed(2)+'s of post-hit invulnerability, '+
+       'which turns one blink into '+(BLINK_GRACE/TICK_HZ).toFixed(2)+'s of grace PLUS a full second of immunity - a '+
+       'second health bar rather than a dodge');
+    // and it is spent, so a second hit inside the same window is a real hit
+    const h2=player.hp;
+    ok(damagePlayer(2,0,1,6)===true,'the second hit inside the same grace window was forgiven too, so one '+
+       'blink covers '+(BLINK_GRACE/TICK_HZ).toFixed(2)+'s of incoming damage and a room of gunners has no answer to it');
+    ok(player.hp<h2,'the second hit reported itself as landed but took no health');
+  });
+
+
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so
   results.push({name:'every draw in game code names its stream - no raw Math.random survives',

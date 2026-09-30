@@ -41,6 +41,12 @@ function doBlink(){
   // cross 140px, and sizing the window by the distance made a two-charge escape on an 8s recharge
   // worth 0.77s of immunity - long enough to walk through a room unharmed twice over.
   player.iframes=Math.max(player.iframes,BLINK_IFRAMES+DASH_TRAIL);
+  // The grace starts here and is spent once, whatever the blink is used for. Resetting graceSpent
+  // per blink rather than per room is what keeps it to one forgiven hit: blink into a pack and the
+  // second body still connects, which is the whole reason this is forgiveness and not a longer
+  // invulnerability window. See damagePlayer.
+  player.blinkGrace=BLINK_GRACE;
+  player.graceSpent=false;
   // Momentum. Landing on your feet and then walking out of the blink at the same speed you arrived
   // at is what makes it feel like a teleport rather than an escape - you spend the dodge and get
   // nothing for it, so the correct play is to bank the charges for emergencies instead of using one
@@ -62,7 +68,7 @@ function startGame(){
   generateDungeon();
   cur={x:START,y:START};
   player={x:MIDX,y:MIDY,r:13,speed:0.935*PLAYER_MOVE,vx:0,vy:0,kvx:0,kvy:0,lagX:MIDX,lagY:MIDY,hp:8,maxHp:8,armor:0,weaponIdx:0,cooldown:0,cooldownMax:WEAPONS[0].cooldown/TEMPO.rate,altCooldown:0,altCooldownMax:ALT_WEAPON.cooldown/TEMPO.rate,altMode:'blast',iframes:0,hasSilver:false,hasGold:false,
-    blinkCharges:2,blinkRegen:0,blinkRestore:null,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,momentum:0,trendVx:0,trendVy:0,beliefVx:0,beliefVy:0};
+    blinkCharges:2,blinkRegen:0,blinkRestore:null,blinkGrace:0,graceSpent:false,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,momentum:0,trendVx:0,trendVy:0,beliefVx:0,beliefVy:0};
   projectiles=[]; dashFX=[]; burstFX=[]; hookFields=[]; bossUnlocked=false; itemUnlocked=false; trans=null; readyT=0;
   unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
   entryDir='N';

@@ -208,6 +208,11 @@ function update(){
   tickFields(currentRoom());
   tickHookResist(currentRoom());
   if(player.iframes>0)player.iframes--;
+  // The blink grace ages on its own clock, deliberately NOT folded into iframes. They are two
+  // different windows with different rules - i-frames block everything, the grace forgives exactly
+  // one hit and only when something actually connects - and a tick that treated them as one number
+  // would quietly restore the merged window the whole design exists to avoid.
+  if(player.blinkGrace>0)player.blinkGrace--;
   if(player.muzzleTimer>0)player.muzzleTimer--;
   if(player.shootSlow>0)player.shootSlow=Math.max(0,player.shootSlow-SHOOT_SLOW_RECOVER);
   if(mouseDown && player.cooldown<=0) fireWeapon();
