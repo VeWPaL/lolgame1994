@@ -989,7 +989,7 @@ function update(){
       }
     }
   }
-  for(let a=0;a<r.enemies.length;a++)for(let b=a+1;b<r.enemies.length;b++) bounceEnemies(r.enemies[a],r.enemies[b]);
+  separateBodies(r.enemies);
   for(const e of r.enemies) clampEnemy(e);   // separation can push a body into a wall
 
   // clearing a room is what pays out its key: the branch tip gives the gold one that opens the

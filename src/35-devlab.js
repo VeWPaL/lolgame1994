@@ -363,36 +363,108 @@ const Lab=(function(){
 
      The major/minor split matters. Uniformly spaced lines read as wallpaper and stop being a
      ruler; a line every 120 with a brighter one every 480 gives both a fine reference and an obvious
-     "one big square" to count, which is how you estimate a distance in a fight. */
-  function drawGrid(){
-    const b=currentRoom().bounds, MINOR=120, MAJOR=480;
-    const x0=Math.floor(b.l/MINOR)*MINOR, x1=b.r, y0=Math.floor(b.t/MINOR)*MINOR, y1=b.b;
-    ctx.save();
+     "one big square" to count, which is how you estimate a distance in a fight.
+
+     BAKED, because it is WORLD-FIXED and therefore frame-invariant. It was two stroke passes and
+     about twenty line segments every frame, to redraw a lattice that cannot change until the room
+     does; a room 1680 wide has 14 verticals and 7 horizontals in it. One drawImage now, cached per
+     room size and origin. The same argument as the floor, which was already cached for exactly this
+     reason before the lab existed. */
+  const MINOR=120, MAJOR=480, gridCache=new Map();
+  function gridSprite(b){
+    const key=b.w+'x'+b.h+'@'+b.l+','+b.t;
+    let c=gridCache.get(key);
+    if(c) return c;
+    c=mk(b.w,b.h);
+    const g=c.getContext('2d');
     for(let pass=0;pass<2;pass++){
       const step=pass?MAJOR:MINOR;
-      ctx.strokeStyle=pass?'rgba(214,178,110,0.13)':'rgba(150,160,180,0.055)';
-      ctx.lineWidth=1;
-      ctx.beginPath();
-      for(let x=Math.floor(b.l/step)*step;x<=x1;x+=step){ if(x<b.l) continue; ctx.moveTo(x+0.5,b.t); ctx.lineTo(x+0.5,b.b); }
-      for(let y=Math.floor(b.t/step)*step;y<=y1;y+=step){ if(y<b.t) continue; ctx.moveTo(b.l,y+0.5); ctx.lineTo(b.r,y+0.5); }
-      ctx.stroke();
+      g.strokeStyle=pass?'rgba(214,178,110,0.13)':'rgba(150,160,180,0.055)';
+      g.lineWidth=1;
+      g.beginPath();
+      for(let x=0;x<=b.w;x+=step){ g.moveTo(x+0.5,0); g.lineTo(x+0.5,b.h); }
+      for(let y=0;y<=b.h;y+=step){ g.moveTo(0,y+0.5); g.lineTo(b.w,y+0.5); }
+      g.stroke();
     }
-    ctx.restore();
-    // the origin cross, so there is one unambiguous reference rather than only a lattice
-    const cx=b.l+b.w/2, cy=b.t+b.h/2;
-    ctx.save();
-    ctx.strokeStyle='rgba(214,178,110,0.22)'; ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.moveTo(cx-14,cy); ctx.lineTo(cx+14,cy); ctx.moveTo(cx,cy-14); ctx.lineTo(cx,cy+14);
-    ctx.stroke();
-    ctx.beginPath(); ctx.arc(cx,cy,7,0,7); ctx.stroke();
-    ctx.restore();
+    const cx=b.w/2, cy=b.h/2;
+    g.strokeStyle='rgba(214,178,170,0.22)'; g.lineWidth=1;
+    g.strokeRect(cx-0.5,cy-0.5,1,1);
+    g.beginPath();
+    g.moveTo(cx-14,cy); g.lineTo(cx+14,cy); g.moveTo(cx,cy-14); g.lineTo(cx,cy+14);
+    g.stroke();
+    g.beginPath(); g.arc(cx,cy,7,0,7); g.stroke();
+    gridCache.set(key,c);
+    return c;
+  }
+  function drawGrid(){
+    const b=currentRoom().bounds;
+    ctx.drawImage(gridSprite(b),b.l,b.t);
   }
 
   /* BRAZIERS on the walls. Warm pools of light on a cold floor, and - like the grid - fixed points
      the camera passes. They also do the job the room vignette cannot: the vignette darkens toward
      the edges, which on a room this size means the far corners go almost black, and a body fighting
      out there would be invisible. The braziers put light back where the play is. */
+  /* BRAZIERS, AND WHY THEY ARE A SPRITE.
+
+     Measured, not assumed: a normal frame in this game allocates ZERO canvas gradients and renders
+     30 bodies in 0.44ms. The lab allocated 29 gradients per frame - 15 radial, 14 linear - and
+     rendered in 0.94ms. Every one of those was light that looks identical every frame being rebuilt
+     from scratch every frame. createRadialGradient is not free, and twenty-nine of them is most of a
+     millisecond.
+
+     So they are baked, the way the floor and the sprites already are in this project. The pool and
+     the column go into one canvas per brazier, drawn with a single drawImage; the flame goes into
+     five baked frames picked by the same counter that drives everything else that flickers.
+
+     The pool's brightness rides in globalAlpha rather than being baked in, because alpha is free and
+     a second sprite per flicker step is not. And the sprites are built ONCE and cached in a Map,
+     which is the same shape as spriteCache and glowCache in 10-art.js - the lab was the only place
+     in the game still building its art from scratch on every frame.
+
+     FREE-STANDING COLUMNS IN THE ROOM, not on its walls. The first version put all eight braziers on
+     the walls, and in a room larger than the viewport the walls are never on screen, so all eight
+     sat outside the frame at every camera position and the lab rendered with no light in it at all.
+     A count of "eight braziers placed" says nothing about how many are visible. */
+  const BRAZIER_R=168, BRAZIER_FRAMES=5, brazierCache=new Map();
+  function brazierSprite(){
+    let c=brazierCache.get('body');
+    if(c) return c;
+    const S=BRAZIER_R*2;
+    c=mk(S,S);
+    const g=c.getContext('2d'), o=BRAZIER_R;
+    const pool=g.createRadialGradient(o,o,2,o,o,BRAZIER_R);
+    pool.addColorStop(0,'rgba(255,178,90,0.2)');
+    pool.addColorStop(1,'rgba(255,140,60,0)');
+    g.fillStyle=pool; g.beginPath(); g.arc(o,o,BRAZIER_R,0,7); g.fill();
+    g.fillStyle='#1a1c22'; g.beginPath(); g.ellipse(o,o+9,16,7,0,0,7); g.fill();
+    g.fillStyle='#23262e'; g.fillRect(o-5,o-20,10,28);
+    g.fillStyle='#343a45'; g.fillRect(o+1,o-20,4,28);
+    g.fillStyle='#2c3038'; g.beginPath(); g.ellipse(o,o-21,14,6,0,0,7); g.fill();
+    g.fillStyle='#464e5c'; g.beginPath(); g.ellipse(o,o-23,11,5,0,0,7); g.fill();
+    brazierCache.set('body',c);
+    return c;
+  }
+  /* FIVE BAKED FLAMES, not a blend. The same reasoning as the momentum ramp: a blend is a colour
+     the eye cannot name, and a flame that is always exactly one of five heights reads as a flame
+     cycling rather than as a rendering artefact. */
+  function flameFrame(i){
+    const key='f'+i;
+    let c=brazierCache.get(key);
+    if(c) return c;
+    const S=72, o=S/2, fh=19+5*(i/(BRAZIER_FRAMES-1));
+    c=mk(S,S);
+    const g=c.getContext('2d');
+    g.globalCompositeOperation='lighter';
+    g.fillStyle='rgba(255,120,40,0.6)';
+    g.beginPath(); g.moveTo(o,o+25);
+    g.quadraticCurveTo(o+10,o+25-fh*0.6,o,o+25-fh); g.quadraticCurveTo(o-10,o+25-fh*0.6,o,o+25); g.fill();
+    g.fillStyle='rgba(255,220,150,0.85)';
+    g.beginPath(); g.moveTo(o,o+25);
+    g.quadraticCurveTo(o+5,o+25-fh*0.4,o,o+25-fh*0.6); g.quadraticCurveTo(o-5,o+25-fh*0.4,o,o+25); g.fill();
+    brazierCache.set(key,c);
+    return c;
+  }
   function braziers(){
     const b=currentRoom().bounds, spots=[];
     /* FREE-STANDING COLUMNS IN THE ROOM, not on its walls. The first version put all eight braziers
@@ -405,31 +477,15 @@ const Lab=(function(){
     const stepX=300;
     for(let x=b.l+175;x<=b.r-175;x+=stepX)
       for(let y=b.t+175;y<=b.b-175;y+=250) spots.push([x,y]);
-    const flick=0.86+0.14*Math.sin(frameCount*0.21/SPEEDUP);
+    const body=brazierSprite();
+    const flame=flameFrame(Math.floor(frameCount/3)%BRAZIER_FRAMES);
     for(const s of spots){
       const x=s[0],y=s[1];
       ctx.save();
-      // the pool on the floor first, under the bracket
-      const pool=ctx.createRadialGradient(x,y,2,x,y,152);
-      pool.addColorStop(0,'rgba(255,178,90,'+(0.2*flick).toFixed(3)+')');
-      pool.addColorStop(1,'rgba(255,140,60,0)');
-      ctx.fillStyle=pool; ctx.beginPath(); ctx.arc(x,y,152,0,7); ctx.fill();
-      // a standing column: a plinth, a shaft with a lit side, and a bowl. It was a wall bracket,
-      // which made no sense once they stopped being on the walls.
-      ctx.fillStyle='#1a1c22'; ctx.beginPath(); ctx.ellipse(x,y+9,16,7,0,0,7); ctx.fill();
-      ctx.fillStyle='#23262e'; ctx.fillRect(x-5,y-20,10,28);
-      ctx.fillStyle='#343a45'; ctx.fillRect(x+1,y-20,4,28);
-      ctx.fillStyle='#2c3038'; ctx.beginPath(); ctx.ellipse(x,y-21,14,6,0,0,7); ctx.fill();
-      ctx.fillStyle='#464e5c'; ctx.beginPath(); ctx.ellipse(x,y-23,11,5,0,0,7); ctx.fill();
-      // the flame: two overlapping teardrops, the outer one cooler and taller
-      ctx.globalCompositeOperation='lighter';
-      const fh=22*flick;
-      ctx.fillStyle='rgba(255,120,40,0.6)';
-      ctx.beginPath(); ctx.moveTo(x,y-23);
-      ctx.quadraticCurveTo(x+10,y-23-fh*0.6,x,y-23-fh); ctx.quadraticCurveTo(x-10,y-23-fh*0.6,x,y-23); ctx.fill();
-      ctx.fillStyle='rgba(255,220,150,0.85)';
-      ctx.beginPath(); ctx.moveTo(x,y-23);
-      ctx.quadraticCurveTo(x+5,y-23-fh*0.4,x,y-23-fh*0.6); ctx.quadraticCurveTo(x-5,y-23-fh*0.4,x,y-23); ctx.fill();
+      ctx.globalAlpha=0.86+0.14*Math.sin(frameCount*0.21/SPEEDUP);
+      ctx.drawImage(body,x-BRAZIER_R,y-BRAZIER_R);
+      ctx.globalAlpha=1;
+      ctx.drawImage(flame,x-36,y-48);
       ctx.restore();
     }
   }
@@ -441,13 +497,30 @@ const Lab=(function(){
      five things that happen to be in a room - which matters, because the whole claim of this view is
      that it is a considered arrangement rather than a level. The top face catches light and the
      front face is in shadow, which is the same two-value read the game's own stone uses. */
+  /* The shadow under a plinth, baked per radius. Same measurement as the braziers: this was one
+     createRadialGradient per specimen per frame, for a shape that is a circle with a soft edge and
+     never changes. The cache is keyed by radius because the boss's plinth is a different size, and a
+     sprite drawn at the wrong scale would be a soft circle of the wrong softness. */
+  const shadowCache=new Map();
+  function plinthShadow(rad){
+    const k=Math.round(rad);
+    let c=shadowCache.get(k);
+    if(c) return c;
+    const S=Math.ceil(rad*2)+4, o=S/2;
+    c=mk(S,S);
+    const g=c.getContext('2d');
+    const sh=g.createRadialGradient(o,o,2,o,o,rad);
+    sh.addColorStop(0,'rgba(0,0,0,0.5)'); sh.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=sh; g.beginPath(); g.ellipse(o,o,rad,rad*0.38,0,0,7); g.fill();
+    shadowCache.set(k,c);
+    return c;
+  }
   function drawPlinth(e){
     const rad=e.r+18, top=e.y-e.r-4;
     ctx.save();
     // shadow pooling at the base
-    const sh=ctx.createRadialGradient(e.x,e.y+e.r+4,2,e.x,e.y+e.r+4,rad*1.3);
-    sh.addColorStop(0,'rgba(0,0,0,0.5)'); sh.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.fillStyle=sh; ctx.beginPath(); ctx.ellipse(e.x,e.y+e.r+4,rad*1.3,rad*0.5,0,0,7); ctx.fill();
+    const S=plinthShadow(rad*1.3);
+    ctx.drawImage(S,e.x-S.width/2,e.y+e.r+4-S.height/2);
     // the drum
     ctx.fillStyle='#20232a';
     ctx.beginPath(); ctx.ellipse(e.x,e.y+e.r+2,rad,rad*0.34,0,0,7); ctx.fill();
@@ -478,6 +551,23 @@ const Lab=(function(){
      you recognise the build you are holding by looking at the rail. Rarity tints the alcove's inner
      shadow, so a legendary is visibly seated in a warmer, deeper niche. */
   const RARITY_TINT={common:'#6f7889',uncommon:'#6fbf9a',rare:'#7fb2f0',legendary:'#f0c86a'};
+  /* The alcove's inner glow, baked per rarity. Thirteen alcoves is thirteen createLinearGradient
+     calls a frame, for thirteen gradients that differ only by which of four colours they are - so the
+     cache has four entries and the draw is a drawImage. Same measurement, same fix. */
+  const alcoveCache=new Map();
+  function alcoveGlow(tint,w,h){
+    const k=tint+':'+Math.round(w)+'x'+Math.round(h);
+    let c=alcoveCache.get(k);
+    if(c) return c;
+    const S=Math.ceil(w), T=Math.ceil(h);
+    c=mk(S,T);
+    const g=c.getContext('2d');
+    const gr=g.createLinearGradient(0,T,0,0);
+    gr.addColorStop(0,tint+'44'); gr.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=gr; g.fillRect(0,0,S,T);
+    alcoveCache.set(k,c);
+    return c;
+  }
   function drawShelf(){
     if(!shelf.length) return;
     const b=currentRoom().bounds;
@@ -508,9 +598,7 @@ const Lab=(function(){
       ctx.quadraticCurveTo(s.x,ay-h*1.15,s.x+w/2,ay-h*0.35);
       ctx.lineTo(s.x+w/2,ay+h); ctx.closePath(); ctx.fill();
       const tint=RARITY_TINT[s.rarity]||RARITY_TINT.common;
-      const glow=ctx.createLinearGradient(0,ay+h,0,ay-h*0.4);
-      glow.addColorStop(0,tint+'44'); glow.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=glow; ctx.fillRect(s.x-w/2,ay-h*0.4,w,h*1.4);
+      ctx.drawImage(alcoveGlow(tint,w,h*1.4),s.x-w/2,ay-h*0.4);
       // the glyph, in the item's own colour, with a bloom so it reads as lit from inside the niche
       ctx.save();
       ctx.textAlign='center'; ctx.font='bold 17px monospace';

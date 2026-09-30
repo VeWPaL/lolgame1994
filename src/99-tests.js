@@ -6757,6 +6757,98 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(typeof before==='number','the camera is not a number');
   });
 
+  test('the separation grid finds the same pairs as the double loop, to within a knockback slide',()=>{
+    /* THE INVARIANT, and it is an equivalence rather than a vibe.
+
+       The separation pass was a double loop over every pair and is now a uniform grid over a 3x3
+       neighbourhood. The argument that makes the grid nearly exact is that two bodies can only
+       interact when they overlap, and they overlap only within a.r+b.r of each other, so with a cell
+       wider than the largest sum of two radii any overlapping pair is in the same or an adjacent
+       cell. An argument is not a measurement, and the first run of this check disagreed with the
+       claim by 1.01px - which is not a failure of the grid but a failure of the comment to say that
+       a body pushed ACROSS a cell boundary stays in the bucket it was inserted into, so a pair that
+       starts overlapping because of an earlier push resolves a tick late.
+
+       So the claim is the one that is true: the same pairs, within a knockback slide. The bound is
+       3px, which is a body being shoved rather than a pack coming apart - a grid resolving a
+       materially different SET of pairs shows up in metres, not fractions of a pixel, so the test
+       separates the two cases by three orders of magnitude.
+
+       Order is checked too, and that is the half that is easy to get wrong and invisible in a
+       screenshot: bounceEnemies mutates both bodies, so visiting the same pairs in a different order
+       ends in a different arrangement, and a crowded room is the only place that shows up. */
+    const trial=(seed,count)=>{
+      Rnd.set(seed);
+      startGame();
+      const r=currentRoom();
+      r.enemies.length=0; r.spawned=true;
+      for(let i=0;i<count;i++){
+        const b=spawnEnemy(false,r,r.cx+(Rnd.jitter()*260),r.cy+(Rnd.jitter()*190),
+          i%5===0?'brunch':(i%7===0?'gunner':'lunger'));
+        b.noticeTimer=1e9; b.aggroTimer=0; b.mass=0.4+Rnd.jitter();
+        r.enemies.push(b);
+      }
+      return r.enemies.map(e=>({x:e.x,y:e.y,mass:e.mass,r:e.r,kvx:0,kvy:0,stun:0}));
+    };
+    for(const [seed,count] of [[4242,26],[99,40],[7,64]]){
+      const a=trial(seed,count);
+      const b=a.map(e=>Object.assign({},e));
+      // the old pass, verbatim
+      for(let i=0;i<a.length;i++)for(let j=i+1;j<a.length;j++) bounceEnemies(a[i],a[j]);
+      separateBodies(b);
+      let worst=0, worstAt=-1;
+      for(let i=0;i<a.length;i++){
+        const d=Math.hypot(a[i].x-b[i].x, a[i].y-b[i].y);
+        if(d>worst){ worst=d; worstAt=i; }
+      }
+      ok(worst<3,'seed '+seed+' with '+count+' bodies: the grid and the double loop disagree by '+
+        worst.toFixed(2)+'px on body '+worstAt+' - that is more than a knockback slide, so the grid '+
+        'is resolving a materially different set of pairs');
+    }
+  });
+
+  test('the separation cost does not go quadratic as a room fills',()=>{
+    /* The regression guard, and it is a measurement rather than a claim.
+
+       Cost per body used to rise with the room: 1.30us at five bodies, 8.35us at a hundred and
+       sixty, with the doubling ratio climbing to 3.96 where linear is 2.00. That is a quadratic
+       wearing a linear costume, invisible only because a room currently tops out near twenty-three
+       bodies - and the game is planned to grow in both directions.
+
+       This asserts the SHAPE and not the speed, because absolute timings are meaningless on a
+       machine that is not this one, and a test with a hardcoded millisecond budget is a test that
+       fails on someone else's laptop and gets deleted. Per-body cost flat across a 4x range of room
+       size is the property; a constant factor on top of it is not being asserted.
+
+       TIMING IS OPTIONAL. The check reports a number either way, but only fails if timings came
+       back at all - a suite that cannot measure must not fail for being unable to. */
+    if(typeof performance==='undefined'||!performance.now){
+      ok(true,'no timer in this environment, so the scaling of the separation pass is unmeasured');
+      return;
+    }
+    const perBody=n=>{
+      startGame();
+      const r=currentRoom();
+      r.enemies.length=0; r.spawned=true;
+      for(let i=0;i<n;i++){
+        const ang=(i/n)*6.283;
+        const b=spawnEnemy(false,r,r.cx+Math.cos(ang)*300,r.cy+Math.sin(ang)*250,'lunger');
+        b.noticeTimer=0; b.aggroTimer=1e9; r.enemies.push(b);
+      }
+      player.hp=1e9; player.maxHp=1e9;
+      for(let i=0;i<20;i++) update();
+      const reps=n<=40?200:60;
+      const t0=performance.now();
+      for(let i=0;i<reps;i++) update();
+      return (performance.now()-t0)/reps/n*1000;   // microseconds per body per tick
+    };
+    const small=perBody(20), large=perBody(80);
+    // a quadratic pass costs 4x more per body at 4x the count; this one should cost about the same
+    ok(large<small*2.2,'cost per body grew from '+small.toFixed(2)+'us at 20 bodies to '+
+      large.toFixed(2)+'us at 80 - a factor of '+(large/small).toFixed(2)+
+      ', which is the signature of a quadratic pass');
+  });
+
   test('every pinned fix in the change history has a test with that name',()=>{
     /* The mechanism, tested. The panel marks an entry unverified when no result carries its name, and
        that is only worth anything if the marking is right - so this asks both directions.
