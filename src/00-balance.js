@@ -429,23 +429,72 @@ const TOUGH=1.35;
    you gone" a number that means anything, because the number is not secretly a measure of how many
    hats you collected.
 
-   Everything below is LINEAR in the floor, which is the simplest thing that could be right and the
-   easiest to reason about when it turns out to be wrong. The steps are in three places rather than
-   one because three different things are the right things to scale: bodies get tougher, so a fight
-   takes longer; rooms get fuller, so there is less space to answer in; and packs get likelier, so
-   the shape of a room changes as well as its size. Scaling only HP would make deep floors slow and
-   empty, which is a worse game than either of the other two.
+   Everything below is BOUNDED, and it was linear until it was measured, which is the whole reason
+   this comment is here. The brief asked for linear "for now", which was the right instinct - a
+   linear ladder is the simplest thing that could be right and the easiest to reason about - and it
+   turns out three linear ladders multiplied together is not a difficulty curve, it is a brick:
 
-   THE DISCIPLINE, and the reason these are functions and not fields on the run object: nothing in
-   here may read the player. Not a stat, not an item count, not hp, not Momentum. It is very easy to
-   add a small mercy - a hair less HP when the player is hurting - and it would feel like good
-   design and it would quietly destroy the thing the whole system is for, because a difficulty that
-   reads the player is a difficulty that measures the player. The suite asserts it: the same floor
-   with a naked player and with a full build has to produce byte-identical enemy stats. */
+     floor  tough  rate  bodies  shells/s per gunner  time to kill one lunger on the Bolt
+       1    1.00   1.00      6          1.3                    0.72s
+      10    3.70   2.44     79          3.8                    2.35s
+      20    6.70   4.04    159          7.4                    4.34s
+      30    9.70   5.64    240         12.3                    6.15s
+      50   15.70   8.84    400         24.8                    8.62s
 
-const DEPTH_HP_STEP=0.30,        // +30% body HP per floor
-      DEPTH_BODY_STEP=0.34,      // +0.34 of a body per floor, on top of the existing 2..4 roll
-      DEPTH_RATE_STEP=0.16,      // enemies act 16% faster per floor
+   Fifty-five times the effective health pool and sixty-seven times the bodies, and the room on
+   floor 50 was asking for FOUR HUNDRED of them. That is not a hard game, it is a game that cannot
+   be finished, and "hundreds of hours" was the brief - so the wall cannot be at floor 20.
+
+   THE RATE COLUMN IS THE ONE THAT REALLY MATTERS, and it is worth separating from the other two,
+   because it is the only one of the three that was quietly breaking a stated rule. The brief says
+   difficulty comes from rate and density and never from anything the player cannot read. A ranged
+   body at 8.84x does not merely arrive more often, it arrives FASTER: `e.speed` is scaled by the
+   same depthRate as the cadence, so at floor 50 a gunner crosses the room at 3.98 px/tick against
+   a player who moves at 1.2, and its shell cadence is 0.8s / (PRESSURE.rate * 8.84) = 60ms, or
+   about seventeen shells a second. Seventeen shells a second is not a fight, it is a video of a
+   fight, and no amount of player skill reads that. Scaling a BODY'S SPEED with depth is a
+   reaction-time tax wearing the costume of a difficulty curve, and the fix is to bound it rather
+   than to remove it: a body that outruns you is a body the player must pre-empt rather than
+   respond to, and pre-empting is a different game from the one this is.
+
+   So the shape is `1 + growth * steps / (steps + tau)`. Exactly 1 on the first floor, rising
+   monotonically forever, approaching `1 + growth` without ever reaching it - so a floor 1000 and a
+   floor 50 are nearly the same fight, which is what a ladder wants to be. Three dials, one shape,
+   each with its own growth and its own time constant:
+
+     HP     growth 2.60, tau  8   -> 1.00 / 1.87 / 2.38 / 2.83 / 3.23 at floors 1/5/10/20/50
+     RATE   growth 0.95, tau 10   -> 1.00 / 1.27 / 1.45 / 1.62 / 1.79, ceiling 1.95
+     BODIES growth 5.00, log(1+n) -> 6 / 11 / 14 / 18 / 22, where it asked for 400
+
+   BODIES is LOGARITHMIC rather than saturating, and deliberately so: density is the one dial the
+   brief actually names, and a saturating one would flatten a real difficulty lever just to buy a
+   curve shape. A logarithm keeps density rising forever while spending less and less to do it -
+   the first ten floors of a log are worth more than the next hundred, which is the right shape for
+   a game that wants one player to reach floor 30 and a different player to reach floor 60.
+
+   The rate ceiling is the one number here that is not taste. 1.95 is chosen so a gunner's worst
+   case stays inside a human reaction time at a density a floor that deep can physically hold in
+   the room.
+
+   The three dials are in three places rather than one because three different things are the right
+   things to scale: bodies get tougher, so a fight takes longer; rooms get fuller, so there is less
+   space to answer in; and packs get likelier, so the shape of a room changes as well as its size.
+   Scaling only HP would make deep floors slow and empty, which is a worse game than either of the
+   other two.
+
+   THE DISCIPLINE, unchanged, and still the reason these are functions and not fields on the run
+   object: nothing in here may read the player. Not a stat, not an item count, not hp, not
+   Momentum. It is very easy to add a small mercy - a hair less HP when the player is hurting - and
+   it would feel like good design and it would quietly destroy the thing the whole system is for,
+   because a difficulty that reads the player is a difficulty that measures the player. The suite
+   asserts it: the same floor with a naked player and with a full build has to produce
+   byte-identical enemy stats. */
+
+const DEPTH_HP_GROWTH=2.60,     // HP multiplier at the asymptote: 3.60x, never actually reached
+      DEPTH_HP_TAU=8,           // floors to get most of the way there
+      DEPTH_RATE_GROWTH=0.95,    // cadence AND approach speed. The reaction-time dial. Ceiling 1.95x.
+      DEPTH_RATE_TAU=10,
+      DEPTH_BODY_GROWTH=5.6,     // per natural log of the floor. Logarithmic on purpose, see above.
       DEPTH_PACK_STEP=0.035,     // +3.5% chance of a Brunch pack per floor, capped
       DEPTH_PACK_CAP=0.85;       // never a certainty: a room that is always a pack is one shape
 
@@ -460,10 +509,24 @@ const FADE_DESCEND=sec(0.9);
    anywhere else is the thing to watch for in review, for the reason in the comment above. */
 function depthFloor(){ return (run&&run.floor)||1; }
 function depthSteps(){ return Math.max(0,depthFloor()-1); }
-function depthTough(){ return 1+DEPTH_HP_STEP*depthSteps(); }
-function depthRate(){ return 1+DEPTH_RATE_STEP*depthSteps(); }
+
+/* The bounded ladder. `sat` is the whole shape, and it is one expression because three dials written
+   three ways would drift apart the moment one of them was retuned - which is the same geometry-in-
+   two-places failure this file has the most of, wearing a balance patch instead of a hitbox.
+
+   steps/(steps+tau) is 0 at the first floor and rises toward 1 without reaching it, so the product
+   is exactly 1 on floor one and asymptotically approaches 1+growth. Monotone, bounded, and it
+   never needs a cap check, because the cap is the asymptote.
+
+   The bodies dial is a logarithm and not this shape, and the reason is in the comment above: density
+   is a difficulty lever the brief actually names, and a saturating curve would flatten it in
+   exchange for a tidier-looking table. Density keeps climbing; it just costs less and less to do
+   it. log(1+n) rather than log(n) so floor one adds nothing at all. */
+const sat=(steps,growth,tau)=>1+growth*steps/(steps+tau);
+function depthTough(){ return sat(depthSteps(),DEPTH_HP_GROWTH,DEPTH_HP_TAU); }
+function depthRate(){ return sat(depthSteps(),DEPTH_RATE_GROWTH,DEPTH_RATE_TAU); }
 function depthPack(){ return Math.min(DEPTH_PACK_CAP,BRUNCH.chance+DEPTH_PACK_STEP*depthSteps()); }
-function depthBodies(rolled){ return rolled+DEPTH_BODY_STEP*depthSteps(); }
+function depthBodies(rolled){ return rolled+DEPTH_BODY_GROWTH*Math.log(1+depthSteps()); }
 
 // The armour multiplier. Per-hit, so it scales every pellet and every pierce pass rather than
 // subtracting a flat chunk - a subtraction would quietly reward the Beam for spraying, which is

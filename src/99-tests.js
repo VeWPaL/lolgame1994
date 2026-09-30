@@ -5004,31 +5004,82 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        '\n        => something in the depth ladder is reading the player, which turns "how deep" into a '+
        'measure of how many hats you collected');
   });
-  test('the ladder climbs, and it climbs in all three things at once',()=>{
+  test('the ladder climbs in all three things at once, and it is BOUNDED',()=>{
     // hp, rate and body count are the three levers. A ladder that only raised hp would make deep
     // floors slow and empty, which is a worse game than either alternative.
+    //
+    // This test used to assert the ladder was LINEAR and that ten floors reached 3.5x health. Both
+    // assertions are gone, and both are worth explaining because they were pinning a bug.
+    //
+    // Linear in all three at once means the effective health pool is quadratic and the body count
+    // linear, which was measured at floor 50 as 15.7x HP, 8.8x rate and FOUR HUNDRED bodies. The
+    // rate column is the serious one: depthRate scales `e.speed` as well as cadence, so a ranged
+    // body at 8.84x crosses the room at 3.98 px/tick against a player who moves at 1.2, and fires
+    // every 60ms. A reaction time tax is not a difficulty curve, and the brief rules it out.
     const rows=[];
     for(let f=1;f<=10;f++){
       run.floor=f;
       rows.push({f:f,tough:depthTough(),rate:depthRate(),pack:depthPack(),bodies:Math.floor(2+depthBodies(0))});
     }
     ok(rows[0].tough===1,'floor 1 is scaled by '+rows[0].tough+'x, so a first floor is not a first floor');
+    ok(rows[0].rate===1,'floor 1 acts at '+rows[0].rate+'x, so a first floor is not a first floor');
     for(let i=1;i<rows.length;i++){
       ok(rows[i].tough>rows[i-1].tough,'floor '+rows[i].f+' bodies are not tougher than floor '+
          rows[i-1].f+' ('+rows[i].tough.toFixed(2)+' vs '+rows[i-1].tough.toFixed(2)+')');
       ok(rows[i].rate>rows[i-1].rate,'floor '+rows[i].f+' bodies do not act faster than floor '+
          rows[i-1].f);
+      ok(rows[i].bodies>=rows[i-1].bodies,'floor '+rows[i].f+' has FEWER bodies than floor '+
+         rows[i-1].f+' ('+rows[i].bodies+' vs '+rows[i-1].bodies+')');
     }
-    ok(rows[9].tough>3.5,'ten floors of climbing only reaches '+rows[9].tough.toFixed(2)+
+    // ten floors still has to be worth descending
+    ok(rows[9].tough>2.2,'ten floors of climbing only reaches '+rows[9].tough.toFixed(2)+
        'x health, so the ladder is too shallow to be worth descending');
+    // and it has to be WORTH descending for the density, which is the dial the brief actually names
+    ok(rows[9].bodies>=14,'ten floors reaches only '+rows[9].bodies+' bodies, so the depth ladder is '+
+       'a health bar and not a pressure change');
+    // BOUNDED. This is the assertion the old one was standing on the wrong side of.
+    const ceil={t:1+DEPTH_HP_GROWTH,r:1+DEPTH_RATE_GROWTH};
+    for(const f of [20,50,200,1000,100000]){
+      run.floor=f;
+      ok(depthTough()<ceil.t,'floor '+f+' is scaled by '+depthTough().toFixed(3)+
+         'x health, which is past the '+ceil.t.toFixed(2)+'x asymptote - the ladder has no ceiling, '+
+         'so a deep run eventually becomes arithmetic rather than a fight');
+      ok(depthRate()<ceil.r,'floor '+f+' acts at '+depthRate().toFixed(3)+
+         'x, which is past the '+ceil.r.toFixed(2)+'x ceiling');
+      // and the number that made the brief's rule break: shells per second per gunner
+      const cd=Math.max(1,sec(0.8)/(PRESSURE.rate*depthRate()));
+      const sps=1/cd;
+      ok(sps<6,'floor '+f+' has a gunner firing '+sps.toFixed(1)+
+         ' shells a second, which is not a fight the player can read');
+    }
+    // monotonic all the way out, because a ladder that dips is worse than one that is shallow
+    let prev=0;
+    for(let f=1;f<=200;f+=1){
+      run.floor=f;
+      const v=depthRate();
+      ok(v>=prev,'the rate ladder DIPS at floor '+f+' ('+v.toFixed(6)+' after '+prev.toFixed(6)+
+         '), so descending can make a room easier');
+      prev=v;
+    }
     // and the pack chance has to STOP, or floor 30 is a single shape
     run.floor=1000;
     ok(depthPack()<=0.85+1e-9,'the pack chance reaches '+depthPack().toFixed(2)+' on floor 1000, so a deep '+
        'floor is nothing but a pack and the rooms stop being rooms');
-    // sanity on the shape: linear means equal steps
+    // the shape itself: a saturating curve has SHRINKING steps, which is the property that makes it
+    // a ceiling rather than a slower ramp. (This assertion was written backwards the first time -
+    // the condition tested step-GROWS and the failure message said step-GROWS, so it would have
+    // passed on a linear ladder. The measured steps are 0.2311 early and 0.0092 at floor 40.)
     run.floor=2; const a=depthTough(); run.floor=3; const b=depthTough(); run.floor=4; const c=depthTough();
-    ok(Math.abs((b-a)-(c-b))<1e-9,'the ladder is not linear: the steps are '+
-       (b-a).toFixed(4)+' then '+(c-b).toFixed(4));
+    run.floor=40; const d=depthTough(); run.floor=41; const e2=depthTough();
+    ok((b-a)>(e2-d),'the per-floor step GROWS with depth ('+(b-a).toFixed(4)+' early, '+
+       (e2-d).toFixed(4)+' at floor 40), so this is a linear ramp with a small slope rather than a '+
+       'saturating curve, and a floor 100 is a floor 1000');
+    // and the same on the density dial, which is a logarithm and so also has shrinking steps
+    run.floor=2; const ba=depthBodies(0); run.floor=3; const bb=depthBodies(0);
+    run.floor=40; const bd=depthBodies(0); run.floor=41; const be=depthBodies(0);
+    ok((bb-ba)>(be-bd),'the per-floor body count GROWS with depth ('+(bb-ba).toFixed(3)+' early, '+
+       (be-bd).toFixed(3)+' at floor 40), so the density dial is a linear ramp and floor 200 is a '+
+       'floor 2000');
   });
   test('descending goes down a floor and carries the build',()=>{
     startGame();
