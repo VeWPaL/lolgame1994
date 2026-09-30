@@ -58,9 +58,14 @@ const AGGRO_RANGE=Math.round(0.85*Math.hypot(ROOM_RIGHT-ROOM_LEFT,ROOM_BOTTOM-RO
 
 /* THE BLINK GRACE: how long after a blink an incoming hit is still forgiven.
 
-   Measured, because the request was for 0.1s and the game already grants 0.40s - BLINK_IFRAMES 0.17
-   plus DASH_TRAIL 0.23, set after the teleport. A 0.1s grace on top of that would have been strictly
-   shorter than immunity already in force and would have changed nothing at all.
+   Measured, because the request was for 0.1s and the game already grants 0.40s - BLINK_IFRAMES 36
+   ticks plus DASH_TRAIL 48, 84 together, set after the teleport. Those are the real figures and not
+   the 0.17 and 0.23 written into the sec() calls, because sec() rounds to whole ticks: 0.17 arrives
+   as 0.1714s and 0.23 as 0.2286s. The sum lands on 0.40 either way, which is exactly why the
+   error survived a cleanup pass, and a comment quoting the number typed into a function rather than
+   the number the game runs on is the failure this note exists to prevent. A 0.1s grace on top of
+   that would have been strictly shorter than immunity already in force and would have changed
+   nothing at all.
 
    So the real question is what a 0.1s window was being asked to cover, and the answer is: shots that
    land LATER than the i-frames. Measured, by firing a shell to arrive N ticks after a blink:

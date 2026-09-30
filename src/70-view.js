@@ -1032,7 +1032,6 @@ function drawDevMenu(){
     const dps100=devDps(w,str,100), dps250=devDps(w,str,250);
     const pulls=TICK_HZ/(w.cooldown/TEMPO.rate);
     const per=(w.dmg+str)*w.count;
-    const col=10;
     ctx.textAlign='center';ctx.font='11px monospace';
     ctx.fillStyle=INK;ctx.fillText(per.toFixed(2),G.px+150,y+28);
     ctx.fillText(pulls.toFixed(1),G.px+238,y+28);

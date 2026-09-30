@@ -1953,9 +1953,45 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // were never the same distance from the edges of their own frame.
     ok(lo-inset.x>=0&&hi<=inset.x+inset.w,'the blink bars run outside their own inset');
     eq(lo-inset.x,inset.x+inset.w-hi,'the blink bars are not centred in their frame ('+(lo-inset.x)+'px left, '+(inset.x+inset.w-hi)+'px right)');
-    // the wooden border is the same thickness on both sides of every plate
-    for(const p of plates.filter(q=>q.w>20&&q.h>20).slice(0,4))
-      eq(FRAME,FRAME,'the right border of a plate is not the same as its left');
+    /* The wooden border is the same thickness on BOTH sides of every plate, and the only way to know
+       that is to measure the drawing rather than read the constant back.
+
+       This was `eq(FRAME,FRAME,'the right border of a plate is not the same as its left')` in a loop
+       over four plates. FRAME compared with itself, four times, carrying a message about plate
+       borders: it could not fail under any circumstances, and the loop around it made it look like
+       four checks. It is the exact shape of the inert Strength and Vigor stats - an assertion whose
+       text describes a property and whose expression cannot detect it.
+
+       What it should have measured: each plate is a wood image with an inset drawn inside it, so the
+       left border is (the inset's left edge minus the plate's left edge) and the right border is
+       (the plate's right edge minus the inset's right edge). Those are two numbers derived from
+       geometry, and they can disagree. */
+    const {rects:borderRects}=grab();
+    // The four HUD plates carry a wooden frame and an inset. The small weapon slots under the map are
+    // drawn at 25x22 and have neither, so including them would only produce a guaranteed failure
+    // about a plate that was never framed. Sized by what drawInset is called with, not by a name.
+    const big=plates.filter(p=>p.w>=60&&p.h>=28);
+    ok(big.length>=3,'only '+big.length+' framed plates were found (sizes '+big.map(p=>p.w+'x'+p.h)+
+       '), so the border check has nothing to compare and would pass on an empty set');
+    for(const p of big){
+      // The inset belonging to THIS plate. drawInset draws a 2px rule on each side and then fills the
+      // middle, so there are five rects inside every plate and the one to measure is the LARGEST -
+      // the fill. Sorting by distance to the plate's corner, which is what this did first, picks the
+      // 174x2 top rule instead and reports a 6px top border against a 32px bottom one, which is a
+      // true fact about a rule and a false one about the frame.
+      const insetR=borderRects
+        .filter(r=>r.x>=p.x&&r.x<p.x+p.w&&r.y>=p.y&&r.y<p.y+p.h)
+        .sort((a,b)=>(b.w*b.h)-(a.w*a.h))[0];
+      ok(insetR,'a plate at '+p.x+','+p.y+' ('+p.w+'x'+p.h+') has no inset drawn inside it, so its '+
+         'borders cannot be compared and this loop would be checking nothing');
+      if(!insetR) continue;
+      const left=insetR.x-p.x, right=(p.x+p.w)-(insetR.x+insetR.w);
+      eq(left,right,'the borders of the plate at '+p.x+','+p.y+' are '+left+'px on the left and '+
+         right+'px on the right, so the frame is thicker on one side than the other');
+      const top=insetR.y-p.y, bottom=(p.y+p.h)-(insetR.y+insetR.h);
+      eq(top,bottom,'the borders of the plate at '+p.x+','+p.y+' are '+top+'px on top and '+
+         bottom+'px underneath');
+    }
     // the map, and under it a row of three plates: left hand, a reserved middle, right hand
     const map=plates.find(p=>p.w===p.h&&p.w>100);
     ok(map,'the map plate was not found');
