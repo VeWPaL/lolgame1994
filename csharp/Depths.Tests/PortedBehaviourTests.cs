@@ -233,7 +233,7 @@ namespace Depths.Tests
         public void TheStandoffIsWhatMakesTheLungeAMechanic()
         {
             // A lunge is only interesting if there is a gap to cross. LungeHold is the distance the
-            // chaser parks at and LungeReach is the furthest the solution may be and still commit.
+            // lunger parks at and LungeReach is the furthest the solution may be and still commit.
             Assert.That(Balance.LungeHold, Is.GreaterThan(Balance.LungeMin));
             Assert.That(Balance.LungeReach, Is.GreaterThan(Balance.LungeHold));
             Assert.That(Balance.LungeReach, Is.LessThanOrEqualTo(300),

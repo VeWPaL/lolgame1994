@@ -104,11 +104,11 @@ namespace Depths
         /// </summary>
         public const double HookPullGain = 1 - KnockFriction;
 
-        // ------------------------------------------------------------- chasers
+        // ------------------------------------------------------------- lungers
 
-        public const double ChaserPay = 0.96;
-        public const double ChaserWalk = 0.3 * ChaserPay;
-        public const double ChaserRun = 0.82 * ChaserPay;
+        public const double LungerPay = 0.96;
+        public const double LungerWalk = 0.3 * LungerPay;
+        public const double LungerRun = 0.82 * LungerPay;
         public const int MaxArmor = 4;
 
         /// <summary>
@@ -121,7 +121,7 @@ namespace Depths
         /// that does not shoot back does not ramp, so a Brunch pack still closes at the speed it is
         /// supposed to.
         /// </summary>
-        public const double ChaserAccel = 0.0058;
+        public const double LungerAccel = 0.0058;
         public const double WanderSpeed = 0.25;
 
         /// <summary>
@@ -139,14 +139,14 @@ namespace Depths
         // ------------------------------------------------------------- the lunge
 
         /// <summary>
-        /// THE STANDOFF is what makes this mechanic a mechanic. A chaser that simply walks at the
+        /// THE STANDOFF is what makes this mechanic a mechanic. A lunger that simply walks at the
         /// player ends up touching them - its approach speed is faster than theirs at range - and then
         /// "lunges" from zero distance, where no read is worth anything because there is nothing left
         /// to dodge. Every measurement of this attack came out a hundred percent for that reason, and
         /// not because the prediction was any good.
         ///
         /// <para>
-        /// The chaser holds at this distance, the way the gunner holds inside its close/far band, and
+        /// The lunger holds at this distance, the way the gunner holds inside its close/far band, and
         /// the lunge is what crosses the gap. That makes it a real committed attack: the line is
         /// drawn across open ground, there is time to see it, and there is something to answer with.
         /// </para>
@@ -155,7 +155,7 @@ namespace Depths
         public const int LungeMin = 34;
 
         /// <summary>
-        /// How far the lunge can be aimed at all. A chaser whose solution is outside this does not
+        /// How far the lunge can be aimed at all. A lunger whose solution is outside this does not
         /// commit - it keeps closing at its approach speed until the solution fits, which is what
         /// "too far" means: not that the attack fails, but that it has not started yet.
         ///
@@ -171,7 +171,7 @@ namespace Depths
         public const int LungeFloor = 56;
 
         /// <summary>
-        /// How the chaser believes the player is moving. It reads a SMOOTHED heading rather than the
+        /// How the lunger believes the player is moving. It reads a SMOOTHED heading rather than the
         /// instantaneous velocity, and scales that reading by how settled the player looks: a player
         /// holding one line is read in full and gets the whole intercept, a player who has been
         /// reversing is read as unreliable and gets a much shorter, weaker lunge. So reversing to
@@ -195,20 +195,20 @@ namespace Depths
         public const double LungeSpeed = 4.2;
         public static int LungeRecover => Sec(0.55);
         public const int LungeRange = 178;
-        public const double ChaserNear = 0.55, ChaserFar = 1.3;
+        public const double LungerNear = 0.55, LungerFar = 1.3;
 
-        /// <summary>Two chasers meeting mid-charge come off both worse.</summary>
+        /// <summary>Two lungers meeting mid-charge come off both worse.</summary>
         public const double LungeClash = 5.5;
 
         /// <summary>
-        /// How fast a chaser walks its own angle around the player, in px/tick, aimed tangentially so
+        /// How fast a lunger walks its own angle around the player, in px/tick, aimed tangentially so
         /// it can never change how far away it is. This is the whole of the anti-front mechanic and it
         /// is a single number on purpose: at a third of a pixel a tick the bodies take a second or
         /// two to fan out, which reads as encircling rather than as teleporting into position.
         /// Scaling it by the approach speed instead does nothing at all, because the approach speed
         /// is zero inside the standoff - which is exactly where a pack spends most of its time.
         /// </summary>
-        public const double ChaserSpread = 0.9;
+        public const double LungerSpread = 0.9;
 
         // ------------------------------------------------------------- counterstrafing
 
@@ -256,5 +256,68 @@ namespace Depths
         /// into.
         /// </summary>
         public const double GunSpreadFloor = 0.02;
+
+        // ------------------------------------------------------- the depth ladder
+
+        /// <summary>
+        /// The growth and time constant of the health dial, and the rate dial, and the growth of the
+        /// density dial. The ladder is BOUNDED, and it was linear until it was measured - which is
+        /// worth recording because the brief asked for linear "for now" and the right instinct, and
+        /// three linear ladders multiplied together is not a difficulty curve:
+        ///
+        ///   floor  tough  rate  bodies  shells/s per gunner
+        ///     1    1.00   1.00      6          1.9
+        ///    10    3.70   2.44     79          3.8
+        ///    20    6.70   4.04    159          7.4
+        ///    50   15.70   8.84    400         24.8
+        ///
+        /// A room on floor 50 was asking for four hundred bodies. That is not a hard game, it is a
+        /// game that cannot be finished.
+        ///
+        /// The rate dial is the one that really mattered, because it is the only one of the three
+        /// that was breaking a stated rule. It scales approach speed as well as cadence, so at
+        /// 8.84x a gunner crosses the room at 3.98 px/tick against a player who moves at 1.2, and
+        /// fires every 60ms. Seventeen shells a second is not a fight, it is a video of a fight.
+        /// Scaling a body's SPEED with depth is a reaction-time tax wearing the costume of a
+        /// difficulty curve, and the brief rules it out.
+        ///
+        /// The shape is 1 + growth*steps/(steps+tau): exactly 1 on the first floor, monotone
+        /// forever, approaching 1+growth without ever reaching it. No cap check is needed because the
+        /// cap IS the asymptote.
+        /// </summary>
+        public const double DepthHpGrowth = 2.60, DepthHpTau = 8;
+        public const double DepthRateGrowth = 0.95, DepthRateTau = 10;
+        public const double DepthBodyGrowth = 5.6;
+
+        /// <summary>
+        /// The Brunch pack chance. The one dial on this ladder that is still linear, because it
+        /// already has a ceiling and the ceiling was the point: a room that is always a pack is one
+        /// shape, and a deep floor has to stay a set of rooms.
+        /// </summary>
+        public const double DepthPackStep = 0.035, DepthPackCap = 0.85;
+
+        /// <summary>The number of floors below the first one, floored at zero.</summary>
+        public static int DepthSteps(int floor) => System.Math.Max(0, floor - 1);
+
+        /// <summary>
+        /// The saturating shape, shared by the health and rate dials. Three dials written three ways
+        /// would drift apart the moment one of them was retuned, which is the geometry-in-two-places
+        /// failure wearing a balance patch instead of a hitbox.
+        /// </summary>
+        public static double Sat(int steps, double growth, double tau) => 1 + growth * steps / (steps + (double)tau);
+
+        public static double DepthTough(int floor) => Sat(DepthSteps(floor), DepthHpGrowth, DepthHpTau);
+        public static double DepthRate(int floor) => Sat(DepthSteps(floor), DepthRateGrowth, DepthRateTau);
+
+        /// <summary>
+        /// Density is logarithmic rather than saturating, deliberately. Density is the one dial the
+        /// brief actually names, and a saturating curve would flatten a real difficulty lever just
+        /// to buy a tidier table. log(1+n) rather than log(n) so floor one adds nothing at all.
+        /// </summary>
+        public static double DepthBodies(int floor, int rolled) =>
+            rolled + DepthBodyGrowth * System.Math.Log(1 + DepthSteps(floor));
+
+        public static double DepthPack(int floor, double brunchChance) =>
+            System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor));
     }
 }

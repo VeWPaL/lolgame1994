@@ -37,7 +37,7 @@ namespace Depths
     /// Everything in the game that aims at a moving player goes through here.
     ///
     /// <para>
-    /// There are two consumers - the chaser's lunge and the gunner's shell - and they are the same
+    /// There are two consumers - the lunger's lunge and the gunner's shell - and they are the same
     /// problem with different terms. That is not a coincidence to be tidied away later; it is why
     /// they agree with each other about the player. Both read the same smoothed heading, both scale
     /// that reading by the same <c>swerve</c> signal, and both shrink when the player thrashes.
@@ -82,14 +82,14 @@ namespace Depths
         }
 
         /// <summary>
-        /// The chaser's lunge.
+        /// The lunger's lunge.
         /// </summary>
         /// <remarks>
-        /// The velocity the chaser BELIEVES, which is not the velocity the player has.
+        /// The velocity the lunger BELIEVES, which is not the velocity the player has.
         ///
         /// <para>
         /// Instantaneous velocity is a bad thing to aim from, and not only because it is noisy. A
-        /// player one tick into pressing a key is still nearly stationary, so a chaser that reads the
+        /// player one tick into pressing a key is still nearly stationary, so a lunger that reads the
         /// raw number commits to a point that stops being true immediately - and a player
         /// mid-reversal is read at whatever the easing happens to be sitting on that tick. So it reads
         /// a smoothed heading, and it reads it in proportion to how SETTLED the player looks, using
@@ -99,7 +99,7 @@ namespace Depths
         ///
         /// <para>
         /// The consequence is the point. Hold a line and you are read in full, so the intercept is
-        /// right and the lunge lands. Start reversing and the chaser loses confidence in you, the
+        /// right and the lunge lands. Start reversing and the lunger loses confidence in you, the
         /// solution shortens, and the lunge it commits to is a smaller one - which the player can
         /// then slip. Baiting is not free: it is a downgrade. You get a weaker attack instead of no
         /// attack.

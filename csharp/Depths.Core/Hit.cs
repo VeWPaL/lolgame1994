@@ -28,7 +28,7 @@ namespace Depths
         ///
         /// <para>
         /// That exact bug is why the gunner's intercept solves for a point ten pixels below where
-        /// the player is drawn. A chaser must NOT aim here, because it steers a body and would
+        /// the player is drawn. A lunger must NOT aim here, because it steers a body and would
         /// visibly drift low - but a projectile has no excuse at all for missing the one part of the
         /// player it is going to hit.
         /// </para>
