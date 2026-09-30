@@ -7,6 +7,118 @@
    terms, and both now iterate fourteen times, because a shell is only 1.8x the player's speed and
    three passes leave thirty pixels of miss.
    ============================================================================================== */
+/* BUILD-READS: a body that answers the gun the player is holding. VARIATION, NEVER DIFFICULTY.
+
+   The rule that governs this file is one sentence, and it is the depth-only rule pointed the other
+   way: a trait may change WHERE a fight happens and may never change HOW HARD it is. The ladder is
+   the only thing in the game permitted to raise a number, and nothing in this file is allowed to
+   read it. If a trait made a body tougher, the floor would get harder for the player who happened to
+   pick the wrong gun, which is the exact failure the depth rule exists to prevent.
+
+   So there is no trait here that touches health, damage, speed, cadence, radius, accuracy or aim
+   error. Every one of them is a change to a body GEOMETRY, and the test that guards this file
+   asserts it: spawn forty of the same body under each of the four guns and check that every
+   combat number is byte-identical across the four columns. The only columns allowed to differ are
+   the ones describing where the body stands.
+
+   THE MECHANISM, and why it is the only one. A ranged body holds a standoff and derives it fresh
+   every tick:
+
+       standoff = far - (far-close)*roomPress*PRESSURE_CLOSURE
+       inside close  -> walk TOWARD the player
+       outside far   -> walk AWAY from the player
+
+   Both `far` and `close` are per-body and set once at spawn, so shifting them moves the whole band.
+   Shifting BOTH by the same factor is the only version of this that is safe: the band keeps its
+   width, a body does not start dithering, and the change is a place rather than a personality.
+
+   A WEAKNESS ANSWERED, per gun, and the pairing is the whole design:
+
+     Scatter    a knife-range gun: 8 small pellets, fNear 80, fFar 300. What it wants is to be
+                standing next to something. TRAIT_HOLD answers it by standing further out than the
+                gun is worth, so the room it works in stops being the room the player is in. This is
+                the strongest answer in the game and it is given the highest weight, because the
+                falloff is the most punishing in the roster and there is nothing subtle about it.
+
+     Beam       a mid-range gun: fastest cadence, widest cone, and falloff that bites past its own
+                fFar. What it wants is bodies at mid range, held on a line. TRAIT_HOLD answers it
+                the same way for a different reason - not the knife, but the middle, where its own
+                falloff starts costing it more than the Scatter's.
+
+     Bolt       one committed shot on a 38-tick cooldown, aimed at where a body was. What it wants
+     Voidball   is a target that holds still enough to be worth that wait. TRAIT_CLOSE answers both
+                by walking IN, which is the worst thing that can happen to a gun with a long reload:
+                the player has to hold a moving body at knife range on a cadence that was chosen for
+                a target across the room. Two of the four guns are single-target, so they get the
+                same answer, and that is the honest answer rather than a coincidence - both are
+                aimed at a single body, so both are answered by a body that is not standing where
+                it was aimed.
+
+   The player is never told which gun a room dislikes. A visible counter is a puzzle with the answer
+   printed on it; an invisible one is a fight the player solves by noticing which gun keeps working.
+   What IS visible is the consequence, because the player has to be able to act on it: a body that
+   holds further out is standing further out, and that is on screen every second it happens.
+
+   A trait is rolled ONCE, at spawn, from the weapon the player is actually holding, and written
+   onto the body. Reading it from a global every tick would mean a body changed its mind the
+   instant the player swapped guns mid-room, and the player would be fighting two different fights
+   in one corridor with nothing to tell them apart. */
+const TRAIT_HOLD=1, TRAIT_CLOSE=2;
+
+/* Which answer a gun gets, and how reliably. The weight is NOT difficulty - it is how reliably the
+   answer works, which decides how many bodies in a room take it. The ceiling is what stops a stack:
+   a room of TRAIT_HOLD bodies must still all stand in roughly the same place rather than drifting
+   further out every time the trait is applied. */
+const TRAIT_TABLE={
+  bolt:       {trait:TRAIT_CLOSE, weight:0.50},
+  scatter:    {trait:TRAIT_HOLD,  weight:0.70},
+  arcane_beam:{trait:TRAIT_HOLD,  weight:0.62},
+  voidball:   {trait:TRAIT_CLOSE, weight:0.50},
+};
+const TRAIT_HOLD_SCALE=1.45;   // shift the band outward by this much
+const TRAIT_CLOSE_SCALE=0.72;  // ...or inward by this much
+const TRAIT_CHANCE=0.5;         // per body, so a room is a mix and not a themed set
+
+/* Where the shifted band is allowed to land. `far` is capped under `sense` because a body that
+   notices you at 600 and then tries to hold at 700 is a body that stands in a corner and never
+   fires, which reads as broken rather than as an answer. The lower bound keeps the band from
+   collapsing into a point, which would make the body twitch on the spot instead of standing. */
+const TRAIT_FAR_CEIL=0.78, TRAIT_FAR_FLOOR=90, TRAIT_BAND_MIN=40;
+
+function weaponIdOf(w){ return Content.idOf(w||WEAPONS[player.weaponIdx]); }
+
+function rollTrait(w){
+  const row=TRAIT_TABLE[weaponIdOf(w)];
+  if(!row) return 0;
+  return Rnd.run()<TRAIT_CHANCE*row.weight ? row.trait : 0;
+}
+
+/* Applied to RANGED bodies only, and the restriction is not a preference - it is the bug this
+   shipped once. The tick decides what kind of body it is holding with `e.walkSpeed!==undefined`
+   (see 60-tick.js, and the note there about that test having cost a boss phase). A walker is the
+   branch that has `walkSpeed`. So writing `walkSpeed` onto a body that lacked it - which the first
+   version of the shield trait did, to "make it close faster" - does not make a shooter close
+   faster. It silently converts it into a lunger, its gun and its whole ranged kit never run again,
+   and nothing anywhere says why. Never add or remove `walkSpeed` here. Only `far` and `close`.
+
+   Returns the trait it applied, so the suite can assert a trait is not silently a no-op. */
+function applyTrait(e){
+  if(e.walkSpeed!==undefined) return 0;   // a walker has no band to move
+  if(e.far===undefined) return 0;         // the boss before it has been given its kit
+  const t=rollTrait();
+  if(!t) return 0;
+  e.trait=t;
+  const k=t===TRAIT_HOLD?TRAIT_HOLD_SCALE:TRAIT_CLOSE_SCALE;
+  const cap=e.sense*TRAIT_FAR_CEIL;
+  let far=e.far*k, close=e.close*k;
+  if(far>cap) far=cap;
+  if(far<TRAIT_FAR_FLOOR) far=TRAIT_FAR_FLOOR;
+  if(far-close<TRAIT_BAND_MIN) close=far-TRAIT_BAND_MIN;
+  e.far=far; e.close=close;
+  return t;
+}
+
+
 function spawnEnemy(boss,room,x,y,type){
   const rx=()=>ROOM_LEFT+SPAWN_MARGIN+Rnd.run()*(ROOM_RIGHT-ROOM_LEFT-SPAWN_MARGIN*2);
   const ry=()=>ROOM_TOP+SPAWN_MARGIN+Rnd.run()*(ROOM_BOTTOM-ROOM_TOP-SPAWN_MARGIN*2);
@@ -43,6 +155,11 @@ function spawnEnemy(boss,room,x,y,type){
   e.castT=0; e.castReady=false; e.castAim=0;
   e.dmg=c.dmg; e.pspd=c.pspd; e.pr=c.pr; e.pcol=c.pcol; e.aggroTimer=0;
   e.shootCd=e.cdMin+Rnd.jitter()*e.cdVar;
+  // The trait is rolled ONCE, here, and written onto the body. On the ranged path specifically:
+  // the walker path returned before this point, and it must keep returning before it, because a
+  // trait is a thing a body WITH A STANDOFF BAND can do. See applyTrait for why that is not a
+  // preference.
+  applyTrait(e);
   return e;
 }
 

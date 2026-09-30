@@ -5501,6 +5501,171 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(player.hp<h2,'the second hit reported itself as landed but took no health');
   });
 
+  /* BUILD-READS. The rules of the trait system, as tests, because the whole thing rests on one
+     sentence that no assertion in the codebase would otherwise protect: a trait may change WHERE a
+     fight happens and may never change HOW HARD it is. */
+
+  test('a trait changes where a fight happens and never how hard it is',()=>{
+    // Sixty identical shooters per held gun. Every combat number must come out byte-identical across
+    // all four columns; only the standoff band is allowed to differ. The assertion is on the SET of
+    // distinct values per column, not on a value read back from a field we just wrote - the bug
+    // shape this file has the most of is asserting a thing against itself.
+    const combat=e=>[e.maxHp,e.dmg,e.armour||0,e.r,Math.round(e.speed*1e4),e.pspd,Math.round(e.cdMin)].join('|');
+    const band=e=>Math.round(e.far)+'/'+Math.round(e.close);
+    const sigs={}, bands={};
+    for(let w=0;w<WEAPONS.length;w++){
+      startGame();
+      const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+      room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+      player.weaponIdx=w;
+      const s={}, b={};
+      for(let i=0;i<60;i++){
+        const e=spawnEnemy(false,room,MIDX,MIDY,'shooter');
+        s[combat(e)]=1; b[band(e)]=(b[band(e)]||0)+1;
+      }
+      sigs[w]=Object.keys(s).join(' ; ');
+      bands[w]=Object.keys(b).sort().join(',');
+    }
+    const distinct=new Set(Object.values(sigs));
+    ok(distinct.size===1,
+      'the same shooter, spawned under each of the four guns in turn, is not the same body. Combat '+
+      'figures seen:\n        '+Object.keys(sigs).map(k=>WEAPONS[k].name+' -> '+sigs[k]).join('\n        ')+
+      '\n        A trait that moves a number here is a difficulty knob wearing a behavioural hat, and '+
+      'the floor is now harder for the player who happened to pick the wrong gun.');
+    ok(new Set(Object.values(bands)).size>1,
+      'every gun produced the same standoff band, so no trait is being applied at all. Bands by '+
+      'gun: '+Object.keys(bands).map(k=>WEAPONS[k].name+' -> '+bands[k]).join('  |  '));
+  });
+
+  test('a trait never adds or removes walkSpeed - the one field that decides what kind of body this is',()=>{
+    /* THE BUG THIS EXISTS FOR, and it is worth being blunt about how close it was to shipping.
+
+       The tick decides what kind of body it is holding with `e.walkSpeed!==undefined` - the walker
+       branch has the field, the ranged branch does not. The first version of the trait system had a
+       "close faster" trait that set walkSpeed, intending to make a shooter press in. It did not
+       make a shooter press in. It converted the shooter into a lunger, and from that tick the
+       entire ranged kit - the shell, the cadence, the muzzle prediction, the standoff rule - stopped
+       running, and the body simply stopped being a shooter. No error, no log, no test: a shooter
+       that walks at you and hits you on contact, indistinguishable from a lunger with worse art.
+
+       So the field is asserted directly, on both signs, for every body type, under every gun. */
+    const isWalker=(t)=>t==='lunger'||t==='brunch';
+    for(const type of ['lunger','brunch','shooter','gunner']){
+      for(let w=0;w<WEAPONS.length;w++){
+        startGame();
+        const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+        room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+        player.weaponIdx=w;
+        let broken=0, kind='', traits=0;
+        for(let i=0;i<80;i++){
+          const e=spawnEnemy(false,room,MIDX,MIDY,type);
+          if((e.walkSpeed!==undefined)!==isWalker(type)){ broken++; kind=String(e.walkSpeed); }
+          if(e.trait) traits++;
+        }
+        ok(broken===0,
+          type+' spawned with the '+WEAPONS[w].name+' held came out '+
+          (isWalker(type)?'ranged':'a walker')+' on '+broken+' of 80 bodies (walkSpeed='+kind+
+          '). The tick branches on that field, so those bodies no longer run the kit they were '+
+          'built with, and nothing anywhere says why.');
+        if(isWalker(type)){
+          ok(traits===0,
+            type+' carried a trait on '+traits+' of 80. A walker has no standoff band, so a trait is '+
+            'a thing it cannot do - whatever the trait did here, it did it by touching a field it '+
+            'has no business touching.');
+        } else {
+          ok(traits>0,
+            'no '+type+' took a trait in 80 spawns with the '+WEAPONS[w].name+' held, so this '+
+            'column of the test is asserting that nothing happened rather than that the right thing '+
+            'happened.');
+        }
+      }
+    }
+  });
+
+  test('a shifted standoff band stays inside the clamps that keep the body able to fight',()=>{
+    // Two clamps, each guarding a specific way this could have shipped broken.
+    //   far under sense   a body that notices you at 600 and then tries to hold at 700 is a body
+    //                     that stands in a corner and never fires. It reads as broken, not as an
+    //                     answer, and the player cannot act on it because nothing is happening.
+    //   band has a floor  a band that collapses to a point makes the body twitch on the spot
+    //                     forever instead of standing somewhere, which is a different failure with
+    //                     the same cause.
+    let widest=0, highest=0, n=0;
+    for(const type of ['shooter','gunner']){
+      for(let w=0;w<WEAPONS.length;w++){
+        startGame();
+        const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+        room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+        player.weaponIdx=w;
+        for(let i=0;i<120;i++){
+          const e=spawnEnemy(false,room,MIDX,MIDY,type);
+          if(!e.trait) continue;
+          n++;
+          highest=Math.max(highest,e.far); widest=Math.max(widest,e.far-e.close);
+          ok(e.far<e.sense*TRAIT_FAR_CEIL+0.001,
+            type+' with a trait holds at '+Math.round(e.far)+'px while it only notices the player '+
+            'at '+e.sense+'px, so it stands somewhere it can never shoot from.');
+          ok(e.far-e.close>=TRAIT_BAND_MIN-0.001,
+            type+' with a trait has a standoff band of '+(e.far-e.close).toFixed(1)+'px, which is '+
+            'under the '+TRAIT_BAND_MIN+'px floor, so the body dithers on the spot rather than '+
+            'standing somewhere.');
+          ok(e.close>0,'a trait pushed the close threshold to '+e.close+', which is off the map.');
+        }
+      }
+    }
+    ok(n>0,'no body took a trait across 960 spawns, so every clamp above asserted nothing at all.');
+    // and the band actually MOVED, or the whole thing is decoration
+    ok(highest>260,'the furthest a traited body holds is only '+Math.round(highest)+
+       'px. The plain shooter holds at 250, so a trait that lands at the same place is not an '+
+       'answer to anything.');
+  });
+
+  test('a trait is chosen from the gun in hand and then belongs to the body for life',()=>{
+    // The pairing is the design, so assert it: the two close/mid guns get HOLD, the two
+    // single-target guns get CLOSE. Over 400 spawns the mix must be a mix and not a themed set -
+    // TRAIT_CHANCE is per body precisely so a room is a room and not a counter.
+    const want={bolt:TRAIT_CLOSE, scatter:TRAIT_HOLD, arcane_beam:TRAIT_HOLD, voidball:TRAIT_CLOSE};
+    for(const id of Object.keys(want)){
+      startGame();
+      const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+      room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+      const idx=WEAPONS.findIndex(x=>Content.idOf(x)===id);
+      ok(idx>=0,'no weapon has the id '+id+', so the trait table has a row nothing can reach. '+
+         'The table keys off the id derived from the display name, and a renamed weapon silently '+
+         'stops being answered.');
+      player.weaponIdx=idx;
+      let right=0, wrong=0, none=0;
+      for(let i=0;i<400;i++){
+        const e=spawnEnemy(false,room,MIDX,MIDY,'shooter');
+        if(!e.trait) none++;
+        else if(e.trait===want[id]) right++;
+        else wrong++;
+      }
+      ok(wrong===0,
+        'holding the '+(WEAPONS[idx]?WEAPONS[idx].name:id)+' rolled a trait the table does not '+
+        'assign to it on '+wrong+' of 400 bodies, so the answer a gun gets is not the answer the '+
+        'table says it gets.');
+      ok(right>60,
+        'the '+(WEAPONS[idx]?WEAPONS[idx].name:id)+' was answered on only '+right+' of 400 bodies '+
+        '('+none+' took none). A counter the player meets once every hundred rooms is not a counter.');
+    }
+    // and it is STABLE: the whole point of writing it onto the body at spawn is that swapping guns
+    // mid-room does not silently rewrite the fight the player is already in
+    startGame();
+    const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+    player.weaponIdx=1;
+    const e=spawnEnemy(false,room,MIDX,MIDY,'gunner');
+    const trait=e.trait, far=e.far, close=e.close;
+    player.weaponIdx=0;                       // the player swaps to the other gun mid-room
+    for(let i=0;i<180;i++) update();
+    ok(e.trait===trait && e.far===far && e.close===close,
+      'a body changed its own standoff band while the fight was happening, because the trait is '+
+      'read from the gun in hand rather than from the body. The player swapped weapons and the '+
+      'room silently became a different fight.');
+  });
+
+
 
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so
