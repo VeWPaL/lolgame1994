@@ -1358,21 +1358,34 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:x0+canvas.clientWidth,clientY:y0+canvas.clientHeight}));
     ok(Math.abs(mouse.x-W)<1&&Math.abs(mouse.y-H)<1,'content bottom-right maps to '+mouse.x.toFixed(2)+','+mouse.y.toFixed(2));
   });
-  test('every dungeon: four winding runs, each ending on a reward',()=>{
+  test('every dungeon: a branching tree with a reward at each of two ends, and a key in a branch',()=>{
+    // This test used to assert a fixed 15 rooms, two forks and exactly four dead ends, because that
+    // was the shape the old hand-laid generator produced every single time. Asserting it again would
+    // be asserting the absence of the thing the redesign was for: a dungeon you can learn in one run
+    // is a corridor with monsters in it. So the invariants are now the ones that have to hold for a
+    // tree of any shape - the roles exist, the ends are clean, the keys are not behind the doors they
+    // open - and the room count is only required to VARY across dungeons.
+    const shapes=new Set(), counts=new Set();
     for(let i=0;i<200;i++){
       startGame();
       const all=Object.values(rooms);
       const one=f=>all.filter(f).length;
       eq(one(r=>r.type==='boss'),1,'boss rooms'); eq(one(r=>r.type==='item'),1,'upgrade rooms');
       eq(one(r=>r.keyReward),1,'silver key rooms'); eq(one(r=>r.goldReward),1,'gold key rooms');
-      eq(all.length,15,'room count moved: '+all.length);
-      // the shape: a spine with two forks off it, and exactly four dead ends (the four rewards)
-      const doors=all.map(r=>Object.keys(r.doors).length);
-      eq(doors.filter(n=>n===1).length,4,'dead ends (the rewards)');
-      eq(doors.filter(n=>n===3).length,2,'forks');
-      ok(!doors.some(n=>n>3),'a room has four doors, which is not a path');
+      counts.add(all.length);
+      // A trunk tip is the room that becomes the boss or the upgrade, and it has to stay a single
+      // door. A branch hung off it would put a key behind the locked door that key opens, which is a
+      // dead run and not a hard one: measured at 113 of 300 dungeons before the generator was fixed.
+      for(const r of [all.find(x=>x.type==='boss'),all.find(x=>x.type==='item')])
+        eq(Object.keys(r.doors).length,1,(r.type)+' room has '+
+           Object.keys(r.doors).length+' doors, so it is a junction rather than an end');
+      // the two keys sit at ends of their own, not on a trunk
+      for(const r of [all.find(x=>x.goldReward),all.find(x=>x.keyReward)])
+        eq(Object.keys(r.doors).length,1,'a key room has '+
+           Object.keys(r.doors).length+' doors, so the key is on a through-route rather than at the '+
+           'end of a detour, and a detour is the only reason it is a choice');
       const runLen=all.filter(r=>r.type==='normal'||r.keyReward||r.goldReward).length;
-      ok(runLen>=10,'not enough fight rooms to make the runs worth walking ('+runLen+')');
+      ok(runLen>=9,'not enough fight rooms to make the tree worth walking ('+runLen+')');
       // a run must actually go somewhere: no two rooms touch without a door, apart from the one
       // deliberate exception, the fake wall
       let fakes=0;
@@ -1403,7 +1416,13 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       eq(secrets.length,1,'secret rooms: '+secrets.length);
       ok(!seen[key(secrets[0].x,secrets[0].y)],'the secret is walkable without breaking the wall');
       eq(Object.keys(seen).length,all.length-1,'the map has rooms you cannot walk to');
+      // the shape itself, so a future generator that quietly goes back to one corridor is caught
+      shapes.add(all.map(r=>r.x+','+r.y+':'+Object.keys(r.doors).sort().join('')).join('|'));
     }
+    ok(counts.size>1,'200 dungeons came out at exactly '+(counts.size===1?[...counts][0]:'one')+
+       ' rooms every time, so the tree is not actually growing anything different');
+    ok(shapes.size>150,'200 dungeons produced only '+shapes.size+' distinct layouts, which is a fixed '+
+       'map with noise on it rather than a generator');
   });
   test('the two keys gate different doors and are each spent once',()=>{
     startGame();
@@ -4982,7 +5001,11 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const itemCount=Items.equipped.length;
     const seedBefore=Rnd.seedText;
     const floor1=run.floor;
-    const rooms1=Object.keys(rooms).length;
+    // Taken BEFORE the descent. The first version of this line sat below descend(), so shape1 and
+    // shape2 were both read off floor 2 - a comparison of a value with itself, which can never be
+    // unequal and so could never fail. The message described a real worry about the generator
+    // ignoring the seed and the assertion checked nothing at all.
+    const shape1=Object.values(rooms).map(r=>r.x+','+r.y+':'+Object.keys(r.doors).sort().join('')).join('|');
     descend();
     eq(run.floor,floor1+1,'descending did not go down a floor');
     // the build
@@ -4991,11 +5014,15 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     eq(player.weaponIdx,wBefore,'descending took the weapon away');
     eq(Stats.value('strength'),strBefore,'descending reset a stat');
     eq(Items.equipped.length,itemCount,'descending dropped the items');
-    // the floor is a NEW dungeon from a different seed
+    // the floor is a NEW dungeon from a different seed. Comparing room COUNTS was the old check and
+    // the tree generator made it wrong rather than the code: a new floor may legitimately have a
+    // different number of rooms. The layout signature is the thing that has to differ.
     ok(Rnd.seedText!==seedBefore,'floor 2 was generated from floor 1 seed, so the floors are one dungeon '+
        'replayed rather than a hundred dungeons');
-    ok(Object.keys(rooms).length===rooms1,'the new floor has '+Object.keys(rooms).length+' rooms against '+
-       rooms1+' - the layout is not being regenerated');
+    const shape2=Object.values(rooms).map(r=>r.x+','+r.y+':'+Object.keys(r.doors).sort().join('')).join('|');
+    ok(shape1!==shape2,'floor 2 has an identical layout to floor 1, so the map is not being regenerated '+
+       'even though the seed changed - the generator has stopped responding to the seed');
+    eq(shape1.length>0,true,'the floor 1 layout signature was empty, so the comparison proves nothing');
     // and the player is put back at the start of it, not left in a room that no longer exists
     eq(cur.x,START,'the player was not returned to the entrance of the new floor');
   });

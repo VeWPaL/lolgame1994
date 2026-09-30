@@ -78,37 +78,159 @@ function grow(rs,x,y,dir,len,strict,bias){
   }
   return {path,tip:rs[key(cx,cy)]};
 }
+/* THE MAP. A general branching tree, with the rooms that matter assigned to its ENDS afterwards.
+
+   The old generator laid out three named runs by hand - a silver spine, an arm off its first room
+   for the upgrade, a gold run off its second, and the boss hanging off the end of that. It was
+   legible as code and it produced the same map every time in shape: three corridors, a fixed
+   junction at each fork, and a route a player could learn in one run and never have to think about
+   again. A dungeon you can learn in one run is a corridor with monsters in it.
+
+   What replaces it grows a TREE and then decides what the ends are FOR. Two trunks leave the start
+   in different directions; each forks a side run partway out; the tips of the trunks become the two
+   rooms worth fighting towards, and the tips of the side runs are the places a key can be. The
+   branches are not decoration - a key is IN one, so a branch is a detour you have to choose to make
+   rather than a shortcut you pass through, and which branch holds which key is decided at
+   generation, so the route is different every floor even at the same seed.
+
+   WHY THE KEYS GO IN BRANCH ENDS RATHER THAN ON THE TRUNK. A key on the trunk is a toll you pay by
+   walking forward, and a toll that is unavoidable is not a decision. Put it at the end of a side run
+   and the player is choosing between two ways to spend a floor: go deep on a trunk and find out what
+   is at the end of it, or turn off early and come back with a key. Both are correct play and they
+   cost different amounts of the thing the player cares about, which is time and health.
+
+   ENDPOINTS, not coordinates. A room is an endpoint if it has exactly one door. Nothing in this
+   function knows where anything is on the grid; it asks the graph what its dead ends are and picks
+   from those. That is what makes the layout free to change shape without this code changing with it,
+   and it is the same reason the key rooms were moved off fixed positions in the first place. */
+function isEndpoint(r){ return Object.keys(r.doors).length===1; }
+
+function endpointsOf(rs){
+  return Object.values(rs).filter(r=>r.type==='normal'&&isEndpoint(r));
+}
+
+/* One trunk, with side runs cut off it.
+
+   This is `grow` with forks added, and it is written as a separate function rather than as a flag on
+   `grow` because the fork has to happen from INSIDE the walk - a branch can only be cut from a room
+   that actually exists - and threading that through the existing loop meant giving `grow` two return
+   shapes and one more parameter, for a caller that wants a different answer.
+
+   `forkAt` is the list of step indices to cut from, and `forkLen` how long each cut is. Returns the
+   path, the tip, and every endpoint the side runs produced. */
+function growForked(rs,x,y,dir,len,strict,bias,forkAt,forkLen){
+  const path=[],ends=[];
+  let cx=x,cy=y,lastTurn=-1,seg=1+((Rnd.run()*2.4)|0);
+  for(let step=0;step<len;step++){
+    let order;
+    if(seg<=0){
+      const first=lastTurn<0?(Rnd.run()<0.5?0:1):(Rnd.run()<bias?lastTurn:1-lastTurn);
+      order=[TURNS[dir][first],TURNS[dir][1-first],dir];
+      seg=1+((Rnd.run()*2.4)|0);
+    } else {
+      order=[dir,dir,...TURNS[dir]];
+      seg--;
+    }
+    let placed=false;
+    for(const d of order){
+      const [nx,ny]=neighbor(cx,cy,d);
+      if(nx<0||ny<0||nx>=GRID||ny>=GRID||rs[key(nx,ny)]) continue;
+      if(strict && ['N','S','E','W'].some(k=>{const [ax,ay]=neighbor(nx,ny,k);return (ax!==cx||ay!==cy)&&rs[key(ax,ay)];})) continue;
+      const room=newRoom(nx,ny,'normal');
+      rs[key(cx,cy)].doors[d]=true; room.doors[OPP[d]]=true;
+      rs[key(nx,ny)]=room;
+      if(d!==dir) lastTurn=TURNS[dir].indexOf(d);
+      cx=nx; cy=ny; dir=d; path.push(room); placed=true; break;
+    }
+    if(!placed) return null;
+    /* NEVER FORK FROM THE TIP. The last room of a trunk is the one that becomes the upgrade room or
+       the boss, and a branch hanging off it puts the key in that branch BEHIND the locked door the
+       key is supposed to open. Measured before this was caught: 113 of 300 dungeons had an
+       unreachable gold key, and the grid showed a branch running east out of the boss room.
+
+       The tip has to stay an endpoint - one door - or the room that is supposed to be the end of
+       the map is a corridor junction with a locked door on one side of it, which is not a room worth
+       fighting towards. */
+    if(step>=len-1) continue;
+    if(forkAt.indexOf(step)<0) continue;
+    // Cut a side run off the room just placed. It leaves through a direction that is not the way we
+    // came and not the way we are going, so a branch is never a stub pointing back down the trunk.
+    const room=path[path.length-1];
+    const incoming=OPP[dir];
+    const sides=ARM_DIRS.filter(k=>k!==incoming&&k!==dir);
+    for(const sd of sides){
+      const [bx,by]=neighbor(room.x,room.y,sd);
+      if(bx<0||by<0||bx>=GRID||by>=GRID||rs[key(bx,by)]) continue;
+      const b=grow(rs,room.x,room.y,sd,forkLen,strict,bias);
+      if(!b) continue;
+      ends.push(b.tip);
+      break;
+    }
+  }
+  return {path,tip:rs[key(cx,cy)],ends};
+}
+
 function tryBuild(strict){
   const rs={};
   const startRoom=newRoom(START,START,'start');
   startRoom.visited=true; startRoom.spawned=true;
   rs[key(START,START)]=startRoom;
-  // one run: `fights` fight rooms walked out of `host`, with the reward room as its last
-  const run=(host,fights,bias)=>{
-    // leave through a side, not back the way we came
-    const back=host.doors.E?'W':host.doors.W?'E':host.doors.S?'N':'S';
-    const d=freeDir(rs,host,back);
-    if(!d) return null;
-    const built=grow(rs,host.x,host.y,d,fights+1,strict,bias||0.55);
-    if(!built) return null;
-    return {tip:built.tip,path:built.path,dir:d};
-  };
-  // the silver run: the spine of the map, three fights and a payout
-  const silver=run(startRoom,3);
-  if(!silver) return null;
-  silver.tip.keyReward=true;
-  // an upgrade run forks off the first room of it
-  const arm=run(silver.path[0],2);
-  if(!arm) return null;
-  arm.tip.type='item';
-  // the gold run forks off the second, and the boss run hangs off the end of that one, so the
-  // intended line is: fight down the spine, detour for the key, fight on into the boss door
-  const gold=run(silver.path[1],3);
-  if(!gold) return null;
-  gold.tip.goldReward=true;
-  const boss=run(gold.tip,1);
-  if(!boss) return null;
-  boss.tip.type='boss';
+
+  // Two trunks out of the start, in different directions. The second one is grown AFTER the first,
+  // so freeDir already knows the first trunk is there and the two cannot collide - which is what
+  // stops the whole build being thrown away for a run that walks into its own corridor.
+  //
+  // trunkLen 4-5 and forkLen 3-4 rather than something shorter. The first version of the tree used
+  // 3-4 and 2-3, which put a floor at 8 fight rooms in the worst case - and eight is not a floor, it
+  // is a corridor with two decisions in it, and a player who reaches the boss in ninety seconds has
+  // not been given the thing the map is for. The lengths are the cost side of the same trade: they
+  // are what the retry loop in generateDungeon is paying for, and at 17 rooms against a 7x7 grid
+  // there is still room for strict mode to refuse a cramped build and try again.
+  const trunkLen=4+((Rnd.run()*2)|0);
+  const forkLen=3+((Rnd.run()*2)|0);
+  // The fork is cut from an INTERIOR room. The index is drawn from the steps that are not the last
+  // one, because the last one is the tip and the tip is a terminal room - see growForked, where
+  // forking from it is refused and why.
+  const forkAt=[(Rnd.run()*(trunkLen-1))|0];
+  const dirA=freeDir(rs,startRoom,null);
+  if(!dirA) return null;
+  const A=growForked(rs,START,START,dirA,trunkLen,strict,0.55,forkAt,forkLen);
+  if(!A) return null;
+  const dirB=freeDir(rs,startRoom,dirA);
+  if(!dirB) return null;
+  const B=growForked(rs,START,START,dirB,trunkLen,strict,0.55,forkAt,forkLen);
+  if(!B) return null;
+
+  /* ROLES, assigned to the ENDS of what grew rather than to positions chosen in advance.
+
+     The two trunks get the two rooms worth walking towards, and they are different on purpose: one
+     end is the upgrade room and one is the boss, so a player who commits early to a direction has
+     committed to what that direction was FOR. Which trunk gets which is a coin toss, so the map
+     cannot be learned as "left is the boss".
+
+     A trunk tip is a dead end by construction - it is where the walk stopped - so it is an endpoint
+     and the same test covers it. The upgrade and boss rooms are marked so the door code can seal
+     them, which is the only part of this that needs to know a room's job. */
+  const aIsBoss=Rnd.run()<0.5;
+  A.tip.type=aIsBoss?'boss':'item';
+  B.tip.type=aIsBoss?'item':'boss';
+
+  /* THE KEYS, one per trunk, placed at a BRANCH END and chosen at generation.
+
+     A branch end is an ordinary fight room with a key in it, so getting the key costs a detour and
+     the detour can be blocked, which is the whole point of putting it there rather than on the
+     spine. If a trunk produced no branch the build is thrown away rather than quietly putting the
+     key on the spine, because a map that sometimes has a detour and sometimes does not is a map
+     where the detour is not a decision. */
+  const aEnds=A.ends.filter(r=>isEndpoint(r)&&rs[key(r.x,r.y)]);
+  const bEnds=B.ends.filter(r=>isEndpoint(r)&&rs[key(r.x,r.y)]);
+  if(!aEnds.length||!bEnds.length) return null;
+  const silverAt=aEnds[(Rnd.run()*aEnds.length)|0];
+  const goldAt=bEnds[(Rnd.run()*bEnds.length)|0];
+  if(silverAt===goldAt) return null;
+  silverAt.keyReward=true;
+  goldAt.goldReward=true;
+
   // one secret per dungeon, walled off behind a fake wall on a random solid wall. never on the boss
   // or the upgrade room, so those two stay legible, and it stays off the map until the wall is gone
   const walls=[];
@@ -131,6 +253,7 @@ function tryBuild(strict){
   spot.r.secret=spot.d;
   return rs;
 }
+
 function generateDungeon(){
   for(let i=0;i<800;i++){
     const res=tryBuild(i<500);
