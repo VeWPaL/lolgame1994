@@ -5551,6 +5551,111 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        'blink covers '+(BLINK_GRACE/TICK_HZ).toFixed(2)+'s of incoming damage and a room of gunners has no answer to it');
     ok(player.hp<h2,'the second hit reported itself as landed but took no health');
   });
+  test('the blink grace outlives the blink i-frames, or the forgiveness is dead code',()=>{
+    /* The narrowest invariant in the file, and the one nothing was checking.
+
+       damagePlayer tests its two windows in this order:
+
+         if(player.iframes>0) return false;                      <- swallows everything
+         if(player.blinkGrace>0 && !player.graceSpent){ ... }     <- the forgiveness
+
+       So forgiveness is reachable ONLY on ticks where the i-frames have expired and the grace has
+       not. The two windows are set independently - i-frames by BLINK_IFRAMES+DASH_TRAIL, the grace
+       by BLINK_GRACE - and nothing anywhere asserts the ordering. If i-frames ever reach BLINK_GRACE,
+       the grace branch becomes unreachable: the mechanic stops existing, silently, and every test in
+       this file still passes, because every one of them runs the clock until the i-frames are gone
+       before it probes. A test that waits for the window it is testing is not evidence the window
+       is there.
+
+       Measured: i-frames 84 ticks (0.40s), grace 126 ticks (0.60s), slack 42 ticks (0.20s).
+       That 42 ticks is the entire margin. */
+    const iframes=BLINK_IFRAMES+DASH_TRAIL;
+    const slack=BLINK_GRACE-iframes;
+    ok(slack>sec(0.12),
+      'the blink i-frames ('+iframes+' ticks, '+(iframes/TICK_HZ).toFixed(2)+'s) are within '+
+      (slack/TICK_HZ).toFixed(2)+'s of the grace ('+BLINK_GRACE+' ticks, '+
+      (BLINK_GRACE/TICK_HZ).toFixed(2)+'s). The forgiveness branch in damagePlayer sits BELOW the '+
+      'i-frame check, so if the i-frames reach the grace it never runs: a blink stops forgiving '+
+      'anything, which is a design change that costs the player a mechanic and reports nothing.');
+    // and it has to be a window a player can actually use, not one tick of formality
+    ok(slack>=sec(0.15),
+      'the forgiving window is only '+(slack/TICK_HZ).toFixed(3)+'s - '+(slack+1)+
+      ' ticks. A shell in flight on a caster that fires every '+((sec(0.8)/TICK_HZ)).toFixed(2)+
+      's arrives on a timescale longer than that, so the window closes before anything can use it '+
+      'and the mechanic is present in the code and absent in the game.');
+
+    // The two windows are also two different IDEAS and the split matters, so pin the split rather
+    // than just the ordering: there has to be a block phase AND a forgive phase.
+    ok(iframes>0 && BLINK_GRACE>iframes,
+      'the blink is '+(iframes/TICK_HZ).toFixed(2)+'s of invulnerability and '+
+      ((BLINK_GRACE-iframes)/TICK_HZ).toFixed(2)+'s of forgiveness, which is the right ORDER. '+
+      'Reversed, a hit during the travel would be forgiven and the player would never learn that '+
+      'blinking through a shell is not safe.');
+
+    // and the real behaviour, at the first reachable tick, with a probe that cannot spend twice
+    startGame();
+    const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    player.iframes=0; player.blinkGrace=0; player.graceSpent=false; player.blinkCharges=2;
+    player.hp=99; player.maxHp=99; player.armor=0;
+    dashFX.length=0;
+    doBlink();
+    for(let i=0;i<iframes;i++) update();
+    ok(player.iframes===0,'the i-frames were still running at tick '+iframes+' ('+player.iframes+
+       ' left), so the tick the grace is supposed to be reachable on is still inside them');
+    ok(player.blinkGrace>0,'the grace had already expired by the time the i-frames did, so there '+
+       'is no forgiving window at all');
+    const hp=player.hp;
+    const r=damagePlayer(1,1,0,4);
+    ok(r===false && player.hp===hp,'a hit on the first reachable tick reported '+
+       JSON.stringify(r)+' and took the player from '+hp+' to '+player.hp+' health. On this tick '+
+       'the grace must forgive: no HP, and a false return.');
+    // knockback and momentum are the part that makes it forgiveness and not a longer i-frame
+    ok(player.kvx>0,'the forgiven hit applied no knockback (kvx='+player.kvx.toFixed(3)+'), so the '+
+       'grace is behaving as invulnerability rather than as a dodge the player still paid for');
+    ok(player.graceSpent,'the grace was not marked spent, so the second hit of a pair would also '+
+       'be forgiven and one blink forgives a whole room');
+    const hp2=player.hp;
+    ok(damagePlayer(1,0,0,4)===true && player.hp<hp2,'the SECOND hit inside the same blink was '+
+       'also forgiven, which makes the grace a second health bar rather than an escape');
+  });
+
+  test('the forgiving window is the last of the three phases, and the lag resolves inside it',()=>{
+    /* Two numbers that have to agree, and neither of them is written down anywhere.
+
+       The aim lag is the reason a blink buys a reaction window: the position enemies shoot at
+       stays where the player was and eases across. If the lag resolved AFTER the protection ran
+       out, the player would be standing in the open, visible and accurate, for the tail of the
+       animation - which is the "uncovered gap" this is here to close out. Measured over the whole
+       window: the lag is down to a couple of pixels by tick 78 and zero by tick 120, while
+       protection ends at tick 126. The lag resolves first, which is the correct order. */
+    startGame();
+    const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    player.iframes=0; player.blinkGrace=0; player.graceSpent=false; player.blinkCharges=2;
+    dashFX.length=0;
+    doBlink();
+    let lagZero=-1, trailZero=-1;
+    for(let i=0;i<=BLINK_GRACE+20;i++){
+      if(lagZero<0 && Math.hypot(player.x-player.lagX,player.y-player.lagY)<0.5) lagZero=i;
+      if(trailZero<0 && dashFX.length===0) trailZero=i;
+      update();
+    }
+    ok(lagZero>=0,'the aim lag never resolved, so enemies keep aiming at a stale position forever '+
+       'after a blink and the player is never accurately visible again');
+    ok(lagZero<BLINK_GRACE,'the aim lag resolved at tick '+lagZero+', AFTER the protection ran out at '+
+       'tick '+BLINK_GRACE+'. For '+(lagZero-BLINK_GRACE)+' ticks the player is exposed with nothing '+
+       'protecting them and enemies that can see them exactly - the gap, and it is the whole tail '+
+       'the grace was supposed to cover.');
+    ok(trailZero<=BLINK_GRACE,'the blink trail is still being drawn at tick '+(trailZero<0?999:trailZero)+
+       ' but the protection ended at tick '+BLINK_GRACE+', so the animation is still running on a '+
+       'player who can already be hit. The picture says "I am still moving" and the hitbox says '+
+       '"you are not".');
+  });
+
+
 
   /* BUILD-READS. The rules of the trait system, as tests, because the whole thing rests on one
      sentence that no assertion in the codebase would otherwise protect: a trait may change WHERE a
