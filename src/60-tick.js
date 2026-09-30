@@ -31,7 +31,7 @@ function fireCommittedShot(e,roomPress){
   e.castReady=false;
   e.shootCd=(e.cdMin+Rnd.jitter()*e.cdVar)*(1-PRESSURE_CADENCE*roomPress);
   projectiles.push({x:e.x,y:e.y,vx:Math.cos(e.castAim)*e.pspd,vy:Math.sin(e.castAim)*e.pspd,r:e.pr,
-    dmg:e.dmg,friendly:false,color:e.pcol,owner:e,heavy:e.type==='gunner'});
+    dmg:e.dmg,friendly:false,color:e.pcol,owner:e,heavy:e.type==='gunner',from:'enemy'});
 }
 
 function tickMomentum(moved){
@@ -301,13 +301,44 @@ function update(){
       }
     } else {
       let hitSomething=false;
+      /* BRUNCH ARE COVER, and the cover has to be VISIBLE or it is a rule the player has to infer
+         from damage numbers. A shell that reaches a Brunch stops there and dies, and the Brunch is
+         unharmed - it is impervious, not armoured, so there is no number to grind down and no
+         counterplay to work out. What the player sees is the shot they were about to eat collapsing
+         into a wall, in its own colour, which is the clearest possible statement that the pack is
+         doing something.
+
+         Checked BEFORE the lungers and before the player, and that ordering is the design rather than
+         an implementation detail: a shell that overlaps a Brunch and the player on the same tick
+         dies on the Brunch. Cover that only works when nothing else happens to be nearby is not
+         cover, it is a coincidence, and a player who learns that coincidences apply will stop
+         trusting the pack the moment a gunner is also in the room.
+
+         Player projectiles are NOT absorbed. The player has to be able to shoot through a Brunch pack
+         to clear it, and the Voidball's pierce and the Bolts drilling a line both depend on it. Only
+         incoming fire is eaten. */
       for(let j=r.enemies.length-1;j>=0;j--){
-        const e2=r.enemies[j];
-        if(e2===p.owner || e2.type!=='lunger') continue;
-        if(Math.hypot(p.x-e2.x,p.y-e2.y)<p.r+e2.r){
-          e2.hp-=1; e2.hitFlash=HIT_FLASH; alertEnemy(e2); slowEnemy(e2); hitSomething=true;
-          if(e2.hp<=0) killEnemy(r,j);
+        const b=r.enemies[j];
+        if(b.type!=='brunch'||b.hp<=0) continue;
+        if(Math.hypot(p.x-b.x,p.y-b.y)<p.r+b.r){
+          // the ring collapses inward rather than expanding, which is the read: something arrived
+          // and was swallowed. An expanding burst would say the opposite.
+          burstFX.push({x:p.x,y:p.y,r:BRUNCH_ABSORB_R,life:BURST_TICKS,color:p.color,dir:-1});
+          dashFX.push({x:p.x,y:p.y,life:BRUNCH_ABSORB_PUFF});
+          b.hitFlash=Math.max(b.hitFlash,BRUNCH_ABSORB_FLASH);
+          hitSomething=true;
           break;
+        }
+      }
+      if(!hitSomething){
+        for(let j=r.enemies.length-1;j>=0;j--){
+          const e2=r.enemies[j];
+          if(e2===p.owner || e2.type!=='lunger') continue;
+          if(Math.hypot(p.x-e2.x,p.y-e2.y)<p.r+e2.r){
+            e2.hp-=1; e2.hitFlash=HIT_FLASH; alertEnemy(e2); slowEnemy(e2); hitSomething=true;
+            if(e2.hp<=0) killEnemy(r,j);
+            break;
+          }
         }
       }
       if(!hitSomething && playerHit(p.x,p.y,p.r)){

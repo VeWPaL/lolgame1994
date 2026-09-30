@@ -374,11 +374,15 @@ function fireWeapon(){
     }
     projectiles.push({x:sx,y:sy,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,r:w.r||5,dmg:dmg,friendly:true,color:w.color,
       ox:sx,oy:sy,fNear:w.fNear,fFar:w.fFar,fMin:w.fMin,shrink:!!w.shrink,
+      // `from` is the OWNER of the shot, as a value both directions can carry. `friendly` already
+      // said which side it was on, but it is a boolean about the projectile, and everything the
+      // Brunch rule needs is a question about who fired it: a pack that eats enemy shells has to
+      // leave the player's alone, or the Brunch stop being a thing you can shoot through. Deriving
+      // that from `from` is one comparison, and it cannot be got wrong by a flag that drifted out of
+      // step with the other one. `owner` stays as the enemy that fired, which is what stops a
+      // gunner hurting itself.
+      from:'player',owner:null,
 
-      // `pierce` is the number of EXTRA bodies this shot may pass through, so 3 means four bodies in
-      // a line. `scale` starts at 1 and is multiplied by PIERCE_FALLOFF on every body after the
-      // first. `hit` remembers which bodies it has already counted, or a bolt that is sitting
-      // inside a Brunch takes the same two pixels of HP off it over and over and never advances.
       pierce:w.pierce||0, scale:1, hit:null,
       // the unit direction of travel, captured at spawn. it is what "how far along the line is this
       // body" is measured against when a pierced bolt has to decide which of two overlapping bodies
@@ -423,7 +427,10 @@ function fireAlt(){
   // against the per-tick step, and without it that comparison is against undefined and never true,
   // so the bolt sails straight through the point you aimed at and only ever goes off on a wall
   projectiles.push({x:player.x,y:player.y,vx:Math.cos(ang0)*m.speed,vy:Math.sin(ang0)*m.speed,speed:m.speed,r:m.r,friendly:true,color:m.color,
-    alt:true,phase:!!m.phase,mode:m,age:0,tx,ty});
+    // `from:'player'` for the same reason the wand's pellets carry it: the Brunch rule asks who fired
+    // a shot, and a right-click bolt is the player's too. Without it the hook would be eaten by the
+    // pack the player is trying to drag a line through.
+    alt:true,phase:!!m.phase,mode:m,age:0,tx,ty,from:'player',owner:null});
   player.altCooldown=m.cooldown/TEMPO.rate; player.altCooldownMax=player.altCooldown;
   player.muzzleTimer=MUZZLE_TICKS;
   player.shootSlow=Math.min(SHOOT_SLOW_MAX,player.shootSlow+SHOOT_SLOW_ALT);

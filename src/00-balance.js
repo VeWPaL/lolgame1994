@@ -106,6 +106,21 @@ const LUNGER_ACCEL=0.0058, WANDER_SPEED=0.25, WANDER_TICKS=sec(1);
 // the whole reason it is frightening - it just commits in front of you now.
 const BRUNCH_RAMP=sec(2.2), BRUNCH_RAMP_GAIN=1.9;
 
+/* BRUNCH AS COVER: an incoming shell that touches a Brunch stops there and dies, and the Brunch is
+   untouched. Impervious, not armoured - there is no HP to grind down and no counterplay to work out,
+   and the pack is a wall that eats a shell a body. It is a big deal to the fight and it was
+   invisible, because enemy projectiles only ever collided with lungers and with the player, so a
+   shell sailed straight through a Brunch pack on its way to you and the only evidence was a number
+   on a health bar.
+
+   These three are the whole of the make-it-visible budget. The ring is drawn in the SHELL's own
+   colour and collapses inward, so the player can see exactly which shot was eaten rather than
+   inferring it from what did not arrive; an expanding burst would read as an explosion, which is the
+   opposite of what happened. BRUNCH_ABSORB_FLASH is on the Brunch, not the shell, and is short
+   enough that a pack absorbing three shots in a row looks like a wall working rather than a
+   highlight the player has to read past. */
+const BRUNCH_ABSORB_R=15, BRUNCH_ABSORB_FLASH=sec(0.1), BRUNCH_ABSORB_PUFF=sec(0.14);
+
 /* A lunger does not walk at you. It closes the distance, stops, TELLS you where it is going, and
    then commits to a straight line at that point. Every number here exists because of a specific way
    the old straight-line chase was unfair:

@@ -4879,6 +4879,85 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        'against a stated '+sc.dmg*sc.count+', so the pattern change quietly buffed the gun');
   });
 
+  // Brunch as cover. This is the mechanic the whole change exists for, so it is measured by firing
+  // real shells at a real pack rather than by reading the collision code back at itself. The first
+  // assertion is a CONTROL: without it, a fixture that put the pack somewhere the shell never reached
+  // would report "the shell was absorbed" for the wrong reason, which is how most of the false
+  // findings in this project started.
+  test('a Brunch pack is cover: enemy shells die on it, the pack is unharmed, and you can still shoot it',()=>{
+    // The shell starts to the RIGHT of the pack and travels left, so it has to pass through the
+    // Brunch to reach the player. The first version of this fired the shell from the player's own
+    // position, which connected on tick zero and made the control pass for the wrong reason.
+    const shootThrough=withPack=>{
+      startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+      r.pickups.length=0; projectiles.length=0; burstFX.length=0; dashFX.length=0;
+      player.x=ROOM_LEFT+90; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+      player.hp=8; player.maxHp=8; player.iframes=0; player.blinkCharges=2;
+      let b=null;
+      if(withPack){
+        b=spawnEnemy(false,r,MIDX,MIDY,'brunch');
+        // spawnEnemy RETURNS the body; it does not put it in the room. Without this line the pack
+        // was never in r.enemies, so it collided with nothing and the first run of this test
+        // reported "the shell reached the player" - which was the fixture, not the mechanic.
+        r.enemies.push(b);
+        b.noticeTimer=1e9; b.aggroTimer=1e9; b.hp=b.maxHp;
+      }
+      const hp0=b?b.hp:0;
+      projectiles.push({x:MIDX+150,y:MIDY,vx:-2.4,vy:0,r:5,dmg:1.8,friendly:false,color:'#ffb37a',
+        owner:null,heavy:false,from:'enemy'});
+      let absorbedAt=-1, shellGone=-1;
+      for(let i=0;i<260;i++){
+        keys={};
+        if(burstFX.length>0&&absorbedAt<0) absorbedAt=i;
+        update();
+        if(shellGone<0&&projectiles.length===0) shellGone=i;
+        if(player.hp<=0) break;
+      }
+      return {hp0:hp0, hp:b?b.hp:0, playerHp:player.hp, absorbedAt:absorbedAt, shellGone:shellGone,
+        shellLeft:projectiles.length};
+    };
+    // 1. CONTROL: with no pack, the same shell reaches the player. Without this every assertion
+    //    below would pass on a fixture that simply never connects.
+    const open=shootThrough(false);
+    ok(open.playerHp<8,'a shell fired at the player across an empty room left them at '+open.playerHp+
+       ' hp, so the cover test would pass on a fixture that measures nothing');
+    // 2. the pack eats it and the player is untouched
+    const cov=shootThrough(true);
+    ok(cov.playerHp>=8,'a shell fired through a Brunch pack still reached the player ('+cov.playerHp+
+       ' hp left), so the pack is not cover and the collision is not running');
+    // 3. impervious, not armoured: full health, because there is no number to grind down and no
+    //    counterplay to work out
+    ok(cov.hp===cov.hp0,'the Brunch went from '+cov.hp0+' to '+cov.hp+' hp absorbing a shell, so it is '+
+       'armoured rather than impervious - a different mechanic, and one with a different answer');
+    // 4. the shell is gone, not merely stopped: it dies on the pack
+    ok(cov.shellGone>=0,'the shell survived the Brunch ('+cov.shellLeft+' left in flight), so it is '+
+       'passing through and the pack is only pretending to be cover');
+    // 5. and the absorption is VISIBLE, which is the entire reason it was built rather than left as
+    //    an invisible rule
+    ok(cov.absorbedAt>=0,'no absorption effect was drawn, so the mechanic works but cannot be seen - '+
+       'an unshown rule is one the player has to infer from damage numbers');
+  });
+  test('the player shoots through the pack, because the Brunch only eat incoming fire',()=>{
+    // If this fails, a Brunch pack has quietly become a wall to the player's own weapons and both
+    // the Voidball's pierce and the Bolt drilling a line stop existing in a Brunch room.
+    startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+    r.pickups.length=0; projectiles.length=0;
+    player.x=ROOM_LEFT+90; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    player.weaponIdx=0; player.cooldown=0; player.iframes=99999;
+    mouse.x=MIDX+400; mouse.y=MIDY;
+    const b=spawnEnemy(false,r,MIDX,MIDY,'brunch');
+    r.enemies.push(b);   // returns, does not add - same trap as the test above
+    b.noticeTimer=1e9; b.aggroTimer=1e9;
+    const hp0=b.hp;
+    fireWeapon();
+    ok(projectiles.length===1,'the wand did not fire, so the pierce test is measuring nothing');
+    // 40 ticks was not enough for the bolt to cross the room, so the first version of this read
+    // "no damage" as "the pack is a wall". Run until the projectile is resolved either way.
+    for(let i=0;i<400&&projectiles.length;i++){ keys={}; update(); }
+    ok(b.hp<hp0,'the wand did '+hp0+' -> '+b.hp+' to a Brunch sitting between it and the far wall, so '+
+       'the pack is a wall to the player as well and shooting through a Brunch room is impossible');
+  });
+
   });
   // The blink grace, which is a FORGIVENESS and not more invulnerability. The distinction is the
   // whole safety argument, so these tests assert both halves of it: that the window forgives a hit
