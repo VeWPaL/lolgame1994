@@ -330,10 +330,51 @@ function fireWeapon(){
   // read is worse than no stat, because the player is told they have it.
   const dmg=w.dmg+Stats.value('strength');
   for(let i=0;i<w.count;i++){
-    const off=w.count>1?(i-(w.count-1)/2)*spread:(Rnd.jitter()-0.5)*2*spread;
-    const a=ang0+off;
-    projectiles.push({x:player.x,y:player.y,vx:Math.cos(a)*w.speed,vy:Math.sin(a)*w.speed,r:w.r||5,dmg:dmg,friendly:true,color:w.color,
-      ox:player.x,oy:player.y,fNear:w.fNear,fFar:w.fFar,fMin:w.fMin,shrink:!!w.shrink,
+    /* BUCKSHOT, for a weapon with more than one pellet.
+
+       The old model fanned the pellets by ANGLE - pellet i left the muzzle at (i-(count-1)/2)*spread
+       - so every pellet started at the same point and diverged from it. Eight evenly spaced rays
+       from a common origin is not a shotgun, it is a diffraction pattern. And because the
+       divergence was purely angular it opened into a V that kept widening with range, which is the
+       same shape the Arcane Beam makes, and the reason the Scatter read as a wave shot rather than
+       a shell full of shot.
+
+       Real shot leaves the barrel from across the BORE rather than from a point, and the pellets do
+       not share a direction. So the spread moves off the angle and onto the muzzle POSITION: each
+       pellet starts somewhere in a small disc and flies near-parallel to the aim. That alone turns
+       the cone into a column, which is what the pattern is supposed to be.
+
+       The chaos is per-pellet SPEED, and it is worth being explicit that this is the part that is
+       not merely cosmetic. A column of identical pellets travelling at identical speed is a bar of
+       light - a tighter cone, but still not shot. Shot is de-synchronised: some out, some sagging,
+       and by any distance the pattern has holes in it.
+
+       Per-pellet speed variance is the whole of that mechanism, and it needs nothing on top of it.
+       A per-tick drag was written here first, on the reasoning that it would let the fast pellets
+       fall behind the slow ones and open the column with range. Measured, it cannot: a drag that is
+       the same for every pellet scales all their velocities by one shared factor, so the ratio
+       between the fastest and the slowest pellet is exactly what it was at the muzzle, forever. The
+       mechanism does not amplify the spread at all - it only slows the whole shot down, and paying
+       range for a cosmetic that was already free is a bad trade. The speed spread at the muzzle
+       already separates pellets LINEARLY in time - at 0.25 variance on a 2.4 px/tick shot that is
+       0.6 px/tick of difference, so 50px of spread by 200px of range and 112px by 450 - which is
+       the column opening with range, for nothing.
+
+       Damage is NOT changed by any of this. Same pellet count, same damage per pellet: the 2.60
+       crowd rating the Scatter earned is untouched. This is a redistribution of where the damage
+       lands, not a buff, and the tests assert the total so it cannot quietly become one. */
+    let sx=player.x, sy=player.y, a=ang0, spd=w.speed;
+    if(w.muzzleJitter!==undefined){
+      sx+=(Rnd.jitter()-0.5)*2*w.muzzleJitter;
+      sy+=(Rnd.jitter()-0.5)*2*w.muzzleJitter;
+      a=ang0+(Rnd.jitter()-0.5)*2*w.pelletAngle;
+      spd=w.speed*(1+(Rnd.jitter()-0.5)*2*w.pelletSpeedVar);
+    } else {
+      a=ang0+(w.count>1?(i-(w.count-1)/2)*spread:(Rnd.jitter()-0.5)*2*spread);
+    }
+    projectiles.push({x:sx,y:sy,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,r:w.r||5,dmg:dmg,friendly:true,color:w.color,
+      ox:sx,oy:sy,fNear:w.fNear,fFar:w.fFar,fMin:w.fMin,shrink:!!w.shrink,
+
       // `pierce` is the number of EXTRA bodies this shot may pass through, so 3 means four bodies in
       // a line. `scale` starts at 1 and is multiplied by PIERCE_FALLOFF on every body after the
       // first. `hit` remembers which bodies it has already counted, or a bolt that is sitting

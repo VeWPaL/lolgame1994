@@ -1530,10 +1530,20 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(sc.dmg*sc.count===burst,'the shotgun is not the biggest single shot ('+(sc.dmg*sc.count).toFixed(1)+' vs best '+burst.toFixed(1)+')');
     ok(sc.cooldown===slowest,'the shotgun is not the slowest gun ('+(sc.cooldown/TICK_HZ).toFixed(2)+'s vs slowest '+(slowest/TICK_HZ).toFixed(2)+'s)');
     ok(sc.count>=6,'the shotgun fires '+sc.count+' pellets, wanted a real bunch');
-    // spread is the step between pellets, so the cone is count-1 steps wide; that is what makes this
-    // buckshot rather than a firehose, and it is the number that is easy to get wrong
-    ok(sc.spread*(sc.count-1)<0.4,'the shotgun cone is '+(sc.spread*(sc.count-1)).toFixed(2)+' rad wide, wanted a tight bunch');
-    ok(sc.spread*(sc.count-1)>0.15,'the shotgun cone is so tight it is a laser, not a spread');
+    // The pattern is no longer a cone, so the old "spread*(count-1) rad wide" assertion is gone: it
+    // measured an angle that no longer decides where the pellets go, and leaving it in would have
+    // been a test that passes while describing nothing. What replaced it is the actual geometry -
+    // a column whose width is dominated by a term that does NOT scale with range, and a spread that
+    // is a distribution rather than a set of evenly spaced steps.
+    ok(sc.muzzleJitter>0,'the shotgun has no muzzle scatter, so every pellet still leaves from one point');
+    ok(sc.pelletSpeedVar>0,'the shotgun has no per-pellet speed variance, so the pellets stay in step');
+    // the angular error has to be small enough that the pattern is still a column and not a cone
+    // again. Measured in PIXELS at the far corner of a room, not in radians - an earlier version of
+    // this line compared a pixel figure against 0.02, which is a radian number, and failed a gun that
+    // was behaving exactly as intended.
+    ok(sc.pelletAngle*450<8,'at the far corner of a room the angular term alone spreads the pattern '+
+       (sc.pelletAngle*450).toFixed(1)+'px, so the shotgun has quietly become a beam with extra steps');
+
     ok(dps(sc,0)/dps(sc,edge(sc))>=steepest-0.01,'the shotgun is not the gun that cares most about range ('+(dps(sc,0)/dps(sc,edge(sc))).toFixed(2)+'x vs steepest '+steepest.toFixed(2)+'x)');
     // Two different fights, two different numbers, and the difference between them is what makes
     // the shotgun a shotgun. `crowd` is every pellet landing, which is what the tight cone buys.
@@ -4803,6 +4813,72 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
          Math.round(y)+', which is not on the card');
     }
     toggleDev(false);
+  // The buckshot property, measured off the pellets the gun actually spawns rather than restated
+  // from the weapon table. A test that checks the numbers on the definition cannot tell a working
+  // spawn from a broken one - it would go on passing if fireWeapon stopped reading muzzleJitter.
+  // Evenness is the statistic: a volley of evenly spaced pellets has seven identical gaps and scores
+  // 1.00, and any value above that is real clumping and real holes. The old cone scored 1.01 at every
+  // range, which is the whole complaint restated as a number.
+  test('the scatter is a column of shot: tight, near-constant width, and not evenly spaced',()=>{
+    const sc=WEAPONS[1];
+    const volley=()=>{
+      startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
+      r.pickups.length=0; projectiles.length=0;
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+      player.weaponIdx=1; player.cooldown=0; player.iframes=99999;
+      mouse.x=MIDX+400; mouse.y=MIDY;
+      fireWeapon();
+      // dmg has to survive the copy. A version of this that mapped only x/y/vx/vy left it undefined,
+      // summed to NaN, and was let through by a "total===0 ||" escape hatch that read the NaN case as
+      // merely-unsupported rather than as a fixture with a hole in it.
+      return projectiles.map(p=>({x:p.x,y:p.y,vx:p.vx,vy:p.vy,dmg:p.dmg}));
+    };
+    // where a pellet crosses the line D px downrange from the muzzle. The muzzle offset has to be in
+    // here: a probe that measured vx*t alone and dropped it reported a 1px column, which was the
+    // harness being wrong rather than the gun.
+    const crossY=(p,D)=>(p.y-MIDY)+p.vy*(D/p.vx);
+    const widthAt=v=>D=>{
+      const ys=v.map(p=>crossY(p,D)).sort((a,b)=>a-b);
+      return ys[ys.length-1]-ys[0];
+    };
+    const evennessAt=v=>D=>{
+      const ys=v.map(p=>crossY(p,D)).sort((a,b)=>a-b);
+      const g=[]; for(let i=1;i<ys.length;i++) g.push(ys[i]-ys[i-1]);
+      const mean=g.reduce((a,b)=>a+b,0)/g.length;
+      return mean>0?Math.max(...g)/mean:1;
+    };
+    const N=60;
+    // 1. the width must not scale with range. A cone triples from 60px to 450px; a column does not.
+    const near=widthAt(volley())(60), far=widthAt(volley())(450);
+    let wNear=0, wFar=0;
+    for(let i=0;i<N;i++){ const v=volley(); wNear+=widthAt(v)(60); wFar+=widthAt(v)(450); }
+    wNear/=N; wFar/=N;
+    ok(wNear<20,'the column is '+wNear.toFixed(0)+'px wide at 60px, so the pellets are still fanning');
+    ok(wFar/wNear<2.0,'the column grows '+wFar.toFixed(0)+'px -> '+wFar.toFixed(0)+'px from 60px to 450px, a '+
+       (wFar/wNear).toFixed(2)+'x widening, so the spread is still angular and the shotgun is still a cone');
+    // 2. and it must be de-synchronised, which is the part that reads as shot rather than as a bar
+    let eSum=0;
+    for(let i=0;i<N;i++) eSum+=evennessAt(volley())(200);
+    const even=eSum/N;
+    ok(even>1.5,'the pellets are spaced almost evenly (evenness '+even.toFixed(2)+' against 1.00 for a '+
+       'ruler), so the volley is still synchronised and the shot has no holes in it');
+    // 3. the speed spread has to be real and has to be what the weapon asked for
+    const v0=volley();
+    const speeds=v0.map(p=>Math.hypot(p.vx,p.vy));
+    const lo=Math.min(...speeds), hi=Math.max(...speeds);
+    ok(hi-lo>sc.speed*0.2,'per-pellet speed spans only '+(hi-lo).toFixed(2)+' px/tick on a '+sc.speed+
+       ' px/tick weapon, so the pellets fly in step and the shot reads as one bolt of light');
+    // 4. and the damage is untouched, because this is a redistribution and not a buff. No escape
+    // hatch on a missing dmg field: that was in the first version, and a projectile that stopped
+    // carrying damage at all would have made the sum 0 and sailed through a test written to allow
+    // it. Verified to be taking the real branch - 8 pellets at 2.60 is exactly 20.80.
+    let total=0;
+    for(const p of v0) total+=p.dmg;
+    ok(v0.length===sc.count,'the buckshot spawned '+v0.length+' pellets, wanted '+sc.count);
+    ok(Math.abs(total-sc.dmg*sc.count)<1e-9,'the volley is worth '+total.toFixed(2)+' raw damage '+
+       'against a stated '+sc.dmg*sc.count+', so the pattern change quietly buffed the gun');
+  });
+
   });
   // The blink grace, which is a FORGIVENESS and not more invulnerability. The distinction is the
   // whole safety argument, so these tests assert both halves of it: that the window forgives a hit

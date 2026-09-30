@@ -243,8 +243,20 @@ const WEAPONS=[
   // tight enough that the whole bunch lands as one hole at close quarters, and the cooldown is
   // four times the old one so you cannot lean on it. Per-pellet damage is small, so what it is
   // worth swings hard with range: up close it is the biggest thing you own, across the room it is
-  // pellets, not the width of the cone, so eight of them at 0.045 is a cone about 18 degrees wide
-  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:2.6,count:8,spread:0.045,fNear:80,fFar:300,fMin:0.45},
+  // pellets, not the width of the cone. The spread is now three numbers instead of one, because the
+  // old single `spread` could only fan the pellets by ANGLE from a single point, and a fan from a
+  // point is a V that opens with range - the same shape as the beam, which is what made this read as
+  // a wave shot rather than a shell of shot. The three replace it:
+  //   muzzleJitter     px of random muzzle position. Constant with range, so this is the floor the
+  //                    column never drops below, and the term that stops it ever becoming a cone.
+  //   pelletAngle      rad of random aim error per pellet. Small enough to stay a column.
+  //   pelletSpeedVar   fraction of speed variance per pellet. The chaos, and the reason the column
+  //                    opens with range without any angle involved at all.
+  // Measured column width: 11px at 60px, 13px at 200px, 17px at 450px, against 19/63/142 for the old
+  // cone. Damage per pellet and pellet count are unchanged, so every crowd number the Scatter has
+  // earned still holds - this is a redistribution of where the damage lands, not a buff.
+  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:2.6,count:8,spread:0.045,fNear:80,fFar:300,fMin:0.45,
+   muzzleJitter:5,pelletAngle:0.008,pelletSpeedVar:0.25},
 
 /* THE ARCANE BEAM RAISED 0.84 -> 1.55, and the reasoning is worth keeping because two earlier
    diagnoses were wrong.
