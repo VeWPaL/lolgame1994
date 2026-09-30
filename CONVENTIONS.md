@@ -710,7 +710,8 @@ four guns.**
 - `depths.html` — a shell loading fifteen modules from `src/`. Playable, double-clickable.
 - `src/99-tests.js` — **149 checks**, every test seeded to an identical world. All must pass at
   every commit.
-- `csharp/Depths.Core` + `Depths.Tests` — 19 checks, parity-verified against the JavaScript.
+- `csharp/Depths.Core` + `Depths.Tests` — 52 checks, parity-verified against the JavaScript. Still
+  no world state; see the section on the port boundary above.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
   first, because it is the only artifact the player can run, then ported.
 - Unity 6 LTS and VS2022 are installed. The port resumes at `60-tick.js` (`update()`), then the
@@ -732,3 +733,26 @@ teaches; the other three exist to make a room's answer depend on which of them i
   exactly what it is. The type test means the movement change costs it nothing.
 - **Boss** — the Warden. Not a scaled lunger: a phased fight with a TELL, a COMMIT and a RECOVER for
   every move, and a wall it can call. See the section above.
+
+### The C# port, and exactly where its boundary is
+
+`csharp/Depths.Core` has `Balance` (all the tuning, plus the depth ladder), `Hit` (the player hit
+test), `Intercept` (lunge and gun solutions), `Mulberry32` and `Rng` (the three streams, the floor
+seed, the base36 codec). `csharp/Depths.Tests` has **52 checks**, all parity-verified against numbers
+read out of the running JavaScript.
+
+**There is no world in the port yet.** No player, no body, no projectile, no room, no tick. Everything
+ported so far is a function of its arguments, which is exactly why it could be ported honestly — the
+moment a type needs to hold mutable state that another type also mutates, "translate it mechanically"
+stops being available and `update()` has to be ported against the tests rather than by reading it.
+
+Two things to know before adding to the port:
+
+- **A port that agrees with its own source is not parity.** Every expected value in
+  `RngParityTests` and `DepthLadderParityTests` was read out of the browser. When a value was
+  hand-computed instead, three of nine were wrong and the *test* was what failed.
+- **C# is not JavaScript where it looks identical.** `(uint)someDouble` above `uint.MaxValue`
+  saturates; `>>> 0` wraps. The original's `Decode` relies on the wrap, so the largest seed the game
+  can display could not be typed back in. That was a real bug in the port, found by a parity test,
+  and it is the kind of thing that would have shipped.
+
