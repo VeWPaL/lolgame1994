@@ -271,13 +271,20 @@ function update(){
   // p runs 0 -> 1 across the fade, so 1-smooth(p) starts at full black and eases out of it.
   if(fadeT>0&&!trans){fadeT--; roomFade=1-smooth(1-fadeT/fadeTicks);}
   else if(!trans) roomFade=0;
-  if(state!=='playing') return;
+  if(state!=='playing'&&state!=='dev') return;
+  /* THE DEATH BACKSTOP. The lab passes through here like anything else and is protected one level
+     down, at damagePlayer - which is the only place the rule could safely live, because there are
+     four death checks in this file and not one of them should know the lab exists. Guarding this one
+     and the one below it left the other two live, and a drove killed the lab player through one of
+     those and wrote a record. See the note in damagePlayer. */
+  if(player.hp<=0){ endRun(false); return; }
   // The backstop. Everything below here can return early - a room transition, the ready window, a
   // death check further down - and every one of those returns is a tick that never looks at your
   // health. So the health is checked here, before any of them can fire, as well as at the point the
   // damage lands. One check on its own is not enough: the only way to guarantee a dead player cannot
   // still be playing is to check on the way in AND on the way out, so there is no route through
-  // this function that leaves a zero-health player standing.
+  // this function that leaves a zero-health player standing. The lab passes through here like
+  // anything else and is protected one level down, in damagePlayer.
   if(player.hp<=0){ endRun(false); return; }
   run.ticks++;
   // The per-floor clock, alongside the run clock and for the same reason: the summary wants to say
@@ -289,6 +296,17 @@ function update(){
   // grace ages on its own: two numbers for one duration drift apart, and the first symptom is a
   // banner still fading in over a room the player is already being shot at.
   if(descendT>0) descendT--;
+  /* THE LAB'S OWN TICK, and it is here - after the run clocks, before the transition early-returns -
+     for two reasons. It has to be after the state gate so it does not tick on the title screen, and
+     it has to be BEFORE the transition returns because the lab has no transitions and must therefore
+     never be the reason a tick is skipped; if it were placed below them it would silently stop
+     running the moment anything above it returned, which is the failure this project keeps meeting
+     in a new costume.
+
+     remember() before freeze(): a body needs somewhere to be pinned TO, and on the very first tick
+     a row body has no remembered position yet. The other order works until the first tick and then
+     pins everything to undefined. */
+  if(state==='dev'){ Lab.remember(); Lab.freeze(); }
   if(trans){
     trans.t++; roomFade=smooth(Math.min(1,trans.t/FADE_OUT));
     if(trans.t>=FADE_OUT){const t=trans;trans=null;enterRoom(t.nx,t.ny,t.from);}
@@ -1038,6 +1056,15 @@ function update(){
       r.pickups.push({x:MIDX,y:MIDY,r:30,kind:'exit'});
     }
   }
+  /* THE LAB'S READOUT, at the very end, and the position is the whole argument.
+
+     It compares each body's health with the tick before, so it has to run after everything that can
+     have damaged something - the enemy pass, the projectile pass, the weapon pass, the trap pass.
+     Put it anywhere earlier and it reports the damage dealt on the PREVIOUS tick, which is a number
+     that is one tick stale and therefore wrong exactly when it matters: a burst that lands on one
+     tick would be attributed to the next, and a reader comparing the number against the flash would
+     find them a tick apart and conclude the readout is broken. */
+  if(state==='dev') Lab.tickNumbers();
 }
 
 /* The way out. It is a pickup slot so that the existing touch-to-collect code carries it, but it is

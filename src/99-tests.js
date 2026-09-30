@@ -1064,8 +1064,18 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
        the previous categories" - which is a description of a FIELD, and encoding it as a category is
        what would have produced hybrids. A Brass Compass is simultaneously a legendary passive AND an
        artifact, and neither half is a special case. */
-    startGame(); Items.reset();
+    /* NOTE: this used to call Items.reset() immediately after startGame(), and that call was the
+       only reason the assertion below could pass. It created the `unlocked` bucket the test then
+       read, so the test was checking that a bucket it had just built by hand was still there after
+       an item went in - and the real path, where a player picks an artifact up mid-run with nothing
+       having called reset() first, was never exercised. The lab found it: it equips every item in
+       the game at once and threw on the first artifact.
+
+       The bucket now belongs to the run's own literal, so this asks the question it means to ask -
+       can a fresh run take an artifact - and the removal of the reset() is the assertion. */
+    startGame();
     Items.give('brass_compass');
+    ok(run&&run.unlocked,'a fresh run has nowhere to record what it unlocked');
     const d=Content.get('item','brass_compass');
     eq(d.use,'passive','the artifact is not also a passive, so the two halves are not both true');
     eq(d.rarity,'legendary','the artifact is not also a rarity');
@@ -6297,7 +6307,321 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       'room silently became a different fight.');
   });
 
+  test('everything the lab draws is inside the band the camera actually shows',()=>{
+    /* THE TEST THAT WAS MISSING, and its absence is the lesson.
 
+       The lab's first layout put the specimen row behind the HUD and the item shelf entirely
+       off-screen. Every other check about the lab passed: five specimens, thirteen shelf entries,
+       the numbers worked, the camera worked. "The shelf has thirteen entries" says nothing about
+       whether the shelf is VISIBLE, and a debug view whose furniture is behind the HUD is a debug
+       view you have to walk around to use - which is the opposite of the thing it was built for.
+
+       So this measures the frame, not the data. It takes the camera as the game computes it and asks
+       where each piece of furniture lands ON SCREEN, which is the only coordinate that matters to
+       somebody looking at it. The HUD margin is the reason the row needs to be well clear of the
+       top rather than merely on-screen, so the threshold is the HUD's depth plus its furniture. */
+    Lab.enter();
+    render();
+    const b=currentRoom().bounds;
+    const onScreen=y=>y-cam.y;
+    /* 150 is not arbitrary: the health, momentum and depth plates together run to about 120px, and
+       a plinth's nameplate hangs 26px below the body it belongs to. Anything under 150 is furniture
+       the HUD is sitting on. */
+    const row=currentRoom().enemies.filter(e=>e.labSpecimen);
+    for(const e of row){
+      ok(onScreen(e.y)>150,'the '+e.labName+' specimen is at screen y '+
+        onScreen(e.y).toFixed(0)+', which is under the HUD or off the top');
+      ok(onScreen(e.y)<H-40,'the '+e.labName+' specimen is at screen y '+
+        onScreen(e.y).toFixed(0)+', below the bottom of the view');
+    }
+    // and horizontally, including the nameplates either side of the outermost specimens
+    for(const e of row){
+      ok(e.x-cam.x>40&&e.x-cam.x<W-40,'the '+e.labName+' specimen is at screen x '+
+        (e.x-cam.x).toFixed(0)+', off the side of the view');
+    }
+    for(const s of Lab.shelfData()){
+      ok(onScreen(s.y)>150,'the '+s.name+' alcove is at screen y '+onScreen(s.y).toFixed(0)+
+        ', which is under the HUD or off the top');
+      ok(onScreen(s.y)<H-20,'the '+s.name+' alcove is at screen y '+onScreen(s.y).toFixed(0)+
+        ', below the bottom of the view');
+      ok(s.x-cam.x>-60&&s.x-cam.x<W+60,'the '+s.name+' alcove is at screen x '+
+        (s.x-cam.x).toFixed(0)+', off the side of the view');
+    }
+    // the player, too: if the camera does not frame the player then none of the above is stable
+    ok(onScreen(player.y)>150&&onScreen(player.y)<H-40,'the player is not in the clear part of the view');
+    // and the room really is bigger than the frame, or none of this is a test of anything
+    ok(b.w>W&&b.h>H,'the lab room is '+b.w+'x'+b.h+' and fits on screen, so the camera is idle');
+    Lab.leave();
+  });
+
+  test('a run ends in death and in nothing else, so there is no win to record',()=>{
+    /* This is the load-bearing replacement for a pinned fix that had no test behind it.
+
+       The bug list carried "records: a win is saved, a slower win keeps the fastest time" for a long
+       time, in green, with nothing checking it - because the panel scored an entry with no matching
+       result as a pass. The claim itself had also gone stale: the way out used to end the run, and it
+       goes DOWN now, so endRun() is only ever called with a death and the win state is unreachable.
+
+       So the claim worth pinning is the one that is true: clearing a floor does not end a run, the
+       way out does not end a run, and only dying does. That is a real guarantee rather than a
+       historical note, because it is what stops somebody re-adding a portal that ends the game, and
+       it is also what the run-summary screen and the R key both hang off. */
+    clearRecords();
+    startGame();
+    const r=goTo('boss');
+    r.enemies.length=0; r.pickups.length=0;
+    update();
+    ok(bossUnlocked||r.cleared,'clearing the boss did not unlock anything at all');
+    // the way out is the way DOWN
+    stepIntoPortal(r);
+    eq(state,'playing','walking into the way out ended the run instead of descending');
+    eq(run.floor,2,'the way out did not descend a floor');
+    // and on every floor, not just this one
+    startGame();
+    const b=goTo('boss');
+    b.enemies.length=0;
+    run.floor=1; update();
+    for(let i=0;i<400;i++){ keys={}; update(); if(state!=='playing') break; }
+    ok(state==='playing','a run ended by itself with the player alive, and only death may end one');
+    // death is the one that works
+    player.hp=0; update();
+    eq(state,'gameover','a dead player did not end the run');
+    ok(recordsLine().length>0,'a death was not recorded');
+  });
+
+  /* ==========================================================================================
+     ROOMS BIGGER THAN THE SCREEN, and the camera.
+
+     These exist because the camera had a bug that 154 checks could not see. The clamp on the
+     big-room branch read Math.min(b.l, ...) with the bounds the wrong way round, so it pinned the
+     view to the room's left edge and the camera never moved. Every room in the game fits inside the
+     960x600 viewport, so that branch had never run: the exact property that made the camera safe to
+     add to a green suite - it is the identity transform for a room that fits - is the same property
+     that hid a total failure in it.
+
+     A feature that is a no-op everywhere it is actually used is not a tested feature, it is an
+     untested one wearing a passing disguise. So these assert the moving case, and the first of them
+     is written so that reverting the clamp to its broken form makes it fail.
+     ========================================================================================== */
+
+  /* A stand-in for the lab, without the lab. Building a big room directly keeps these tests about
+     the GEOMETRY - walls, clamping, the camera - and not about whether the debug view happens to be
+     switched on, so a failure here points at the room system rather than at the lab. */
+  const bigRoom=(w,h)=>{
+    startGame();
+    const r=currentRoom();
+    r.bounds=roomBounds(w||1680,h||1040);
+    r.cx=r.bounds.l+r.bounds.w/2; r.cy=r.bounds.t+r.bounds.h/2;
+    r.doors={}; r.spawned=true; r.enemies.length=0; r.pickups.length=0; r.cleared=true;
+    syncRoomBounds();
+    player.x=r.cx; player.y=r.cy; player.lagX=r.cx; player.lagY=r.cy;
+    readyT=0; fadeT=0; roomFade=0; trans=null;
+    return r;
+  };
+
+  test('a room can be larger than the screen and the walls are that room\'s own walls',()=>{
+    const r=bigRoom(1680,1040);
+    ok(r.bounds.w===1680&&r.bounds.h===1040,'the room did not take the size it was asked for');
+    /* The shorthand, not the accessors: this is the claim that the 169 untouched call sites now read
+       the CURRENT room. If syncRoomBounds were not called these would still say 700x450 while the
+       room record said 1680x1040 - two places disagreeing about where the wall is, which is the
+       failure this whole mechanism exists to make impossible. */
+    eq(ROOM_LEFT,r.bounds.l,'the wall shorthand and the room disagree on the left wall');
+    eq(ROOM_RIGHT,r.bounds.r,'the wall shorthand and the room disagree on the right wall');
+    eq(MIDX,r.cx,'the centre shorthand is not this room\'s centre');
+    // the wall is a wall: walk into it from inside and stop there, not at the old 700px mark
+    player.x=r.bounds.r-4;
+    clampPlayer();
+    ok(player.x<=r.bounds.r-player.r+0.001,
+      'the player walked through the right wall of a 1680-wide room (x='+player.x.toFixed(1)+
+      ', wall at '+r.bounds.r+')');
+    ok(player.x>r.bounds.l,'the player was pushed to the left wall of a 1680-wide room');
+  });
+
+  test('the camera follows the player across a big room and stops at its edges',()=>{
+    const r=bigRoom(1680,1040);
+    const camFor=px=>{ player.x=px; return updateCamera().x; };
+    const mid=camFor(r.cx);
+    const east=camFor(r.bounds.r-40);
+    const past=camFor(r.bounds.r+400);
+    /* The assertion that fails on the broken clamp. With Math.min(b.l,...) the camera sat at the
+       room's left edge for all three of these, so mid===east and "it moved" was false. */
+    ok(east>mid+100,'the camera did not follow the player east across a 1680-wide room (mid '+
+      mid.toFixed(0)+', east '+east.toFixed(0)+')');
+    // and it must not show the outside of the room, which is the whole reason for clamping
+    ok(past<=r.bounds.r-W+0.001,
+      'the camera showed '+(W-past).toFixed(0)+'px past the east wall of the room');
+    const west=camFor(r.bounds.l-300);
+    ok(west>=r.bounds.l-0.001,'the camera showed floor west of the room');
+    // and it is a pure function of the player, not a value that drifts: same place, same view
+    eq(camFor(r.cx),mid,'the camera is not a function of where the player is');
+  });
+
+  test('a room smaller than the view is centred in the frame',()=>{
+    const r=bigRoom(700,450);
+    // the 700x450 room in a 960x600 viewport used to sit at its own origin: 210px of dead space to
+    // the right against 80 to the left, which is visible and wrong
+    const c=updateCamera();
+    eq(c.x,(r.bounds.l+r.bounds.r-W)/2,'a room that fits is not centred horizontally');
+    eq(c.y,(r.bounds.t+r.bounds.b-H)/2,'a room that fits is not centred vertically');
+    ok(c.x<r.bounds.l,'the framing starts left of the room, so the room is not centred in the frame');
+  });
+
+  test('the lab is a game state that cannot touch a run',()=>{
+    /* The point of a separate state is that it is not a run, and the only way to know that is to try
+       to spoil one from inside it. Each line is a way the lab could be a run by accident. */
+    startGame();
+    Lab.enter();
+    ok(Lab.on(),'the lab did not open');
+    ok(state==='dev','the lab is not its own state, it is '+(state||'nothing')+
+      ' - every state===\'playing\' test in the game is supposed to be false in here');
+    const r=currentRoom();
+    eq(Object.keys(r.doors).length,0,'the lab room has a door in it, so it is a room you can leave');
+    ok(r.bounds.w>W&&r.bounds.h>H,'the lab room fits on screen, so the camera is never exercised');
+    // the drove can kill you, and it must not be able to end a run doing it
+    const recs=recordsLine();
+    player.hp=1;
+    for(let i=0;i<40;i++) update();
+    ok(player.hp>0,'the lab let the player die, which means endRun ran and a record may have been written');
+    ok(state==='dev','the lab left its own state on death');
+    eq(recordsLine(),recs,'the lab wrote to the records');
+    Lab.leave();
+    ok(state==='start','leaving the lab put the player somewhere that looks like a run continues ('+state+')');
+    ok(!Lab.on(),'the lab says it is still open after leaving');
+  });
+
+  test('the lab derives its damage numbers by watching, and the number is the damage',()=>{
+    /* The number comes from the difference in a body's health between two ticks, so it has to
+       survive one tick without a baseline: the first tick after a body appears can only record what
+       it saw. That is asserted rather than tolerated - a readout that invented a number on the tick
+       a body arrived would be a number about nothing. */
+    Lab.enter();
+    const r=currentRoom();
+    const e=r.enemies.find(b=>b.labSpecimen);
+    ok(!!e,'the specimen row is empty, so there is nothing to shoot');
+    update();                                    // the baseline tick
+    eq(Lab.numbers().length,0,'a number appeared on the baseline tick, describing no damage');
+    const before=e.hp;
+    e.hp=before-7;
+    update();
+    const ns=Lab.numbers();
+    ok(ns.length===1,'one hit produced '+ns.length+' numbers, wanted 1');
+    eq(ns.length?ns[0].txt:'?','-7','the number is not the damage that was dealt');
+    ok(ns.length&&!ns[0].heal,'7 points of damage were reported as healing');
+    // a RISE is reported as healing, in the other colour, because a body that gains health between
+    // two ticks is a thing worth seeing rather than something to average away.
+    //
+    // It is +10 and not +3, and the number is the point rather than an accident of the fixture: the
+    // readout is a DELTA FROM THE LAST TICK, not a total from some earlier moment. The body is being
+    // set from before-7 back up to before+3, so what happened on this tick is ten points of healing.
+    // A readout that reported +3 here would be reporting the change since the shot, which is a
+    // number about two events rather than about the one that just occurred - and a burst that lands
+    // across three ticks would read as three small numbers instead of one damage event.
+    e.hp=before+3; update();
+    const h=Lab.numbers();
+    ok(h.length&&h[h.length-1].heal,'a body that gained 10 health was not reported as healing');
+    eq(h.length?h[h.length-1].txt:'?','+10','the healing number is not this tick\'s change');
+    Lab.leave();
+  });
+
+  test('the lab freezes the specimen row and only the row',()=>{
+    /* Freeze is a position write-back, and the row is the still copy the damage numbers are read
+       off. A drove must NOT be pinned, or "spawn in droves" would quietly become "spawn twelve
+       statues" and the stress case would stop testing anything. */
+    Lab.enter();
+    const r=currentRoom();
+    const row=r.enemies.find(b=>b.labSpecimen);
+    for(let i=0;i<4;i++) update();                // let the pin point settle
+    const pinned={x:row.x,y:row.y};
+    for(let i=0;i<30;i++) update();
+    ok(Math.abs(row.x-pinned.x)<0.001&&Math.abs(row.y-pinned.y)<0.001,
+      'the specimen row drifted while frozen (moved '+
+      Math.hypot(row.x-pinned.x,row.y-pinned.y).toFixed(2)+'px)');
+    const n0=r.enemies.length;
+    Lab.drove();
+    eq(r.enemies.length,n0+12,'a dropper of a dozen did not add a dozen bodies');
+    const drove=r.enemies.filter(b=>b.labDrove);
+    eq(drove.length,12,'the dropped bodies are not marked as a drove');
+    /* THE MECHANISM, not the symptom. The claim is that the freeze pins the row and ONLY the row,
+       and the freeze works by writing a remembered position back - so the thing to assert is that a
+       drove body has no remembered position to be written back to. Asserting movement instead
+       measures the whole simulation as well as the freeze, which is how this check came to report
+       that a drove was "pinned" when the real position was that the drop was landing somewhere the
+       pack could not act from.
+
+       OPEN, AND DELIBERATELY NOT ASSERTED: a drove dropped by Lab.drove() does not approach the
+       player. Placed by hand - same room, same body, same 40 ticks - a lunger walks 48px and enters
+       its approach, so the pack logic, the aggro gate and the separation pass are all fine; the
+       difference is where Lab.drove() puts the ring. As dropped, a body sits at ~279px with
+       curSpeed 0. Until that is found, the claim "drop a dozen and they come at you" is NOT
+       verified, and the honest thing is to say so here rather than to assert something weaker that
+       happens to hold. */
+    ok(drove[0].labX===undefined,'a drove body was given a pin position, so the freeze has something to write it back to');
+    ok(drove[0].labSpecimen===undefined,'a drove body is marked as a specimen, so the freeze will pin it');
+    // and the freeze really is leaving them alone: positions untouched by a tick that pins the row
+    const row2=r.enemies.filter(b=>b.labSpecimen);
+    const rp={x:row2[0].x,y:row2[0].y}, dp={x:drove[0].x,y:drove[0].y};
+    update();
+    ok(Math.hypot(row2[0].x-rp.x,row2[0].y-rp.y)<0.001,'the specimen row is not actually frozen, so this check proves nothing');
+    Lab.leave();
+  });
+
+
+
+  /* THE CHANGE HISTORY IS TESTED, and it is the LAST check in the suite for a structural reason.
+
+     It audits the table of pinned fixes against the results, so it can only see checks that have
+     already run - and results are appended in the order the tests are DEFINED. Written anywhere else
+     in this file it would compare the table against a partial list and report every later check as
+     an unbacked fix, which is exactly what happened the first time: it claimed two of them were
+     unverified, and they were the two tests sitting below it in the file. A check about the whole
+     suite has to come after the whole suite, and the only way to guarantee that is to put it last.
+
+     `results`, not window.__testResults: the global is assigned after this file has finished running,
+     so reading it from inside a check gets undefined. */
+  test('every pinned fix in the change history has a test with that name',()=>{
+    /* The mechanism, tested. The panel marks an entry unverified when no result carries its name, and
+       that is only worth anything if the marking is right - so this asks both directions.
+
+       Two entries were in the unverified state when this was written: one whose test had been renamed
+       out from under it, and one - the win record - that had no test at all and never had. The first
+       is a rename somebody forgot; the second is worse, because a fix nobody is checking is a fix
+       nobody can tell has stopped working, and it sat in green because "no result" scored as "pass".
+
+       The first assertion is deliberately about the TABLE and not about the game: it cannot fail
+       because a mechanic broke, only because somebody pinned a fix without pinning a test for it, or
+       renamed a test without renaming its entry. That is the mistake worth catching, and it is
+       invisible from the game's side. */
+    const names=results.map(r=>r.name);
+    const unbacked=Object.keys(FIXES).filter(n=>names.indexOf(n)<0);
+    eq(unbacked.length,0,'pinned fixes with no test of that name, so nothing is checking them: '+
+      (unbacked.length?'\n        - '+unbacked.join('\n        - '):''));
+
+    /* And the second half is the one that matters, because a correct table is no use if the panel
+       still reports green over it. This calls the REAL showBugPanel with a results list that has one
+       genuine entry removed, and reads what it says. The entry removed is a real pinned fix, not an
+       invented one, so the panel is being asked about a fix that genuinely has no test behind it.
+
+       Re-implementing the scoring here and asserting on that would test my own arithmetic rather
+       than the shipped behaviour, and the whole point is that the shipped behaviour is what was
+       wrong. */
+    const victim=Object.keys(FIXES)[0];
+    const oldBtn=document.getElementById('bugBtn'), oldPanel=document.getElementById('bugPanel');
+    if(oldBtn) oldBtn.remove();
+    if(oldPanel) oldPanel.remove();
+    showBugPanel(results.filter(r=>r.name!==victim));
+    const btn=document.getElementById('bugBtn');
+    ok(!!btn,'the panel did not render, so there is nothing asserting against');
+    if(btn){
+      ok(/UNVERIFIED/.test(btn.textContent),
+        'with "'+victim+'" reporting no result, the panel said "'+btn.textContent+
+        '" - so a fix with nothing behind it still reads as a fix that holds');
+      ok(!/all pinned fixes hold/.test(btn.textContent),
+        'the panel claimed every pinned fix holds while one of them has no test');
+    }
+    if(btn) btn.remove();
+    const pn=document.getElementById('bugPanel'); if(pn) pn.remove();
+  });
 
   // the discipline check itself, as a test: if any game module ever draws from raw Math.random
   // again, the seed stops meaning anything and this is the line that says so

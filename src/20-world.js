@@ -46,12 +46,19 @@ const TURNS={N:['W','E'],S:['E','W'],E:['N','S'],W:['S','N']};
    an asymmetric inset, a ledge, or a corridor stub has somewhere to put it without changing the
    shape of the data.
 
-   `px,py` is the spawn centre, also on the room, because a bigger room's centre is not the screen's
-   centre and anything that needs "the middle of this room" should ask the room rather than average
-   two constants that happen to describe a different room. */
+   It reads STD_ROOM for its origin rather than ROOM_LEFT, and that is not a style choice. ROOM_LEFT
+   is now the CURRENT room's left edge, so a room built while standing in a big room would be
+   positioned relative to the big room - and a room built while standing in itself would be placed at
+   its own coordinates, which is a room that is somehow at its own left edge. A generator that
+   positions a room from the room you are in is the same geometry-in-two-places bug wearing a
+   different hat, so this anchors on the constant that means "where a room starts" and nothing else.
+
+   `cx`/`cy` are on the room because a bigger room's centre is not the screen's centre, and anything
+   that needs "the middle of this room" should ask the room rather than average two shorthands that
+   happen to be describing whatever room the player is in at the time. */
 function roomBounds(w,h){
   w=w||ROOM_W; h=h||ROOM_H;
-  return {l:ROOM_LEFT,t:ROOM_TOP,r:ROOM_LEFT+w,b:ROOM_TOP+h,w:w,h:h};
+  return {l:STD_ROOM.l,t:STD_ROOM.t,r:STD_ROOM.l+w,b:STD_ROOM.t+h,w:w,h:h};
 }
 function newRoom(x,y,type,bounds){
   const b=bounds||roomBounds();

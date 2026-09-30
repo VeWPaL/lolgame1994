@@ -96,7 +96,7 @@ const FIXES={
   'fractional damage can never leave you alive on an empty health bar':['movement and being hit','repeated fractional subtraction landed health on 6.66e-16, which is not zero, so the death check never fired'],
 
   /* ---- rooms, keys and getting further ---- */
-  'every dungeon: four winding runs, each ending on a reward':['rooms and progression','the map had loops in it, so a run could be all backtracking and no depth'],
+  'every dungeon: a branching tree with a reward at each of two ends, and a key in a branch':['rooms and progression','the map had loops in it, so a run could be all backtracking and no depth. The name of this entry drifted when the test was rewritten - it read "four winding runs" and matched nothing, which is how a pinned fix ends up looking verified while nothing checks it'],
   'the critical path is walkable: silver to the upgrade, gold to the boss':['rooms and progression','a generator could produce a floor whose key room could not be reached'],
   'the two keys gate different doors and are each spent once':['rooms and progression','one key could open both doors, so the progression was one gate with two props'],
   'clearing the two key rooms pays out the right metal':['rooms and progression','the two key rooms paid the same metal, so the boss door could open before the upgrade room did'],
@@ -130,13 +130,44 @@ const FIXES={
   'time and heart formatting':['HUD and interface','a formatted value could print 0:60.0 or a negative heart'],
 
   /* ---- runs, records and the frame ---- */
-  'records: a win is saved, a slower win keeps the fastest time':['runs and records','a slow run overwrote the best time, or a win never saved at all'],
+  /* This entry used to read "records: a win is saved, a slower win keeps the fastest time", and it
+     was pinned with NO TEST behind it - not a failing test, not a renamed one, none at all. The
+     panel scored an entry with no result as a pass, so it sat there in green indefinitely.
+
+     It is retired rather than given a test, because the thing it describes no longer exists. The way
+     out used to end the run; it goes DOWN now, and endRun() is only ever called with a death. There
+     is no path through a normal run that wins, so "a slower win keeps the fastest time" is a
+     sentence about a door that was taken out. Writing a test to keep a claim about it honest would be
+     inventing a requirement.
+
+     What replaced it is the claim that is actually load-bearing now, and that is pinned next door:
+     a run ends when the player dies, and nothing else ends it. That one has a test. */
+  'a run ends in death and in nothing else, so there is no win to record':['runs and records',
+    'the way out used to call endRun(true) and end the game, and a slow win overwrote the best time. '+
+    'It goes down a floor now, so the win path is unreachable - which means the honest claim is not '+
+    'about saving a win but about there being no way to end a run early'],
   'records: dying on the boss-kill frame is a death, and deaths save rooms explored':['runs and records','a tie on the last frame was resolved the wrong way, so a death was scored as a win'],
   'run stats count shots, hits, kills, damage and time exactly':['runs and records','the numbers on the results screen did not match what the game did'],
   'room fade: entering with enemies eases in across the whole ready window':['presentation','the fade was computed as the complement of a smoothstep, which is flat at both ends and cut to black on the first tick'],
   'room fade: a cleared room snaps back in and a doorway eases to black first':['presentation','rooms faded in at different rates depending on whether they were cleared'],
   'room entry fades in over the ready window and locks the enemies out':['presentation','enemies could act during the entry fade, before the player could see them'],
   'every screen renders without throwing':['presentation','a screen that has not been opened in a build throws the first time it is reached'],
+  /* ---- rooms bigger than the screen ----
+     These are the first entries here for something no player ever reported: the camera and the room
+     bounds are new work, not a regression. They belong anyway, because a table of fixes that stops
+     recording fixes the day it starts recording new work is a table that goes stale quietly - and
+     the camera clamp is the single best example in this project of a fix whose whole value was the
+     note explaining why a green suite had not caught it. */
+  'a room can be larger than the screen and the walls are that room\'s own walls':['rooms and progression',
+    'room geometry lived in four constants read in 169 places. One shape was the only shape, so a room '+
+    'of any other size had its walls drawn by half the game at the old size while the other half used '+
+    'the new one - and the two agreed perfectly right up until the first room that was not 700x450'],
+  'the camera follows the player across a big room and stops at its edges':['presentation',
+    'the clamp on the big-room branch was Math.min(b.l,...) with the bounds transposed, so it pinned '+
+    'the view to the room\'s left edge and the camera never moved at all. It passed the entire suite '+
+    'because every room in the game fits on screen, so that line had never executed once: the very '+
+    'property that made the camera safe to add - it is the identity transform for a room that fits - '+
+    'was the property that hid a total failure inside it'],
 };
 
 
@@ -219,7 +250,7 @@ function uiHoldsInput(){ return !!uiOverlay()||devOpen; }
    on pause, and then the suppressor ate the resume. Three tests failed and then left the sheet open,
    which broke the five after them. An overlay that traps its own dismiss key does not fail one test,
    it poisons the rest of the run. */
-const UI_KEYS=['escape','h','b','s','p','r','f1','1','2','3','4'];
+const UI_KEYS=['escape','h','b','s','p','r','f1','f2','f3','f4','f5','1','2','3','4'];
 function uiAllows(k){ return UI_KEYS.indexOf(String(k).toLowerCase())>=0; }
 // Anything aimed at the overlay is consumed on the way down, before the game sees it.
 /* ---- the character sheet -----------------------------------------------------------------------
@@ -491,22 +522,62 @@ function showBugPanel(results){
   const live=results&&results.length;
   const byName={};
   if(live) for(const r of results) byName[r.name]=r.ok;
-  // With no results the table is the source of truth and everything in it is, by construction, fixed.
+  /* With no results the table is the source of truth and everything in it is, by construction, fixed.
+
+     THREE states, not two, and the third is the one this used to fold into the first.
+
+     An entry here whose test no longer exists - because the test was renamed, or deleted, or never
+     existed - used to be scored `byName[name]!==false`, which is TRUE for a name that is not in the
+     results at all. So a fix with nothing behind it was reported as a fix that holds, in green,
+     forever. That is the worst way for this panel to be wrong: not a false alarm, but a false all
+     clear, on exactly the entries somebody had every reason to assume were covered.
+
+     It is not hypothetical. Two entries were in that state - one whose test had been renamed out from
+     under it, and one, 'a win is saved', that has no test at all. A scoreboard that cannot say "I do
+     not know" will always prefer the comfortable answer, so it is taught to say it. */
   const items=Object.keys(FIXES).map(name=>{
     const m=FIXES[name];
-    return {name,cat:m[0],why:m[1],ok:live?byName[name]!==false:true,live:!!live,msg:live&&byName[name]===false?(results.find(r=>r.name===name)||{}).msg:''};
+    const known=live?name in byName:false;
+    const ok=known?byName[name]:true;
+    return {name,cat:m[0],why:m[1],ok,known,live:!!live,
+      msg:live&&known&&!byName[name]?((results.find(r=>r.name===name)||{}).msg||''):''};
   });
   const byCat={};
-  for(const c of CAT_ORDER) byCat[c]={ok:[],bad:[]};
-  for(const it of items) byCat[it.cat][it.ok?'ok':'bad'].push(it);
+  for(const c of CAT_ORDER) byCat[c]={ok:[],bad:[],orphan:[]};
+  for(const it of items) byCat[it.cat][it.live&&!it.known?'orphan':(it.ok?'ok':'bad')].push(it);
   const pass=items.filter(i=>i.ok).length, total=items.length, allOk=pass===total;
+  /* Unverified counts as NOT ok for the headline. A panel that goes green while a third of its
+     entries are unbacked is the failure being fixed, one level up. */
+  const orphans=items.filter(i=>i.live&&!i.known);
+  const allClear=allOk&&orphans.length===0;
+
+  /* THE TWO NUMBERS, and the reason this panel says what each one is.
+
+     `total` is the number of ENTRIES IN THIS TABLE - bugs that were found and pinned. The suite runs
+     a good deal more checks than that, most of which are not bug fixes at all but standing
+     guarantees: that a seed round-trips, that a stat is derived from base, that the registry refuses
+     a missing id. Those belong in the suite and not in a change history, and back-filling the table
+     with them would be inventing a history in which each one was once a bug somebody reported.
+
+     So the two numbers are genuinely different and the panel used to show only the smaller one, under
+     a heading that read like a test result. A player comparing "94 ok" against a suite that says 160
+     has no way to tell which is stale, and the likeliest reading - that 66 checks are missing or
+     broken - is the wrong one. Both are printed, each named, and the unpinned count is printed too,
+     because a check that exists in neither list is the thing that would actually be worth knowing. */
+  const suiteTotal=live?results.length:0;
+  const unpinned=live?results.filter(r=>!(r.name in FIXES)).length:0;
 
   const btn=document.createElement('button');
   btn.id='bugBtn';
-  btn.textContent=allOk?'bug fixes: '+pass+'/'+total+' ok':'bug fixes: '+(total-pass)+' FAILED';
+  /* The button leads with whatever is wrong, and an unbacked fix outranks a red one - a failing
+     check tells you the fix stopped working, while an unbacked one tells you it was never working
+     and nobody could tell. */
+  btn.textContent=orphans.length?orphans.length+' UNVERIFIED'
+    :(allClear?'fixes: '+pass+'/'+total+' pinned':(total-pass)+' FAILED');
   btn.title='Bug fixes (B)';
   btn.style.cssText='position:fixed;left:10px;bottom:10px;z-index:11;padding:7px 12px;cursor:pointer;'+
-    'background:rgba(12,14,20,.92);color:'+(allOk?'#5ee27a':'#ff6b6b')+';border:1px solid '+(allOk?'#2f6b46':'#6b2f2f')+';'+
+    'background:rgba(12,14,20,.92);color:'+(orphans.length?'#e8c04a':(allClear?'#5ee27a':'#ff6b6b'))+';border:1px solid '+
+    (orphans.length?'#6b5c2f':(allClear?'#2f6b46':'#6b2f2f'))+';'+
     'border-radius:4px;font:12px ui-monospace,monospace;letter-spacing:.04em';
   document.body.appendChild(btn);
 
@@ -517,9 +588,12 @@ function showBugPanel(results){
     'border:1px solid #2b303c;border-radius:4px;font:12px ui-monospace,monospace;box-shadow:0 8px 30px rgba(0,0,0,.5)';
 
   const head=document.createElement('div');
-  head.style.cssText='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;color:'+(allOk?'#5ee27a':'#ff6b6b');
+  head.style.cssText='display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;color:'+
+    (orphans.length?'#e8c04a':(allClear?'#5ee27a':'#ff6b6b'));
   const title=document.createElement('span');
-  title.textContent=(allOk?'all fixed':'STILL BROKEN')+'  '+pass+'/'+total;
+  title.textContent=(orphans.length?orphans.length+' FIXES HAVE NO TEST'
+    :(allClear?'all pinned fixes hold':'STILL BROKEN'))+'  '+pass+'/'+total+' pinned'
+    +(live?('   ·   '+suiteTotal+' checks, '+unpinned+' not in this list'):'');
   const close=document.createElement('button');
   close.textContent='close';
   close.style.cssText='background:none;border:1px solid #3a4150;color:#9aa4b5;border-radius:3px;padding:2px 8px;cursor:pointer;font:inherit';
@@ -530,29 +604,40 @@ function showBugPanel(results){
     if(panel.style.display==='block') uiTakeInput(); };
 
   for(const c of CAT_ORDER){
-    const g=byCat[c]; if(!g.ok.length&&!g.bad.length) continue;
+    const g=byCat[c]; if(!g.ok.length&&!g.bad.length&&!g.orphan.length) continue;
     const det=document.createElement('details');
     // a group with a failure inside starts open, so red is never hidden behind a triangle
-    det.open=!!g.bad.length||c==='unclassified';
+    det.open=!!g.bad.length||!!g.orphan.length||c==='unclassified';
     det.style.cssText='margin:0 0 3px;border-bottom:1px solid #1e222c';
     const sum=document.createElement('summary');
-    const mark=g.bad.length?'✖':'✔';
-    sum.style.cssText='cursor:pointer;padding:5px 2px;list-style:none;color:'+(g.bad.length?'#ff6b6b':'#8fd8a8')+';user-select:none';
+    const mark=g.bad.length?'✖':(g.orphan.length?'?':'✔');
+    sum.style.cssText='cursor:pointer;padding:5px 2px;list-style:none;color:'+
+      (g.bad.length?'#ff6b6b':(g.orphan.length?'#e8c04a':'#8fd8a8'))+';user-select:none';
     sum.innerHTML='<span style="opacity:.8">'+mark+'</span>  '+c+
-      ' <span style="opacity:.5">'+g.ok.length+'/'+(g.ok.length+g.bad.length)+'</span>';
+      ' <span style="opacity:.5">'+g.ok.length+'/'+(g.ok.length+g.bad.length+g.orphan.length)+'</span>';
     det.appendChild(sum);
     const ul=document.createElement('ul');
     ul.style.cssText='margin:0 0 6px;padding:0 0 0 20px;list-style:none';
     // the reason comes first in grey, because "why is this pinned" is the part worth reading and
     // the name of the test is only there to find it in the source
-    for(const it of g.ok.concat(g.bad)){
+    for(const it of g.ok.concat(g.bad).concat(g.orphan)){
+      const orph=it.live&&!it.known;
       const li=document.createElement('li');
-      li.style.cssText='margin:0 0 5px;color:'+(it.ok?'#7fbf95':'#ff6b6b');
+      li.style.cssText='margin:0 0 5px;color:'+(orph?'#e8c04a':(it.ok?'#7fbf95':'#ff6b6b'));
       const nm=document.createElement('div');
       nm.textContent=it.name;
+      if(orph){
+        /* Say what is wrong, in the entry, rather than only in the heading. An amber row that reads
+           like a green one is worse than no row: the reader is looking at a name in a list of fixed
+           things, and the name is the whole of what they take away. */
+        const w=document.createElement('span');
+        w.textContent='  — no test with this name; this fix is unverified';
+        w.style.cssText='color:#e8c04a;font-size:11px';
+        nm.appendChild(w);
+      }
       const why=document.createElement('div');
       why.textContent=it.why;
-      why.style.cssText='color:'+(it.ok?'#5d6b78':'#c98a8a')+';font-size:11px;line-height:1.35';
+      why.style.cssText='color:'+(orph?'#8a7a4a':(it.ok?'#5d6b78':'#c98a8a'))+';font-size:11px;line-height:1.35';
       li.appendChild(nm); li.appendChild(why);
       if(!it.ok&&it.msg){
         const m=document.createElement('div');
@@ -599,6 +684,15 @@ window.addEventListener('keydown',e=>{
     return;
   }
   if(k==='f1'&&first&&player){ toggleDev(true); return; }
+  /* THE LAB, asked BEFORE the game and before the overlays below, for the same reason the bench is:
+     its keys are function keys that mean nothing to the game, and F2 in particular has to be able
+     to both enter and leave. If the lab only answered on the way in it would be a one-way door, and
+     the only way out of a debug view that cannot be left is a browser refresh - which throws away
+     the very run you opened it from.
+
+     It is asked before the state overlay keys as well, so F2 leaves the lab even while something is
+     open over it. */
+  if(Lab.key(k,first)) return;
   if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','shift'].includes(k)) e.preventDefault();
   keys[k]=true;
   if(k==='f'&&first) showPerf=!showPerf;

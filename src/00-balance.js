@@ -28,39 +28,68 @@ const SPEEDUP=3.5, TICK_HZ=Math.round(60*SPEEDUP);
 const sec=s=>Math.round(s*TICK_HZ);
 const GRID=7, START=3, DOORW=90;
 
-/* ROOM SIZE IS A DEFAULT, NOT THE WORLD. These four numbers describe a STANDARD room, and the
-   distinction is new and load-bearing.
+/* THE STANDARD ROOM, and the fact that it is a DEFAULT rather than the world is new and load-bearing.
 
-   They used to mean "the room" - there was exactly one shape, every room was 700x450 at (50,130),
-   and ~208 call sites read them as the walls. A room is now DATA carrying its own bounds, so a room
-   can be 700x450 or 1600x1200 or an L, and these numbers are what a new room gets unless it asks
-   for something else.
+   There was exactly one room shape for the whole project: 700x450 at (50,130), and 169 call sites in
+   seven gameplay files read those four numbers as the walls. A room is now DATA carrying its own
+   bounds, so a room can be 700x450 or 1600x1000 or an L, and these are what a new room gets unless it
+   asks for something else.
 
-   Keeping the old names as the default is deliberate: the alternative was renaming 208 call sites AND
-   the C# mirror in one go, and a change that wide cannot be reviewed. Instead the four constants keep
-   their meaning as "a standard room" and every site that means "the wall of the room I am standing in"
-   is migrated to the accessor. The suite is what tells the two apart: a site left on the constant
-   agrees with every other site right up until a room is a different size, and then it silently
-   disagrees - which is the geometry-in-two-places failure this file has the most of. */
-const ROOM_LEFT=50, ROOM_RIGHT=750, ROOM_TOP=130, ROOM_BOTTOM=580;
-const ROOM_W=ROOM_RIGHT-ROOM_LEFT, ROOM_H=ROOM_BOTTOM-ROOM_TOP;
-const MIDX=(ROOM_LEFT+ROOM_RIGHT)/2, MIDY=(ROOM_TOP+ROOM_BOTTOM)/2;
+   WHY THE OLD NAMES SURVIVE, which is the judgement call in this change and the thing to argue with.
 
-/* THE ACCESSORS. Four functions answering "where is the wall of the room I am in", and they are the
-   only things gameplay should ask. They read the CURRENT room's bounds, so a room of a different size
-   works with no code change anywhere else - which is the whole point of putting the size on the room
-   rather than in a constant.
+   The obvious move is to rewrite all 169 sites to call the accessors. That is the cleaner end state
+   on paper, and it is also a change too wide to review, too wide to land in one sitting, and - worst
+   of all - possible to leave HALF DONE, which is the state where some sites read the room and some
+   read a 700x450 constant, every one of them individually plausible, and the bug only appearing in
+   the first room that is a different size. A half-migrated geometry is worse than an unmigrated
+   one, because an unmigrated one is at least uniformly wrong.
+
+   So the four names stay, and become a SHORTHAND FOR THE CURRENT ROOM, written by exactly one
+   function and by nothing else. There is still one place that knows the geometry - the room record -
+   and syncRoomBounds is the single line of code that copies it out. All 169 sites now read the
+   current room's bounds, with zero of them edited.
+
+   THE COST, STATED PLAINLY, because the shorthand has a real one: a `let` read before
+   syncRoomBounds has run for the room you are standing in is a stale number, where a function call
+   could not be. That is why the sync is called from the one function that changes rooms
+   (enterRoom) and from the two that build one, rather than being sprinkled at call sites where
+   someone might forget it. A reader who wants to be certain is not reading the shorthand: they call
+   roomL(), which reads the room every time and cannot be stale.
+
+   MIDX and MIDY came along for the same reason. A bigger room's centre is not the screen's centre,
+   and 60 sites wanted "the middle of the room" without saying so. */
+const STD_ROOM={l:50,t:130,r:750,b:580};
+const ROOM_W=STD_ROOM.r-STD_ROOM.l, ROOM_H=STD_ROOM.b-STD_ROOM.t;
+let ROOM_LEFT=STD_ROOM.l, ROOM_RIGHT=STD_ROOM.r, ROOM_TOP=STD_ROOM.t, ROOM_BOTTOM=STD_ROOM.b;
+let MIDX=(STD_ROOM.l+STD_ROOM.r)/2, MIDY=(STD_ROOM.t+STD_ROOM.b)/2;
+
+/* THE ACCESSORS - the honest read, and what a new site should use.
+
+   They answer "where is the wall of the room I am in" from the room itself, every time, so they
+   cannot be stale. Each takes an OPTIONAL room, which is the escape hatch that makes the shorthand
+   above safe: the day something needs to know a room that is not the current one - drawing the
+   neighbouring room through an open door, or a corridor stub, or a second player's room - it passes
+   that room in and is correct, rather than reaching for a global that only knows about one.
 
    They fall back to the standard room when there is no room yet, because the test harness pokes
    Stats and the player before the first startGame, and a helper that throws on a missing room is a
    helper every caller has to guard. */
-const boundsOf=()=>{
-  const r=(typeof currentRoom==='function')?currentRoom():null;
-  return (r&&r.bounds)||{l:ROOM_LEFT,t:ROOM_TOP,r:ROOM_RIGHT,b:ROOM_BOTTOM};
+const boundsOf=(r)=>{
+  const q=r||((typeof currentRoom==='function')?currentRoom():null);
+  return (q&&q.bounds)||STD_ROOM;
 };
-const roomL=()=>boundsOf().l, roomR=()=>boundsOf().r, roomT=()=>boundsOf().t, roomB=()=>boundsOf().b;
-const roomW=()=>boundsOf().r-boundsOf().l, roomH=()=>boundsOf().b-boundsOf().t;
-const roomCX=()=>(roomL()+roomR())/2, roomCY=()=>(roomT()+roomB())/2;
+const roomL=(r)=>boundsOf(r).l, roomR=(r)=>boundsOf(r).r, roomT=(r)=>boundsOf(r).t, roomB=(r)=>boundsOf(r).b;
+const roomW=(r)=>boundsOf(r).r-boundsOf(r).l, roomH=(r)=>boundsOf(r).b-boundsOf(r).t;
+const roomCX=(r)=>(roomL(r)+roomR(r))/2, roomCY=(r)=>(roomT(r)+roomB(r))/2;
+
+/* THE ONE WRITER. Everything above that is a `let` is written here and nowhere else, and this is the
+   function to look at when a wall is in the wrong place. */
+function syncRoomBounds(){
+  const b=boundsOf();
+  ROOM_LEFT=b.l; ROOM_RIGHT=b.r; ROOM_TOP=b.t; ROOM_BOTTOM=b.b;
+  MIDX=(b.l+b.r)/2; MIDY=(b.t+b.b)/2;
+  return b;
+}
 
 /* THE CAMERA, and it is a RENDER-TIME TRANSFORM rather than a change of coordinates.
 
@@ -82,11 +111,25 @@ const roomCX=()=>(roomL()+roomR())/2, roomCY=()=>(roomT()+roomB())/2;
 const cam={x:0,y:0,w:0,h:0};
 function cameraTarget(){
   const b=boundsOf();
-  // a room narrower or shorter than the view is CENTRED rather than pinned to its top-left, so a
-  // small room does not sit in the corner of the screen with a third of the viewport showing scenery
-  // that is not part of the fight
-  const x=(b.r-b.l)<=W?(b.l+b.r-W)/2:Math.min(b.l,Math.max(b.r-W,player.x-W/2));
-  const y=(b.b-b.t)<=H?(b.t+b.b-H)/2:Math.min(b.t,Math.max(b.b-H,player.y-H/2));
+  /* A room that fits the view is CENTRED: the 700x450 room in a 960x600 viewport used to sit at
+     (50,130) with 210px of dead space to the right and 80 to the left, which is visible and wrong.
+
+     A room that does NOT fit is the interesting branch, and it is written out longhand because it
+     was wrong the first time and nothing caught it. The camera's left edge may range over
+     [b.l, b.r-W] - the left edge of the room up to the left edge that puts the room's right edge on
+     the screen's right. The clamp has to be to THOSE two numbers.
+
+     It was written as Math.min(b.l, ...) with the player's offset on the inside, which pins the
+     camera to the room's left edge whenever the player is right of centre - that is, most of the
+     time, in most of the room. The view never moved at all. It passed 154 checks because every
+     room in the game fits on screen, so this branch had never executed once: the property that
+     made the camera safe to introduce is the same property that hid the bug in it, and the lab is
+     the only reason it is now a bug that is fixed rather than a bug that is waiting.
+
+     So the order matters and is the whole content: max(lower, min(upper, desired)). min-then-max
+     with the bounds transposed reads plausibly and is what it was. */
+  const x=(b.r-b.l)<=W?(b.l+b.r-W)/2:Math.max(b.l,Math.min(b.r-W,player.x-W/2));
+  const y=(b.b-b.t)<=H?(b.t+b.b-H)/2:Math.max(b.t,Math.min(b.b-H,player.y-H/2));
   return {x,y};
 }
 function updateCamera(){

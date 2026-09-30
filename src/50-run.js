@@ -78,6 +78,9 @@ function startGame(){
   if(typeof Items!=='undefined') Items.reset(); else Stats.reset();
   generateDungeon();
   cur={x:START,y:START};
+  // the wall shorthand, re-synced before the player is placed: the line below puts the player at
+  // MIDX/MIDY, and MIDX is the current room's centre, so it has to already be the new room's
+  syncRoomBounds();
   player={x:MIDX,y:MIDY,r:13,speed:0.935*PLAYER_MOVE,vx:0,vy:0,kvx:0,kvy:0,lagX:MIDX,lagY:MIDY,hp:8,maxHp:8,armor:0,weaponIdx:0,cooldown:0,cooldownMax:WEAPONS[0].cooldown/TEMPO.rate,altCooldown:0,altCooldownMax:ALT_WEAPON.cooldown/TEMPO.rate,altMode:'blast',iframes:0,hasSilver:false,hasGold:false,
     blinkCharges:2,blinkRegen:0,blinkRestore:null,blinkGrace:0,graceSpent:false,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,momentum:0,trendVx:0,trendVy:0,beliefVx:0,beliefVy:0};
   projectiles=[]; dashFX=[]; burstFX=[]; hookFields=[]; bossUnlocked=false; itemUnlocked=false; trans=null; readyT=0;
@@ -85,7 +88,21 @@ function startGame(){
   entryDir='N';
   roomFade=1; fadeTicks=sec(0.4); fadeT=fadeTicks;
   applyVitals();   // after the player exists, so a Vigor item and a fresh body agree
-  run={floor:1,floorTicks:0,roomsThisFloor:0,rootSeed:Rnd.seed,ticks:0,kills:0,dmgTaken:0,shots:0,hits:0,secret:false,hook:false}; lastRun=null;
+  /* `unlocked` is created WITH the run, which it was not until the lab handed this over by trying to
+     equip every item in the game at once and throwing on the first artifact.
+
+     The bucket is a property of the run - "what has this run unlocked" - so it belongs in the run's
+     own literal. It used to be created by Items.reset(), and that worked by accident and only in
+     one direction: startGame calls Items.reset() on line 78, which is BEFORE this literal, so
+     reset() was writing the bucket onto the PREVIOUS run and this one was born without it. Nothing
+     noticed because the one test that reads the bucket calls Items.reset() itself immediately
+     beforehand, which recreates the precondition it is supposed to be checking. A test that
+     establishes the thing it is about to assert is not a test of that thing.
+
+     The visible symptom in a real run is a crash the moment an artifact is picked up, which is a
+     legendary - the rarest thing in the game, and the one thing most likely to be deliberately
+     farmed for. */
+  run={floor:1,floorTicks:0,roomsThisFloor:0,rootSeed:Rnd.seed,ticks:0,kills:0,dmgTaken:0,shots:0,hits:0,secret:false,hook:false,unlocked:{}}; lastRun=null;
   paused=false; acc=0;
   state='playing';
 }
@@ -138,6 +155,9 @@ function descend(){
   Rnd.set(Rnd.floorSeed(run.rootSeed,run.floor));
   generateDungeon();
   cur={x:START,y:START};
+  // same reason as startGame: the line below re-centres the player on MIDX, and this is a freshly
+  // generated floor whose rooms may not be the size the last one was
+  syncRoomBounds();
   // the body carries down whole. Not the position, not the projectiles, not the room - the build.
   player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
   player.vx=0; player.vy=0; player.kvx=0; player.kvy=0;

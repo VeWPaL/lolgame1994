@@ -404,6 +404,12 @@ function pickWeapons(n,exclude){
 
 function enterRoom(nx,ny,fromDir){
   cur={x:nx,y:ny};
+  /* THE CURRENT ROOM CHANGED, so the wall shorthand has to be re-synced before anything in this
+     function or the tick reads a size belonging to the room the player just left. It goes first,
+     immediately after `cur`, because everything below - the spawn margins, the secret pickup at
+     MIDX, the wave - reads those numbers, and a spawn placed by the previous room's dimensions is
+     the kind of bug that only shows up in the first oversized room and then never again. */
+  syncRoomBounds();
   entryDir=fromDir;
   const r=rooms[key(nx,ny)];
   r.visited=true;

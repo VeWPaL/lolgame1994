@@ -32,11 +32,28 @@ function doorRect(d,wt){
        : d==='W'?[ROOM_LEFT-wt,MIDY-DOORW/2,wt,DOORW]
        :         [ROOM_RIGHT,MIDY-DOORW/2,wt,DOORW];
 }
+/* THE FLOOR, and the cache is keyed by SIZE as well as by type - which it has to be now that a
+   room is not one shape.
+
+   It used to be keyed by `type` alone, on the reasoning that there was one room size so the size
+   was constant. That reasoning stopped being true the moment bounds went on the room, and the
+   failure is quiet rather than loud: a big room asks for its floor, the cache hands back the
+   700x450 canvas built for a small one, and it gets stretched to cover 1600x1000. Everything looks
+   present. The tile pattern doubles in size, the cave speckles smear, and nobody can say why the
+   floor of the biggest room in the game looks like it is wearing a hat two sizes too small.
+
+   So the key is type + width + height, and the radial vignette is sized from the room rather than
+   from a literal 420. The vignette is the other half of it: at 420px it was most of the way across
+   a 450px-tall room, and on a 1000px-tall room it would be a small bright disc in the middle of a
+   large dark floor - the room would read as unlit beyond the disc rather than as a room. Scaling it
+   off the diagonal keeps the proportion, which is what was actually being chosen by hand. */
 function drawFloor(type){
-  let c=floorCache[type];
+  const w=roomW(), h=roomH();
+  const key=type+':'+w+'x'+h;
+  let c=floorCache[key];
   if(!c){
-    c=floorCache[type]=document.createElement('canvas');
-    c.width=ROOM_RIGHT-ROOM_LEFT; c.height=ROOM_BOTTOM-ROOM_TOP;
+    c=floorCache[key]=document.createElement('canvas');
+    c.width=w; c.height=h;
     const g=c.getContext('2d'), cx=c.width/2, cy=c.height/2;
     g.fillStyle=g.createPattern(caveCanvas,'repeat');
     g.fillRect(0,0,c.width,c.height);
@@ -44,13 +61,15 @@ function drawFloor(type){
     g.fillStyle=ROOM_BG[type]||'#191b22';
     g.fillRect(0,0,c.width,c.height);
     g.globalAlpha=1;
-    const grad=g.createRadialGradient(cx,cy,40,cx,cy,420);
+    // 420 was the radius on a 450-tall room, so this recovers the same shape at any size
+    const rad=Math.max(160,Math.sqrt(w*w+h*h)*0.47);
+    const grad=g.createRadialGradient(cx,cy,Math.min(40,rad*0.1),cx,cy,rad);
     grad.addColorStop(0,'rgba(255,255,255,0.05)');
     grad.addColorStop(1,'rgba(0,0,0,0.32)');
     g.fillStyle=grad;
     g.fillRect(0,0,c.width,c.height);
   }
-  ctx.drawImage(c,ROOM_LEFT,ROOM_TOP);
+  ctx.drawImage(c,roomL(),roomT());
 }
 function drawWand(px,py,a,color,extra){
   const side=Math.cos(a)>=0?1:-1, hx=px+side*11, hy=py+5;
@@ -136,6 +155,11 @@ function drawRoom(){
   const r=currentRoom();
   drawFloor(r.type);
   drawFloorField();
+  /* The lab's furniture goes over the floor and under the bodies: the grid and the braziers are
+     marks ON the floor, the shelf is a rail on the wall, and a plinth is the thing a body stands
+     ON - drawn over its own specimen it would hide the thing you came to look at. The damage
+     readout is the other half and goes the other way, over everything; see Lab.drawNumbers. */
+  Lab.draw();
 
   const wt=16;
   ctx.fillStyle='#2b2f3a';
@@ -319,6 +343,11 @@ function drawRoom(){
     // whole of it trailing thirty pixels behind the body making it
     if(e.castT>0) drawCastFlash(e.x,e.y,e.castT,CAST_TIME,e.pcol);
   }
+  /* The lab's damage readout, over the bodies and over the projectiles. It is here rather than with
+     the plinths because a number is the one thing in the lab that must never be behind something:
+     it is the thing you are reading, and in a room this size the body that just got hit is often
+     behind another body that did not. */
+  Lab.drawNumbers();
   for(const p of projectiles){
     // the ring marks where the bolt will actually go off, so it has to be the radius of the weapon
     // in flight - otherwise the hook's circle would understate the ground it covers
@@ -706,9 +735,28 @@ function drawHUD(){
   ctx.restore();
   ctx.textBaseline='alphabetic';
 
+  /* THE MAP IS NOT DRAWN IN THE LAB, and the reason is that in the lab it would be a lie.
+
+     The lab is built on top of a real startGame(), so a real 18-room dungeon exists behind it -
+     which is what gives the lab a valid player, a valid build and working menus. Its map is
+     therefore a map of a dungeon that is not there. On screen that reads as a large dark grey
+     rectangle with one white cell in it: the unvisited-room colour on the knocked-back paper, with
+     nothing in it to look at. A player - or a designer - sees a grey box and reasonably concludes
+     something failed to draw.
+
+     A debug view that shows furniture from a world it is not in is worse than one that shows
+     nothing, so it shows nothing. The lab's own survey grid and braziers are its map, and they are
+     true.
+
+     The guard wraps the map's DRAWING and not its layout arithmetic, which is deliberate and was
+     wrong the first time: the weapon row underneath reuses pw and mx0 to sit flush against the
+     bottom of the map, so closing the guard any earlier left those names undeclared and the HUD
+     threw on the very first frame. The weapon row is also deliberately left OUTSIDE the guard - the
+     bench works in the lab, and the lab is exactly where you want to be able to swap guns. */
   // the minimap hangs off the same right-hand margin as the left-hand one, so the two edges of the
   // HUD are the same distance from the screen and the whole block reads as one inset
   const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-MARGIN_X-pw,my0=MARGIN_Y,mx=mx0+14,my=my0+14,ic=3;
+  if(state!=='dev'){
   ctx.drawImage(woodPlate(pw,pw),mx0,my0);
   drawInset(mx0+8,my0+8,pw-16,pw-16,null);
   ctx.drawImage(paperTex(pw-20,pw-20),mx0+10,my0+10);
@@ -786,6 +834,7 @@ function drawHUD(){
       ctx.fillRect(cx+(cell-ic)/2,cy+(cell-ic)/2,ic,ic);
     }
   }
+  }   // end of the map, which the lab skips
 
   // The weapon row is three plates on one line: left hand, middle, right hand, touching, and glued
   // to the bottom of the map. The middle one is a placeholder and is meant to stay that way - it is
@@ -1246,6 +1295,9 @@ function render(){
     drawRoom();
     ctx.restore();
     drawHUD();
+    // the lab's legend is screen space, so it is drawn out here with the HUD rather than in the
+    // room pass - see Lab.drawLegend for why it does not scroll with the world
+    Lab.drawLegend();
     if(roomFade>0){ctx.fillStyle='rgba(0,0,0,'+roomFade+')';ctx.fillRect(0,0,W,H);}
     drawBossWarning();   // over the fade, so a room transition cannot swallow the warning
     drawDescent();       // also over the fade, and for the same reason: the fade is what it is drawn on

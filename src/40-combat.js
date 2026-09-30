@@ -71,6 +71,24 @@ function damagePlayer(amount,kx,ky,force){
   // Only the band just BELOW zero is snapped; anything at or above zero is left exactly as it is,
   // which is the whole point - a positive remainder is real remaining health and must survive.
   if(player.hp<0&&player.hp>-1e-6) player.hp=0;
+  /* THE LAB CANNOT DIE, and it is enforced HERE rather than at the death checks.
+
+     This was first done at the two death checks in update() that a first reading suggested were the
+     only ones. There are four. The other two were left unpatched, so a drove killed the lab player
+     through one of them, endRun fired, and the run recorded a death that never happened - which is
+     the one thing a debug view must not be able to do to a real record.
+
+     So the rule lives at the single point every point of player damage passes through, and it floors
+     health at one rather than zero. Flooring rather than restoring matters: restoring at the top of
+     the tick would still let a hit take the player under within that same tick, and a check further
+     down would see it. One line here, and the four checks need no knowledge of the lab at all.
+
+     It goes here rather than inside endRun because endRun is also the run's legitimate way to end,
+     and teaching it about the lab would mean the lab's immunity was a property of the scoreboard.
+     The knockback and the momentum cost are deliberately NOT skipped: a body that cannot be hurt
+     still gets shoved, and the meter still records the hit, because a lab that protects you from
+     consequences is a lab that will lie to you about momentum. */
+  if(state==='dev'&&player.hp<1) player.hp=1;
   // A hit costs most of the Momentum meter, not all of it. Unconditional here, including a hit that
   // armour absorbed entirely: the player lost the trade, and the meter measures whether you are
   // winning, not whether the health bar went down.
