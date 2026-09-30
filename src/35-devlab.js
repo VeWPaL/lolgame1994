@@ -197,11 +197,17 @@ const Lab=(function(){
      THE RING IS BELOW THE PLAYER, not on them, and that is not decoration. The first version centred
      it on the player, which put half the pack on top of the specimen row - and the row is FROZEN, so
      those five bodies are immovable. Twelve bodies pressing against a wall of statues do not go round
-     it, they stall against it: a measured pack travelled 1.0px in 40 ticks and read as pinned, and
-     the check that reported it was measuring a traffic jam.
+     it. So the ring opens downward, into the clear floor between the player and the shelf, which is
+     also where you want a pack to arrive from: you see it coming.
 
-     So the ring opens downward, into the clear floor between the player and the shelf, which is also
-     where you want a pack to arrive from - you see it coming. */
+     A DROVE THAT APPEARED NOT TO WORK, and never did. It was recorded as an open bug for a while,
+     on the evidence that a dropped body travelled 1.0px in 40 ticks with curSpeed 0. Both numbers
+     were true and the reading was wrong: that window is the LUNGE WINDUP, during which a lunger is
+     planted and motionless on purpose, because stopping to telegraph is what makes the attack
+     readable. The diagnostic that reported it printed lungeState='wind' and read past it. Over 120
+     ticks a dropped body closes 279px to 83px and hits. The lesson is the third of its kind in this
+     project: a fixture that measures a transient and reports it as a steady state, and the cure is
+     always the same - run it longer, and read the field that says which phase you are in. */
   function drove(){
     const r=currentRoom(), t=droverType();
     const rad=Math.min(300,Math.min(roomW(),roomH())*0.3);

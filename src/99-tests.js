@@ -6570,27 +6570,35 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     eq(r.enemies.length,n0+12,'a dropper of a dozen did not add a dozen bodies');
     const drove=r.enemies.filter(b=>b.labDrove);
     eq(drove.length,12,'the dropped bodies are not marked as a drove');
-    /* THE MECHANISM, not the symptom. The claim is that the freeze pins the row and ONLY the row,
-       and the freeze works by writing a remembered position back - so the thing to assert is that a
-       drove body has no remembered position to be written back to. Asserting movement instead
-       measures the whole simulation as well as the freeze, which is how this check came to report
-       that a drove was "pinned" when the real position was that the drop was landing somewhere the
-       pack could not act from.
-
-       OPEN, AND DELIBERATELY NOT ASSERTED: a drove dropped by Lab.drove() does not approach the
-       player. Placed by hand - same room, same body, same 40 ticks - a lunger walks 48px and enters
-       its approach, so the pack logic, the aggro gate and the separation pass are all fine; the
-       difference is where Lab.drove() puts the ring. As dropped, a body sits at ~279px with
-       curSpeed 0. Until that is found, the claim "drop a dozen and they come at you" is NOT
-       verified, and the honest thing is to say so here rather than to assert something weaker that
-       happens to hold. */
     ok(drove[0].labX===undefined,'a drove body was given a pin position, so the freeze has something to write it back to');
     ok(drove[0].labSpecimen===undefined,'a drove body is marked as a specimen, so the freeze will pin it');
     // and the freeze really is leaving them alone: positions untouched by a tick that pins the row
     const row2=r.enemies.filter(b=>b.labSpecimen);
-    const rp={x:row2[0].x,y:row2[0].y}, dp={x:drove[0].x,y:drove[0].y};
+    const rp={x:row2[0].x,y:row2[0].y};
     update();
     ok(Math.hypot(row2[0].x-rp.x,row2[0].y-rp.y)<0.001,'the specimen row is not actually frozen, so this check proves nothing');
+
+    /* AND THEY ACTUALLY COME AT YOU, which is the claim the whole feature rests on.
+
+       This was previously recorded as an unresolved bug, and it was never a bug: it was this check
+       measuring 40 ticks, which is almost entirely the LUNGE WINDUP. A lunger stops dead to
+       telegraph before it commits - lungeState 'wind' - and that pause is the design, not a stall.
+       The diagnostic that called it a bug printed the state and read past it.
+
+       Measured properly, a drove body closes 279px to 83px over 120 ticks and lands a hit. So the
+       window has to clear the windup, and the quantity has to be PATH LENGTH rather than net
+       displacement - which is the second time this check has measured the wrong thing, and the
+       first time it measured a deliberate pause in an animation. */
+    let path=0, px=drove[0].x, py=drove[0].y, closest=1e9;
+    for(let i=0;i<120;i++){
+      update();
+      path+=Math.hypot(drove[0].x-px, drove[0].y-py); px=drove[0].x; py=drove[0].y;
+      closest=Math.min(closest, Math.hypot(drove[0].x-player.x, drove[0].y-player.y));
+    }
+    ok(path>60,'a dropped drove did not come at the player: it travelled '+path.toFixed(0)+
+      'px in 120 ticks, which for a body dropped 279px away is standing still');
+    ok(closest<140,'a dropped drove closed only to '+closest.toFixed(0)+
+      'px, so it approaches but never arrives');
     Lab.leave();
   });
 

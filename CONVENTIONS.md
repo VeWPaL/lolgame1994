@@ -774,13 +774,17 @@ by comparing each body's health with the previous tick, not reported by the dama
 place that knows how much a weapon hits is a second place that drifts when a trait or a falloff
 changes. A rise prints in green. The number is a **delta from the last tick**, not a total.
 
-### Known open item
+### Resolved: the drove "does not approach" was a measurement error
 
-A drove dropped by `Lab.drove()` does not approach the player. Placed by hand — same room, same
-body, same 40 ticks — a lunger walks 48px and enters its approach, so the pack logic, the aggro gate
-and the separation pass are sound; the difference is where the ring lands. As dropped, a body sits at
-~279px with `curSpeed` 0. The check asserts the *mechanism* and says in a comment that the approach
-is unverified, because asserting something weaker that happens to hold is the false all-clear.
+This was carried as an open bug and was never one. The check measured **40 ticks**, which is almost
+entirely the **lunge windup** — a lunger plants itself and stops to telegraph before it commits, and
+that pause is the design. The diagnostic that called it a bug printed `lungeState='wind'` and read
+past it.
+
+Measured over 120 ticks a drove body closes **279px → 83px** and lands a hit. The check now runs a
+window that clears the windup and measures **path length** rather than net displacement — the second
+time that check measured the wrong quantity, and the first time it measured a deliberate pause in an
+animation and reported it as a stall.
 
 ## One frame, and knowing which one you are in
 
