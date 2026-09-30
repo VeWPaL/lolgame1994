@@ -15,7 +15,8 @@ function getBlinkDir(){
   if(len>0) return [dx/len,dy/len];
   len=Math.hypot(player.vx,player.vy);
   if(len>0.1) return [player.vx/len,player.vy/len];
-  const a=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+  const aim=mouseWorld();
+  const a=Math.atan2(aim.y-player.y,aim.x-player.x);
   return [Math.cos(a),Math.sin(a)];
 }
 function doBlink(){

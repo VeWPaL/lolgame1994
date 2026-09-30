@@ -399,7 +399,11 @@ function drawRoom(){
     ctx.globalAlpha=1;
   }
 
-  const a=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+  // the wand points at the cursor, in world space like everything else it is drawn among - see
+  // mouseWorld. Drawn in the wrong frame it leaned a few degrees off the shot it was announcing,
+  // which is worse than a drawing error: the tell and the thing it was telling you about disagreed
+  const aimPt=mouseWorld();
+  const a=Math.atan2(aimPt.y-player.y,aimPt.x-player.x);
   const fr=player.anim>0?Math.floor(player.anim)%4:-1, frame=fr<0?1:fr;
   const bob=fr<0?Math.round(Math.sin(frameCount*0.07/SPEEDUP)):((fr&1)?-2:0);
   const hop=readyT>0?-Math.sin(readyProg*Math.PI)*7:0;

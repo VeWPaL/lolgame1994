@@ -109,6 +109,42 @@ function syncRoomBounds(){
    camera's presence - which makes the addition provable rather than hopeful. Only a room LARGER than
    the screen moves the view at all. */
 const cam={x:0,y:0,w:0,h:0};
+function updateCamera(){
+  const t=cameraTarget();
+  cam.x=t.x; cam.y=t.y; cam.w=W; cam.h=H;
+  return cam;
+}
+
+/* THE POINTER, IN THE FRAME THE GAME IS IN.
+
+   `mouse` is where the CURSOR is, which is a fact about the screen: the DOM handler scales clientX
+   into the canvas's own 960x600 and stops there. Everything else in the game - the player, every
+   body, every projectile, the walls - is in world space. So `mouse - player` was a vector from a
+   screen point to a world point, and it was wrong by exactly the camera offset.
+
+   It was wrong by a lot, and unevenly, which is why it read as "a few degrees off" rather than as an
+   obvious failure. The camera sits at (-80, 55) in a standard room, and the error in the aim angle
+   depends on where the cursor is: measured at six cursor positions around the frame it ran from
+   -0.34 to +21.28 degrees, and it changes sign across the frame. Anyone testing by wiggling the
+   cursor near one spot would see a small consistent error and conclude the wand was slightly off.
+
+   THE CONVERSION IS AT THE POINT OF USE, not at the event, and that is the part that is not
+   cosmetic. If the world position were baked into `mouse` on mousemove, then scrolling the camera
+   without moving the cursor would leave `mouse` pointing at a world position that is no longer under
+   the cursor - the aim would drift as the player walked, in a room the camera was following them
+   through. Reading the camera at the moment of use is the only version of this that is correct when
+   the view moves, and it is why this is a function and not a second pair of variables written by the
+   event handler.
+
+   updateCamera() is called here rather than trusting cam to be current, for the same reason the tick
+   computes nothing it could have inherited: the tick runs before render, so a shot fired on the first
+   tick after the camera moved would otherwise use the previous frame's view. Two subtractions and
+   two clamps. */
+function screenToWorld(sx,sy){
+  updateCamera();
+  return {x:sx+cam.x, y:sy+cam.y};
+}
+function mouseWorld(){ return screenToWorld(mouse.x,mouse.y); }
 function cameraTarget(){
   const b=boundsOf();
   /* A room that fits the view is CENTRED: the 700x450 room in a 960x600 viewport used to sit at

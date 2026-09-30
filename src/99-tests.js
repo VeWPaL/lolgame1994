@@ -80,6 +80,20 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const clearRecords=()=>{for(const k of REC_KEYS){try{localStorage.removeItem(k);}catch(e){}} loadRecords();};
   const playerSpeedForTest=()=>0.935*PLAYER_MOVE;
 
+  /* AIM AT A WORLD POINT. Every fixture in this file used to say `mouse.x=e.x; mouse.y=e.y`, which
+     reads as obvious and is the reason a real bug survived 163 checks.
+
+     `mouse` is the CURSOR, in screen space - that is what the DOM handler produces and what the
+     weapon bench hit-tests against. The fixture was writing a WORLD position into it, and the game
+     was reading a world position out of it, so the test and the bug agreed perfectly: aiming worked
+     in the suite and was wrong on screen, by between 0.34 and 21.28 degrees depending on where the
+     cursor was. The agreement was the accident, and only one of the two sides of it was real.
+
+     So the frame is now stated at every call. `pointAt(e.x,e.y)` means "put the cursor over this
+     world point", which is what a fixture always meant, and it cannot be got quietly wrong again:
+     a fixture that meant a screen position now has to say so. */
+  const pointAt=(x,y)=>{ updateCamera(); mouse.x=x-cam.x; mouse.y=y-cam.y; };
+
   /* PIXELS ARE SAMPLED IN SCREEN SPACE, from a WORLD position, and every test that looks at a
      rendered pixel goes through here.
 
@@ -1149,7 +1163,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
         room.enemies.length=0; projectiles.length=0;
         const e=spawnEnemy(false,room,player.x+180,player.y,'shooter');
         e.noticeTimer=1e9; e.aggroTimer=0; room.enemies.push(e);
-        player.weaponIdx=0; mouse.x=e.x; mouse.y=e.y; player.cooldown=0;
+        player.weaponIdx=0; pointAt(e.x, e.y); player.cooldown=0;
         fireWeapon();
         for(let i=0;i<200&&projectiles.length&&e.hp===e.maxHp;i++) update();
         return e.maxHp-e.hp;
@@ -1457,7 +1471,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   test('run stats count shots, hits, kills, damage and time exactly',()=>{
     startGame(); const r=goTo('normal'); r.enemies.length=0;
     const dummy=lunger(r,player.x+150,player.y); Object.assign(dummy,{r:60,hp:100,maxHp:100,noticeTimer:1e9});
-    mouse.x=dummy.x; mouse.y=dummy.y;
+    pointAt(dummy.x, dummy.y);
     // shooting a body wakes it up, so the dummy is not frozen for the rest of the test any more and
     // the damage bookkeeping below is measured as a delta
     player.weaponIdx=1; fireWeapon(); eq(run.shots,WEAPONS[1].count,'Scatter fires '+WEAPONS[1].count+' pellets, wanted its whole bunch');
@@ -2224,7 +2238,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       ok(!revealed()[key(sec.x,sec.y)],'the secret is on the map before the wall is broken');
       const p=doorPoint(host.secret);
       // the wand does not break it, however long you lean on it
-      mouse.x=p[0]; mouse.y=p[1]; player.cooldown=0;
+      pointAt(p[0], p[1]); player.cooldown=0;
       for(let k=0;k<200;k++){ fireWeapon(); update(); }
       ok(!host.doors[host.secret],'the left click broke the fake wall');
       // the right click does. read the direction first: breaking the wall clears the marker.
@@ -2233,7 +2247,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       // dozen pixels from the player and never let it reach the wall at all
       const d=host.secret;
       let broke=false;
-      mouse.x=p[0]; mouse.y=p[1]; player.altCooldown=0; altMouseDown=true;
+      pointAt(p[0], p[1]); player.altCooldown=0; altMouseDown=true;
       update(); altMouseDown=false;
       for(let k=0;k<500&&!broke;k++){ update(); broke=!!host.doors[d]; }
       ok(broke,'the right click did not break the fake wall');
@@ -2256,7 +2270,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     for(const aim of [[MIDX,MIDY],[ROOM_RIGHT-30,MIDY],[MIDX,ROOM_TOP+20],[ROOM_LEFT+20,ROOM_BOTTOM-20],[MIDX+320,ROOM_BOTTOM-30]]){
       player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
       player.altMode='hook'; player.altCooldown=0;
-      mouse.x=aim[0]; mouse.y=aim[1];
+      pointAt(aim[0], aim[1]);
       const want={x:Math.max(ROOM_LEFT,Math.min(ROOM_RIGHT,aim[0])),y:Math.max(ROOM_TOP,Math.min(ROOM_BOTTOM,aim[1]))};
       // clear the burst list rather than counting it: old bursts expire during the flight, so a
       // length comparison can sit unchanged when one is added and one is dropped
@@ -2273,7 +2287,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     r.enemies.length=0;
     const mid=spawnEnemy(false,r,MIDX-40,MIDY,'lunger'); r.enemies.push(mid);
     mid.noticeTimer=1e9;
-    mouse.x=ROOM_RIGHT-60; mouse.y=MIDY; player.altCooldown=0; fireAlt();
+    pointAt(ROOM_RIGHT-60, MIDY); player.altCooldown=0; fireAlt();
     let flew=0;
     for(let i=0;i<400;i++){ update(); if(!projectiles.length){flew=i;break;} }
     ok(flew>0,'the hook never detonated');
@@ -2412,7 +2426,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
         player.x=gx-gap; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
         player.weaponIdx=0; player.iframes=99999; player.cooldown=0;
         let was=0, i=0;
-        for(;i<210*20&&r.enemies.length>0;i++){ mouse.x=g.x; mouse.y=g.y; if(player.cooldown<=0) fireWeapon(); update();
+        for(;i<210*20&&r.enemies.length>0;i++){ pointAt(g.x, g.y); if(player.cooldown<=0) fireWeapon(); update();
           if(g.dodgeCd>0&&was===0) slips++; was=g.dodgeCd; }
         if(r.enemies.length===0){killed++;ticks+=i;}
       }
@@ -2565,7 +2579,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   test('right-click blast detonates on the first body it touches, no phasing',()=>{
     startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null;
     const e=lunger(r,player.x+120,player.y); e.noticeTimer=1e9; e.aggroTimer=0;
-    mouse.x=e.x; mouse.y=e.y; fireAlt();
+    pointAt(e.x, e.y); fireAlt();
     eq(projectiles.length,1,'blast did not spawn');
     for(let i=0;i<200&&projectiles.length;i++) update();
     eq(projectiles.length,0,'blast flew straight through the enemy');
@@ -2575,7 +2589,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // the cooldown is enforced inside fireAlt now, not at the call site, so a direct call has to
     // clear it the same way the input path would
     player.altCooldown=0;
-    mouse.x=ROOM_RIGHT-40; mouse.y=ROOM_TOP+40; fireAlt();
+    pointAt(ROOM_RIGHT-40, ROOM_TOP+40); fireAlt();
     for(let i=0;i<600&&projectiles.length;i++) update();
     eq(projectiles.length,0,'blast did not reach its target');
     eq(burstFX.length,1,'targeted blast never detonated');
@@ -2615,7 +2629,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
         const e=spawnEnemy(false,r,player.x+d,player.y,'shooter');
         e.noticeTimer=1e9; e.aggroTimer=0; r.enemies.push(e);
         for(let s=0;s<SHOTS;s++){
-          mouse.x=e.x; mouse.y=e.y; fireWeapon();
+          pointAt(e.x, e.y); fireWeapon();
           for(let i=0;i<400&&projectiles.length&&e.hp===e.maxHp;i++) update();
           if(e.hp<=0){ e.hp=e.maxHp; e.hitFlash=0; }   // the body survives, so all six are measured
         }
@@ -2916,7 +2930,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
             keys={};
             if(Math.abs(tx-player.x)>8) keys[tx>player.x?'d':'a']=1;
             if(Math.abs(ty-player.y)>8) keys[ty>player.y?'s':'w']=1;
-            mouse.x=g.x; mouse.y=g.y; mouseDown=true;
+            pointAt(g.x, g.y); mouseDown=true;
           }
           update();
           checked++;
@@ -2955,7 +2969,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
           }
           if(g){
             const a=Math.atan2(g.y-player.y,g.x-player.x);
-            mouse.x=g.x; mouse.y=g.y; mouseDown=true;
+            pointAt(g.x, g.y); mouseDown=true;
             // and walk at whatever is nearest, so doors and rooms really get crossed
             if(bd>90){
               if(Math.abs(Math.cos(a))>0.2) keys[Math.cos(a)>0?'d':'a']=1;
@@ -3162,14 +3176,14 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       line.push(e);
     }
     const before=line.map(e=>e.hp);
-    mouse.x=line[0].x; mouse.y=line[0].y;
+    pointAt(line[0].x, line[0].y);
     player.cooldown=0; fireWeapon();
     const bolt=projectiles[projectiles.length-1];
     ok(bolt,'the voidball did not fire');
     eq(bolt.pierce,3,'the voidball is not set up to pass through three bodies');
     eq(bolt.scale,1,'a fresh bolt is not at full strength');
     ok(!bolt.hit,'a fresh bolt already remembers a body it has hit');
-    for(let i=0;i<140;i++){ mouse.x=player.x+900; update(); }   // long enough for the bolt to reach the far end of the line
+    for(let i=0;i<140;i++){ pointAt(player.x+900, MIDY); update(); }   // long enough for the bolt to reach the far wall, far end of the line
     const hit=line.filter(e=>e.hp<before[line.indexOf(e)]);
     eq(hit.length,4,'the voidball hit '+hit.length+' bodies in a line of 5, wanted 4 (one plus three pierces)');
     // it stopped at the fifth, which is what pierce:3 is supposed to mean
@@ -3359,7 +3373,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(B.shrink,'the bolt does not shrink, so the falloff is invisible until it lands');
     ok(!WEAPONS[1].shrink&&!WEAPONS[2].shrink&&!WEAPONS[3].shrink,'a gun that was meant to be left alone has started shrinking');
     player.weaponIdx=0; player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
-    player.cooldown=0; mouse.x=MIDX+900; mouse.y=MIDY;
+    player.cooldown=0; pointAt(MIDX+900, MIDY);
     fireWeapon();
     const b=projectiles[projectiles.length-1];
     ok(b.shrink,'the fired bolt was not marked as a shrinking one');
@@ -3451,9 +3465,9 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         line.push(e);
       }
       const h0=line.map(e=>e.hp);
-      mouse.x=player.x+140; mouse.y=MIDY;   // always aim at the NEAREST body
+      pointAt(player.x+140, MIDY);   // always aim at the NEAREST body
       fireWeapon();
-      for(let k=0;k<300;k++){ mouse.x=player.x+900; update(); }
+      for(let k=0;k<300;k++){ pointAt(player.x+900, mouse.y+cam.y); update(); }
       // return damage paired with distance from the muzzle, which is arrival order by definition
       return line.map((e,i)=>({d:Math.hypot(e.x-player.x,e.y-player.y),t:h0[i]-e.hp}));
     };
@@ -3503,7 +3517,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     }
     const N=knot.length;
     const k0=knot.map(e=>e.hp);
-    mouse.x=cx; mouse.y=MIDY; fireWeapon();
+    pointAt(cx, MIDY); fireWeapon();
     const bolt=projectiles[projectiles.length-1];
     // Record WHEN each body was hit, not where it ended up. A knot shoves itself around as separation
     // runs, so measuring a body's position after the shot has landed reorders the very thing being
@@ -3511,7 +3525,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // What has to be monotonic is the damage against the bolt's own distance travelled at impact.
     const at=new Array(N).fill(-1);
     for(let k=0;k<120;k++){
-      mouse.x=player.x+900;
+      pointAt(player.x+900, MIDY);
       const flown=bolt?Math.hypot(bolt.x-bolt.ox,bolt.y-bolt.oy):Infinity;
       update();
       for(let i=0;i<N;i++) if(at[i]<0&&k0[i]-knot[i].hp>0) at[i]=flown;
@@ -3539,7 +3553,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const g=spawnEnemy(false,r,MIDX+220,MIDY,'lunger'); r.enemies.push(g);
     g.noticeTimer=0; g.aggroTimer=0;
     player.altMode='hook'; player.altCooldown=0; player.cooldown=0;
-    mouse.x=MIDX+200; mouse.y=MIDY;
+    pointAt(MIDX+200, MIDY);
     fireAlt();
     ok(projectiles.some(p=>p.alt),'the hook was not cast');
     hookFields.length=0;
@@ -3553,7 +3567,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const c=spawnEnemy(false,r2,MIDX+220,MIDY,'lunger'); r2.enemies.push(c);
     c.noticeTimer=0; c.aggroTimer=0;
     player.altMode='blast'; player.altCooldown=0; player.cooldown=0;
-    mouse.x=MIDX+200; mouse.y=MIDY;
+    pointAt(MIDX+200, MIDY);
     fireAlt();
     hookFields.length=0;
     player.altMode='hook';
@@ -3578,7 +3592,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       for(let i=0;i<enemies;i++){
         const e=spawnEnemy(false,r,player.x+bodyDist+i*30,player.y,'lunger'); r.enemies.push(e); held(e); list.push(e);
       }
-      mouse.x=ROOM_RIGHT-10; mouse.y=player.y;   // the cursor is past every single body
+      pointAt(ROOM_RIGHT-10, player.y);   // the cursor is past every single body
       fireAlt();
       const bolt=projectiles[projectiles.length-1];
       for(let k=0;k<400&&projectiles.length;k++) update();
@@ -3623,7 +3637,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     player.altMode='hook'; player.altCooldown=0; player.cooldown=0; player.hp=99; player.maxHp=99;
     player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
     // a long cast: the far corner, so the bolt is genuinely still in the air for most of a second
-    mouse.x=ROOM_RIGHT-20; mouse.y=ROOM_BOTTOM-20;
+    pointAt(ROOM_RIGHT-20, ROOM_BOTTOM-20);
     fireAlt();
     ok(projectiles.some(p=>p.alt),'the hook was not cast');
     ok(player.altCooldown>0,'the hook did not start its cooldown');
@@ -3856,7 +3870,10 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         player.x+=dx; player.y+=dy;
         for(const o of r.enemies){ o.x+=dx; o.y+=dy; }
         if(c.lungeFromX!==undefined){ c.lungeFromX+=dx; c.lungeFromY+=dy; }
-        mouse.x+=dx; mouse.y+=dy;
+        // a world-space DELTA on the cursor, which needs no conversion: world = screen + cam, and cam is
+    // constant across this loop, so adding dx to the screen adds exactly dx to the world. Only an
+    // ABSOLUTE position has to be converted - which is the whole distinction pointAt exists to make.
+    mouse.x+=dx; mouse.y+=dy;
       }
       if(c.lungeState==='wind'&&!committed){
         committed=i; len=c.lungeLen;
@@ -3967,7 +3984,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // aim at the far wall, so the bolt is still travelling when the age floor is crossed rather than
     // having run out of floor and detonated on its own - otherwise the test measures its range
     const cast=()=>{ projectiles.length=0; player.altCooldown=0;
-      altMouseDown=true; mouse.x=ROOM_RIGHT-4; mouse.y=player.y; update(); altMouseDown=false;
+      altMouseDown=true; pointAt(ROOM_RIGHT-4, player.y); update(); altMouseDown=false;
       return inFlight(); };
     let h=cast();
     ok(h,'the hook was never thrown');
@@ -4651,7 +4668,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       update();
       // slide the fight along, so the corridor is as unbounded as the other lunge tests
       const dx=player.x-px0;
-      if(dx){ player.x+=dx; for(const o of r.enemies){ o.x+=dx; } mouse.x+=dx; }
+      if(dx){ player.x+=dx; for(const o of r.enemies){ o.x+=dx; } mouse.x+=dx; }  // a delta: see above
       if(c.lungeState==='approach'){
         if(solveIntercept(c,player.x-c.x,player.y-c.y).dist>LUNGE_REACH) waited++;
       }
@@ -5212,7 +5229,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       r.pickups.length=0; projectiles.length=0;
       player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
       player.weaponIdx=1; player.cooldown=0; player.iframes=99999;
-      mouse.x=MIDX+400; mouse.y=MIDY;
+      pointAt(MIDX+400, MIDY);
       fireWeapon();
       // dmg has to survive the copy. A version of this that mapped only x/y/vx/vy left it undefined,
       // summed to NaN, and was let through by a "total===0 ||" escape hatch that read the NaN case as
@@ -5589,7 +5606,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       b.noticeTimer=0; b.aggroTimer=1e9;
       const moves={}, phases={}, walls=[]; let prev=1, hits=0, t=0;
       for(;t<9000;t++){
-        mouse.x=b.x; mouse.y=b.y;
+        pointAt(b.x, b.y);
         const tell=b.castT>0||(b.move==='sweep'&&b.moveT>0);
         if(reads&&tell){
           const p=perp(b), k={};
@@ -5677,7 +5694,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       b.noticeTimer=1e9; b.aggroTimer=1e9; b.move='idle'; b.moveT=1e9;
       player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
       player.weaponIdx=w; player.cooldown=0; player.iframes=1e9;
-      mouse.x=MIDX+400; mouse.y=MIDY;
+      pointAt(MIDX+400, MIDY);
       let t=0;
       for(;t<9000;t++){ keys={}; mouseDown=true; update(); if(b.hp<=0) break; }
       mouseDown=false;
@@ -5757,7 +5774,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     r.pickups.length=0; projectiles.length=0;
     player.x=ROOM_LEFT+90; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
     player.weaponIdx=0; player.cooldown=0; player.iframes=99999;
-    mouse.x=MIDX+400; mouse.y=MIDY;
+    pointAt(MIDX+400, MIDY);
     const b=spawnEnemy(false,r,MIDX,MIDY,'brunch');
     r.enemies.push(b);   // returns, does not add - same trap as the test above
     b.noticeTimer=1e9; b.aggroTimer=1e9;
@@ -6590,6 +6607,156 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
 
      `results`, not window.__testResults: the global is assigned after this file has finished running,
      so reading it from inside a check gets undefined. */
+  test('the wand points at the cursor, in the frame the cursor is actually in',()=>{
+    /* THE AIMING BUG, and the reason 163 checks did not see it.
+
+       The player, every body and every wall are in world space. The cursor is on the screen. The aim
+       was `atan2(mouse.y - player.y, mouse.x - player.x)` - a vector from a screen point to a world
+       point - so every shot was off by exactly the camera offset.
+
+       It did not look like "off by the camera offset". It looked like a few degrees, and it was only
+       a few degrees if you wiggled the cursor near one spot: measured at six positions around the
+       frame the error ran from -0.34 to +21.28 degrees and CHANGED SIGN across the frame, because a
+       translation error's angular size depends on where the ray is pointing. Reported as "a few
+       degrees off, counter-clockwise", which is exactly what it looks like from one seat.
+
+       And the suite passed throughout, because every fixture in it wrote a WORLD position into
+       `mouse` - `mouse.x=e.x; mouse.y=e.y` - and the game read a world position out of `mouse`. The
+       test and the bug agreed perfectly. That is the fourth time in this project that agreement has
+       turned out to be the problem rather than the reassurance.
+
+       So this drives it the way a player does: a real MouseEvent at a real client position, and then
+       the angle the game actually fires at. Asserted at several positions and in a big room, because
+       a check at one position is a check that passes for the wrong reason at the other eleven. */
+    const D=180/Math.PI;
+    const turn=(a,b)=>Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b)))*D;
+    startGame();
+    const rect=canvas.getBoundingClientRect();
+    // a real event at a canvas position, which is the only way to cover the DOM scaling too
+    const cursorAt=(sx,sy)=>{
+      const cx=rect.left+canvas.clientLeft+sx*(canvas.clientWidth/canvas.width);
+      const cy=rect.top+canvas.clientTop+sy*(canvas.clientHeight/canvas.height);
+      canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:cx,clientY:cy,bubbles:true}));
+    };
+    // eight positions: four quadrants, both edges, dead centre, and the two diagonals. Symmetric
+    // positions are not enough - a frame mismatch is worst on the diagonals, where a translation
+    // error is largest, and best on an axis, where it can vanish entirely.
+    const spots=[[800,150],[800,450],[160,150],[160,450],[480,300],[640,140],[320,460],[900,560]];
+    const w0=WEAPONS[player.weaponIdx];
+    // Every weapon has a cone - the Bolt's is 0.05 rad, about 2.9 degrees - so ONE shot is allowed
+    // to be off-axis by that much and asserting otherwise would be asserting that the gun does not
+    // spread. Two claims instead, and the frame bug fails both by a wide margin:
+    //   1. no shot lands OUTSIDE the weapon's own cone, which is 2.9 degrees and not 21;
+    //   2. the MEAN of several shots is the aim, because a symmetric cone averages to its centre -
+    //      which pins the centre to a fraction of a degree and would catch a smaller constant offset
+    //      that claim 1 alone would let through.
+    /* THE EXPECTED ANGLE IS BUILT FROM SCREEN QUANTITIES ONLY, and the first version of this test
+       got that wrong in the most embarrassing possible way.
+
+       It computed the expected angle with `mouseWorld()` - the same helper the game calls - so when
+       the helper was mutated back to the identity to prove the test was sensitive, the expectation
+       and the game were wrong in exactly the same way and the test passed. Twelve other checks
+       failed, and this one, the one whose entire subject is the bug, did not.
+
+       That is the same trap the whole suite was in for 163 checks: two sides of a comparison agreeing
+       because they came from the same place. The cure is to derive the expected value from
+       something the game does not use - here, the player's own SCREEN position against the raw
+       cursor - so the two can only agree if the game is right. */
+    const wantAngle=()=>{
+      const sx=player.x-cam.x, sy=player.y-cam.y;   // the player where the player is DRAWN
+      return Math.atan2(mouse.y-sy, mouse.x-sx);    // ...to the cursor, in the frame it is in
+    };
+    const SHOTS=25;
+    /* The tolerance on the mean is a FOUR-SIGMA bound and not a number somebody liked.
+
+       A cone's samples are uniform on +/-spread, so one sample's standard deviation is
+       spread/sqrt(3) and the mean of n has standard error spread/sqrt(3n). With the Bolt's 0.05 rad
+       and 25 shots that is 0.0064 rad, so four sigma is about 1.5 degrees. Nine shots gave a
+       standard error of 0.010 rad and a measured 0.80 degrees, which is inside one and a half sigma
+       - pure sampling noise, and a check that read it as bias would have been a check that fails at
+       random about half the time. A flaky check is worse than none, because it teaches you to
+       re-run rather than to read.
+
+       1.5 degrees is still a quarter of the smallest frame error this bug produced (3.89 at the
+       top right) and a fourteenth of the largest, so it separates the two decisively. */
+    const meanTol=4*w0.spread/Math.sqrt(3*SHOTS)*D;
+    for(const s of spots){
+      const r=currentRoom();
+      r.enemies.length=0; projectiles.length=0;
+      player.x=r.cx; player.y=r.cy; player.lagX=player.x; player.lagY=player.y;
+      player.cooldown=0;
+      render();
+      cursorAt(s[0],s[1]);
+      const want=wantAngle();
+      let sx=0, sy=0, worst=0, fired=0;
+      for(let k=0;k<SHOTS;k++){
+        projectiles.length=0; player.cooldown=0;
+        fireWeapon();
+        const p=projectiles[0];
+        if(!p) continue;
+        fired++;
+        const m=Math.hypot(p.vx,p.vy)||1;
+        sx+=p.vx/m; sy+=p.vy/m;
+        worst=Math.max(worst, turn(Math.atan2(p.vy,p.vx),want));
+      }
+      ok(fired===SHOTS,'only '+fired+' of '+SHOTS+' shots were fired at canvas '+s.join(','));
+      if(fired!==SHOTS) continue;
+      const coneDeg=w0.spread*D;
+      ok(worst<=coneDeg+0.001,'at canvas '+s.join(',')+' a shot went '+
+        (worst>0?'counter-':'')+'clockwise by '+worst.toFixed(2)+' degrees, outside the '+
+        w0.name+"'s own "+coneDeg.toFixed(2)+' degree cone');
+      const mean=Math.atan2(sy,sx);
+      const off=turn(mean,want);
+      ok(off<meanTol,'at canvas '+s.join(',')+' the mean of '+SHOTS+' shots is '+
+        (off>0?'counter-':'')+'clockwise by '+off.toFixed(3)+' degrees, past the '+
+        meanTol.toFixed(2)+' degree sampling bound, so the aim itself is off');
+    }
+    /* And in a room the camera has to scroll in, where the offset is large and moves. A fix that
+       only handled the centred case would pass everything above. */
+    const big=bigRoom(1680,1040);
+    big.enemies.length=0; projectiles.length=0;
+    player.x=big.bounds.r-200; player.y=big.cy; player.lagX=player.x; player.lagY=player.y;
+    player.cooldown=0;
+    render();
+    cursorAt(880,120);
+    const w2=wantAngle();
+    let ax=0, ay=0;
+    for(let k=0;k<SHOTS;k++){
+      projectiles.length=0; player.cooldown=0;
+      fireWeapon();
+      const p=projectiles[0]; if(!p) continue;
+      const m=Math.hypot(p.vx,p.vy)||1; ax+=p.vx/m; ay+=p.vy/m;
+    }
+    ok(ax!==0||ay!==0,'nothing was fired in the big room');
+    const off2=turn(Math.atan2(ay,ax),w2);
+    ok(off2<meanTol,'in a 1680-wide room with the camera scrolled to the far wall the aim was off by '+
+      off2.toFixed(3)+' degrees, past the '+meanTol.toFixed(2)+' degree sampling bound');
+    Lab.leave();
+  });
+
+  test('the cursor is a screen position and the game asks for it in world space',()=>{
+    /* The other half: the conversion has to go the right way, not merely be applied. A sign error
+       here would aim the wand at the mirror point, which in a centred room is a smaller mistake
+       than the original and would pass a looser check.
+
+       The bench is the control. It hit-tests `mouse` against its own layout in screen space and has
+       always been correct, so the two consumers of the same variable are asserted to disagree by
+       exactly the camera offset - which is what "one variable, two frames, converted at the point
+       of use" means in practice. */
+    startGame();
+    render();
+    const before=Math.round(cam.x*1000)/1000;
+    eq(Math.round(mouseWorld().x*1000)/1000, Math.round((mouse.x+cam.x)*1000)/1000,
+      'the world cursor is not the screen cursor plus the camera');
+    eq(Math.round(mouseWorld().y*1000)/1000, Math.round((mouse.y+cam.y)*1000)/1000,
+      'the world cursor is not the screen cursor plus the camera, vertically');
+    // and the camera is not zero in a standard room, or this whole test is asserting 0+0=0
+    ok(Math.abs(cam.x)>1||Math.abs(cam.y)>1,
+      'the camera sits at the origin in a standard room, so the conversion proves nothing (cam '+
+      cam.x.toFixed(1)+','+cam.y.toFixed(1)+')');
+    ok(typeof before==='number','the camera is not a number');
+  });
+
   test('every pinned fix in the change history has a test with that name',()=>{
     /* The mechanism, tested. The panel marks an entry unverified when no result carries its name, and
        that is only worth anything if the marking is right - so this asks both directions.

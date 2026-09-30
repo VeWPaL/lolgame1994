@@ -335,7 +335,10 @@ function activeAlt(){ return player.altMode==='hook'?HOOK_WEAPON:ALT_WEAPON; }
 
 function fireWeapon(){
   const w=WEAPONS[player.weaponIdx];
-  const ang0=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+  // the cursor, in the frame the player is in - see mouseWorld. This used to subtract the player's
+  // world position straight out of the screen position, which is a vector between two frames
+  const aim=mouseWorld();
+  const ang0=Math.atan2(aim.y-player.y,aim.x-player.x);
   // A weapon whose cone is a STAT reads it here, once, at the moment of firing - not at spawn, and
   // not cached on the weapon, or picking up a Steady Hand would not narrow the beam until the wand
   // was swapped.
@@ -439,7 +442,12 @@ function fireAlt(){
     return;
   }
   if(player.altCooldown>0) return;   // nothing in flight, and the cooldown is still running
-  const tx=Math.max(ROOM_LEFT,Math.min(ROOM_RIGHT,mouse.x)), ty=Math.max(ROOM_TOP,Math.min(ROOM_BOTTOM,mouse.y));
+  // the ground spell lands where the cursor is, clamped to the room. Both halves of that needed the
+  // conversion: it was clamping a SCREEN position against the room's WORLD walls, so in any room
+  // that was not sitting at the screen origin the target was dragged toward a corner it was never
+  // near - which is a second aiming bug wearing the same root cause as the wand's.
+  const aim=mouseWorld();
+  const tx=Math.max(roomL(),Math.min(roomR(),aim.x)), ty=Math.max(roomT(),Math.min(roomB(),aim.y));
   const ang0=Math.atan2(ty-player.y,tx-player.x);
   // `speed` has to ride along with the bolt: the travel test compares the distance still to cover
   // against the per-tick step, and without it that comparison is against undefined and never true,
