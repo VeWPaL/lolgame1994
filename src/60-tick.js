@@ -674,7 +674,7 @@ function update(){
     if(e.type==='boss'){
       stepBoss(e,edx,edy,dist,sm,r);
     } else if(e.walkSpeed!==undefined){
-      if(dist<AGGRO_RANGE) e.aggroTimer=AGGRO_TIME;
+      if(dist<aggroRange()) e.aggroTimer=AGGRO_TIME;
       else if(e.aggroTimer>0) e.aggroTimer--;
       if(e.aggroTimer>0){
         if(e.type==='lunger') stepLunge(e,edx/dist,edy/dist,dist,sm,r);
@@ -864,7 +864,7 @@ function update(){
              room and ramps to the full bonus over the next stretch, so distance is what buys the
              player the tactic. The floor of 0.02 stays: a gunner is never perfectly deterministic,
              and a shot that is the same shot every time is a shot that can be walked into. */
-          const reach=Math.max(0,Math.min(1,(dist-SWERVE_DEADZONE)/(SWERVE_FULL-SWERVE_DEADZONE)));
+          const dz=swerveDeadzone(), reach=Math.max(0,Math.min(1,(dist-dz)/(swerveFull()-dz)));
           const conf=Math.max(0,1-player.swerve*(rootsWhileCasting?SWERVE_TRUST_ROOTED:SWERVE_TRUST_WALKING));
           /* THE BELIEVED VELOCITY IS THE CURRENT ONE, and the bug this fixes was NOT acceleration.
              It was the LAG.

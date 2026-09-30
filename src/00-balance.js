@@ -198,7 +198,22 @@ const ROOM_BG={start:'#1c2230',normal:'#191b22',item:'#2a2410',boss:'#2a1414'};
    BLINK_FILL_CLEAR is the quiet-room fill, in ticks per tick, and is the only reason a charge feels
    free once a fight is over: 9 per tick against 1 in a fight makes the recharge 9x faster in a room
    with nothing in it. 735/9 = 82 ticks, about 0.39s. */
-const AGGRO_RANGE=Math.round(0.85*Math.hypot(ROOM_RIGHT-ROOM_LEFT,ROOM_BOTTOM-ROOM_TOP)), AGGRO_TIME=sec(2.5), BLINK_DIST=116, BLINK_RECHARGE=sec(3.5), BLINK_FILL_CLEAR=9, BLINK_IFRAMES=sec(0.17);
+/* AGGRO_RANGE IS A FUNCTION OF THE ROOM, and it was a number frozen at module load.
+
+   It used to read 0.85 * the room's diagonal, evaluated once when this file was parsed - when every
+   room in the game was 700x450, so it was 707 and it was right. A room is now a thing with its own
+   bounds, and a 1680x760 one wants 1567. Left as a constant it is a balance number that has quietly
+   stopped describing the thing it names: a lunger 900px away in a big room is outside its aggro, so
+   it stands still, and the room reads as a safe place to stand still in.
+
+   It is a function now, and that costs one multiply and one hypot per body per tick, which the
+   scaling measurement says is free next to what it replaces. In a standard room it returns exactly
+   the 707 it always did, so nothing about the current balance moves - which is the property worth
+   insisting on, since a fix that also retunes the game is two changes wearing one.
+
+   AGGRO_TIME stays a constant because it is a duration, and a duration does not depend on the room. */
+const aggroRange=()=>Math.round(0.85*Math.hypot(roomW(),roomH()));
+const AGGRO_TIME=sec(2.5), BLINK_DIST=116, BLINK_RECHARGE=sec(3.5), BLINK_FILL_CLEAR=9, BLINK_IFRAMES=sec(0.17);
 
 /* THE BLINK GRACE: how long after a blink an incoming hit is still forgiven.
 
@@ -980,7 +995,18 @@ const RESTORE_FX_SPAN=READY;
    that a reversing player stays hittable, and that cap is the right thing to protect. So the ramp
    moves instead, and the number that is actually being tuned is where the benefit arrives - not how
    wide it gets at the far end. */
-const SWERVE_DEADZONE=Math.round((ROOM_RIGHT-ROOM_LEFT)/2)-50, SWERVE_FULL=SWERVE_DEADZONE+130;
+/* THE SWERVE RAMP IS A FUNCTION OF THE ROOM, for the same reason AGGRO_RANGE is.
+
+   A gunner reads a reversing player less well the further away it is, and "how far away is far" is a
+   property of the room - half its width, less a margin. Evaluated once at load it froze at 300 for a
+   700px room and stayed there for a 1680px one, which means every gunner in a big room reads a
+   reversal at full strength from across the room. That is not a subtle balance drift; it is the
+   counter to the whole mechanic switching itself off at range, and it is silent.
+
+   A function, for the same reason and with the same guarantee: in a standard room these return
+   exactly the 300 and 430 they always did, so no measured number in this file moves. */
+const swerveDeadzone=()=>Math.round(roomW()/2)-50, SWERVE_FULL_BASE=130;
+const swerveFull=()=>swerveDeadzone()+SWERVE_FULL_BASE;
 // The gunner's cast tell. This is the whole of the change: the shell used to leave the instant the
 // gunner's cooldown ran out, so the player had nothing to read and the only counter was not being
 // there. Half a second of swelling light at the muzzle turns that into a reaction. It is paid for

@@ -168,6 +168,33 @@ const FIXES={
     'because every room in the game fits on screen, so that line had never executed once: the very '+
     'property that made the camera safe to add - it is the identity transform for a room that fits - '+
     'was the property that hid a total failure inside it'],
+  'the wand points at the cursor, in the frame the cursor is actually in':['weapons and damage',
+    'the cursor is in screen space and every body is in world space, and the aim subtracted one from '+
+    'the other, so every shot was off by the camera offset - by up to 21.28 degrees, and it changed '+
+    'sign across the frame, which is why it read as a few degrees off from any one seat. The suite '+
+    'passed throughout because every fixture wrote a world position into the cursor variable and the '+
+    'game read a world position out of it: the test and the bug agreed perfectly'],
+  'the cursor is a screen position and the game asks for it in world space':['HUD and interface',
+    'the other half of that fix, and the one a looser check would have let through: the conversion '+
+    'has to go the right WAY, and the weapon bench is the control, because it has always hit-tested '+
+    'the same variable in screen space correctly'],
+  'the separation grid finds the same pairs as the double loop, to within a knockback slide':['enemies and AI',
+    'every pair of bodies was tested every tick, so cost per body climbed from 1.30us at five bodies '+
+    'to 8.35us at a hundred and sixty - a quadratic wearing a linear costume, invisible only because '+
+    'a room tops out near 23 bodies. A grid is only faster if it visits pairs in the same ORDER, '+
+    'because separation moves both bodies, and the first version did not: 76px of divergence'],
+  'the separation cost does not go quadratic as a room fills':['enemies and AI',
+    'the shape of the cost, asserted rather than a millisecond budget, because absolute timings mean '+
+    'nothing off the machine that wrote them and a test with a hardcoded ms figure gets deleted '+
+    'rather than fixed. It reports a number either way and only fails if timings came back at all'],
+  'the room-scaled numbers scale with the room, and do not move when it does not':['enemies and AI',
+    'the aggro range and the swerve deadzone were both derived from the room size ONCE, at parse '+
+    'time, back when there was one room shape. A 1680-wide room wanted an aggro range of 1567 and '+
+    'read 707, and a gunner read a reversing player at full strength from across the room. In a '+
+    'standard room they return exactly what they always did, which is what makes this a fix and not a retune'],
+  'a lunger in a big room comes at you from across it':['enemies and AI',
+    'the consequence and not the constant: a number can follow the room and still not be read '+
+    'anywhere, and only a body 1100px away in a 1680-wide room can tell the difference'],
 };
 
 

@@ -6849,6 +6849,69 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       ', which is the signature of a quadratic pass');
   });
 
+  test('the room-scaled numbers scale with the room, and do not move when it does not',()=>{
+    /* TWO BALANCE NUMBERS THAT HAD STOPPED DESCRIBING WHAT THEY NAME.
+
+       AGGRO_RANGE was 0.85 of the room's diagonal, evaluated ONCE when 00-balance.js was parsed. So
+       it was 707 - correct for the only room shape that existed - and it stayed 707 for a 1680-wide
+       one, which wants 1567. A lunger 900px away in a big room is outside its aggro, so it stands
+       still, and the room reads as a safe place to stand still in.
+
+       SWERVE_DEADZONE was half the room's width less a margin, frozen the same way at 300. Which
+       means a gunner in a big room reads a reversing player at FULL strength from across the room -
+       the counter to the entire mechanic switching itself off at range, silently off.
+
+       Both were found by asking a question rather than by reading: what else is captured at module
+       load from something that now varies? That is the same shape as the aiming bug, where a
+       screen-space cursor met a world-space player, and the same shape as the camera clamp that
+       never ran. Values derived from the world are only correct until the world changes shape.
+
+       The second half is the half that matters for a fix: in a STANDARD room both must return
+       exactly what they always returned. A change that also retunes the game is two changes wearing
+       one, and every number measured in this project's history was measured in a standard room. */
+    startGame();
+    const r=currentRoom();
+    eq(r.bounds.w,700,'the standard room is not 700 wide any more, so these constants are meaningless');
+    // what they have always read, written out rather than recomputed from the new function
+    eq(aggroRange(),707,'the aggro range in a standard room moved - this fix must not retune anything');
+    eq(swerveDeadzone(),300,'the swerve deadzone in a standard room moved');
+    eq(swerveFull(),430,'the top of the swerve ramp in a standard room moved');
+    // and in a room four times as wide, they follow it
+    const big=bigRoom(1680,760);
+    const wantAggro=Math.round(0.85*Math.hypot(1680,760));
+    eq(aggroRange(),wantAggro,'the aggro range did not follow the room: '+aggroRange()+' vs '+wantAggro);
+    eq(swerveDeadzone(),790,'the swerve deadzone did not follow the room: '+swerveDeadzone()+' vs 790');
+    ok(aggroRange()>707,'a bigger room did not widen the aggro range, so the number is still frozen');
+    // and the RAMP is still a ramp: the top must stay above the bottom or the division is a divide by
+    // something silly and reach jumps rather than ramps
+    ok(swerveFull()>swerveDeadzone(),'the swerve ramp has no width in a big room');
+    Lab.leave();
+  });
+
+  test('a lunger in a big room comes at you from across it',()=>{
+    /* The BEHAVIOUR, not the constant. The check above asserts the number follows the room; this
+       asserts the consequence, because a number can follow the room and still not be read anywhere.
+
+       A body 1100px from the player in a 1680-wide room is inside the aggro range it should have and
+       outside the one it used to have. If it walks, the range is being read. If it stands, the number
+       moved and nothing did. */
+    const big=bigRoom(1680,760);
+    const r=currentRoom();
+    r.enemies.length=0;
+    player.x=big.bounds.l+120; player.y=big.cy;
+    const e=spawnEnemy(false,r,player.x+1100,player.y,'lunger');
+    r.enemies.push(e);
+    e.noticeTimer=0; e.alerted=true;
+    const start=Math.hypot(e.x-player.x,e.y-player.y);
+    for(let i=0;i<60;i++) update();
+    const end=Math.hypot(e.x-player.x,e.y-player.y);
+    ok(end<start-20,'a lunger 1100px away in a 1680-wide room did not close at all ('+
+      start.toFixed(0)+'px -> '+end.toFixed(0)+'px), so the aggro range is not being read');
+    ok(aggroRange()>start,'the fixture is not actually testing the range: the aggro range is '+
+      aggroRange()+' and the body started at '+start.toFixed(0)+'px');
+    Lab.leave();
+  });
+
   test('every pinned fix in the change history has a test with that name',()=>{
     /* The mechanism, tested. The panel marks an entry unverified when no result carries its name, and
        that is only worth anything if the marking is right - so this asks both directions.

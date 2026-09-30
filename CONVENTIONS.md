@@ -705,13 +705,174 @@ four guns.**
 **Never add or remove `walkSpeed` in a trait.** Only `far` and `close`.
 
 
+## Rooms bigger than the screen, and a camera
+
+A room is DATA. `bounds` sits on the room record — `{l,t,r,b,w,h}` written out rather than derived,
+so a room with an asymmetric inset or a corridor stub has somewhere to go — and `boundsOf(room)`,
+`roomL()`, `roomR()`, `roomT()`, `roomB()`, `roomW()`, `roomH()`, `roomCX()`, `roomCY()` read it.
+Each takes an **optional room**, which is the escape hatch: the day something needs a room that is
+not the current one, it passes that room in rather than reaching for a global.
+
+### The shorthand, and why 169 call sites were not edited
+
+`ROOM_LEFT/RIGHT/TOP/BOTTOM` and `MIDX/MIDY` used to mean "the room", and 169 sites in seven
+gameplay files read them as the walls. They are now `let`, written by exactly one function —
+`syncRoomBounds()`, called from `enterRoom` and the two places that build a run. All 169 sites now
+read the current room with **zero of them edited**.
+
+The alternative was rewriting all 169 to call the accessors, which is the cleaner end state on
+paper and also a change too wide to land in one sitting and possible to leave **half done** — which
+is the state where some sites read the room and some read a 700x450 constant, every one individually
+plausible, and the bug only appearing in the first room of a different size. A half-migrated
+geometry is worse than an unmigrated one, because an unmigrated one is at least uniformly wrong.
+
+**The cost, stated plainly:** a `let` read before the sync has run is a stale number, where a
+function call could not be. A reader who wants certainty calls `roomL()`, which reads the room every
+time. `roomBounds()` deliberately anchors on `STD_ROOM`, never on `ROOM_LEFT` — a room built while
+standing in a big room would otherwise be positioned relative to that big room.
+
+### The camera is a render-time transform, not a change of coordinates
+
+Nothing moved to accommodate it. Every distance, body, projectile and wall reference stays in world
+space; the view is one `ctx.translate(-cam.x, -cam.y)` around the room draw **only**. The HUD, the
+minimap and every overlay are outside it, because a HUD that scrolled off the corner of a big room
+would be a HUD nobody can read. It is computed immediately before use, at the point of draw.
+
+### THE LESSON, which cost a bug to learn
+
+The clamp on the big-room branch was `Math.min(b.l, …)` with the bounds transposed. It pinned the
+view to the room's left edge and **the camera never moved at all**. It passed the whole suite,
+because every room in the game fits on screen and so that line had never executed once.
+
+> The property that made the camera safe to add to a green suite — it is the identity transform for a
+> room that fits — was the same property that hid a total failure inside it. **A feature that is a
+> no-op everywhere it is actually used is not a tested feature; it is an untested one wearing a
+> passing disguise.**
+
+So the big-room checks assert the *moving* case, and reverting the clamp makes them fail with both
+numbers in the message.
+
+## The lab — a game state that is not a game
+
+`src/35-devlab.js`. **F2** in, **F2** out, **F3** freeze/release the row, **F4** arm the dropper,
+**F5** drop a dozen. A 1680x760 room, so the camera genuinely moves.
+
+It is not a run, and each of these is asserted rather than assumed: `state==='dev'`, so nothing
+counts; no doors, so there is nothing to progress through; death **cannot** reach `endRun`, so no
+record is written; leaving goes to the **title**, not back into a half-remembered floor.
+
+**The lab cannot die, enforced in one place.** It was first enforced at the two death checks in
+`update()` that a first reading suggested were the only ones. There are **four**. The other two were
+left live, a drove killed the lab player through one of them, and the run recorded a death that never
+happened. The rule now lives in `damagePlayer` — the single funnel — and floors health at 1, so the
+four checks need no knowledge of the lab. Knockback and the momentum cost are deliberately *not*
+skipped: a body that cannot be hurt still gets shoved, and a lab that protects you from consequences
+is a lab that will lie to you about momentum.
+
+The row is **still and silent**; the drove is awake and does neither. Damage numbers are **derived**
+by comparing each body's health with the previous tick, not reported by the damage path — a second
+place that knows how much a weapon hits is a second place that drifts when a trait or a falloff
+changes. A rise prints in green. The number is a **delta from the last tick**, not a total.
+
+### Known open item
+
+A drove dropped by `Lab.drove()` does not approach the player. Placed by hand — same room, same
+body, same 40 ticks — a lunger walks 48px and enters its approach, so the pack logic, the aggro gate
+and the separation pass are sound; the difference is where the ring lands. As dropped, a body sits at
+~279px with `curSpeed` 0. The check asserts the *mechanism* and says in a comment that the approach
+is unverified, because asserting something weaker that happens to hold is the false all-clear.
+
+## One frame, and knowing which one you are in
+
+The single most productive bug class in this project, and it has one shape: **two things that were
+true by accident, agreeing.**
+
+- The **cursor** is in screen space; the player, bodies and walls are in world. The aim was
+  `atan2(mouse.y - player.y, …)` — a vector from a screen point to a world point — so every shot was
+  off by the camera offset, **up to 21.28 degrees**, changing sign across the frame. It read as "a few
+  degrees off, counter-clockwise" from any one seat. 163 checks passed throughout because every
+  fixture wrote a **world** position into the cursor and the game read a **world** position out of
+  it. Fixed with `mouseWorld()` / `screenToWorld()`, which call `updateCamera()` rather than trusting
+  `cam` — baking the world position in on `mousemove` would make the aim drift as the camera scrolls.
+- Fixtures now say which frame they mean: **`pointAt(x,y)`** means "put the cursor over this world
+  point". A world **delta** needs no conversion (`world = screen + cam`, and `cam` is constant across
+  a loop) — only an absolute position does.
+- **A test that derives its expectation from the same helper the game uses is not a test.** The first
+  version of the aim check computed its expected angle with `mouseWorld()`. Mutating the helper back
+  to the identity failed twelve checks and passed that one, because the expectation and the game were
+  wrong identically. The expected value must come from something the game does not use.
+
+## Values derived from the world are only correct until the world changes shape
+
+`AGGRO_RANGE` and `SWERVE_DEADZONE` were both derived from the room size **once, at parse time**,
+back when there was one room shape. `AGGRO_RANGE` read 707 where a 1680-wide room wants 1567, so a
+lunger 900px away stood still; `SWERVE_DEADZONE` stayed at 300, so a gunner read a reversing player
+at full strength from across the room — the counter to the whole mechanic, silently off.
+
+They are functions of the current room now. **In a standard room they return exactly what they always
+did** (707 and 300), which is the property that makes this a fix and not a retune — every number
+measured in this project's history was measured in a 700x450 room.
+
+The question that found them is the one worth asking again:
+
+> What else is captured at module load, from something that now varies?
+
+## The separation pass, and the order it visits pairs in
+
+Cost per body used to climb with room size: 1.30us at five bodies, 8.35us at a hundred and sixty, with
+the doubling ratio reaching 3.96 where linear is 2.00. A quadratic wearing a linear costume, invisible
+only because a room tops out near 23 bodies. Now a uniform grid; per-body cost is flat, and 160 bodies
+went 1.336ms → 0.644ms a tick.
+
+**The grid is only faster if it visits pairs in the same ORDER.** `bounceEnemies` mutates both
+bodies, so the order decides the arrangement a pack ends up in. A grid naturally yields candidates
+*grouped by cell*, which is a different order from the double loop's ascending index. The first
+version did not sort them, and the equivalence check caught it: 1.01px on a forty-body room, which I
+first wrote off as a boundary approximation, then **76px on sixty-four bodies**, which is not a
+boundary anything. Sorting the neighbourhood back into index order fixed it.
+
+Two checks, and the first earned its keep: an **equivalence** check that runs both passes on
+identical copies of a crowded seeded room and compares body for body — it catches a missed pair, a
+reordered pair and a wrong cell size, none of which a screenshot would. And a **shape** check that
+asserts per-body cost stays flat across a 4x range, rather than a millisecond budget: absolute
+timings mean nothing off the machine that wrote them, and a test with a hardcoded ms figure gets
+deleted rather than fixed.
+
+## Performance: what was actually slow
+
+Measured, and the first two stories were wrong.
+
+| | before | after |
+|---|---|---|
+| normal frame, 30 bodies | 0.44ms, **0 gradients allocated** | unchanged |
+| lab frame, 41 bodies | 0.94ms, 29 gradients | 0.92ms, **1 gradient** |
+| `update()`, 160 bodies | 1.336ms/tick | **0.644ms/tick** |
+| `update()`, 20 bodies | 0.036ms/tick | 0.063ms/tick |
+
+The lab allocates nothing per frame now — braziers, plinth shadows, alcove glows and the survey grid
+are all baked sprites, the way the floor and the sprites already were. **That bought 0.02ms.** The
+gradients were not the cost, and neither was the next guess: a full-room 1680x760 `drawImage` of the
+floor and the grid measures 0.0015ms, the same as a clipped 960x600 one, because the compositor does
+it. What is left is many small draws with no hot spot — 93 `fillText` against a normal frame's 6,
+because the lab engraves every label twice.
+
+The real win was not a hot spot at all. It came from asking **what shape is the cost** rather than
+**what is slow** — and the honest summary is that the game was never slow, and the one number worth
+having is the one that says what happens when the content outgrows the code.
+
 ## Current state
 
-- `depths.html` — a shell loading fifteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` — **149 checks**, every test seeded to an identical world. All must pass at
-  every commit.
+- `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
+- `src/99-tests.js` — **169 checks**, every test seeded to an identical world. All must pass at
+  every commit. The change history (`FIXES`, in `80-ui.js`) is **102** entries and is itself checked:
+  every pinned fix must have a test carrying its name, and an entry with no matching result is
+  reported **UNVERIFIED** in amber rather than scored as a pass. The panel prints both numbers and
+  names each, because they are genuinely different — the table is bugs found and pinned, the suite
+  is every standing guarantee.
 - `csharp/Depths.Core` + `Depths.Tests` — 52 checks, parity-verified against the JavaScript. Still
-  no world state; see the section on the port boundary above.
+  no world state; see the section on the port boundary above. **The port does not yet know about the
+  camera, the room `bounds`, the lab, or the aim conversion** — those are the first things to bring
+  across, and `Balance.cs` still holds its own copy of the room size.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
   first, because it is the only artifact the player can run, then ported.
 - Unity 6 LTS and VS2022 are installed. The port resumes at `60-tick.js` (`update()`), then the
