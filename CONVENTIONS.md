@@ -237,6 +237,136 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
 
 ---
 
+## A Brunch pack is a WALL, not a crowd
+
+Every Brunch used to steer straight at the player, so a pack of eight arrived as a loose mob you
+could walk into the middle of and pick off one at a time. That made the most numerous enemy in the
+game the least interesting one, and wasted the thing a pack already is: a body of bodies.
+
+**The mechanism is the frame, not the target.** A Brunch now steers at a **slot** — a position in
+the pack's own frame, across the approach vector and back along it — so the pack is a rigid body that
+turns to face the player as one thing. Steering at the player instead produces a crowd every time,
+because eight bodies converging on one point from eight directions *is* a crowd by geometry.
+
+Two ranks, offset by half a column, so a shot that finds the gap in the front does not find a body
+behind it. A single rank is a wall you shoot down lengthwise.
+
+**Both spacings sit above `r+r` on purpose** (19 and 17 against a 16px overlap threshold).
+`bounceEnemies` is a hard positional push, not a force, so it fires whenever two bodies overlap and
+it will fight a slot asking for less than 16px — the wall shivers in place forever and reads as a bug
+rather than a formation. Letting separation have nothing to do is what lets the shape hold.
+
+The pack centroid is computed **once per tick**, before the body loop. The expensive mistake is the
+subtle one: if each body recomputed the centroid *after* the earlier bodies had moved, the wall would
+rotate a little every pass and the formation would creep.
+
+### Measured — the difference between a wall and a crowd is that a wall stops growing
+
+| tick | live | wall across | wall depth | centroid to player |
+|---|---|---|---|---|
+| 50 | 8 | 56px | 30px | 526px |
+| 150 | 8 | 48px | 22px | 425px |
+| 250 | 8 | 48px | 22px | 304px |
+| 350 | 8 | 47px | 23px | 178px |
+| 450 | 8 | 52px | 27px | 53px |
+| 500 | 8 | 83px | 57px | 69px ← contact |
+| 600 | 6 | 58px | 25px | 40px |
+
+It breaks only at contact, which is the existing Brunch rule — a body spends itself when it reaches
+you — and is not what this change touches.
+
+### Fairness, measured rather than assumed
+
+- **Reaction time** 2.1s–3.0s to cross the room. A human reacts in about 0.25s, so there is an order
+  of magnitude of margin. Density and rate are allowed to punish; arriving faster than a reaction is
+  a coin toss, not a difficulty.
+- **Flanking** a player walking the long way round a pack of 8 loses **0 bodies, 0 damage**. If that
+  stops being true, a wall has exactly one answer and it is a blink — which turns a spatial problem
+  into a resource problem.
+
+Both are in the suite, because "it looks like a wall" is a claim about a picture and neither number
+is visible in a picture.
+
+---
+
+## The map is a branching tree, and roles go to its ends
+
+The generator used to lay out three named runs by hand: a silver spine of three fights, an arm off its
+first room for the upgrade, a gold run off its second, boss hanging off the end of that. It produced
+the **same 15-room shape every time** — three corridors, a fixed junction at each fork, a route you
+could learn in one run and never think about again. A dungeon you can learn in one run is a corridor
+with monsters in it.
+
+What replaced it grows a **tree** and then decides what the ends are *for*. Two trunks leave the start
+in different directions, each cuts a side run partway out, the trunk tips become the two rooms worth
+fighting towards, and the branch ends are where the keys go. Which trunk is the boss and which is the
+upgrade is a coin toss, so "left is the boss" is not learnable.
+
+**The keys go in branch ends rather than on the trunk.** A key on the trunk is a toll you pay by
+walking forward, and a toll that is unavoidable is not a decision. At the end of a side run the player
+chooses between two ways to spend a floor: go deep on a trunk, or turn off early and come back with a
+key. Both are correct play and they cost different amounts of the thing the player cares about.
+
+**Endpoints, not coordinates.** A room is an endpoint if it has exactly one door. Nothing in the
+generator knows where anything is on the grid; it asks the graph what its dead ends are.
+
+### Measured, 400 dungeons
+
+| | |
+|---|---|
+| total rooms | 16: 134 · 18: 178 · 20: 87 · 21: 1 |
+| fight rooms | 12: 134 · 14: 178 · 16: 87 · 17: 1 |
+| distinct layouts | **395 of 400** |
+| unreachable required rooms | **0 of 500** |
+| boss room a clean single-door endpoint | **500 of 500** |
+
+### The bug the tree caught
+
+The first version forked from `path[path.length-1]` without excluding the last step, so a branch
+could be cut from a **trunk tip** — and a tip is the room that becomes the boss. The result put the
+gold key *behind the locked door the gold key opens*: **113 of 300 dungeons dead on arrival.**
+
+```
+ K  o  .  .  .  .  .        K silver key      G gold key
+ o  .  .  .  .  .  .        I item room       B boss
+ o  .  .  .  .  .  .        S start           ? secret
+ I  o  o  S  .  .  .
+ .  .  .  o  ?  .  .
+ .  o  B  o  .  .  .
+ G  o  .  .  .  .  .      <- the branch runs east out of the BOSS room
+```
+
+A dead run is not a hard run, so this was correctness, not tuning. It is now impossible by
+construction: `growForked` refuses to fork at the last step and `tryBuild` draws its fork index from
+interior steps only.
+
+`trunkLen` 4–5 and `forkLen` 3–4, raised from 3–4 and 2–3. The first tree put a floor at **8 fight
+rooms** in the worst case, and eight is not a floor — it is a corridor with two decisions in it.
+
+---
+
+### Verified end to end, on the real generator
+
+Twenty dungeons, walked start to the way down: silver key, item gate, gold key, boss gate, the
+boss, the way out, floor 2. **20 of 20 succeeded**, and the health in the bank carried down (6hp in,
+6hp out) on every one.
+
+Getting that number took six versions of the harness and every single failure was the harness, not
+the game. In order: the pathfinder walked through locked doors, so the bot routed toward the gold key
+via the boss room and stood in a doorway; it froze on arrival at an objective room because the key
+spawns at the room centre and it had stopped moving; it re-triggered a room transition without
+waiting out FADE_OUT; it cleared the boss inside the arrival fade, where `update()` correctly does no
+gameplay at all; it never cleared the rooms it walked into, which `doorOpen()` correctly refuses; it
+walked to the boss before collecting the silver key, which does not open the item gate; and finally
+its pickup helper deleted the way out of the boss room and then reported that the boss had not
+opened one.
+
+Worth writing down for the obvious reason: at no point in those six attempts was the game wrong. The
+result that mattered took a harness that behaves like the suite's own `walkTo`, because that one
+already knew about the lock, the transition, the fade and the clear.
+
+---
+
 ## Floors: the run descends, and difficulty reads depth and nothing else
 
 The boss dies, the way out appears, and walking into it takes you **down**. A run now ends in exactly
@@ -333,8 +463,11 @@ floor 12 alone has more rooms than floor 1. `run.ticks` deliberately does not re
 ## The blink grace — forgiveness, not invulnerability
 
 The user asked for a 0.1s window to press blink and avoid a hit. The game already grants **0.40s**
-after a blink (`BLINK_IFRAMES` 0.17 + `DASH_TRAIL` 0.23, set *after* the teleport), so 0.1s would
-have been strictly inside immunity already in force and would have changed nothing at all. Measured
+after a blink (`BLINK_IFRAMES` 36 ticks + `DASH_TRAIL` 48 ticks, 84 together, set *after* the
+teleport), so 0.1s would have been strictly inside immunity already in force and would have changed
+nothing at all. Those are ticks, not the `0.17` and `0.23` in the `sec()` calls — `sec()` rounds to
+whole ticks, so the real values are 0.1714s and 0.2286s, and their sum happens to be 0.40 either
+way, which is precisely why the stale figures survived a cleanup pass. Measured
 what the window was actually being asked to cover, by firing a shell to arrive N ticks after a
 blink:
 
@@ -445,7 +578,7 @@ falloff alone; the best long-range retention in the game is the Beam's identity.
 ## Current state
 
 - `depths.html` — a shell loading fourteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` — **141 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` — **143 checks**, every test seeded to an identical world. All must pass at
   every commit.
 - `csharp/Depths.Core` + `Depths.Tests` — 19 checks, parity-verified against the JavaScript.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
