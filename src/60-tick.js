@@ -848,7 +848,32 @@ function update(){
              and a shot that is the same shot every time is a shot that can be walked into. */
           const reach=Math.max(0,Math.min(1,(dist-SWERVE_DEADZONE)/(SWERVE_FULL-SWERVE_DEADZONE)));
           const conf=Math.max(0,1-player.swerve*(rootsWhileCasting?SWERVE_TRUST_ROOTED:SWERVE_TRUST_WALKING));
-          const bvx=player.trendVx*conf, bvy=player.trendVy*conf;
+          /* THE BELIEVED VELOCITY IS THE CURRENT ONE, and the bug this fixes was NOT acceleration.
+             It was the LAG.
+
+             trendV is an EMA with LUNGE_TRACK 0.014, so it lags by about 71 ticks, and the solver
+             was treating that lagged value as the player's present velocity. A 400px shell is in the
+             air for roughly 195 ticks and the player covers about 1.4px a tick, so seventy-one ticks
+             of stale velocity is a hundred pixels of position error by the time the shell arrives.
+             Measured: a straight runner at 400px was missed by a consistent 86-108px, which is that
+             number and not a coincidence.
+
+             So the prediction reads player.vx - where the player is actually going this tick - and
+             the smoothing is not removed, it is DEMOTED, which is the accurate word for it. trendV's
+             job was never accuracy; it was not reacting to a single tick of knockback noise, and
+             `conf` already does that job and does it better, because a player who has just been
+             knocked about has a high swerve read and a high swerve read scales the whole belief down.
+             The noise rejection lives in the confidence and the freshness lives in the velocity; they
+             were the same knob doing two jobs.
+
+             And the effect lands where it should, which is worth checking rather than assuming. A
+             COMMITTED player is helped: their velocity is steady, so reading it fresh removes a
+             hundred pixels of error and they are hit again. A REVERSING player is not: a quarter-second
+             reversal flips the true velocity every 26 ticks while trendV barely moves, so reading
+             fresh makes the belief noisier rather than truer - and that noise is then scaled by a conf
+             already near zero for a body that unsettled. The two cases separate because they are
+             different signals, which is the whole reason to keep them separate. */
+          const bvx=player.vx*conf, bvy=player.vy*conf;
           /* The target is the player's HITBOX, not the point their sprite is drawn from. The hit test
              is a circle ten pixels below the origin - a body reads as its chest and hem, not as its
              coordinate - and an intercept solved against the origin is therefore aimed ten pixels

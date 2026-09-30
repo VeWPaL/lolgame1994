@@ -143,6 +143,32 @@ namespace Depths
         /// <see cref="SwerveReach"/> and <see cref="GunSpread"/> for what the caller scales it by.
         /// </para>
         /// </remarks>
+        /// <summary>
+        /// Where a gunner aims: a real intercept against a moving target, from the muzzle it will
+        /// actually fire from.
+        /// </summary>
+        /// <param name="lagX">The target's lagged x - the hitbox origin, not the drawn sprite.</param>
+        /// <param name="lagY">The target's lagged y.</param>
+        /// <param name="trendVx">
+        /// The target's CURRENT velocity. The name is the JavaScript field name kept for parity, but
+        /// it is the value that matters and it CHANGED: this used to receive a 71-tick-old EMA and
+        /// treat it as the present. A 400px shell flies about 195 ticks and a player covers roughly
+        /// 1.4px a tick, so seventy-one ticks of stale velocity is a hundred pixels of error by
+        /// arrival - measured as a straight runner missing by a consistent 86-108px at 400px, and as
+        /// being literally unhittable at 200px with a full Momentum meter.
+        ///
+        /// The smoothing was not removed, it was DEMOTED, which is the accurate word: an EMA exists
+        /// to stop a body reacting to one tick of knockback noise, and the swerve confidence already
+        /// does that job and does it better. So noise rejection lives in the confidence and freshness
+        /// lives in the velocity. They were one knob doing two jobs, and a committed player paid for
+        /// the compromise by a hundred pixels while a reverser - whom the confidence already handles
+        /// - got nothing from it.
+        /// </param>
+        /// <param name="trendVy">The target's current y velocity.</param>
+        /// <param name="swerve">How unsettled the target looks, 0..1. Scales the whole belief down.</param>
+        /// <param name="sx">The muzzle x the shell will leave from.</param>
+        /// <param name="sy">The muzzle y the shell will leave from.</param>
+        /// <param name="shellSpeed">Shell speed in px per tick.</param>
         public static Intercept Gun(double lagX, double lagY,
                                     double trendVx, double trendVy, double swerve,
                                     double sx, double sy, double shellSpeed)

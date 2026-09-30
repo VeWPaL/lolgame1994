@@ -701,7 +701,7 @@ const MOMENTUM_MOVE_FLOOR=0.3;
    target that is still accelerating would let the meter be worth more than 5% AND keep the gunner
    dangerous, and that is a change to Intercept.cs rather than to this file. Written down so the next
    pass starts there rather than re-deriving it. */
-const MOMENTUM_SPEED=0.05, MOMENTUM_ACCEL=0.55;
+const MOMENTUM_SPEED=0.18, MOMENTUM_ACCEL=0.55;
 // Two ceilings, and the difference matters. SPEED_CAP is the ceiling on the SPEED STAT, which a
 // character now STARTS INSIDE - it is the most a build can add on top of a starting 25%, not the most
 // a build can give. MOVE_SPEED_HARD_CAP is the ceiling on the SUM of everything, and it is set to
