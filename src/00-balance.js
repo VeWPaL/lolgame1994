@@ -27,8 +27,73 @@ const W=960, H=600;
 const SPEEDUP=3.5, TICK_HZ=Math.round(60*SPEEDUP);
 const sec=s=>Math.round(s*TICK_HZ);
 const GRID=7, START=3, DOORW=90;
+
+/* ROOM SIZE IS A DEFAULT, NOT THE WORLD. These four numbers describe a STANDARD room, and the
+   distinction is new and load-bearing.
+
+   They used to mean "the room" - there was exactly one shape, every room was 700x450 at (50,130),
+   and ~208 call sites read them as the walls. A room is now DATA carrying its own bounds, so a room
+   can be 700x450 or 1600x1200 or an L, and these numbers are what a new room gets unless it asks
+   for something else.
+
+   Keeping the old names as the default is deliberate: the alternative was renaming 208 call sites AND
+   the C# mirror in one go, and a change that wide cannot be reviewed. Instead the four constants keep
+   their meaning as "a standard room" and every site that means "the wall of the room I am standing in"
+   is migrated to the accessor. The suite is what tells the two apart: a site left on the constant
+   agrees with every other site right up until a room is a different size, and then it silently
+   disagrees - which is the geometry-in-two-places failure this file has the most of. */
 const ROOM_LEFT=50, ROOM_RIGHT=750, ROOM_TOP=130, ROOM_BOTTOM=580;
+const ROOM_W=ROOM_RIGHT-ROOM_LEFT, ROOM_H=ROOM_BOTTOM-ROOM_TOP;
 const MIDX=(ROOM_LEFT+ROOM_RIGHT)/2, MIDY=(ROOM_TOP+ROOM_BOTTOM)/2;
+
+/* THE ACCESSORS. Four functions answering "where is the wall of the room I am in", and they are the
+   only things gameplay should ask. They read the CURRENT room's bounds, so a room of a different size
+   works with no code change anywhere else - which is the whole point of putting the size on the room
+   rather than in a constant.
+
+   They fall back to the standard room when there is no room yet, because the test harness pokes
+   Stats and the player before the first startGame, and a helper that throws on a missing room is a
+   helper every caller has to guard. */
+const boundsOf=()=>{
+  const r=(typeof currentRoom==='function')?currentRoom():null;
+  return (r&&r.bounds)||{l:ROOM_LEFT,t:ROOM_TOP,r:ROOM_RIGHT,b:ROOM_BOTTOM};
+};
+const roomL=()=>boundsOf().l, roomR=()=>boundsOf().r, roomT=()=>boundsOf().t, roomB=()=>boundsOf().b;
+const roomW=()=>boundsOf().r-boundsOf().l, roomH=()=>boundsOf().b-boundsOf().t;
+const roomCX=()=>(roomL()+roomR())/2, roomCY=()=>(roomT()+roomB())/2;
+
+/* THE CAMERA, and it is a RENDER-TIME TRANSFORM rather than a change of coordinates.
+
+   Nothing in the game moves to accommodate it. Every distance, every body, every projectile and all
+   ~208 wall references stay in world space, and the view is `ctx.translate(-cam.x, -cam.y)` around
+   the room draw ONLY - the HUD, the minimap and every overlay are drawn outside it, because a HUD
+   that scrolled off the corner of a big room would be a HUD nobody can read.
+
+   That choice is the reason the big-room work is cheap. The alternative - moving the world to the
+   camera by rewriting coordinates - would touch every arithmetic expression in the game and every
+   number in the test suite. This way the camera is one transform and the rest of the game is not
+   aware of it.
+
+   THE CLAMP IS WHAT MAKES IT SAFE TO INTRODUCE. A room that already fits on screen gets a camera
+   landing exactly on the room's own origin, so the transform is the identity and not one pixel
+   changes. Every existing room, every screenshot and all 154 checks are therefore unchanged by the
+   camera's presence - which makes the addition provable rather than hopeful. Only a room LARGER than
+   the screen moves the view at all. */
+const cam={x:0,y:0,w:0,h:0};
+function cameraTarget(){
+  const b=boundsOf();
+  // a room narrower or shorter than the view is CENTRED rather than pinned to its top-left, so a
+  // small room does not sit in the corner of the screen with a third of the viewport showing scenery
+  // that is not part of the fight
+  const x=(b.r-b.l)<=W?(b.l+b.r-W)/2:Math.min(b.l,Math.max(b.r-W,player.x-W/2));
+  const y=(b.b-b.t)<=H?(b.t+b.b-H)/2:Math.min(b.t,Math.max(b.b-H,player.y-H/2));
+  return {x,y};
+}
+function updateCamera(){
+  const t=cameraTarget();
+  cam.x=t.x; cam.y=t.y; cam.w=W; cam.h=H;
+  return cam;
+}
 const OPP={N:'S',S:'N',E:'W',W:'E'};
 const ROOM_BG={start:'#1c2230',normal:'#191b22',item:'#2a2410',boss:'#2a1414'};
 /* BLINK RECHARGE IS A DURATION, AND IT IS NOT SCALED BY TEMPO.

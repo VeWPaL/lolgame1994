@@ -80,6 +80,25 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const clearRecords=()=>{for(const k of REC_KEYS){try{localStorage.removeItem(k);}catch(e){}} loadRecords();};
   const playerSpeedForTest=()=>0.935*PLAYER_MOVE;
 
+  /* PIXELS ARE SAMPLED IN SCREEN SPACE, from a WORLD position, and every test that looks at a
+     rendered pixel goes through here.
+
+     getImageData reads the framebuffer, which is the screen, and the game is drawn in world space
+     under a camera transform. So a test that samples at a body's world x/y was correct only while
+     the camera was the identity - which it was, for every room that fit on screen, and stopped being
+     the moment a room was allowed to be bigger than the viewport. That is the same class of bug as
+     every other stale-derived-value in this file: a thing that was true because of an accident of
+     the current numbers, and stops being true the moment a number moves.
+
+     Doing the conversion in one helper rather than at each call site is also what stops a second
+     reader of the same idea from appearing: the conversion is the kind of arithmetic that is easy to
+     get backwards, and backwards it samples empty floor and reports a hit that is not there. */
+  const px=(v)=>Math.round(v-cam.x), py=(v)=>Math.round(v-cam.y);
+  const pixelsAtWorld=(x,y,w,h)=>{
+    updateCamera();
+    return ctx.getImageData(px(x),py(y),w,h).data;
+  };
+
   /* THE CHARACTER IS NEUTRALISED FOR WEAPON TESTS, and this one helper exists because a starting
      class put +3 Strength on every pellet of every gun and quietly broke fifteen checks.
 
@@ -1886,11 +1905,13 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const e=spawnEnemy(false,r,MIDX,MIDY,'lunger');
     e.noticeTimer=1e9; e.aggroTimer=0; e.anim=0; e.hitFlash=0;
     r.enemies.push(e);
-    // the brightest pixel in a box over the body, so we cannot accidentally sample the floor
-    const peak=()=>{const d=ctx.getImageData(Math.round(MIDX)-8,Math.round(MIDY)-10,16,20).data; let m=0;
+    // the brightest pixel in a box over the body, so we cannot accidentally sample the floor.
+    // through the world-to-screen helper, because the framebuffer is the screen and the game is
+    // drawn in world space under the camera
+    const peak=()=>{const d=pixelsAtWorld(MIDX-8,MIDY-10,16,20); let m=0;
       for(let i=0;i<d.length;i+=4) m=Math.max(m,d[i]*0.2126+d[i+1]*0.7152+d[i+2]*0.0722);
       return m;};
-    const isWhite=()=>{const d=ctx.getImageData(Math.round(MIDX)-8,Math.round(MIDY)-10,16,20).data;
+    const isWhite=()=>{const d=pixelsAtWorld(MIDX-8,MIDY-10,16,20);
       for(let i=0;i<d.length;i+=4) if(d[i]>248&&d[i+1]>248&&d[i+2]>248) return true;
       return false;};
     render(); const clean=peak();

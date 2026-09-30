@@ -1223,7 +1223,29 @@ function render(){
     drawOverlay('DEPTHS','click or press any key to descend',recordsLine());
     drawStartSeed();
   } else {
-    drawRoom(); drawHUD();
+    /* THE CAMERA, applied to the ROOM AND NOTHING ELSE.
+
+       The transform is inside a save/restore pair that closes before the HUD, so the HUD, the
+       minimap and every overlay draw in screen space exactly as they always did. A HUD that scrolled
+       with the room would be a HUD that walks off the corner of a big room, and a minimap that
+       scrolled would be a minimap of a window rather than of the floor.
+
+       For every room that fits on screen this translate is the identity, because the camera clamps
+       to the room's own origin. That is deliberate: it means the camera can be added to a game that
+       is already green without any of its existing numbers moving, and the only thing being tested
+       on day one is a transform that is currently a no-op.
+
+       It is computed HERE, immediately before it is used, rather than in the tick. That is the
+       lesson of every stale-derived-value bug in this file: a value updated somewhere else is a
+       value that can be wrong at the moment it matters, and the first symptom is a one-frame
+       offset nobody can reproduce. Computing it at the point of use makes it impossible to be stale,
+       and it is one subtraction and two clamps. */
+    updateCamera();
+    ctx.save();
+    ctx.translate(-cam.x,-cam.y);
+    drawRoom();
+    ctx.restore();
+    drawHUD();
     if(roomFade>0){ctx.fillStyle='rgba(0,0,0,'+roomFade+')';ctx.fillRect(0,0,W,H);}
     drawBossWarning();   // over the fade, so a room transition cannot swallow the warning
     drawDescent();       // also over the fade, and for the same reason: the fade is what it is drawn on

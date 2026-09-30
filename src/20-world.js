@@ -35,7 +35,30 @@ const UNLOCK_TIME=sec(0.5), UNLOCK_RANGE=64, BOSS_WARN_TIME=sec(3.2);
    wants: fight, fight, fight, payout, and a map small enough to hold in your head. */
 const ARM_DIRS=['N','E','S','W'];
 const TURNS={N:['W','E'],S:['E','W'],E:['N','S'],W:['S','N']};
-function newRoom(x,y,type){return {x,y,doors:{},type,visited:false,spawned:false,enemies:[],pickups:[],spawnPlan:null,keyReward:false,goldReward:false,cleared:false,secret:null,armed:false};}
+/* A ROOM CARRIES ITS OWN BOUNDS, and this is the field the whole big-room system hangs off.
+
+   Every room is a rectangle in world space, and a standard room is the default rather than the rule.
+   `bounds` is stored rather than computed from a global because a room is the thing that knows its
+   own size - and because the alternative, a global every room reads, is a global that can only ever
+   describe one shape.
+
+   The four values are written out rather than spread from ROOM_W/ROOM_H so that a future room with
+   an asymmetric inset, a ledge, or a corridor stub has somewhere to put it without changing the
+   shape of the data.
+
+   `px,py` is the spawn centre, also on the room, because a bigger room's centre is not the screen's
+   centre and anything that needs "the middle of this room" should ask the room rather than average
+   two constants that happen to describe a different room. */
+function roomBounds(w,h){
+  w=w||ROOM_W; h=h||ROOM_H;
+  return {l:ROOM_LEFT,t:ROOM_TOP,r:ROOM_LEFT+w,b:ROOM_TOP+h,w:w,h:h};
+}
+function newRoom(x,y,type,bounds){
+  const b=bounds||roomBounds();
+  return {x,y,doors:{},type,visited:false,spawned:false,enemies:[],pickups:[],spawnPlan:null,
+    keyReward:false,goldReward:false,cleared:false,secret:null,armed:false,
+    bounds:b, cx:b.l+b.w/2, cy:b.t+b.h/2};
+}
 // a direction that leaves `room` through an unused side into empty grid
 function freeDir(rs,room,prefer){
   const open=d=>{const [nx,ny]=neighbor(room.x,room.y,d);return !room.doors[d]&&nx>=0&&ny>=0&&nx<GRID&&ny<GRID&&!rs[key(nx,ny)];};
