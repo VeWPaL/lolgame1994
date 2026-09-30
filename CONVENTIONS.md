@@ -237,6 +237,48 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
 
 ---
 
+## The Warden - the boss, and what a boss is allowed to do
+
+It was 50*TOUGH = 67.5 HP, no ranged kit at all (the tick explicitly excludes the boss from firing),
+and it walked at the player. Measured against the four guns, it died in **2.20s / 2.66s / 3.81s /
+5.24s**. That is not a fight.
+
+**Built out of the existing vocabulary, not a new one.** Every move is one the player has already
+learned to read from a smaller body:
+
+| move | what it is |
+|---|---|
+| **VOLLEY** | three committed shells, gunner's muzzle tell, re-aimed between each |
+| **SWEEP** | a lunger lunge, from a body four times the mass |
+| **WALL** | the Brunch formation, called as cover for the boss |
+
+The wall is the one new idea, and it is new *because* the player has just learned that Brunch eat
+shells. The fight where that matters most is the boss, and the boss gets its own wall to stand
+behind — the cover the player has been building is now something the fight takes away.
+
+**Two phase thresholds, and each opens a MOVE rather than raising a number**, so a phase is a
+different fight rather than the same one with different dice. They are fractions of max HP, not
+absolute, because the depth ladder scales body health.
+
+**Sized from measured dps: 520*TOUGH = 702 HP.** 25.7s Scatter, 28.4s Beam, 28.6s Bolt, 28.6s
+Voidball. The spread is left alone on purpose — the slow gun *should* take longer, and flattening it
+would mean tuning to the median weapon and telling the player their choice does not matter. No
+armour, deliberately: irregular chunks make it impossible to tell how much of a volley landed.
+
+### The number that decides whether any of it works
+
+| player | length | moves | phases | wall | hits | outcome |
+|---|---|---|---|---|---|---|
+| **reads the tells** | 46.0s | sweep, volley, wall | P2@16.0s P3@30.7s | 5 | **1** | killed it |
+| **reads nothing** | 33.9s | sweep, volley | P2@16.8s P3@31.0s | 0 | **6** | DIED |
+
+That gap **is** the boss. As first written it fired every 0.55–0.85s for 2.88 a shell — 46 shells in
+fifteen seconds against an 8 HP player, so the player had to dodge 94% of what was fired, and the
+reader and the non-reader finished on the *same* number of hits. The tells were doing nothing, which
+is the one thing a boss may not be.
+
+---
+
 ## A Brunch pack is a WALL, not a crowd
 
 Every Brunch used to steer straight at the player, so a pack of eight arrived as a loose mob you
@@ -578,7 +620,7 @@ falloff alone; the best long-range retention in the game is the Beam's identity.
 ## Current state
 
 - `depths.html` — a shell loading fourteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` — **143 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` — **145 checks**, every test seeded to an identical world. All must pass at
   every commit.
 - `csharp/Depths.Core` + `Depths.Tests` — 19 checks, parity-verified against the JavaScript.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
