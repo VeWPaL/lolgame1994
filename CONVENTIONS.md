@@ -873,10 +873,37 @@ having is the one that says what happens when the content outgrows the code.
   reported **UNVERIFIED** in amber rather than scored as a pass. The panel prints both numbers and
   names each, because they are genuinely different — the table is bugs found and pinned, the suite
   is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` — 52 checks, parity-verified against the JavaScript. Still
-  no world state; see the section on the port boundary above. **The port does not yet know about the
-  camera, the room `bounds`, the lab, or the aim conversion** — those are the first things to bring
-  across, and `Balance.cs` still holds its own copy of the room size.
+- `csharp/Depths.Core` + `Depths.Tests` — **67 checks**, parity-verified against the JavaScript.
+  Still no world state; see the section on the port boundary above.
+
+### The port's own drift, and the test that was defending it
+
+The port is where the hand-duplication of numbers bites, and it had already bitten:
+
+| | game | port (was) |
+|---|---|---|
+| `SwerveDeadzone` | 300 | **350** |
+| `SwerveFull` | 430 | **570** |
+
+`Intercept.SwerveReach` reads both, so the port's gunners read a reversing player differently from
+the game's, in every build, silently. It survived because there was a test called
+**`TheDeadzoneIsHalfTheRoomWidth`** asserting 350 and 570 — the name states the *rule*, the game's rule
+is half the width **less a margin of 50**, and the constant had been written from the prose. The test
+then re-derived the same prose and passed.
+
+**A test that re-derives the rule it is auditing cannot find the rule being wrong, and will defend
+the wrongness for ever.** That is the same shape as the cursor bug (fixture and game agreeing on a
+frame) and the separation grid (candidate order). Three instances, one cause.
+
+`Balance.Room` is now a struct (`l/t/r/b`, `W`, `H`, `Cx`, `Cy`, `Standard`), and `SwerveDeadzone`,
+`SwerveFull` and the new `AggroRange` are **functions of a room** — methods, not properties, because
+C# will not let a property and a method share a name. Expected values are read out of the browser;
+the port's own docs already record that hand-computing one produced three wrong numbers out of nine.
+
+**Not ported, deliberately:** the HUD, boss bar, character sheet, Scatter recoil, hook rework, Brunch
+arc AI, the camera, and the world/screen frame. The first group is cheapest to iterate in JavaScript
+and the port has no presentation layer to keep in sync; the second is the next step, and it should be
+next *because* the foundation now models a room as data.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
   first, because it is the only artifact the player can run, then ported.
 - Unity 6 LTS and VS2022 are installed. The port resumes at `60-tick.js` (`update()`), then the
