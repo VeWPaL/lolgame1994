@@ -155,6 +155,7 @@ const BRUNCH_WALL_GAP=19,     // along the wall, between columns. Brunch r is 8,
       BRUNCH_WALL_RANK=17,    // between the two ranks, along the approach. Also above 2*r
       BRUNCH_WALL_MIN=3;      // a pack smaller than this is a knot, not a wall, and walks straight in
 
+
 /* A lunger does not walk at you. It closes the distance, stops, TELLS you where it is going, and
    then commits to a straight line at that point. Every number here exists because of a specific way
    the old straight-line chase was unfair:
@@ -257,6 +258,33 @@ const HITBOX_LAG_EASE=0.05, HIT_FLASH=sec(0.13), BURST_TICKS=sec(0.2), MUZZLE_TI
 // flash decays, so a body under the Beam's fifth-of-a-second cadence still reads as a creature
 const HIT_FLASH_MAX=0.62, HIT_FLASH_MIN=0.38;
 const SHOT_DMG=1.8;   // a chip off a lunger's HP rather than half a heart
+
+/* THE WARDEN, the boss. Tuning only - the behaviour is in 60-tick.js beside the tick that runs it.
+
+   It was a large lunger with the boss explicitly excluded from firing: 50 HP of walking, which is not
+   a fight. Everything here exists to make it one, and every number is chosen so that a player who
+   READS it takes very little damage and a player who reads nothing takes all of it. That gap is the
+   fight, and it is the only thing a boss is allowed to do to make itself hard.
+
+   PHASE thresholds are a FRACTION of max HP, not an absolute, because the depth ladder scales body
+   health and an absolute threshold would mean something different on every floor - phase 2 arriving
+   at 40 HP on floor 3 and at 300 HP on floor 12. */
+
+const BOSS_VOLLEY_N=3,        // shells per volley. Three is a pattern with a shape; five is noise
+      BOSS_VOLLEY_GAP=sec(0.55),  // between shells, and each is re-told, so one can be answered alone
+      BOSS_PHASE_1=0.66, BOSS_PHASE_2=0.33,   // fractions of max HP
+      BOSS_RECOVER=sec(1.1),   // dead time after every move. The gap the player spends reading the next
+      BOSS_CD_MIN=sec(3.2), BOSS_CD_VAR=sec(1.0),   // seconds BETWEEN moves. The single most
+                                // important number on the boss, and the one that was wrong first.
+      BOSS_SHELL_DMG=SHOT_DMG*0.8,   // 1.44, not 2.88. A body firing THREE shells at a time cannot
+                                // also hit for 36% of the player's health bar per shell, or the
+                                // player has to dodge 94% of what is fired and reading the tells
+                                // stops mattering - which is the one thing a boss may not do.
+      BOSS_WALL_HP=5,          // bodies in the wall the boss calls
+      BOSS_WALL_ID=-1,         // a pack id no room generator can hand out, so a called wall is its own
+      BOSS_SWEEP_DIST=150,     // how far the sweep carries it
+      BOSS_PHASE_FLASH=sec(0.8);  // the banner, which is not skippable - a phase change the player
+                                  // cannot see is a difficulty spike wearing a disguise
 const SPAWN_MARGIN=76, SPAWN_MID=104, SPAWN_SEP=158, SPAWN_DOOR=130, SPAWN_FAR=210;
 // the simulation ticks at a fixed TICK_HZ whatever the monitor refresh rate; STEP_TOL absorbs rAF
 // timer jitter so a 60Hz screen gets a steady 3.5 ticks per frame, MAX_CATCHUP_MS caps the run

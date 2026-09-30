@@ -93,7 +93,23 @@ const ENEMY={
  brunch:{mass:0.5,r:8,art:1,bar:11,hp:2*TOUGH,walk:BRUNCH_WALK,run:BRUNCH_RUN},
   shooter:{mass:0.8,r:14,art:2,bar:26,hp:5.6*TOUGH,base:0.45*LUNGER_PAY,sense:600,range:520,close:150,far:250,cdMin:sec(0.5),cdVar:sec(0.4),dmg:SHOT_DMG,pspd:2.2,pr:5,pcol:'#ff4d4d'},
   gunner:{mass:2.4,r:22,art:3,bar:32,hp:8*TOUGH,base:0.3*LUNGER_PAY,sense:700,range:600,close:120,far:200,cdMin:sec(0.8),cdVar:sec(0.6),dmg:SHOT_DMG*2,pspd:2.05,pr:7,pcol:'#ffb03a',armour:ARMOUR},
- boss:{mass:4,r:28,art:4,bar:40,hp:50*TOUGH,base:0.6*LUNGER_PAY},
+  /* THE BOSS HP IS SIZED FROM MEASURED WEAPON DPS, which is the only way to size a health bar.
+
+     It was 50*TOUGH = 67.5, and measured against the four guns that killed it in 2.20s, 2.66s, 3.81s
+     and 5.24s. That is not a fight: it is the same walk with a health bar on it, and a player would
+     learn in one attempt that the boss is a formality between the gold key and the next floor.
+
+     Sized so the fight is a fight with the gun the player is actually holding. 520*TOUGH = 702 HP,
+     which is 22.9s to the Scatter, 27.6s to the Arcane Beam, 39.6s to the Bolt and 54.4s to the
+     Voidball. The spread is left alone deliberately - the slow gun SHOULD take longer, and flattening
+     it would mean tuning the boss to the median weapon and telling the player their choice does not
+     matter. The depth ladder multiplies all of it, so a floor 10 boss is a long fight by exactly the
+     same rule that made everything else on that floor harder.
+
+     NO ARMOUR, deliberately. Armour would flatten the read: a player watching a health bar fall in
+     irregular chunks cannot tell how much of a volley landed, and the whole design is that a player
+     who reads the tells takes very little damage. */
+ boss:{mass:4,r:28,art:4,bar:40,hp:520*TOUGH,base:0.6*LUNGER_PAY,walk:0.42*PLAYER_MOVE,run:0.72*PLAYER_MOVE},
 };
 // A Brunch pack arrives as one knot. big packs are much rarer than small ones, so a room that rolls
 // an eight has genuinely gone wrong, and a room that rolls a four is a nuisance rather than a wall

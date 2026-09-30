@@ -15,7 +15,7 @@ function spawnEnemy(boss,room,x,y,type){
   const c=ENEMY[boss?'boss':type==='shooter'||type==='gunner'?type:type==='brunch'?'brunch':'lunger'];
   const e=Object.assign(base,{type:boss?'boss':type||'lunger',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp*depthTough(),maxHp:c.hp*depthTough(),armour:c.armour||1});
   if(c.base!==undefined) e.speed=c.base*PRESSURE.rate*depthRate();
-  if(boss){e.aggroTimer=9999;return e;}
+  if(boss){e.aggroTimer=9999;bossInit(e);return e;}
   // lungers and Brunch are the same shape of body: they walk at you and hit you on contact. only
   // the two gunners carry a ranged kit
   if(c.walk!==undefined){e.curSpeed=c.walk;e.walkSpeed=c.walk;e.runSpeed=c.run;e.aggroTimer=0;

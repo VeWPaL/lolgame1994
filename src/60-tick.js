@@ -43,6 +43,207 @@ function tickMomentum(moved){
   Stats.earn('momentum',player.momentum);
 }
 
+/* THE WARDEN: the boss, as a composition of the vocabulary the rest of the game already speaks.
+
+   It used to be a large lunger with no ranged kit - `e.type!=='boss'` is explicitly excluded from
+   firing - so it walked at the player slowly and did nothing else. 50 HP of walking is not a fight,
+   it is a long walk.
+
+   The design rule for this game is that difficulty comes from RATE and DENSITY and never from
+   something the player cannot read, so the boss is built out of attacks that already have tells and
+   already have answers, rather than out of new mechanics. Every move below is one the player has
+   already learned to read from a smaller body:
+
+     VOLLEY   three committed shells, each with the gunner's muzzle tell. The player has been dodging
+               these from gunners for twenty minutes; the boss does not teach anything new, it just
+               does more of it.
+     SWEEP    a lunger lunge, from a body four times the mass. Same wind-up, same commit, same dodge.
+     WALL     the Brunch formation, called as COVER for the boss. This is the one genuinely new
+               thing here, and it is new because the player has just learned that Brunch eat shells -
+               so the fight where that matters most is the boss, and the boss gets its own wall to
+               stand behind. The inversion is the point: the cover the player has been building is
+               now something the fight takes away.
+
+   PHASES, because a fight that repeats one loop is a job rather than a fight. Two thresholds, and
+   each one opens a move rather than just raising a number. The tell is the PHASE BANNER, which is
+   drawn and is not skippable, because a phase change the player cannot see is a difficulty spike
+   wearing a disguise.
+
+   NOTHING HERE IS UNREADABLE. Every attack resolves at most one commitment at a time, every one is
+   preceded by a tell the game has already drawn, and the boss never acts while recovering from its
+   own previous move. A player who reads correctly takes very little damage; a player who reads
+   nothing takes all of it. That gap is the fight. */
+
+function bossInit(e){
+  e.phase=1;
+  e.move='idle';
+  e.moveT=0;
+  e.bossCd=sec(1.2);
+  e.volleyLeft=0;
+  e.volleyT=0;
+  e.sweepAim=0;
+  e.sweepFrom=null;
+  e.wallIds=null;
+  e.wallT=0;
+  // the ranged kit it was missing. These are the gunner's numbers with a boss behind them, and the
+  // aim is solved at the moment the tell starts rather than when the shell leaves, exactly as it is
+  // for a gunner - so a player who commits to a dodge is dodging the shot that will arrive.
+  e.range=620; e.sense=900; e.close=140; e.far=260;
+  e.cdMin=BOSS_CD_MIN; e.cdVar=BOSS_CD_VAR;
+  e.dmg=BOSS_SHELL_DMG; e.pspd=1.9; e.pr=8; e.pcol='#ff9a5a';
+}
+
+/* The wall the boss calls. Deliberately built through spawnEnemy and the same pack fields the room
+   generator uses, so the formation code, the separation pass and the shell-absorption rule all apply
+   to it untouched. A boss that had its own private cover would be a second implementation of the one
+   thing that is easiest to get subtly wrong. */
+function bossCallWall(e,room){
+  const n=BOSS_WALL_HP;
+  const base={x:clampX(e.x+(e.x<player.x?70:-70)),y:e.y};
+  const made=[];
+  for(let i=0;i<n;i++){
+    const a=(i/n)*6.283, rad=i%2?30:16;
+    const b=spawnEnemy(false,room,base.x+Math.cos(a)*rad,base.y+Math.sin(a)*rad,'brunch');
+    b.hp=b.maxHp=BOSS_WALL_HP*2;
+    b.packId=BOSS_WALL_ID; b.packSlot=i;
+    b.noticeTimer=1e9; b.aggroTimer=0; b.pursuit=0;
+    /* PUT IT IN THE ROOM. spawnEnemy RETURNS a body and does not add it - the room generator is the
+       thing that pushes, and so is every other caller. The first version of this line was missing
+       entirely, so the boss spent the whole fight calling a wall made of nothing: the formation code
+       found no Brunch to arrange, the shell-absorption rule had nothing to absorb, and an earlier
+       measurement reported "brunch alive: 0" without anyone reading it as the bug it was. It is the
+       same trap the walkaround harness fell into six times in a row, and the same trap is in the
+       room generator's own comment. */
+    room.enemies.push(b);
+    made.push(b);
+  }
+  // the BODIES, not the slot numbers - the slot is a formation index and reading it back as an
+  // identity gives five copies of a number and no way to find the wall again
+  e.wallBodies=made;
+  e.wallT=0;
+}
+
+function clampX(x){
+  return Math.max(ROOM_LEFT+60,Math.min(ROOM_RIGHT-60,x));
+}
+function clampY(y){
+  return Math.max(ROOM_TOP+60,Math.min(ROOM_BOTTOM-60,y));
+}
+
+
+/* The boss's turn. One move at a time, always the same shape: a TELL, a COMMIT, a RECOVER.
+
+   The structure is the whole fairness argument. There is no move that can start while the boss is
+   recovering, there is no move that resolves in less time than its own tell, and the phase changes
+   open a move rather than accelerating the existing one - so a player who is keeping up with the
+   tells is never asked to react to something they have not already seen. */
+function stepBoss(e,edx,edy,dist,sm,room){
+  const hx=player.x, hy=player.y;
+  if(e.moveT>0) e.moveT--;
+
+  // the wall it called expires on its own, and it is the only boss resource that runs without the
+  // player doing anything - a wall that never went away would end the fight for them
+  if(e.wallBodies){
+    e.wallT++;
+    if(e.wallT>sec(14)||!e.wallBodies.some(b=>b.hp>0)) e.wallBodies=null;
+  }
+
+  // PHASE. Both thresholds fire on a transition only, so a boss that sits at 66.4% for ten seconds
+  // does not announce itself ten times.
+  const frac=e.hp/e.maxHp;
+  if(e.phase===1&&frac<=BOSS_PHASE_1) bossPhase(e,2);
+  else if(e.phase===2&&frac<=BOSS_PHASE_2) bossPhase(e,3);
+
+  if(e.move!=='idle'){ resolveBoss(e,edx,edy,dist,sm,room); return; }
+  if(e.moveT>0) return;
+
+  // choose. Weighted by phase rather than random, so a phase is a different FIGHT and not the same
+  // one with the dice rolled differently - and so the mix can be read off the phase number.
+  e.bossCd-=1;
+  if(e.bossCd>0) return;
+  const bag=[];
+  bag.push('volley'); bag.push('volley');
+  bag.push('sweep');
+  if(e.phase>=2) bag.push('wall');
+  if(e.phase>=3) bag.push('volley'); bag.push('sweep'); bag.push('sweep');
+  const pick=bag[(Rnd.run()*bag.length)|0];
+  e.bossCd=(e.cdMin+Rnd.jitter()*e.cdVar)*(1-PRESSURE_CADENCE*roomPressure(room.enemies.length));
+  beginBoss(e,pick,room);
+}
+
+function bossPhase(e,n){
+  e.phase=n;
+  e.move='idle';
+  e.moveT=BOSS_RECOVER;          // the phase change is itself a beat of recovery, not a free attack
+  e.volleyLeft=0;
+  e.bossCd=sec(0.4);
+  e.phaseFlash=BOSS_PHASE_FLASH;
+}
+
+function beginBoss(e,move,room){
+  e.move=move;
+  // Read the player position HERE rather than taking it as an argument. The first version used `hy`
+  // and `hx`, which are locals of stepBoss and resolveBoss - two other functions' variables, in a
+  // third. It threw on the first volley of the first fight, which is the only place a boss is ever
+  // spawned from a real room, so no amount of reading the code would have surfaced it.
+  const hx=player.x, hy=player.y;
+  if(move==='volley'){
+    // the tell is the aim being solved and held, which is exactly what a gunner does for half a
+    // second. A player who has read a gunner is already reading this.
+    e.castT=CAST_TIME; e.castReady=false; e.castAim=Math.atan2(hy-e.y,hx-e.x);
+    e.volleyLeft=BOSS_VOLLEY_N; e.volleyT=0;
+    e.moveT=CAST_TIME+1;
+  } else if(move==='sweep'){
+    e.castAim=Math.atan2(hy-e.y,hx-e.x);
+    e.sweepFrom={x:e.x,y:e.y};
+    e.moveT=CAST_TIME;           // wind-up: the boss stops, and a stopped body is a readable one
+  } else if(move==='wall'){
+    bossCallWall(e,room);
+    e.moveT=BOSS_RECOVER;
+  }
+}
+
+function resolveBoss(e,edx,edy,dist,sm,room){
+  const hx=player.x, hy=player.y;
+  if(e.move==='volley'){
+    if(e.volleyLeft>0){
+      e.volleyT--;
+      if(e.volleyT<=0){
+        // one shell, re-aimed each time. Re-aiming between shells rather than firing all three along
+        // one line is the difference between a volley and a wall the player steps around once.
+        e.castAim=Math.atan2(hy-e.y,hx-e.x);
+        projectiles.push({x:e.x,y:e.y,vx:Math.cos(e.castAim)*e.pspd,vy:Math.sin(e.castAim)*e.pspd,r:e.pr,
+          dmg:e.dmg,friendly:false,color:e.pcol,owner:e,heavy:true,from:'enemy'});
+        e.volleyLeft--;
+        e.volleyT=BOSS_VOLLEY_GAP;
+        e.castT=CAST_TIME;       // re-tell between shells, so each one is answerable on its own
+      }
+    } else {
+      e.move='idle'; e.moveT=BOSS_RECOVER;
+    }
+  } else if(e.move==='sweep'){
+    if(e.moveT>0) return;        // still winding up
+    // the lunge, from a body that cannot be pushed out of its line by anything in the room
+    if(!e.sweepDone){
+      e.sweepDone=true;
+      const a=e.castAim;
+      for(let i=0;i<6;i++){
+        dashFX.push({x:e.x-Math.cos(a)*i*9,y:e.y-Math.sin(a)*i*9,life:LUNGE_TRAIL});
+      }
+      e.x+=Math.cos(a)*BOSS_SWEEP_DIST; e.y+=Math.sin(a)*BOSS_SWEEP_DIST;
+      clampEnemy(e);
+      // it only hurts on the way THROUGH, not on arrival: a body that lands on you and then sits
+      // there is a body you cannot get away from
+      if(Math.hypot(e.x-hx,e.y-hy)<e.r+player.r)
+        damagePlayer(e.dmg*1.4,Math.cos(a),Math.sin(a),3*KNOCK_P_GAIN);
+    }
+    e.move='idle'; e.moveT=BOSS_RECOVER; e.sweepDone=false;
+  } else {
+    e.move='idle';
+  }
+}
+
+
 function update(){
   frameCount++;
   tickFX();
@@ -387,6 +588,9 @@ function update(){
   }
   for(const k in packC){ const c=packC[k]; c.x/=c.n; c.y/=c.n; }
 
+
+
+
   for(const e of r.enemies.slice()){
     if(e.hp<=0) continue;   // a body killed earlier in this same tick has already been removed
     if(e.hitFlash>0)e.hitFlash--;
@@ -438,7 +642,23 @@ function update(){
     // at the player's position, not at the middle of their chest, and moving the seek target down ten
     // pixels would make every lunger in the room drift visibly low as it closed.
     const edx=hx-e.x,edy=hy-e.y,dist=Math.hypot(edx,edy)||1;
-    if(e.walkSpeed!==undefined){
+    /* THE BOSS IS CHECKED FIRST, and that ordering is load-bearing rather than stylistic.
+
+       The branch used to be `if(e.walkSpeed!==undefined){...} else if(e.type==='boss'){...}`, which
+       reads perfectly and is wrong. Giving the boss walk/run in the ENEMY table - which it needs, so
+       it can close distance instead of standing at the far wall - makes walkSpeed defined, so the
+       shared pursue branch took it and the boss turn never ran at all. Measured: 600 ticks against a
+       stationary player, zero hits, and the boss sitting at `move=idle` with bossCd still 252,
+       having never been decremented once.
+
+       Nothing about that failure looks like a boss bug. It looks exactly like a boss whose attacks
+       all miss, and the first instinct is to blame the shells - which were measured hitting a
+       stationary player on tick 202, perfectly. So the shells were innocent and the branch order was
+       the whole of it. A type check that depends on an unrelated field in another table is a landmine
+       with a plausible story attached, and the only defence is to test the type before the shape. */
+    if(e.type==='boss'){
+      stepBoss(e,edx,edy,dist,sm,r);
+    } else if(e.walkSpeed!==undefined){
       if(dist<AGGRO_RANGE) e.aggroTimer=AGGRO_TIME;
       else if(e.aggroTimer>0) e.aggroTimer--;
       if(e.aggroTimer>0){
@@ -486,8 +706,6 @@ function update(){
           }
         }
       } else { e.curSpeed=e.walkSpeed; e.pursuit=0; idleWander(e); }
-    } else if(e.type==='boss'){
-      e.x+=edx/dist*e.speed*sm;e.y+=edy/dist*e.speed*sm;
     } else {
       // an alerted gunner keeps firing from anywhere, so a hit from across the room is answered.
       // `sense` is wider than `range` on purpose: it notices you early and walks you down, rather

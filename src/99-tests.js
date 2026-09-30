@@ -5215,6 +5215,128 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        'a blink, which turns a spatial problem into a resource problem');
   });
 
+  // The Warden. Every claim here is one the boss can fail: that it acts at all, that its phases
+  // open rather than merely announce, and - the one that matters - that reading its tells is worth
+  // something. A boss whose two fights, fought well and fought badly, come out the same is a boss
+  // with a health bar on it.
+  test('the boss is a fight: it acts, it phases, and reading its tells is the difference',()=>{
+    const perp=e=>{
+      const dx=player.x-e.x, dy=player.y-e.y, d=Math.hypot(dx,dy)||1;
+      return {x:-dy/d,y:dx/d};
+    };
+    const fight=reads=>{
+      startGame(); const room=goTo('boss');
+      room.enemies.length=0; room.spawnPlan=null; room.pickups.length=0; projectiles.length=0;
+      readyT=0; fadeT=0; roomFade=0;
+      player.x=MIDX-250; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+      player.hp=8; player.maxHp=8; player.iframes=0; player.blinkCharges=2;
+      player.weaponIdx=0; player.cooldown=0;
+      const b=spawnEnemy(true,room,MIDX+250,MIDY); room.enemies.push(b);
+      b.noticeTimer=0; b.aggroTimer=1e9;
+      const moves={}, phases={}, walls=[]; let prev=1, hits=0, t=0;
+      for(;t<9000;t++){
+        mouse.x=b.x; mouse.y=b.y;
+        const tell=b.castT>0||(b.move==='sweep'&&b.moveT>0);
+        if(reads&&tell){
+          const p=perp(b), k={};
+          if(p.x>0.25)k.d=1; if(p.x<-0.25)k.a=1;
+          if(p.y>0.25)k.s=1; if(p.y<-0.25)k.w=1;
+          keys=k;
+          if(Math.hypot(b.x-player.x,b.y-player.y)<110&&player.blinkCharges>0) doBlink();
+        } else if(reads){
+          const d=Math.hypot(b.x-player.x,b.y-player.y);
+          keys=d>230?{d:1}:(d<150?{a:1}:{});
+        } else keys={};
+        const hp0=player.hp;
+        mouseDown=player.cooldown<=0;
+        update();
+        if(player.hp<hp0) hits++;
+        if(b.move!=='idle') moves[b.move]=(moves[b.move]||0)+1;
+        if(b.move==='wall') walls.push(room.enemies.filter(e=>e.type==='brunch').length);
+        if(b.phase!==prev){ phases[b.phase]=t; prev=b.phase; }
+        if(b.hp<=0||player.hp<=0) break;
+      }
+      return {t:t,moves:moves,phases:phases,walls:walls,hits:hits,
+              won:b.hp<=0,lost:player.hp<=0,hp:player.hp};
+    };
+    const good=fight(true), bad=fight(false);
+    // 1. it acts. A boss that never enters a move is a large lunger, which is what it was.
+    const kinds=Object.keys(good.moves);
+    ok(kinds.length>=2,'the boss used '+(kinds.length?kinds.join(','):'NO MOVES')+
+       ' across 9000 ticks. One move is a pattern; none is a body with a health bar');
+    ok(good.moves.volley>0,'the boss never fired a volley');
+    ok(good.moves.sweep>0,'the boss never swept');
+    // 2. it phases, and the phases fire on the way DOWN not at the start
+    ok(good.phases[2]>0,'the boss never reached phase 2');
+    ok(good.phases[2]>good.t*0.15,'phase 2 came at tick '+good.phases[2]+' of '+good.t+
+       ', so the fight had barely started - the threshold is a fraction of health and it is being '+
+       'crossed at the very top rather than by fighting');
+    // 3. phase 2 is what opens the wall. Asserted by CALLING it rather than by waiting for the boss
+    //    to roll it: the wall is one pick in a weighted bag, so over a 9000-tick fight it may or may
+    //    not come up, and a test that depends on that is a coin flip wearing an assertion's clothes.
+    //    What has to be true is that the wall exists, is made of the right number of bodies, and
+    //    shares one pack id - the last part is what makes it a WALL and not a loose mob.
+    startGame(); const wr=goTo('boss'); wr.enemies.length=0; readyT=0; fadeT=0; roomFade=0;
+    const wb=spawnEnemy(true,wr,MIDX,MIDY); wr.enemies.push(wb);
+    bossCallWall(wb,wr);
+    const wall=wr.enemies.filter(e=>e.type==='brunch');
+    eq(wall.length,BOSS_WALL_HP,'the wall the boss called had '+wall.length+' bodies in it, wanted '+
+       BOSS_WALL_HP);
+    const ids=new Set(wall.map(e=>e.packId));
+    eq(ids.size,1,'the called wall is spread across '+ids.size+
+       ' pack ids, so each Brunch forms its own one-body formation and the wall is a crowd with extra steps');
+    eq(wall.every(e=>e.packId===BOSS_WALL_ID),true,'a called wall shares an id a room generator could '+
+       'hand out, so a room pack and a boss wall could be mistaken for one formation');
+    // and the wall the player fights through has to be real cover, which is the whole reason the
+    // boss calls one: an enemy shell must die on it
+    projectiles.length=0;
+    projectiles.push({x:wall[0].x-120,y:wall[0].y,vx:3,vy:0,r:6,dmg:1.8,friendly:false,color:'#fff',
+      owner:null,heavy:false,from:'enemy'});
+    const hpBefore=player.hp; player.x=wall[0].x+40; player.y=wall[0].y;
+    player.lagX=player.x; player.lagY=player.y;
+    for(let i=0;i<80&&projectiles.length;i++){ keys={}; update(); }
+    ok(projectiles.length===0&&wall[0].hp>0,'the boss called a wall an enemy shell went straight '+
+       'through, so the cover the fight is built around is not there');
+    // 4. THE ONE THAT MATTERS. A player who reads must end up meaningfully better off than one who
+    //    does not. This is the design rule stated as a test, and it is the assertion that would have
+    //    caught the boss as first written: 3 hits for the reader and 3 for the non-reader, with the
+    //    tells doing nothing at all.
+    ok(good.hits<bad.hits,'a player who read the tells took '+good.hits+
+       ' hits and one who read nothing took '+bad.hits+
+       '. If those are the same, the tells are decoration and the fight is a damage race');
+    ok(good.hp>bad.hp,'a reader finished on '+good.hp.toFixed(1)+' hp and a non-reader on '+
+       bad.hp.toFixed(1)+' - the fight does not reward reading');
+    // and a player who reads nothing must actually be in danger, or the fight has no teeth at all
+    ok(bad.lost||bad.hp<3,'a player who read nothing finished on '+bad.hp.toFixed(1)+
+       ' hp, so the boss cannot punish not reading and every fight is a formality');
+  });
+  test('the boss is sized from measured weapon dps, and is not the same walk with a health bar',()=>{
+    // It was 50*TOUGH and died in 2.20s to the Scatter. Sizing a health bar is a measurement, not a
+    // feeling, so this pins the number the measurement produced rather than the feeling it gave.
+    const ttk=w=>{
+      startGame(); const room=goTo('boss');
+      room.enemies.length=0; room.spawnPlan=null; room.pickups.length=0; projectiles.length=0;
+      readyT=0; fadeT=0; roomFade=0;
+      const b=spawnEnemy(true,room,MIDX,MIDY); room.enemies.push(b);
+      // frozen, so this measures the GUN and not the boss
+      b.noticeTimer=1e9; b.aggroTimer=1e9; b.move='idle'; b.moveT=1e9;
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+      player.weaponIdx=w; player.cooldown=0; player.iframes=1e9;
+      mouse.x=MIDX+400; mouse.y=MIDY;
+      let t=0;
+      for(;t<9000;t++){ keys={}; mouseDown=true; update(); if(b.hp<=0) break; }
+      mouseDown=false;
+      return t/TICK_HZ;
+    };
+    for(let w=0;w<WEAPONS.length;w++){
+      const s=ttk(w);
+      ok(s>18,'the '+WEAPONS[w].name+' kills the boss in '+s.toFixed(1)+
+         's, which is a formality rather than a fight. Measured at 2.20s before the boss was resized');
+      ok(s<70,'the '+WEAPONS[w].name+' takes '+s.toFixed(1)+
+         's against the boss, which is a slog rather than a fight');
+    }
+  });
+
   // Brunch as cover. This is the mechanic the whole change exists for, so it is measured by firing
   // real shells at a real pack rather than by reading the collision code back at itself. The first
   // assertion is a CONTROL: without it, a fixture that put the pack somewhere the shell never reached
