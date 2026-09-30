@@ -367,6 +367,26 @@ function update(){
   // Room pressure is counted ONCE here, from the snapshot, rather than per enemy: it is a property
   // of the room and recomputing it inside the loop would make a pack of eight cost eight scans.
   const roomPress=roomPressure(r.enemies.reduce((n,x)=>n+(x.hp>0?1:0),0));
+  /* PACK CENTROIDS, computed ONCE per tick and before the body loop.
+
+     A slot is a position in the pack's own frame, so the pack has to know where its own middle is
+     before any of its bodies can be told where to stand. Computing that inside the per-Brunch branch
+     would be O(packs x bodies) every tick to produce a number that cannot change within the tick, and
+     the more expensive mistake is the subtle one: if each body recomputed the centroid AFTER the
+     earlier bodies had already moved, the wall would rotate a little on every pass, because each body
+     would be aiming at a middle that had drifted since it was last read. The formation would creep.
+
+     A snapshot, not the live array, for the same reason the enemy loop below uses one: a Brunch that
+     spends itself on the player is removed from the room mid-tick, and a centroid that included a
+     body which is no longer there would put the wall off-centre for a frame. */
+  const packC={};
+  for(const b of r.enemies){
+    if(b.type!=='brunch'||b.packId===undefined) continue;
+    const c=packC[b.packId]||(packC[b.packId]={x:0,y:0,n:0});
+    c.x+=b.x; c.y+=b.y; c.n++;
+  }
+  for(const k in packC){ const c=packC[k]; c.x/=c.n; c.y/=c.n; }
+
   for(const e of r.enemies.slice()){
     if(e.hp<=0) continue;   // a body killed earlier in this same tick has already been removed
     if(e.hitFlash>0)e.hitFlash--;
@@ -429,7 +449,41 @@ function update(){
           e.pursuit++;
           const gain=1+BRUNCH_RAMP_GAIN*Math.min(1,e.pursuit/BRUNCH_RAMP);
           e.curSpeed+=(e.runSpeed-e.curSpeed)*LUNGER_ACCEL*gain;
-          e.x+=edx/dist*e.curSpeed*sm; e.y+=edy/dist*e.curSpeed*sm;
+          /* THE WALL. A Brunch with a pack steers at a SLOT rather than at the player: its position
+             in the pack's own frame, across the approach vector and back along it. The result is a
+             rigid body that turns to face the player as one thing, instead of eight bodies
+             converging on a point - which is a crowd by geometry whatever the code intends.
+
+             A pack too small to have a shape walks straight in. Three bodies in a row is not a wall,
+             it is a queue, and turning a queue into a formation would only slow three Brunch down for
+             the sake of a picture.
+
+             THE DEAD ZONE is what stops a body already standing on its slot from jittering on the
+             spot forever. It is also what lets a wall pass THROUGH a player who walks into it: the
+             slot does not retreat, so a body inside the line is a body that has arrived, and arriving
+             spends itself on contact the way a Brunch always has. */
+          const pc=e.packId!==undefined?packC[e.packId]:null;
+          let mdx=edx,mdy=edy;
+          if(pc&&pc.n>=BRUNCH_WALL_MIN){
+            // the approach vector, pack centre to player, IS the wall's normal
+            const ndx=hx-pc.x, ndy=hy-pc.y, nd=Math.hypot(ndx,ndy)||1;
+            const ux=ndx/nd, uy=ndy/nd;
+            // two ranks, offset by half a column, so a shot that finds the gap in the front rank does
+            // not find a body sitting behind it
+            const cols=Math.ceil(pc.n/2);
+            const rank=e.packSlot%2, col=((e.packSlot/2)|0)-(cols-1)/2;
+            const sx=pc.x+(-uy)*col*BRUNCH_WALL_GAP+ux*(rank-0.5)*BRUNCH_WALL_RANK;
+            const sy=pc.y+(ux)*col*BRUNCH_WALL_GAP+uy*(rank-0.5)*BRUNCH_WALL_RANK;
+            mdx=sx-e.x; mdy=sy-e.y;
+          }
+          const md=Math.hypot(mdx,mdy);
+          if(md>6){
+            e.x+=mdx/md*e.curSpeed*sm; e.y+=mdy/md*e.curSpeed*sm;
+          } else {
+            // already on its slot: close the last few pixels toward the player, so a wall that has
+            // been reached keeps advancing instead of standing there waiting to be shot
+            e.x+=edx/dist*e.curSpeed*sm; e.y+=edy/dist*e.curSpeed*sm;
+          }
         }
       } else { e.curSpeed=e.walkSpeed; e.pursuit=0; idleWander(e); }
     } else if(e.type==='boss'){

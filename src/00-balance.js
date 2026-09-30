@@ -121,6 +121,35 @@ const BRUNCH_RAMP=sec(2.2), BRUNCH_RAMP_GAIN=1.9;
    highlight the player has to read past. */
 const BRUNCH_ABSORB_R=15, BRUNCH_ABSORB_FLASH=sec(0.1), BRUNCH_ABSORB_PUFF=sec(0.14);
 
+/* THE PACK FORMATION: a Brunch pack advances as a WALL rather than as a crowd.
+
+   Every Brunch used to steer straight at the player, so a pack of eight arrived as a loose mob that
+   the player could walk into the middle of and pick off one at a time. That made the most numerous
+   enemy in the game the least interesting one, and it wasted the thing a pack already is: a body of
+   bodies. A wall is a different fight. It cannot be split by walking into it, it covers the line it
+   stands on (which the shell-absorption rule above now makes real cover rather than a decoration),
+   and it presents two ranks rather than one, so shooting through it costs you time you do not have.
+
+   THE SLOTS ARE SET FROM THE PACK CENTROID, not from the player, and that is the whole trick. A slot
+   is a position in the pack's own frame - across the approach vector and back along it - so the
+   formation is a rigid body that turns to face the player as one thing. Steering each Brunch at the
+   player instead would produce a crowd every time, because eight bodies converging on one point from
+   eight directions is a crowd by geometry, not by accident.
+
+   TWO RANKS, not one line. A single rank is a wall you can shoot down lengthwise, and a pack is
+   supposed to be the thing that punishes standing still in front of it. Rank 0 is the front, rank 1
+   is behind it, and the two are offset by half a column so a bolt that finds the gap in the front
+   rank does not find a body behind it.
+
+   BOTH SPACINGS ARE ABOVE r+r ON PURPOSE. bounceEnemies is a hard positional push rather than a
+   force, so it fires whenever two bodies overlap and it will fight a formation slot that asks for
+   less than 16px - the wall would shiver in place forever, pushed out by separation and pulled back
+   by the slot, and read as a bug rather than as a formation. 19 and 17 leave the separation pass
+   with nothing to do, which is what lets a formation hold its shape. */
+const BRUNCH_WALL_GAP=19,     // along the wall, between columns. Brunch r is 8, so this clears 2*r
+      BRUNCH_WALL_RANK=17,    // between the two ranks, along the approach. Also above 2*r
+      BRUNCH_WALL_MIN=3;      // a pack smaller than this is a knot, not a wall, and walks straight in
+
 /* A lunger does not walk at you. It closes the distance, stops, TELLS you where it is going, and
    then commits to a straight line at that point. Every number here exists because of a specific way
    the old straight-line chase was unfair:

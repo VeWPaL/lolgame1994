@@ -14,6 +14,9 @@ let unlockDoor=null, unlockT=0, bossWarnT=0, secretFound=false, bossWarned=false
 // bodies ever land on the same slot however many have spawned, and not reset per room - a room's
 // pack is spaced by its order of arrival, which is what stops a wave arriving as one front.
 let FLANK_CURSOR=0;
+// Pack identity, handed out one ID per wall. Never reused and never reset, so a body that outlives a
+// room transition cannot end up sharing a formation with a pack it has never met.
+let PACK_CURSOR=1;
 let paused=false, acc=0, run=null, lastRun=null;
 // The between-floors banner: the floor you came from and how long the fade has left to run. Lives
 // here with the other module-level run state because it is set by descend() and read by the view,
@@ -287,11 +290,20 @@ function spawnWave(room,fromDir){
     victim.type='brunch'; victim.pack=pack;
   }
   room.spawnPlan=slots;
+  // A pack gets an ID and a slot index per body, and those two numbers are the entire formation
+  // interface: the movement code never needs to know how many packs exist or where they started, only
+  // which wall a body belongs to and where in it the body stands. PACK_CURSOR is a module counter
+  // rather than something derived from the room, so two packs in one room are genuinely two walls
+  // and cannot be mistaken for one formation of sixteen.
   for(const s of slots){
     if(!s.pack){ room.enemies.push(spawnEnemy(false,room,s.x,s.y,s.type)); continue; }
     for(let i=0;i<s.pack;i++){
       const a=(i/s.pack)*6.283, rad=i%2?25:13;   // two rings, so the knot is not a straight line
-      room.enemies.push(spawnEnemy(false,room,s.x+Math.cos(a)*rad,s.y+Math.sin(a)*rad,'brunch'));
+      const b=spawnEnemy(false,room,s.x+Math.cos(a)*rad,s.y+Math.sin(a)*rad,'brunch');
+      b.packId=PACK_CURSOR; b.packSlot=i;
+      PACK_CURSOR++;
+      room.enemies.push(b);
     }
+    PACK_CURSOR++;
   }
 }

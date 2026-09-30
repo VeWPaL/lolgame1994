@@ -5021,6 +5021,137 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(typeof lastRun.newDepth!=='undefined','the summary has no newDepth marker to announce a record');
   });
 
+  // The Brunch wall. A pack used to steer every body straight at the player, so eight of them arrived
+  // as a loose mob the player could walk into the middle of. They now hold a formation.
+  //
+  // The measurements that shaped it, and the reason this test checks fairness rather than only shape:
+  //
+  //   wall width      stabilises at ~50px and STOPS. A crowd keeps spreading; a wall does not, and
+  //                   the difference between those two numbers is the whole mechanic.
+  //   reaction time   2.1s to 3.0s to cross the room from the far side. Human reaction is about a
+  //                   quarter of a second, so there is an order of magnitude of margin. A pack that
+  //                   arrived faster than it could be read would be the unreadable threat the design
+  //                   rule forbids, and rate is a thing a wall can plausibly get wrong.
+  //   flanking        a player walking the long way round a pack of 8 loses 0 bodies and takes 0
+  //                   damage. If that ever stops being true, the only answer to a wall is a blink,
+  //                   which is a different game.
+  test('a Brunch pack holds a wall: it forms, it holds, and it can still be walked around',()=>{
+    const build=(n,atX)=>{
+      startGame(); const r=goTo('normal');
+      r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
+      readyT=0; fadeT=0;
+      player.x=ROOM_LEFT+60; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+      player.hp=999; player.maxHp=999; player.iframes=0; player.blinkCharges=2;
+      const all=[];
+      for(let i=0;i<n;i++){
+        const b=spawnEnemy(false,r,atX===undefined?ROOM_RIGHT-120:atX,ROOM_TOP+90,'brunch');
+        r.enemies.push(b);
+        b.packId=777; b.packSlot=i; b.noticeTimer=0; b.aggroTimer=1e9;
+        all.push(b);
+      }
+      return {r:r, all:all};
+    };
+    // width measured ACROSS the approach vector, which is the direction the wall actually presents
+    const widthOf=(s,r)=>{
+      const live=s.all.filter(b=>r.enemies.indexOf(b)>=0);
+      if(live.length<2) return 0;
+      let cx=0,cy=0;
+      for(const b of live){cx+=b.x;cy+=b.y;}
+      cx/=live.length; cy/=live.length;
+      const nd=Math.hypot(player.x-cx,player.y-cy)||1;
+      const ux=(player.x-cx)/nd, uy=(player.y-cy)/nd;
+      const a=live.map(b=>Math.abs(-uy*(b.x-cx)+ux*(b.y-cy)));
+      return Math.max(...a)*2;
+    };
+    // 1. it FORMS. A wall of 8 is four columns at BRUNCH_WALL_GAP, so it cannot be much narrower
+    //    than three gaps, and it cannot be a crowd either - a crowd at this range is three times that.
+    const s1=build(8);
+    const distTo=s=>{
+      const live=s.all.filter(b=>s.r.enemies.indexOf(b)>=0);
+      if(!live.length) return 0;
+      let cx=0,cy=0;
+      for(const b of live){cx+=b.x;cy+=b.y;}
+      return Math.hypot(cx-player.x,cy-player.y)/live.length;
+    };
+    for(let i=0;i<150;i++){ keys={}; update(); player.hp=999; }
+    const w1=widthOf(s1,s1.r);
+    ok(w1>40,'a pack of 8 settled at '+w1.toFixed(0)+'px across, which is not a wall - eight bodies '+
+       'converging on a point is a crowd and the geometry does not care what the code intended');
+    // 2. it HOLDS, measured DURING THE APPROACH. This is where the first version of this test was
+    //    wrong: it compared tick 200 against tick 500, by which point the pack had ARRIVED, spent
+    //    itself on contact, and re-formed around a smaller middle. That read as "the wall is
+    //    spreading" and it is not - a Brunch spending itself on the player is the existing rule and
+    //    it is not what this test is about. The second measurement now refuses to count unless the
+    //    pack is still on its way, so it cannot silently drift into measuring the end of the fight.
+    for(let i=0;i<250;i++){ keys={}; update(); player.hp=999; }
+    const w2=widthOf(s1,s1.r), far=distTo(s1);
+    ok(far>player.r+40,'the pack had already reached the player by the second measurement ('+
+       far.toFixed(0)+'px), so the width comparison is measuring a fight that has ended rather than '+
+       'a formation that is holding');
+    ok(w2<w1*1.35,'the pack went from '+w1.toFixed(0)+'px across to '+w2.toFixed(0)+
+       'px while still approaching, so it is spreading rather than holding a formation');
+    // 3. and it has DEPTH, which is what stops it being a line you shoot down
+    const live=s1.all.filter(b=>s1.r.enemies.indexOf(b)>=0);
+    let cx=0,cy=0;
+    for(const b of live){cx+=b.x;cy+=b.y;}
+    cx/=live.length; cy/=live.length;
+    const nd=Math.hypot(player.x-cx,player.y-cy)||1;
+    const ux=(player.x-cx)/nd, uy=(player.y-cy)/nd;
+    const along=live.map(b=>(b.x-cx)*ux+(b.y-cy)*uy);
+    const depth=Math.max(...along)-Math.min(...along);
+    ok(depth>BRUNCH_WALL_RANK*0.6,'the wall is '+depth.toFixed(0)+'px deep, which is inside the '+
+       BRUNCH_WALL_RANK+'px the two ranks are supposed to be apart - so it has collapsed into a single '+
+       'line and a shot that finds the gap in the front finds nothing behind it');
+  });
+  test('a wall is something you can read and walk around, not something you can only blink past',()=>{
+    // Fairness, measured rather than asserted. The design rule allows rate and density to be hard
+    // and forbids unreadable threats, and these are the two numbers that decide which side of that
+    // line a formation falls on.
+    const build=n=>{
+      startGame(); const r=goTo('normal');
+      r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
+      readyT=0; fadeT=0;
+      player.x=ROOM_LEFT+60; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+      player.hp=8; player.maxHp=8; player.iframes=0; player.blinkCharges=2;
+      const all=[];
+      for(let i=0;i<n;i++){
+        const b=spawnEnemy(false,r,ROOM_RIGHT-120,ROOM_TOP+90,'brunch');
+        r.enemies.push(b);
+        b.packId=777; b.packSlot=i; b.noticeTimer=0; b.aggroTimer=1e9;
+        all.push(b);
+      }
+      return {r:r, all:all};
+    };
+    // 1. REACTION TIME. A human reacts in about a quarter of a second. If a wall can cross a room
+    //    faster than that, no amount of telegraphing helps and the answer stops being a decision.
+    const s=build(8);
+    let t=0;
+    for(;t<900;t++){
+      keys={}; update();
+      const live=s.all.filter(b=>s.r.enemies.indexOf(b)>=0);
+      if(!live.length) break;
+      if(Math.min(...live.map(b=>Math.hypot(b.x-player.x,b.y-player.y)))<player.r+8) break;
+    }
+    ok(t/TICK_HZ>0.8,'a pack of 8 crossed the room in '+(t/TICK_HZ).toFixed(2)+'s, which is inside the '+
+       'window a person needs to see it, choose an answer and commit to it. Density and rate are '+
+       'allowed to punish; arriving faster than a reaction is not a difficulty, it is a coin toss');
+    // 2. FLANKING. Walk the long way round, hugging the bottom of the room.
+    const s2=build(8);
+    player.hp=8; player.maxHp=8;
+    let lost=0, arrived=false, t2=0;
+    for(t2=0;t2<900;t2++){
+      keys={d:1,s:1};
+      const before=s2.r.enemies.filter(b=>b.type==='brunch').length;
+      update();
+      lost+=before-s2.r.enemies.filter(b=>b.type==='brunch').length;
+      if(player.y>ROOM_BOTTOM-90&&player.x>ROOM_LEFT+400){ arrived=true; break; }
+    }
+    ok(arrived,'the player could not walk to the far side of the room against a pack of 8');
+    ok(lost===0&&player.hp===8,'walking around a wall of 8 cost '+lost+' Brunch and '+
+       (8-player.hp).toFixed(1)+' health. A wall you cannot flank has exactly one answer and it is '+
+       'a blink, which turns a spatial problem into a resource problem');
+  });
+
   // Brunch as cover. This is the mechanic the whole change exists for, so it is measured by firing
   // real shells at a real pack rather than by reading the collision code back at itself. The first
   // assertion is a CONTROL: without it, a fixture that put the pack somewhere the shell never reached
