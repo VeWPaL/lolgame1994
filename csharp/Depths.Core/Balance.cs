@@ -35,6 +35,70 @@ namespace Depths
         public const int RoomLeft = 50, RoomRight = 750, RoomTop = 130, RoomBottom = 580;
         public const int MidX = (RoomLeft + RoomRight) / 2, MidY = (RoomTop + RoomBottom) / 2;
 
+        /// <summary>A room's bounds in world space. A room is DATA, not a shape.</summary>
+        /// <remarks>
+        /// The four constants above used to mean "the room", and this whole port was built on that:
+        /// every piece of geometry here derived from one rectangle, which was correct for exactly as
+        /// long as there was exactly one rectangle. The reference implementation has since moved the
+        /// size onto the room record, so a room here is four numbers you pass in rather than a global
+        /// you read.
+        /// <para>
+        /// The fields are l/t/r/b rather than Left/Top/Right/Bottom to match the JavaScript
+        /// <c>bounds</c> object field for field, because this is a parity port and a renamed field is
+        /// a renamed field when you are reading the two side by side.
+        /// </para>
+        /// </remarks>
+        public readonly struct Room
+        {
+            public readonly int L, T, R, B;
+            public Room(int l, int t, int r, int b) { L = l; T = t; R = r; B = b; }
+            public int W => R - L;
+            public int H => B - T;
+            public int Cx => L + W / 2;
+            public int Cy => T + H / 2;
+            public static readonly Room Standard = new Room(RoomLeft, RoomTop, RoomRight, RoomBottom);
+            public override string ToString() => $"{W}x{H} at ({L},{T})";
+        }
+
+        /// <summary>How far away a gunner has to be before counterstrafing buys it anything.</summary>
+        /// <remarks>
+        /// HALF THE ROOM'S WIDTH, LESS A MARGIN. It is not half the width.
+        /// <para>
+        /// This port said 350 and the JavaScript said 300, and there was a test here called
+        /// <c>TheDeadzoneIsHalfTheRoomWidth</c> that asserted 350 - so the drift was not merely
+        /// unnoticed, it was protected. The number had been written from the RULE rather than from
+        /// the value, and the test then re-derived the same rule and passed. A test that agrees with
+        /// the thing it audits cannot find the disagreement; this is the third time in this project
+        /// that shape has cost something.
+        /// </para>
+        /// <para>
+        /// The margin is 50 and the ramp is 130 past the deadzone. Both are functions of the room
+        /// because "how far away is far" is a property of the room, and a constant computed from a
+        /// room once is a number that quietly stops describing what it names the moment a second room
+        /// exists - which is exactly what happened on the JavaScript side, where it froze at 707.
+        /// </para>
+        /// </remarks>
+        public const int SwerveMargin = 50, SwerveFullBase = 130;
+
+        // Methods rather than a property plus an overload, because C# will not let a property and a
+        // method share a name - CS0102 - and a property here would also have been the wrong shape.
+        // The JavaScript has one function taking an optional room, so this is the closest honest
+        // mirror of that available in the language: two methods, one of which forwards.
+        public static int SwerveDeadzone(Room room) => (int)System.Math.Round(room.W / 2.0) - SwerveMargin;
+        public static int SwerveFull(Room room) => SwerveDeadzone(room) + SwerveFullBase;
+        public static int SwerveDeadzone() => SwerveDeadzone(Room.Standard);
+        public static int SwerveFull() => SwerveFull(Room.Standard);
+
+        /// <summary>How far a body can be and still notice the player: 0.85 of the room's diagonal.</summary>
+        /// <remarks>
+        /// The other half of the same class. The JavaScript had this frozen at module load, reading
+        /// 707 - correct for a 700x450 room and wrong for every other one, so a body 900px away in a
+        /// 1680-wide room was outside its aggro and stood still. A function of the room here, with the
+        /// 707 preserved for the standard room so nothing about the current balance moves.
+        /// </remarks>
+        public static int AggroRange(Room room) =>
+            (int)System.Math.Round(0.85 * System.Math.Sqrt((double)room.W * room.W + (double)room.H * room.H));
+
         // ------------------------------------------------------------- the player
 
         /// <summary>
@@ -215,13 +279,11 @@ namespace Depths
         /// <summary>How fast a reversal is forgotten, and how much a reversal widens a gunner's aim.</summary>
         public const double SwerveGain = 0.22, SwerveDecay = 0.011, SwerveAim = 0.30;
 
-        /// <summary>
-        /// How far away a gunner has to be before counterstrafing buys anything. Half the width of
-        /// the room is the line, and the bonus is fully open by the time a body is a room-and-a-half
-        /// away.
-        /// </summary>
-        public static int SwerveDeadzone => (RoomRight - RoomLeft) / 2;
-        public static int SwerveFull => SwerveDeadzone + 220;
+        // SwerveDeadzone and SwerveFull used to live here, reading (RoomRight - RoomLeft) / 2 and
+        // +220 - which is 350 and 570, where the JavaScript reads 300 and 430. They now sit beside
+        // the Room struct near the top of this file as functions of the room, and the reasoning is
+        // written there: this pair was the single worst piece of drift in the port, and a test was
+        // defending it rather than catching it.
 
         // ------------------------------------------------------------- the gunner
 

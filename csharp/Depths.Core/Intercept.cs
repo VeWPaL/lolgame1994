@@ -140,7 +140,7 @@ namespace Depths
         /// <para>
         /// The spread is NOT applied here. It is the caller's job and it is passed in already
         /// rolled, which keeps this function pure and therefore testable. See
-        /// <see cref="SwerveReach"/> and <see cref="GunSpread"/> for what the caller scales it by.
+        /// <see cref="SwerveReach(double)"/> and <see cref="GunSpread"/> for what the caller scales it by.
         /// </para>
         /// </remarks>
         /// <summary>
@@ -184,9 +184,27 @@ namespace Depths
         /// How far away a target has to be before counterstrafing buys anything, as a 0..1 ramp.
         /// Zero inside the deadzone, one at the far end of it.
         /// </summary>
-        public static double SwerveReach(double dist)
+        public static double SwerveReach(double dist) => SwerveReach(dist, Balance.Room.Standard);
+
+        /// <summary>The same ramp, in a named room.</summary>
+        /// <remarks>
+        /// The deadzone is a property of the ROOM, so the room is a parameter. Frozen at one room's
+        /// size it reads a long way off in any other, and a gunner in a big room then reads a
+        /// reversing player at full strength from across it - the counter to the whole mechanic,
+        /// silently switched off. The overload above resolves to the standard room, which is the only
+        /// room this port has until world state lands, and is the same trade the JavaScript made with
+        /// its ROOM_LEFT shorthand.
+        /// </remarks>
+        public static double SwerveReach(double dist, Balance.Room room)
         {
-            double t = (dist - Balance.SwerveDeadzone) / (Balance.SwerveFull - Balance.SwerveDeadzone);
+            // The room is a parameter because the deadzone is a property of the ROOM - half its
+            // width, less a margin. Frozen at one room's size it reads a long way off in any other,
+            // and a gunner in a big room then reads a reversing player at full strength from across
+            // it: the counter to the whole mechanic, silently off. The no-room overload resolves to
+            // the standard room, which is the only room this port has until world state lands - the
+            // same trade the JavaScript made with its ROOM_LEFT shorthand.
+            double dz = Balance.SwerveDeadzone(room), top = Balance.SwerveFull(room);
+            double t = (dist - dz) / (top - dz);
             if (t < 0) return 0;
             return t > 1 ? 1 : t;
         }
