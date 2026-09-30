@@ -140,8 +140,11 @@ function descend(){
   entryDir='N';
   // The fade is longer between floors than between rooms, and deliberately so: it is the one beat in
   // the game where nothing is trying to kill you, and it is where a player looks at the sheet.
-  roomFade=1; fadeTicks=sec(0.9); fadeT=fadeTicks;
-  descendFrom=from; descendT=fadeTicks;
+  // FADE_DESCEND is the single source of its length - descend() uses it for the fade, drawDescent()
+  // divides by it to time the banner, and update() counts it down. Three numbers for one duration is
+  // how a banner ends up outliving the fade it was drawn on.
+  roomFade=1; fadeTicks=FADE_DESCEND; fadeT=fadeTicks;
+  descendFrom=from; descendT=FADE_DESCEND;
   paused=false; acc=0;
   state='playing';
   if(records.deepest<run.floor){ records.deepest=run.floor; saveRecords(); }

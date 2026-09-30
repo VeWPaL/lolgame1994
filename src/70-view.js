@@ -792,6 +792,53 @@ function drawStartSeed(){
   ctx.fillText('the seed decides this dungeon  ·  press S to play a different one',W/2,472);
   ctx.textAlign='left';
 }
+/* THE DESCENT BEAT. Drawn over the room fade, during the one moment in a run where nothing is
+   trying to kill the player.
+
+   It earns the 0.9s fade that descend() asks for, and that fade is the reason it is here rather than
+   somewhere in the HUD: the transition between floors is the only place in the game where the player
+   is guaranteed a clear look at the screen, and a beat that exists only to show a number has to use
+   it or the beat is wasted.
+
+   The line under it says what is actually about to change, because "FLOOR 7" alone does not tell a
+   player that the thing they are carrying is about to matter more. The three numbers are the three
+   levers of the depth ladder, stated as ratios against floor 1 so they are readable without knowing
+   what any of them mean internally. */
+function drawDescent(){
+  if(descendT<=0) return;
+  const t=descendT/FADE_DESCEND;
+  // ease in and out so it arrives rather than appears, and is gone before control returns
+  const a=t>0.5?(1-t)*2:t*2;
+  const f=run?run.floor:1;
+  ctx.save();
+  ctx.textAlign='center';
+  ctx.globalAlpha=Math.max(0,Math.min(1,a));
+  ctx.fillStyle='#e8b06a';
+  ctx.font='bold 44px monospace';
+  ctx.fillText('FLOOR '+f,W/2,H/2-34);
+  ctx.fillStyle='#8a7a62';
+  ctx.font='14px monospace';
+  // "deeper than you have been" was here first and it is a lie on the second descent - by floor 12
+  // a returning player has plainly been deeper. The transition itself is always true, always says
+  // something the player did not already know, and needs no assumption about their history.
+  ctx.fillText('floor '+(descendFrom||f-1)+'  →  '+f,W/2,H/2-6);
+  // the three levers, as ratios rather than percentages. "4.3x tougher" reads at a glance where
+  // "330% tougher" needs the mental arithmetic, and a banner is not the place to ask for that.
+  const t1=depthTough(), r1=depthRate();
+  ctx.fillStyle='#6b6152';
+  ctx.font='13px monospace';
+  ctx.fillText('bodies '+t1.toFixed(1)+'x tougher  ·  they answer '+r1.toFixed(1)+
+    'x faster  ·  rooms fuller',W/2,H/2+22);
+  // a ruled line under it, struck like the depth plate, so the beat belongs to the same object
+  ctx.strokeStyle='rgba(232,176,106,0.45)';
+  ctx.lineWidth=1;
+  ctx.beginPath();
+  ctx.moveTo(W/2-150,H/2+36); ctx.lineTo(W/2+150,H/2+36);
+  ctx.stroke();
+  ctx.restore();
+  ctx.textAlign='left';
+}
+
 function drawOverlay(title,sub,foot){
   ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,H);
   ctx.fillStyle='#fff';ctx.textAlign='center';
@@ -1087,6 +1134,7 @@ function render(){
     drawRoom(); drawHUD();
     if(roomFade>0){ctx.fillStyle='rgba(0,0,0,'+roomFade+')';ctx.fillRect(0,0,W,H);}
     drawBossWarning();   // over the fade, so a room transition cannot swallow the warning
+    drawDescent();       // also over the fade, and for the same reason: the fade is what it is drawn on
     // the bench is drawn over everything, after the fade and the boss warning, because it is the one
     // thing that has to be readable at any moment - and it carries its own dim, so the PAUSED
     // overlay beneath it would be a second dim layer and two of those read as a rendering fault

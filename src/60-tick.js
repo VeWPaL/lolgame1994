@@ -87,6 +87,10 @@ function update(){
   // It is here rather than in endRun because endRun is called from two places in this file and a
   // clock that only advances on one of them is a clock that lies.
   run.floorTicks++;
+  // The descent banner ages on the same clock as the fade it is drawn on, for the same reason the
+  // grace ages on its own: two numbers for one duration drift apart, and the first symptom is a
+  // banner still fading in over a room the player is already being shot at.
+  if(descendT>0) descendT--;
   if(trans){
     trans.t++; roomFade=smooth(Math.min(1,trans.t/FADE_OUT));
     if(trans.t>=FADE_OUT){const t=trans;trans=null;enterRoom(t.nx,t.ny,t.from);}

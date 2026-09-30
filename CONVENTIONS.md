@@ -237,6 +237,99 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
 
 ---
 
+## Floors: the run descends, and difficulty reads depth and nothing else
+
+The boss dies, the way out appears, and walking into it takes you **down**. A run now ends in exactly
+one way, which is dying, and the weapon, the items, every stat and the health in the bank all carry
+down. Nothing about the build is rebuilt.
+
+**The rule the whole system exists to enforce:** difficulty is a function of the floor number and of
+nothing else. Not health, not the build, not item count, not how the last floor went. A no-item run
+to floor 5 meets the fight a five-item run to floor 5 meets.
+
+The consequence that actually costs something: the game cannot quietly reward a good run by easing
+off, so every good-run reward has to come from somewhere the ladder cannot reach — a better weapon, a
+tighter route, more health in the bank when it matters.
+
+### The ladder — linear, in three places
+
+| lever | per floor | why this one |
+|---|---|---|
+| `DEPTH_HP_STEP` | +30% body HP | a fight takes longer |
+| `DEPTH_BODY_STEP` | +0.34 of a body | there is less space to answer in |
+| `DEPTH_RATE_STEP` | +16% cadence | bodies answer sooner |
+| `DEPTH_PACK_STEP` | +3.5% pack chance, capped 85% | the *shape* of a room changes, not just its size |
+
+Scaling only HP would make deep floors slow and empty, which is a worse game than either of the other
+two. `depthBodies()` adds to the roll rather than moving the roll itself, so a deeper floor is a
+fuller room of **the same fight** — the shapes a player learns on floor 1 are still the shapes on
+floor 12.
+
+### The discipline, and why these are functions
+
+Nothing in the ladder may read the player. It is very easy to add a small mercy — a hair less HP
+when the player is hurting — and it would feel like good design and it would quietly destroy the
+thing the system is for, because **a difficulty that reads the player is a difficulty that measures
+the player.**
+
+The suite asserts it directly: a player stripped bare and a player carrying every stat at its cap,
+on the same floor, must produce byte-identical enemy stats.
+
+### Floor seeds are a pure function of (root, floor)
+
+`Rnd.floorSeed(root, N)`. Deliberately **not** chained from the previous floor — chaining would make
+floor 3 depend on how many draws floor 2 happened to make, so two players typing the same seven
+characters would get different dungeons and the seed would be decorative. Floor 1 keeps the root
+exactly: the seed a player typed should be the dungeon they get.
+
+### Measured
+
+```
+floor 1  lunger 24.30 hp   rooms average 5.45 bodies
+floor 2  lunger 31.59 hp (1.30x)   5.65 bodies
+floor 3  lunger 38.88 hp (1.60x)   5.50 bodies
+floor 4  lunger 46.17 hp (1.90x)   7.58 bodies
+floor 5  lunger 53.46 hp (2.20x)   7.38 bodies
+floor 6  lunger 60.75 hp (2.50x)   7.35 bodies
+```
+
+Exactly linear, seed different every floor, build carried every time, room count stable at 15.
+
+### The projection, stated plainly
+
+30% **compounds**, and nothing on the player's side scales with it:
+
+| floor | body HP | TTK vs floor 1 |
+|---|---|---|
+| 5 | 2.20x | x2.2 |
+| 10 | 3.70x | x3.7 |
+| 20 | 6.70x | x6.7 |
+| 30 | 9.70x | a single body is a siege |
+
+A no-item run meets that wall, because the rule says it does. This is the right shape for a roguelite
+and it was the explicit instruction — but 0.30 is a wall by floor 20. **The step is one constant.**
+If a hundred floors is the target, sub-linear HP with a separate asymptote will hold up far longer
+than compounding, and the rate lever compounds on top of it.
+
+### Presentation
+
+- **Depth plate** in the HUD, in the same wood-and-inset vocabulary as health, key and blink — a
+  struck numeral plus a tally of notches (eight, then `+N`). A bare number beside the plates reads
+  as a leftover debug readout.
+- **Descent banner** over the room fade, during the one beat in a run where nothing is trying to kill
+  you. States the three levers as ratios. `FADE_DESCEND` is the single source of that duration —
+  read by `descend()`, by `drawDescent()` and by `update()`, because three numbers for one duration is
+  how a banner ends up outliving the fade it was drawn on.
+
+### Records
+
+`deepest floor` is the headline, on the title screen and the summary. `rooms explored` is now
+**per-floor**: summing across floors produces a number that grows without meaning anything, since
+floor 12 alone has more rooms than floor 1. `run.ticks` deliberately does not reset — that is the run
+— and `floorTicks` is the per-floor clock, printed beside it.
+
+---
+
 ## The blink grace — forgiveness, not invulnerability
 
 The user asked for a 0.1s window to press blink and avoid a hit. The game already grants **0.40s**
@@ -352,7 +445,7 @@ falloff alone; the best long-range retention in the game is the Beam's identity.
 ## Current state
 
 - `depths.html` — a shell loading fourteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` — **134 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` — **141 checks**, every test seeded to an identical world. All must pass at
   every commit.
 - `csharp/Depths.Core` + `Depths.Tests` — 19 checks, parity-verified against the JavaScript.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here

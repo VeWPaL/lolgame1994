@@ -387,6 +387,13 @@ const DEPTH_HP_STEP=0.30,        // +30% body HP per floor
       DEPTH_PACK_STEP=0.035,     // +3.5% chance of a Brunch pack per floor, capped
       DEPTH_PACK_CAP=0.85;       // never a certainty: a room that is always a pack is one shape
 
+/* How long the fade between floors lasts, and therefore how long the descent banner is up. It is
+   longer than a room transition on purpose: a room fade covers a door opening, and a floor fade
+   covers a change of difficulty, and the second is worth a beat of the player's attention that the
+   first is not. One constant, read by descend() for the fade, by drawDescent() to time the banner
+   and by update() to count it down. */
+const FADE_DESCEND=sec(0.9);
+
 /* The one place the floor number is read. Everything else asks these. Reading run.floor directly
    anywhere else is the thing to watch for in review, for the reason in the comment above. */
 function depthFloor(){ return (run&&run.floor)||1; }
