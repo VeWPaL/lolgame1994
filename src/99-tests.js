@@ -13,7 +13,12 @@
    Seeded and synchronous, well under a second. Results go to the console, an on-page panel and
    window.__testResults. Saved records are backed up first and restored after, so real progress is untouched. */
 if(new URLSearchParams(location.search).has('test')) (function(){
-  const REC_KEYS=['depths_best','depths_fastest','depths_wins',TICK_KEY], saved={};
+  // Every record key has to be listed here, and the list is the only thing standing between a test
+  // that writes a record and every test after it. depths_deepest was left off when the floor ladder
+  // landed, so a test that reached floor 6 wrote it to storage, clearRecords() did not remove it,
+  // loadRecords() read it straight back, and a later test asserting a depth of 4 saw 6 - a test
+  // failing on a record another test had set, which is exactly the class of bug this list prevents.
+  const REC_KEYS=['depths_best','depths_fastest','depths_wins','depths_deepest',TICK_KEY], saved={};
   for(const k of REC_KEYS){try{saved[k]=localStorage.getItem(k);}catch(e){}}
   const realRandom=Math.random;
   /* The game draws from three named streams, so the suite seeds those rather than hijacking
@@ -1265,25 +1270,43 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const k0=run.kills; explode(r,MIDX,MIDY,{aoeRadius:2000,pool:1e5});
     eq(r.enemies.length,0); eq(run.kills,k0+n);
   });
-  test('records: a win is saved, a slower win keeps the fastest time',()=>{
+  test('records: a floor is recorded, and a slower deeper one does not replace a faster shallower',()=>{
     clearRecords();
-    startGame(); let r=goTo('boss'); const explored=Object.values(rooms).filter(x=>x.visited).length;
+    startGame(); const r=goTo('boss'); const explored=Object.values(rooms).filter(x=>x.visited).length;
     run.ticks=4999; r.enemies.length=0; update();
-    // killing the boss is no longer the end. it opens a way out, and the run ends when the player
-    // walks into it - so the recorded time is measured to the PORTAL, not to the kill, and the
-    // number that matters is the one the summary is built from rather than a hand-counted literal
+    // Killing the boss is not the end and neither is the way out: the way out goes DOWN. There is no
+    // longer any path through a normal run that reaches endRun(true), so a run ends when the player
+    // dies and only then. These two drive the death directly rather than walking into the portal,
+    // which is the point of the change - a test that still reached 'win' by walking would be testing
+    // a door that no longer exists.
     eq(state,'playing','clearing the boss ended the run by itself');
     stepIntoPortal(r);
-    eq(state,'win'); eq(records.wins,1); eq(records.rooms,explored);
-    eq(records.fastest,lastRun.ticks,'the recorded fastest time is not the time of the run that set it');
-    eq(localStorage.getItem('depths_wins'),'1');
-    eq(localStorage.getItem('depths_fastest'),String(lastRun.ticks));
-    eq(localStorage.getItem('depths_best'),String(explored));
-    ok(lastRun.won&&lastRun.newFastest&&lastRun.newRooms,'NEW markers missing on a first clear');
-    const first=lastRun.ticks;
-    startGame(); r=goTo('boss'); run.ticks=8999; r.enemies.length=0; update(); stepIntoPortal(r);
-    ok(lastRun.ticks>first,'the second run did not take longer than the first');
-    eq(records.wins,2); eq(records.fastest,first,'a slower clear replaced the fastest'); ok(!lastRun.newFastest,'slower clear marked NEW');
+    eq(state,'playing','walking into the way out ended the run instead of descending a floor');
+    eq(run.floor,2,'walking into the way out did not take the player down a floor');
+    // floor 1 survived a while, so its counters are real
+    startGame(); const r2=goTo('boss');
+    run.floor=4; r2.enemies.length=0; update();
+    // the per-floor clock has to ADVANCE on its own. The first version of this set floorTicks to a
+    // literal and asserted it came back unchanged, which passed against a clock that was never
+    // ticked at all - the test was measuring its own assignment.
+    const ft0=run.floorTicks, rt0=run.ticks;
+    for(let i=0;i<50;i++){ keys={}; update(); }
+    eq(run.floorTicks-ft0,50,'the per-floor clock advanced '+(run.floorTicks-ft0)+' over 50 ticks, so the '+
+       'summary time for a floor is a number that was set once and never moved');
+    ok(run.ticks-rt0>=50,'the run clock and the floor clock disagree, so one of them is not running');
+    player.hp=0; update();
+    eq(state,'gameover','a run with floors in it does not end when the player dies');
+    eq(lastRun.floor,4,'the summary does not say which floor the run ended on');
+    eq(lastRun.floorTicks,run.floorTicks,'the summary floor time is not the floor time at death');
+    eq(records.deepest,4,'the deepest floor reached was not recorded');
+    ok(lastRun.newDepth,'a new deepest floor was not flagged as one');
+    eq(localStorage.getItem('depths_deepest'),'4','the deepest floor was not written to storage');
+    // a shallower, later run must not lower the record
+    const deepest=records.deepest;
+    startGame(); run.floor=2; player.hp=0; update();
+    eq(records.deepest,deepest,'dying on floor 2 lowered the deepest-floor record to '+
+       records.deepest+', so the number is not a high-water mark');
+    ok(!lastRun.newDepth,'a shallower run was flagged as a new depth');
   });
   test('records: dying on the boss-kill frame is a death, and deaths save rooms explored',()=>{
     clearRecords();
@@ -2229,10 +2252,12 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     player.hp=8; player.armor=0; player.iframes=0;
     update();
     eq(state,'playing','standing 40px from the way out ended the run');
-    // and it does end the run when walked into
+    // and it takes you DOWN a floor rather than ending the run
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    const floorBefore=run.floor;
     update();
-    eq(state,'win','walking into the way out did not end the run');
+    eq(state,'playing','walking into the way out ended the run instead of descending');
+    eq(run.floor,floorBefore+1,'walking into the way out did not descend a floor');
     // a room that is not the boss room has no way out, or every corridor would be an exit
     startGame(); const n=goTo('normal'); n.enemies.length=0; update();
     eq(n.pickups.filter(p=>p.kind==='exit').length,0,'an ordinary room opened a way out');
@@ -2335,7 +2360,11 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   test('every screen renders without throwing',()=>{
     startGame(); render(); setPaused(true); render(); setPaused(false);
     player.hp=0; update(); render(); eq(state,'gameover');
-    startGame(); const r=goTo('boss'); r.enemies.length=0; update(); stepIntoPortal(r); render(); eq(state,'win');
+    // the win screen still has to render even though a normal run can no longer reach it: it is
+    // reachable from a debug path, and a screen that throws when nobody has seen it in a week is a
+    // screen that throws the first week it matters.
+    startGame(); run.floor=2; player.hp=0; update(); state='win'; render();
+    startGame(); const r=goTo('boss'); r.enemies.length=0; update(); stepIntoPortal(r); render(); eq(run.floor,2);
     state='start'; render();
     showSpawn=true; startGame(); goTo('normal'); render(); showSpawn=false;
   });
@@ -4877,6 +4906,119 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(v0.length===sc.count,'the buckshot spawned '+v0.length+' pellets, wanted '+sc.count);
     ok(Math.abs(total-sc.dmg*sc.count)<1e-9,'the volley is worth '+total.toFixed(2)+' raw damage '+
        'against a stated '+sc.dmg*sc.count+', so the pattern change quietly buffed the gun');
+  });
+
+  // THE DEPTH LADDER, and the rule it exists to enforce: difficulty is a function of the floor
+  // number and of nothing else. Not the player's health, not their build, not how many items they
+  // are carrying. The first test is the one that matters, and it is deliberately hostile: a naked
+  // player and a maxed one must meet the same fight on the same floor.
+  test('difficulty reads the floor and never the player',()=>{
+    // Two runs on the same floor, one stripped bare and one carrying everything the framework can
+    // give. If the ladder ever reads a stat, an item count, or hp, these two sets of bodies differ.
+    const snapshot=build=>{
+      startGame();
+      run.floor=build?7:7;
+      if(build){
+        // the most a build can possibly do, all at once
+        for(const k of Stats.ORDER){
+          if(Stats.DEFS[k].kind==='add'&&isFinite(Stats.DEFS[k].cap)) Stats.flat(k,Stats.DEFS[k].cap);
+          if(Stats.DEFS[k].kind==='key') Stats.flat(k,40);
+        }
+        player.hp=1; player.armor=0;   // deliberately the worst possible body
+      }
+      const r=currentRoom();
+      r.enemies.length=0;
+      const out=[];
+      for(const t of ['lunger','shooter','gunner','brunch']){
+        const e=spawnEnemy(false,r,MIDX,MIDY,t);
+        r.enemies.push(e);
+        out.push(t+':hp='+e.hp.toFixed(4)+',speed='+(e.speed||e.curSpeed).toFixed(4)+
+                 ',cd='+(e.cdMin===undefined?'-':e.cdMin.toFixed(4))+
+                 ',dmg='+(e.dmg===undefined?'-':e.dmg.toFixed(4))+
+                 ',pspd='+(e.pspd===undefined?'-':e.pspd.toFixed(4)));
+      }
+      return out.join('|')+'|tough='+depthTough().toFixed(6)+',rate='+depthRate().toFixed(6)+
+             ',pack='+depthPack().toFixed(6);
+    };
+    const bare=snapshot(false), full=snapshot(true);
+    ok(bare===full,'the same floor produced different enemies for a different player.\n        naked: '+bare+
+       '\n        maxed: '+full+
+       '\n        => something in the depth ladder is reading the player, which turns "how deep" into a '+
+       'measure of how many hats you collected');
+  });
+  test('the ladder climbs, and it climbs in all three things at once',()=>{
+    // hp, rate and body count are the three levers. A ladder that only raised hp would make deep
+    // floors slow and empty, which is a worse game than either alternative.
+    const rows=[];
+    for(let f=1;f<=10;f++){
+      run.floor=f;
+      rows.push({f:f,tough:depthTough(),rate:depthRate(),pack:depthPack(),bodies:Math.floor(2+depthBodies(0))});
+    }
+    ok(rows[0].tough===1,'floor 1 is scaled by '+rows[0].tough+'x, so a first floor is not a first floor');
+    for(let i=1;i<rows.length;i++){
+      ok(rows[i].tough>rows[i-1].tough,'floor '+rows[i].f+' bodies are not tougher than floor '+
+         rows[i-1].f+' ('+rows[i].tough.toFixed(2)+' vs '+rows[i-1].tough.toFixed(2)+')');
+      ok(rows[i].rate>rows[i-1].rate,'floor '+rows[i].f+' bodies do not act faster than floor '+
+         rows[i-1].f);
+    }
+    ok(rows[9].tough>3.5,'ten floors of climbing only reaches '+rows[9].tough.toFixed(2)+
+       'x health, so the ladder is too shallow to be worth descending');
+    // and the pack chance has to STOP, or floor 30 is a single shape
+    run.floor=1000;
+    ok(depthPack()<=0.85+1e-9,'the pack chance reaches '+depthPack().toFixed(2)+' on floor 1000, so a deep '+
+       'floor is nothing but a pack and the rooms stop being rooms');
+    // sanity on the shape: linear means equal steps
+    run.floor=2; const a=depthTough(); run.floor=3; const b=depthTough(); run.floor=4; const c=depthTough();
+    ok(Math.abs((b-a)-(c-b))<1e-9,'the ladder is not linear: the steps are '+
+       (b-a).toFixed(4)+' then '+(c-b).toFixed(4));
+  });
+  test('descending goes down a floor and carries the build',()=>{
+    startGame();
+    // give the run something worth losing
+    Items.reset();
+    player.hp=5; player.maxHp=8; player.weaponIdx=3;
+    Stats.flat('strength',3);
+    const hpBefore=player.hp, wBefore=player.weaponIdx, strBefore=Stats.value('strength');
+    const itemCount=Items.equipped.length;
+    const seedBefore=Rnd.seedText;
+    const floor1=run.floor;
+    const rooms1=Object.keys(rooms).length;
+    descend();
+    eq(run.floor,floor1+1,'descending did not go down a floor');
+    // the build
+    eq(player.hp,hpBefore,'descending changed the health in the bank, so a deep run is a fresh run '+
+       'with a bigger number on the enemies');
+    eq(player.weaponIdx,wBefore,'descending took the weapon away');
+    eq(Stats.value('strength'),strBefore,'descending reset a stat');
+    eq(Items.equipped.length,itemCount,'descending dropped the items');
+    // the floor is a NEW dungeon from a different seed
+    ok(Rnd.seedText!==seedBefore,'floor 2 was generated from floor 1 seed, so the floors are one dungeon '+
+       'replayed rather than a hundred dungeons');
+    ok(Object.keys(rooms).length===rooms1,'the new floor has '+Object.keys(rooms).length+' rooms against '+
+       rooms1+' - the layout is not being regenerated');
+    // and the player is put back at the start of it, not left in a room that no longer exists
+    eq(cur.x,START,'the player was not returned to the entrance of the new floor');
+  });
+  test('the floor seed is a pure function of the root and the floor, so a run replays',()=>{
+    // Chaining the previous floor's seed would make floor 3 depend on how many draws floor 2 made.
+    // Two players typing the same seven characters must get the same floor 3, or the seed means
+    // nothing and the reproducibility this whole project is built on is decorative.
+    const root=1234567;
+    const a=Rnd.floorSeed(root,3), b=Rnd.floorSeed(root,3);
+    ok(a===b,'the same root and floor gave two different seeds');
+    const seen=new Set();
+    for(let f=1;f<=200;f++) seen.add(Rnd.floorSeed(root,f));
+    eq(seen.size,200,'200 floors from one root produced only '+seen.size+' distinct seeds, so neighbouring '+
+       'floors are getting visibly similar dungeons');
+  });
+  test('the run ends only by dying, and dying reports the floor',()=>{
+    startGame();
+    run.floor=6; run.floorTicks=1234;
+    player.hp=0; update();
+    eq(state,'gameover');
+    eq(lastRun.floor,6,'the summary does not say which floor the run ended on');
+    eq(lastRun.floorTicks,1234,'the summary does not say how long the last floor lasted');
+    ok(typeof lastRun.newDepth!=='undefined','the summary has no newDepth marker to announce a record');
   });
 
   // Brunch as cover. This is the mechanic the whole change exists for, so it is measured by firing

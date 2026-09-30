@@ -13,8 +13,8 @@ function spawnEnemy(boss,room,x,y,type){
   const base={x:x===undefined?rx():x,y:y===undefined?ry():y,hitFlash:0,idleDir:[0,0],idleTimer:(Rnd.jitter()*WANDER_TICKS)|0,
     noticeTimer:(Rnd.jitter()*16*SPEEDUP)|0,anim:0,kvx:0,kvy:0,stun:0,slowT:0,alerted:false,dodgeCd:0,pursuit:0};
   const c=ENEMY[boss?'boss':type==='shooter'||type==='gunner'?type:type==='brunch'?'brunch':'lunger'];
-  const e=Object.assign(base,{type:boss?'boss':type||'lunger',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp,maxHp:c.hp,armour:c.armour||1});
-  if(c.base!==undefined) e.speed=c.base*PRESSURE.rate;
+  const e=Object.assign(base,{type:boss?'boss':type||'lunger',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp*depthTough(),maxHp:c.hp*depthTough(),armour:c.armour||1});
+  if(c.base!==undefined) e.speed=c.base*PRESSURE.rate*depthRate();
   if(boss){e.aggroTimer=9999;return e;}
   // lungers and Brunch are the same shape of body: they walk at you and hit you on contact. only
   // the two gunners carry a ranged kit
@@ -34,7 +34,12 @@ function spawnEnemy(boss,room,x,y,type){
     e.lungeFromX=x===undefined?0:x; e.lungeFromY=y===undefined?0:y;
     e.lungeChargeFx=0; e.lungeTrail=0;
     return e;}
-  e.range=c.range; e.sense=c.sense; e.close=c.close; e.far=c.far; e.cdMin=c.cdMin/PRESSURE.rate; e.cdVar=c.cdVar/PRESSURE.rate;
+  e.range=c.range; e.sense=c.sense; e.close=c.close; e.far=c.far;
+  // depthRate() divides as well as multiplies. A tougher floor is not only a tougher body, it is a
+  // body that answers sooner, and the cadence is the part a player actually feels - a deep floor
+  // where the shells arrive at the same rate is a deep floor that plays like a shallow one with
+  // more health on the bar.
+  e.cdMin=c.cdMin/PRESSURE.rate/depthRate(); e.cdVar=c.cdVar/PRESSURE.rate/depthRate();
   e.castT=0; e.castReady=false; e.castAim=0;
   e.dmg=c.dmg; e.pspd=c.pspd; e.pr=c.pr; e.pcol=c.pcol; e.aggroTimer=0;
   e.shootCd=e.cdMin+Rnd.jitter()*e.cdVar;

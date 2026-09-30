@@ -15,6 +15,10 @@ let unlockDoor=null, unlockT=0, bossWarnT=0, secretFound=false, bossWarned=false
 // pack is spaced by its order of arrival, which is what stops a wave arriving as one front.
 let FLANK_CURSOR=0;
 let paused=false, acc=0, run=null, lastRun=null;
+// The between-floors banner: the floor you came from and how long the fade has left to run. Lives
+// here with the other module-level run state because it is set by descend() and read by the view,
+// and threading a third parameter through render() to carry two numbers would be worse.
+let descendFrom=0, descendT=0;
 // A locked door no longer opens the instant you hold the key, and it no longer pins you in place
 // while it works. Touching the door starts the lock; it finishes on its own whether you stay or
 // walk off, which is what turns it into a decision you make rather than a button you hold.
@@ -256,11 +260,20 @@ function spawnWave(room,fromDir){
   // more bodies at higher pressure. this is the only lever that makes a competent kiter work for
   // something, and it is the one that costs clear time, so it is what pays back the ground that
   // TEMPO gives away
-  const n=Math.max(2,2+((Rnd.run()*(2+PRESSURE.rate))|0));
+  //
+  // depthBodies() adds a fraction of a body per floor on top of the roll rather than moving the roll
+  // itself, so the depth ladder cannot change WHICH bodies a room draws - only how many. A deeper
+  // floor should be a fuller room of the same fight, not a different fight: the player learns the
+  // shapes on floor 1 and the shapes are still the shapes on floor 12.
+  const rolled=2+((Rnd.run()*(2+PRESSURE.rate))|0);
+  const n=Math.max(2,Math.floor(rolled+depthBodies(0)));
   const pts=spawnPlan(n,fromDir);
   // at most one gunner, and only where there are enough bodies to space it from the rest
   const heavy=n>=3&&Rnd.run()<0.55;
-  const pack=Rnd.run()<BRUNCH.chance&&n>=2?rollPack():0;
+  // depthPack() rather than BRUNCH.chance: a pack is the most interesting thing a room can contain
+  // and the most reliable cover, so if deep floors were only tougher they would be the same rooms
+  // with longer fights. Capped, because a room that is always a pack is a single shape.
+  const pack=Rnd.run()<depthPack()&&n>=2?rollPack():0;
   const slots=pts.slice().sort((a,b)=>b.d-a.d).map((p,k)=>{
     let type=Rnd.run()<0.5?'lunger':'shooter';
     if(heavy&&k===0) type='gunner';

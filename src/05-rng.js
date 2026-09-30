@@ -79,6 +79,28 @@ const Rnd=(function(){
     return seed;
   }
 
+  /* THE FLOOR SEED. Floor N is generated from the root seed the player typed, mixed with N, and NOT
+     from the previous floor's seed. That distinction is the whole reason it is written this way.
+
+     Chaining - reseeding from the current seed each time - would be simpler and is wrong: the streams
+     advance as the floor is generated, so floor 3's seed would depend on how many draws floor 2
+     happened to make. Two players typing the same seed would get different floor 3. Deriving from a
+     FIXED root instead means every floor is a pure function of (root, floor), so the whole run
+     replays from the one seed the player can read out loud, and floor 12 is the same dungeon for
+     everyone who starts from the same seven characters.
+
+     The mix is mulberry32's own output function rather than an arbitrary constant, because any fixed
+     multiplier risks mapping nearby floors onto nearby seeds, and adjacent floors having visibly
+     similar layouts is exactly the failure this is meant to prevent. */
+  function floorSeed(root,n){
+    const t=(root^Math.imul(n+1,0x9E3779B1))>>>0;
+    let a=t;
+    a^=a>>>16; a=Math.imul(a,0x21F0AAAD);
+    a^=a>>>15; a=Math.imul(a,0x735A2D97);
+    a^=a>>>15;
+    return a>>>0;
+  }
+
   /* A random seed that a player can read out loud. Time-based, because the alternative - a
      counter - produces 1, 2, 3, which people cannot tell apart across two machines.
 
@@ -95,7 +117,7 @@ const Rnd=(function(){
   }
 
   return {
-    set:set, encode:encode, decode:decode, fresh:fresh,
+    set:set, encode:encode, decode:decode, fresh:fresh, floorSeed:floorSeed,
     get seed(){return seed;},
     get seedText(){return encode(seed);},
     calls:calls,

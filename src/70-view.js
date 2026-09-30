@@ -574,6 +574,45 @@ function drawHUD(){
 
 
 
+  /* THE DEPTH PLATE. Which floor you are on, in the same wood-and-inset vocabulary as the health,
+     key and blink plates rather than as text painted on the floor.
+
+     It has to be a plate and not a number drawn in the corner, for the same reason those three are
+     plates: the HUD is a row of instruments, and a bare number sitting beside them reads as a
+     leftover debug readout rather than as the fourth thing the player is watching. The floor is now
+     the number the whole game is about - it is what the difficulty ladder reads and what the record
+     is - so it belongs in the row, and it belongs there at a glance.
+
+     The depth is drawn as a struck numeral with a tally of ticks beside it rather than as "FLOOR 7".
+     The word costs a third of the plate and says nothing the numeral does not, and the tally is
+     there because a depth that is only ever a number gives no sense of accumulating distance: three
+     marks at floor 7 and one at floor 4 read as different places, which is what they are. */
+  const dW=104, dy=by+ROW_H+3;
+  ctx.drawImage(woodPlate(dW,ROW_H),hx,dy);
+  drawInset(hx+FRAME,dy+FRAME,dW-FRAME*2,ROW_H-FRAME*2,'#1a1410');
+  const dFloor=run?run.floor:1;
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const dCx=hx+FRAME+Math.floor((dW-FRAME*2)*0.34), dCy=dy+ROW_H/2;
+  // a struck numeral: the depth is a mark cut into the plate, not a label printed on it
+  ctx.font='700 17px "Courier New",monospace';
+  ctx.fillStyle='#0d0a08';
+  ctx.fillText(String(dFloor),dCx+1,dCy+1);
+  ctx.fillStyle=dFloor>1?'#e8b06a':'#c8a878';
+  ctx.fillText(String(dFloor),dCx,dCy);
+  // the tally: one notch per floor, up to eight, then a count of the rest. A depth of forty should
+  // look further than a depth of three without needing forty-one pixels of plate.
+  const tX=hx+FRAME+Math.floor((dW-FRAME*2)*0.56), tY=dCy-6, tW=dW-FRAME*2-Math.floor((dW-FRAME*2)*0.56)-7;
+  ctx.fillStyle='#0d0a08';
+  for(let i=0;i<Math.min(8,dFloor);i++) ctx.fillRect(tX+i*3,tY,2,12);
+  if(dFloor>8){
+    ctx.font='9px "Courier New",monospace';
+    ctx.fillStyle='#c8a878';
+    ctx.fillText('+'+(dFloor-8),tX+8*3+3,tY+7);
+  }
+  ctx.restore();
+  ctx.textBaseline='alphabetic';
+
   // the minimap hangs off the same right-hand margin as the left-hand one, so the two edges of the
   // HUD are the same distance from the screen and the whole block reads as one inset
   const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-MARGIN_X-pw,my0=MARGIN_Y,mx=mx0+14,my=my0+14,ic=3;
@@ -762,7 +801,11 @@ function drawOverlay(title,sub,foot){
   ctx.textAlign='left';
 }
 function recordsLine(){
-  let s='best rooms explored: '+records.rooms;
+  // Depth first, because it is the number the game is about now. Rooms explored and dungeons
+  // cleared are both historical - they describe a version of the game where one dungeon WAS the
+  // game - and they stay because they are still true and a player who has them set should not lose
+  // them, but they are no longer the headline.
+  let s='deepest floor: '+records.deepest+' · best rooms explored: '+records.rooms;
   if(records.wins) s+=' · fastest clear: '+fmtTime(records.fastest)+' · dungeons cleared: '+records.wins;
   return s;
 }
@@ -1004,6 +1047,10 @@ function drawRunSummary(){
     if(isNew){const vw=ctx.measureText(value).width;ctx.font='bold 11px monospace';ctx.fillStyle=INK_NEW;ctx.fillText('NEW',R-vw-10,y-1);}
   };
   let y=py+46;
+  // The floor comes FIRST on the sheet. It is the number the run is about and the one the record is
+  // measured in; everything below it is detail about how the run went rather than how far it got.
+  row(y,'Floor reached',String(s.floor),s.newDepth); y+=26;
+  row(y,'Time on this floor',fmtTime(s.floorTicks||0)); y+=26;
   row(y,'Time',fmtTime(s.ticks),s.newFastest); y+=26;
   row(y,'Rooms explored',s.explored+' / '+s.total,s.newRooms); y+=26;
   row(y,'Enemies defeated',String(s.kills)); y+=26;
@@ -1017,11 +1064,16 @@ function drawRunSummary(){
   stampRight(ctx,s.seed||Rnd.seedText,R,y,15,INK,2.6); y+=20;
   ctx.fillStyle='rgba(90,60,30,0.35)';ctx.fillRect(L,y,R-L,2); y+=26;
   ctx.textAlign='left';ctx.font='bold 12px monospace';ctx.fillStyle=INK_SOFT;ctx.fillText('RECORDS',L,y); y+=24;
+  row(y,'Deepest floor',String(records.deepest)); y+=26;
   row(y,'Best rooms explored',String(records.rooms)); y+=26;
   row(y,'Fastest clear',records.fastest?fmtTime(records.fastest):'not yet'); y+=26;
   row(y,'Dungeons cleared',String(records.wins));
   ctx.textAlign='center';ctx.font='16px monospace';ctx.fillStyle='#fff';
-  ctx.fillText(s.won?'press R for a new dungeon':'press R to try again',W/2,py+ph+36);
+  // "press R for a new dungeon" was correct when a dungeon was the whole game. The run now ends only
+  // by dying, and what R starts is a fresh run at floor 1 - which is a different thing to ask for and
+  // worth saying plainly, because the player has just spent an hour going down and the prompt used
+  // to imply that was the shape of a completed run.
+  ctx.fillText(s.won?'press R to descend again':'press R to try again',W/2,py+ph+36);
   ctx.textAlign='left';
 }
 

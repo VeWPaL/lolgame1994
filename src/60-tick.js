@@ -82,6 +82,11 @@ function update(){
   // this function that leaves a zero-health player standing.
   if(player.hp<=0){ endRun(false); return; }
   run.ticks++;
+  // The per-floor clock, alongside the run clock and for the same reason: the summary wants to say
+  // both "you died on floor 9" and "you spent 4:20 on that floor", and those are different questions.
+  // It is here rather than in endRun because endRun is called from two places in this file and a
+  // clock that only advances on one of them is a clock that lies.
+  run.floorTicks++;
   if(trans){
     trans.t++; roomFade=smooth(Math.min(1,trans.t/FADE_OUT));
     if(trans.t>=FADE_OUT){const t=trans;trans=null;enterRoom(t.nx,t.ny,t.from);}
@@ -703,7 +708,10 @@ function update(){
       : Math.hypot(pk.x-player.x,pk.y-player.y)<pk.r+player.r;
     if(pk.hold){ if(!touching) pk.hold=false; continue; }   // just-dropped weapon: step off before it can swap again
     if(!touching) continue;
-    if(pk.kind==='exit'){ endRun(true); return; }
+    // The way out is now the way DOWN. It used to call endRun(true), which ended the game and told the
+    // player to press R for a new dungeon - correct when one floor was the whole game, and the single
+    // most obvious thing to change once there are several. endRun is now only reachable by dying.
+    if(pk.kind==='exit'){ descend(); return; }
     if(pk.kind==='weapon'){
       // swap: the held weapon is left where the new one was, so no weapon is ever lost
       const old=player.weaponIdx;

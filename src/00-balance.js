@@ -351,6 +351,51 @@ const BOLT_SIZE_MIN=0.65, BOLT_SIZE_MAX=1.05, BOLT_DRAW_R=6;
 // route planning is a poor stand-in for someone who actually wants to get to the bottom. The armour
 // is a single constant, so if it turns out to be too much it is one number to turn back.
 const TOUGH=1.35;
+
+/* THE DEPTH LADDER ---------------------------------------------------------------------------------
+
+   Difficulty in this game is a function of DEPTH. Not of the player's health, not of their build, not
+   of how many items they are carrying, not of how well the last floor went. A no-item run to floor 5
+   meets exactly the fight a five-item run to floor 5 meets. That is the rule, and it is a strange
+   one: it means a strong build does not make a floor easier, it makes the same fight winnable more
+   comfortably. The floor is the floor.
+
+   The consequence that actually costs something is that the player CANNOT be rewarded for a good run
+   by the game quietly easing off, so every good-run reward has to come from somewhere the depth
+   ladder cannot reach - a better weapon, a tighter route, more health in the bank when it matters.
+   That is the right shape for a roguelite, and it is also the only shape that makes "how deep have
+   you gone" a number that means anything, because the number is not secretly a measure of how many
+   hats you collected.
+
+   Everything below is LINEAR in the floor, which is the simplest thing that could be right and the
+   easiest to reason about when it turns out to be wrong. The steps are in three places rather than
+   one because three different things are the right things to scale: bodies get tougher, so a fight
+   takes longer; rooms get fuller, so there is less space to answer in; and packs get likelier, so
+   the shape of a room changes as well as its size. Scaling only HP would make deep floors slow and
+   empty, which is a worse game than either of the other two.
+
+   THE DISCIPLINE, and the reason these are functions and not fields on the run object: nothing in
+   here may read the player. Not a stat, not an item count, not hp, not Momentum. It is very easy to
+   add a small mercy - a hair less HP when the player is hurting - and it would feel like good
+   design and it would quietly destroy the thing the whole system is for, because a difficulty that
+   reads the player is a difficulty that measures the player. The suite asserts it: the same floor
+   with a naked player and with a full build has to produce byte-identical enemy stats. */
+
+const DEPTH_HP_STEP=0.30,        // +30% body HP per floor
+      DEPTH_BODY_STEP=0.34,      // +0.34 of a body per floor, on top of the existing 2..4 roll
+      DEPTH_RATE_STEP=0.16,      // enemies act 16% faster per floor
+      DEPTH_PACK_STEP=0.035,     // +3.5% chance of a Brunch pack per floor, capped
+      DEPTH_PACK_CAP=0.85;       // never a certainty: a room that is always a pack is one shape
+
+/* The one place the floor number is read. Everything else asks these. Reading run.floor directly
+   anywhere else is the thing to watch for in review, for the reason in the comment above. */
+function depthFloor(){ return (run&&run.floor)||1; }
+function depthSteps(){ return Math.max(0,depthFloor()-1); }
+function depthTough(){ return 1+DEPTH_HP_STEP*depthSteps(); }
+function depthRate(){ return 1+DEPTH_RATE_STEP*depthSteps(); }
+function depthPack(){ return Math.min(DEPTH_PACK_CAP,BRUNCH.chance+DEPTH_PACK_STEP*depthSteps()); }
+function depthBodies(rolled){ return rolled+DEPTH_BODY_STEP*depthSteps(); }
+
 // The armour multiplier. Per-hit, so it scales every pellet and every pierce pass rather than
 // subtracting a flat chunk - a subtraction would quietly reward the Beam for spraying, which is
 // exactly backwards.

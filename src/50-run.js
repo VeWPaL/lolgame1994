@@ -74,7 +74,7 @@ function startGame(){
   entryDir='N';
   roomFade=1; fadeTicks=sec(0.4); fadeT=fadeTicks;
   applyVitals();   // after the player exists, so a Vigor item and a fresh body agree
-  run={ticks:0,kills:0,dmgTaken:0,shots:0,hits:0,secret:false,hook:false}; lastRun=null;
+  run={floor:1,floorTicks:0,roomsThisFloor:0,rootSeed:Rnd.seed,ticks:0,kills:0,dmgTaken:0,shots:0,hits:0,secret:false,hook:false}; lastRun=null;
   paused=false; acc=0;
   state='playing';
 }
@@ -87,23 +87,84 @@ function loadRecords(){
   const oldRate=get(TICK_KEY)||60;
   let fastest=get('depths_fastest');
   if(fastest&&oldRate!==TICK_HZ) fastest=Math.round(fastest*TICK_HZ/oldRate);
-  records={rooms:get('depths_best'),fastest,wins:get('depths_wins')};
+  records={rooms:get('depths_best'),fastest,wins:get('depths_wins'),deepest:get('depths_deepest')};
 }
 function saveRecords(){
   try{
     localStorage.setItem('depths_best',String(records.rooms));
     localStorage.setItem('depths_fastest',String(records.fastest));
     localStorage.setItem('depths_wins',String(records.wins));
+    localStorage.setItem('depths_deepest',String(records.deepest));
     localStorage.setItem(TICK_KEY,String(TICK_HZ));
   }catch(e){}
 }
 // freeze the run's numbers for the summary screen and fold them into the records (death and win alike)
+/* DESCEND. The boss dies, the way out appears, and walking into it takes you DOWN rather than out.
+
+   The whole point of a floor is that it is not the end. A run now ends in exactly one way, which is
+   dying, and everything the player has - the weapon, the items, every stat, the health in the bank -
+   is carried down. Nothing about the build is rebuilt. That is the deal the moment a second floor
+   exists, and it is the deal that makes depth the only thing that matters.
+
+   What is deliberately NOT carried: the map, the rooms, the per-floor counters, and the position.
+   A new floor is a new dungeon from the same preset with a DIFFERENT seed, so the shape is familiar
+   and the contents are not. Reusing the seed would make floor 2 a replay of floor 1 with a bigger
+   number on the enemies, which is the cheapest possible version of this and the one that would make
+   a hundred floors feel like one floor played badly.
+
+   Per-floor counters reset because "how far did you get" is a fact about a floor, not a sum of
+   floors. run.ticks deliberately does NOT reset: that is the run, and a player who dies on floor 12
+   wants the total time they survived as much as they want the floor they reached. */
+function descend(){
+  const from=run.floor;
+  run.floor=from+1;
+  run.floorTicks=0;
+  run.roomsThisFloor=0;
+  // A new seed per floor, derived from the ROOT the player typed rather than from the previous
+  // floor's seed, so every floor is a pure function of (root, floor) and the whole run replays from
+  // the one seed on the luggage tag. Floor 1 keeps the root exactly, because the seed the player
+  // typed should be the dungeon they actually get. See Rnd.floorSeed for why chaining would be wrong.
+  Rnd.set(Rnd.floorSeed(run.rootSeed,run.floor));
+  generateDungeon();
+  cur={x:START,y:START};
+  // the body carries down whole. Not the position, not the projectiles, not the room - the build.
+  player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+  player.vx=0; player.vy=0; player.kvx=0; player.kvy=0;
+  projectiles=[]; dashFX=[]; burstFX=[]; hookFields=[];
+  bossUnlocked=false; itemUnlocked=false; trans=null; respawnT=0;
+  unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
+  // The blink comes back full, because arriving at a new floor with no escape is a punishment for
+  // arriving at a new floor, and the depth ladder is supposed to be the only thing that is harder.
+  player.blinkCharges=2; player.blinkRegen=0; player.blinkRestore=null;
+  player.blinkGrace=0; player.graceSpent=false;
+  entryDir='N';
+  // The fade is longer between floors than between rooms, and deliberately so: it is the one beat in
+  // the game where nothing is trying to kill you, and it is where a player looks at the sheet.
+  roomFade=1; fadeTicks=sec(0.9); fadeT=fadeTicks;
+  descendFrom=from; descendT=fadeTicks;
+  paused=false; acc=0;
+  state='playing';
+  if(records.deepest<run.floor){ records.deepest=run.floor; saveRecords(); }
+}
+
+/* A run now ends in exactly one way, which is dying, so `won` is nearly dead weight - but the
+   parameter stays because the game-over screen reads it and a run that used to be winnable should
+   still be able to SAY so if anything ever routes back here. What is new is the depth: the floor
+   reached is the headline number now, because it is the one the whole ladder is built around and the
+   one a player is actually trying to improve.
+
+   rooms explored is per-floor, not per-run. Summing rooms across every floor would produce a number
+   that grows without meaning anything - floor 12 alone has more rooms than floor 1, so a player who
+   died early would show a respectable total for having seen very little. */
 function endRun(won){
   state=won?'win':'gameover';
   const all=Object.values(rooms), explored=all.filter(x=>x.visited).length;
-  const s={won,ticks:run.ticks,explored,total:all.length,kills:run.kills,dmgTaken:run.dmgTaken,
-    shots:run.shots,hits:run.hits,weapon:WEAPONS[player.weaponIdx].name,seed:Rnd.seedText,newRooms:false,newFastest:false};
+  const s={won,ticks:run.ticks,floor:run.floor,floorTicks:run.floorTicks,explored,total:all.length,
+    kills:run.kills,dmgTaken:run.dmgTaken,shots:run.shots,hits:run.hits,
+    weapon:WEAPONS[player.weaponIdx].name,seed:Rnd.seedText,
+    newRooms:false,newFastest:false,newDepth:false};
   if(explored>records.rooms){records.rooms=explored;s.newRooms=true;}
+  if(run.floor>records.deepest){records.deepest=run.floor;s.newDepth=true;}
   if(won){
     records.wins++;
     if(!records.fastest||s.ticks<records.fastest){records.fastest=s.ticks;s.newFastest=true;}
