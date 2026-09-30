@@ -6324,6 +6324,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     render();
     const b=currentRoom().bounds;
     const onScreen=y=>y-cam.y;
+    const shelfY=b.t+b.h/2+130;
     /* 150 is not arbitrary: the health, momentum and depth plates together run to about 120px, and
        a plinth's nameplate hangs 26px below the body it belongs to. Anything under 150 is furniture
        the HUD is sitting on. */
@@ -6346,6 +6347,16 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         ', below the bottom of the view');
       ok(s.x-cam.x>-60&&s.x-cam.x<W+60,'the '+s.name+' alcove is at screen x '+
         (s.x-cam.x).toFixed(0)+', off the side of the view');
+    }
+    // and the shelf's own case has to be big enough for what it holds. It was 204px tall for two
+    // rows whose lower name plates sit 107px below centre, so the rail's own bottom edge cut through
+    // six of the thirteen names - the furniture was on screen and still unreadable, which is the same
+    // class of failure as being off screen and rather more annoying, because it looks deliberate.
+    const railTop=shelfY-102, railBot=shelfY+122;
+    for(const s of Lab.shelfData()){
+      ok(s.y-34>=railTop,'the '+s.name+' alcove arches through the top of its own case');
+      ok(s.y+34+15<=railBot,'the '+s.name+' name plate is cut off by the bottom of its own case ('+
+        (s.y+49).toFixed(0)+' vs '+railBot+')');
     }
     // the player, too: if the camera does not frame the player then none of the above is stable
     ok(onScreen(player.y)>150&&onScreen(player.y)<H-40,'the player is not in the clear part of the view');

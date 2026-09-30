@@ -487,16 +487,16 @@ const Lab=(function(){
     const x0=Math.min.apply(null,xs)-g/2-18, x1=Math.max.apply(null,xs)+g/2+18;
     const y=shelfY(b), h=34;
     ctx.save();
-    const rail=ctx.createLinearGradient(0,y-100,0,y+104);
+    const rail=ctx.createLinearGradient(0,y-102,0,y+122);
     rail.addColorStop(0,'#2a2e37'); rail.addColorStop(0.5,'#1b1e24'); rail.addColorStop(1,'#2a2e37');
-    ctx.fillStyle=rail; ctx.fillRect(x0,y-100,x1-x0,204);
+    ctx.fillStyle=rail; ctx.fillRect(x0,y-102,x1-x0,224);
     // a shelf board between the two rows, so it reads as two shelves in a case rather than as
     // thirteen boxes floating in a panel
     ctx.fillStyle='#343a45'; ctx.fillRect(x0+6,y-4,x1-x0-12,8);
     ctx.fillStyle='rgba(198,152,74,0.22)'; ctx.fillRect(x0+6,y-4,x1-x0-12,1);
     ctx.strokeStyle='rgba(198,152,74,0.3)'; ctx.lineWidth=1;
-    ctx.strokeRect(x0+0.5,y-99.5,x1-x0-1,203);
-    ctx.beginPath(); ctx.moveTo(x0,y-99.5); ctx.lineTo(x1,y-99.5); ctx.stroke();
+    ctx.strokeRect(x0+0.5,y-101.5,x1-x0-1,223);
+    ctx.beginPath(); ctx.moveTo(x0,y-101.5); ctx.lineTo(x1,y-101.5); ctx.stroke();
     for(const s of shelf){
       // each alcove is drawn about ITS OWN y, not the rail's: with two rows they are 116px apart and
       // drawing both at the rail's centre would stack the lower row's arches inside the upper row's
