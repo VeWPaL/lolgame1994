@@ -441,6 +441,22 @@ function drawSlot(x,y,w,idx,side,color,ready){
 }
 
 
+/* THE HUD LAYOUT TABLE, hoisted out of drawHUD so the tests read these numbers instead of copying
+   them.
+
+   They were function-locals, and the suite re-declared the same nine integers to assert against -
+   on the stated ground that it wanted to test "the HUD matches a stated layout" rather than "the HUD
+   matches itself". The reasoning is not wrong and the consequence is worse: `ok(MARGIN_X!==MARGIN_Y)`
+   compared the test's own two copies, so it could not fail whatever the game did, and a real change to
+   a margin would fail nine assertions that all needed editing by hand.
+
+   This is the boss-door bug and the pulse bug and the drift bug, in its purest form: the same geometry
+   living in two places, and the copy is the one under test. One table, read by both, and the
+   comparison becomes a real one - if the margins are ever collapsed back into a single number, the
+   assertion now fires because it is reading the number the drawing is reading. */
+const HUD_MARGIN_X=15, HUD_MARGIN_Y=14, HUD_FRAME=6, HUD_GAP=1;
+const HUD_HP_H=40, HUD_ROW_H=30, HUD_KEY_W=62, HUD_KEY_H=34, HUD_BLINK_W=150, HUD_DEPTH_W=104;
+
 function drawHUD(){
   /* The HUD is one block, laid out from a single table of numbers so that nothing can drift.
 
@@ -470,8 +486,8 @@ function drawHUD(){
      GAP is the space between the health plate and the key plate on its shoulder, and it is one
      pixel. Three read as two separate objects with a corridor between them; one reads as two plates
      in the same frame of reference, which is what they are. */
-  const MARGIN_X=15, MARGIN_Y=14, FRAME=6, GAP=1;
-  const HP_H=40, ROW_H=30, KEY_W=62, KEY_H=34, BLINK_W=150;
+  const MARGIN_X=HUD_MARGIN_X, MARGIN_Y=HUD_MARGIN_Y, FRAME=HUD_FRAME, GAP=HUD_GAP;
+  const HP_H=HUD_HP_H, ROW_H=HUD_ROW_H, KEY_W=HUD_KEY_W, KEY_H=HUD_KEY_H, BLINK_W=HUD_BLINK_W;
   // the heart plate grows with maxHp, so everything that has to line up with it is measured after it
   const hearts=Math.ceil(player.maxHp/2), armorSlots=Math.ceil(MAX_ARMOR/2);
   const healthW=30+(hearts+armorSlots)*26;
@@ -587,7 +603,7 @@ function drawHUD(){
      The word costs a third of the plate and says nothing the numeral does not, and the tally is
      there because a depth that is only ever a number gives no sense of accumulating distance: three
      marks at floor 7 and one at floor 4 read as different places, which is what they are. */
-  const dW=104, dy=by+ROW_H+3;
+  const dW=HUD_DEPTH_W, dy=by+ROW_H+HUD_GAP;
   ctx.drawImage(woodPlate(dW,ROW_H),hx,dy);
   drawInset(hx+FRAME,dy+FRAME,dW-FRAME*2,ROW_H-FRAME*2,'#1a1410');
   const dFloor=run?run.floor:1;

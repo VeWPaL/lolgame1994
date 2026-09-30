@@ -1899,11 +1899,14 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // somewhere to hide. The assertions below are about the SHAPE of the layout - one margin, one
     // frame thickness, one gap, plates that touch, bars that are centred - which is the thing that
     // has to stay true, and which is the thing the old assertions could not express.
-    // X and Y are separate numbers now, and the test keeps its own copies on purpose: it asserts
-    // that what the HUD does matches a stated layout, not that it matches itself. The gap between
-    // the health plate and the key plate is one pixel, which is "touching" - three read as a
-    // corridor between two unrelated objects.
-    const MARGIN_X=15, MARGIN_Y=14, FRAME=6, GAP=1, HP_H=40, ROW_H=30, KEY_W=62, KEY_H=34, BLINK_W=150;
+    // X and Y are separate numbers, and this test READS them rather than restating them. It used to
+    // re-declare all nine, on the stated ground that it wanted to test "the HUD matches a stated
+    // layout" rather than "the HUD matches itself" - but `ok(MARGIN_X!==MARGIN_Y)` against its own
+    // two copies cannot fail whatever the game does, so the one assertion in here that was about the
+    // margins rather than about the drawing was measuring the test. The numbers are now one table in
+    // 70-view.js, read by both, which is the same fix as the boss door and the pulse.
+    const MARGIN_X=HUD_MARGIN_X, MARGIN_Y=HUD_MARGIN_Y, FRAME=HUD_FRAME, GAP=HUD_GAP;
+    const HP_H=HUD_HP_H, ROW_H=HUD_ROW_H, KEY_W=HUD_KEY_W, KEY_H=HUD_KEY_H, BLINK_W=HUD_BLINK_W;
     ok(MARGIN_X!==MARGIN_Y,'the two margins have been collapsed back into one number, which is what made the corner look wrong');
     const hearts=Math.ceil(player.maxHp/2), armorSlots=Math.ceil(MAX_ARMOR/2);
     const healthW=30+(hearts+armorSlots)*26;
