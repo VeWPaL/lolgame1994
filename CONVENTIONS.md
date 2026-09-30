@@ -617,10 +617,98 @@ falloff alone; the best long-range retention in the game is the Beam's identity.
 
 ---
 
+## A body that answers the gun you are holding
+
+Enemies that read the player's build. The rule that governs all of it is one sentence, and it is the
+depth-only rule pointed the other way:
+
+> A trait may change **where** a fight happens. It may never change **how hard** it is.
+
+The ladder is the only thing in the game permitted to raise a number, and nothing in `applyTrait` is
+allowed to read it. If a trait made a body tougher, the floor would get harder for the player who
+happened to pick the wrong gun — which is the exact failure the depth rule exists to prevent. So
+there is no trait here that touches health, damage, speed, cadence, radius, accuracy or aim error.
+Every one of them is a change to a body **geometry**.
+
+That is not a promise, it is an assertion. The suite spawns sixty identical shooters under each of
+the four guns and requires the combat columns to come out byte-identical, asserting on the *set of
+distinct values* per column rather than on a value read back from a field the test just wrote:
+
+| gun | traits | maxHp | dmg | armour | r | speed | pspd | cdMin | band |
+|---|---|---|---|---|---|---|---|---|---|
+| Bolt | 0, 2 | 7.56 | 1.8 | 1 | 14 | 0.648 | 2.2 | 70 | 180/108 |
+| Scatter | 0, 1 | 7.56 | 1.8 | 1 | 14 | 0.648 | 2.2 | 70 | 250/150 |
+| Arcane Beam | 0, 1 | 7.56 | 1.8 | 1 | 14 | 0.648 | 2.2 | 70 | 250/150 |
+| Voidball | 0, 2 | 7.56 | 1.8 | 1 | 14 | 0.648 | 2.2 | 70 | 180/108 |
+
+**Combat drift: none.** Only the standoff band differs, and only where the table says it should.
+
+### The mechanism, and why there is only one
+
+A ranged body derives its standoff fresh every tick:
+
+```
+standoff = far - (far - close) * roomPress * PRESSURE_CLOSURE
+inside close -> walk TOWARD the player
+outside far  -> walk AWAY from the player
+```
+
+`far` and `close` are per-body and set once at spawn, so shifting them moves the whole band. Shifting
+**both by the same factor** is the only safe version: the band keeps its width, so a body does not
+start dithering, and the change is a place rather than a personality. Two clamps keep it honest —
+`far` under `sense * 0.78` (a body that notices you at 600 and holds at 700 stands in a corner and
+never fires, which reads as broken rather than as an answer) and a 40px band floor (a band that
+collapses to a point makes the body twitch on the spot instead of standing somewhere).
+
+### The pairing is the design
+
+Each gun has exactly one real weakness, and the trait is that weakness answered.
+
+- **Scatter** — a knife gun, `fFar` 300. It wants to be standing next to something. `TRAIT_HOLD`
+  stands further out than the gun is worth: 165px → 239px under pressure, **24% of the Scatter's
+  damage per shot**, past its falloff floor entirely. The strongest answer in the game, and the
+  highest weight, because the falloff is the most punishing in the roster and there is nothing
+  subtle about it.
+- **Beam** — a mid gun, `fFar` 470. The same answer for a different reason: not the knife, but the
+  middle, where its own falloff starts costing it. 9%.
+- **Bolt** — one committed shot on a 38-tick cooldown, aimed at where a body *was*.
+- **Voidball** — `TRAIT_CLOSE` walks in, which is the worst thing that can happen to a long reload:
+  the player has to hold a moving body at knife range on a cadence chosen for a target across the
+  room. Two of the four guns are single-target, so they get the same answer, and that is the honest
+  answer rather than a coincidence — both are aimed at one body, so both are answered by a body that
+  is not standing where it was aimed.
+
+The player is never told which gun a room dislikes. A visible counter is a puzzle with the answer
+printed on it; an invisible one is a fight the player solves by noticing which gun keeps working.
+What *is* visible is the consequence, because the player has to be able to act on it.
+
+A trait is rolled **once, at spawn**, from the weapon actually held, and written onto the body.
+Reading it per-tick would mean a body changed its mind the moment the player swapped guns mid-room.
+The suite asserts that stability directly: spawn a traited gunner, swap the player's weapon, run 180
+ticks, and require its band to be untouched.
+
+### The bug this section exists to prevent
+
+The first version had a "close faster" trait that set `e.walkSpeed`, intending to make a shooter
+press in. **It did not make a shooter press in.** The tick decides what kind of body it is holding
+with `e.walkSpeed !== undefined` — the walker branch has the field, the ranged branch does not — so
+writing that field onto a body that lacked it *converted the shooter into a lunger*. The shell, the
+cadence, the muzzle prediction and the standoff rule all stopped running, and the room became a
+silent, worse version of itself with nothing anywhere reporting why.
+
+It was caught by noticing that "make it close faster" is a speed change, and a speed change is
+difficulty. The trait system was written *before* the suite, so the suite caught nothing. The
+assertion exists now — on both signs, for every body type, under every gun — and it was
+mutation-checked by reintroducing the exact bug: **8 violations, precisely the ranged bodies, on all
+four guns.**
+
+**Never add or remove `walkSpeed` in a trait.** Only `far` and `close`.
+
+
 ## Current state
 
-- `depths.html` — a shell loading fourteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` — **145 checks**, every test seeded to an identical world. All must pass at
+- `depths.html` — a shell loading fifteen modules from `src/`. Playable, double-clickable.
+- `src/99-tests.js` — **149 checks**, every test seeded to an identical world. All must pass at
   every commit.
 - `csharp/Depths.Core` + `Depths.Tests` — 19 checks, parity-verified against the JavaScript.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
@@ -642,4 +730,5 @@ teaches; the other three exist to make a room's answer depend on which of them i
   straight runner's 100% — which is recorded as a floor in the suite rather than tuned away.
 - **Gunner** — the heavy committed shot. Roots itself to charge, so its accuracy is measured to be
   exactly what it is. The type test means the movement change costs it nothing.
-- **Boss** — a placeholder. Boss design is deferred; the fodder is the priority.
+- **Boss** — the Warden. Not a scaled lunger: a phased fight with a TELL, a COMMIT and a RECOVER for
+  every move, and a wall it can call. See the section above.
