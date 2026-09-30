@@ -195,6 +195,18 @@ const FIXES={
   'a lunger in a big room comes at you from across it':['enemies and AI',
     'the consequence and not the constant: a number can follow the room and still not be read '+
     'anywhere, and only a body 1100px away in a 1680-wide room can tell the difference'],
+  'the ladder is exponential, climbs unbroken, and its steps GROW':['rooms and progression',
+    'the ladder was 1+growth*n/(n+tau): monotonic but SATURATING, so the steps shrank and the curve '+
+    'flattened into an asymptote of 3.6x that floor 14 had already reached 2.5x of. Every floor after '+
+    'that was spent approaching a number it had nearly hit. Exponential, because a logarithm decreas'+
+    'es its increments - steep early, flat late, the opposite of what the brief asks - while an '+
+    'exponential increases them, so every floor costs more than the one before it'],
+  'the ladder stays playable and readable at every floor, which is why two dials are capped':['rooms and progression',
+    'health is unbounded as asked, but an unbounded ladder is not a harder game, it is a broken one. A '+
+    'ranged body allowed the old 1.95x ceiling would close at 1.264 px/tick against a player who '+
+    'moves at 1.20 - faster than the player, and a threat you cannot outrun is not one you lost to. '+
+    'Uncapped density is 246 bodies by floor 40 and 1869 by floor 50, which is a hang. The old ceiling '+
+    'was never wrong so much as unreachable: its own saturation never got there before content ran out'],
 };
 
 

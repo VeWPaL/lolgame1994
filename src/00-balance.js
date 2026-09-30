@@ -649,13 +649,54 @@ const TOUGH=1.35;
    asserts it: the same floor with a naked player and with a full build has to produce
    byte-identical enemy stats. */
 
-const DEPTH_HP_GROWTH=2.60,     // HP multiplier at the asymptote: 3.60x, never actually reached
-      DEPTH_HP_TAU=8,           // floors to get most of the way there
-      DEPTH_RATE_GROWTH=0.95,    // cadence AND approach speed. The reaction-time dial. Ceiling 1.95x.
-      DEPTH_RATE_TAU=10,
-      DEPTH_BODY_GROWTH=5.6,     // per natural log of the floor. Logarithmic on purpose, see above.
-      DEPTH_PACK_STEP=0.035,     // +3.5% chance of a Brunch pack per floor, capped
-      DEPTH_PACK_CAP=0.85;       // never a certainty: a room that is always a pack is one shape
+/* THE LADDER IS EXPONENTIAL, and it has no ceiling.
+
+   It was `1 + growth * n/(n+tau)` - a saturating curve that approaches 1+growth and flattens as it
+   goes. That was chosen to put a lid on the deep floors, and the lid is the thing being removed: the
+   brief is a difficulty that climbs UNBROKEN, so a floor 40 exists to be harder than floor 20 and
+   not to approach some number from below. An asymptote is a promise the game cannot keep once the
+   content outgrows the tuning.
+
+   It is exponential rather than logarithmic, and the distinction is the whole design rather than a
+   word. A logarithm's increments DECREASE, so a log curve is steep early and flat late - which is
+   the opposite of what is wanted here, where the later floors are meant to ramp significantly more
+   than the earlier ones. An exponential's increments increase, so every floor costs more than the
+   one before it and the run never flattens out. Over floors 1-14 with the numbers below, the
+   per-floor step grows from 0.05 to 0.22: a 4x increase, and still climbing past floor 14.
+
+   The shape is one expression for all three dials, because three dials written three ways drift
+   apart the moment one is retuned - the geometry-in-two-places failure this file has the most of,
+   wearing a balance patch instead of a hitbox.
+
+   WHY CADENCE IS STILL CAPPED, and this is the one place the ceiling survives. `depthRate` drives
+   cadence AND approach speed, and the brief's other standing rule is that a threat must stay
+   readable - a body that closes faster than the player can react is not difficulty, it is a
+   cutscene. The measured guarantee is that a ranged body's approach never exceeds 0.87 px/tick
+   against the player's 1.20, at ANY floor. An uncapped exponential breaks that by floor 20, so rate
+   keeps a ceiling while HP and density climb without one. Growth and reaction time are different
+   dials and only one of them is allowed to be unbounded. */
+const DEPTH_GROWTH=0.40,     // the coefficient: how much of an exponential to add
+      DEPTH_POW=0.12,        // the exponent RATE: larger is steeper later
+      /* The reaction-time ceiling, and the only one in the file. It is 1.34 and NOT the 1.95 the
+         saturating ladder used, and the number is derived rather than chosen: a ranged body starts
+         at 0.648 px/tick against the player's 1.20, and the standing guarantee is that a body never
+         closes faster than 0.87. 0.87/0.648 is 1.343. The old ceiling of 1.95 allowed 1.264 - faster
+         than the player - and the old ladder only stayed honest because its saturation never
+         actually reached its own asymptote before the content ran out.
+
+         That is the whole argument for deriving a ceiling instead of writing one: the previous value
+         was not wrong, it was UNREACHABLE, and a safety limit that safety never actually needed is
+         indistinguishable from no limit at all until the day it is needed. */
+      DEPTH_RATE_CAP=1.34,
+      /* Density is capped too, for a different reason and it is not a fairness argument. Uncapped it
+         is 246 bodies by floor 40 and 1869 by floor 50, which is not a hard fight, it is a hang -
+         and the old ladder put floor 50 at 23. A deep floor has to be reachable on a machine, so
+         past the point where the room stops being playable the ladder leans on HP, which costs the
+         player attention rather than the machine its frame budget. */
+      DEPTH_BODY_POW=0.085,
+      DEPTH_BODY_CAP=28,
+      DEPTH_PACK_STEP=0.035, // +3.5% chance of a Brunch pack per floor, capped
+      DEPTH_PACK_CAP=0.85;   // never a certainty: a room that is always a pack is one shape
 
 /* How long the fade between floors lasts, and therefore how long the descent banner is up. It is
    longer than a room transition on purpose: a room fade covers a door opening, and a floor fade
@@ -669,23 +710,49 @@ const FADE_DESCEND=sec(0.9);
 function depthFloor(){ return (run&&run.floor)||1; }
 function depthSteps(){ return Math.max(0,depthFloor()-1); }
 
-/* The bounded ladder. `sat` is the whole shape, and it is one expression because three dials written
-   three ways would drift apart the moment one of them was retuned - which is the same geometry-in-
-   two-places failure this file has the most of, wearing a balance patch instead of a hitbox.
-
-   steps/(steps+tau) is 0 at the first floor and rises toward 1 without reaching it, so the product
-   is exactly 1 on floor one and asymptotically approaches 1+growth. Monotone, bounded, and it
-   never needs a cap check, because the cap is the asymptote.
-
-   The bodies dial is a logarithm and not this shape, and the reason is in the comment above: density
-   is a difficulty lever the brief actually names, and a saturating curve would flatten it in
-   exchange for a tidier-looking table. Density keeps climbing; it just costs less and less to do
-   it. log(1+n) rather than log(n) so floor one adds nothing at all. */
-const sat=(steps,growth,tau)=>1+growth*steps/(steps+tau);
-function depthTough(){ return sat(depthSteps(),DEPTH_HP_GROWTH,DEPTH_HP_TAU); }
-function depthRate(){ return sat(depthSteps(),DEPTH_RATE_GROWTH,DEPTH_RATE_TAU); }
+/* THE CURVE. 1 + growth * (e^(rate*steps) - 1), which is exactly 1 on floor one, strictly increasing
+   for every floor after it, and unbounded - so "the ladder" is now a direction rather than a number
+   the curve approaches. The -1 rather than a bare e^ is what makes floor one free. */
+const ramp=(steps,growth,rate)=>1+growth*(Math.exp(rate*steps)-1);
+function depthTough(){ return ramp(depthSteps(),DEPTH_GROWTH,DEPTH_POW); }
+function depthRate(){ return Math.min(DEPTH_RATE_CAP,ramp(depthSteps(),DEPTH_GROWTH,DEPTH_POW*0.55)); }
 function depthPack(){ return Math.min(DEPTH_PACK_CAP,BRUNCH.chance+DEPTH_PACK_STEP*depthSteps()); }
-function depthBodies(rolled){ return rolled+DEPTH_BODY_GROWTH*Math.log(1+depthSteps()); }
+/* Density is its own exponent rather than the HP one, because it is a different kind of lever: HP
+   makes a fight longer and density makes it wider, and they should not move in lockstep or every
+   deep floor would be the same fight with more health.
+
+   The -1 makes floor one add NOTHING, which is the same reason the health curve has one: a first
+   floor has to be exactly the base experience, and a dial that is already 0.085 away from zero on
+   floor one is a dial that was retuned without anybody deciding to retune floor one. */
+function depthBodies(rolled){
+  return Math.min(DEPTH_BODY_CAP,rolled+DEPTH_BODY_POW*(Math.exp(DEPTH_POW*1.7*depthSteps())-1));
+}
+
+/* ADAPTIVE DIFFICULTY, and it is a PLACEHOLDER with the rules already written down.
+
+   NOTE THE NAME, because it is a trap. `PRESSURE` is taken: it is the flat rate constant in 10-art,
+   and `roomPressure()` above is something else again - a within-room dial that rises as a room
+   empties. This is the CROSS-FLOOR one the brief asks for, and it is called adaptive so that the
+   two can never be confused in a review. An earlier draft of this comment called it PRESSURE and
+   was a duplicate declaration, which is a SyntaxError that takes the whole file with it.
+
+   The intent is a value that floats on how the player is actually doing and nudges the fight either
+   way, so a run going badly eases off and one going well tightens up. It is NOT wired to anything
+   yet, and the two rules below are the ones it must obey when it is, because both are the mistakes
+   it is most likely to be got wrong:
+
+   NEVER the player's item count or stat total. A difficulty that reads the build punishes a good
+   one - the player earns an item, gets harder, earns the next, gets harder again, and the reward
+   arrives wearing the mask of a punishment. It has to read PERFORMANCE, which is a behaviour and
+   not an inventory.
+
+   and it must be MONOTONIC within a run, or the same fight gets harder while you are winning it,
+   which reads as the game cheating and is worse than any amount of difficulty.
+
+   Until it is live the honest thing is a named zero with its rules attached, rather than a comment
+   somewhere hoping to be read later. */
+const ADAPT={ value:0, min:-0.25, max:0.25 };
+const adaptive=()=>ADAPT.value;
 
 // The armour multiplier. Per-hit, so it scales every pellet and every pierce pass rather than
 // subtracting a flat chunk - a subtraction would quietly reward the Beam for spraying, which is

@@ -343,13 +343,44 @@ namespace Depths
         /// Scaling a body's SPEED with depth is a reaction-time tax wearing the costume of a
         /// difficulty curve, and the brief rules it out.
         ///
-        /// The shape is 1 + growth*steps/(steps+tau): exactly 1 on the first floor, monotone
-        /// forever, approaching 1+growth without ever reaching it. No cap check is needed because the
-        /// cap IS the asymptote.
+        /// The shape is EXPONENTIAL and the health dial has NO CEILING.
+        ///
+        /// It was 1 + growth*steps/(steps+tau) - monotonic, but SATURATING, so the steps shrank and
+        /// the curve flattened into an asymptote it never reached. The asymptote was 3.6x, floor 14
+        /// already reached 2.5x, and everything past that was spent approaching a number it had
+        /// nearly hit: the deep floors were shallower than the table made them look. The brief now
+        /// asks for a climb that is unbroken, and an asymptote is a promise the content eventually
+        /// outgrows.
+        ///
+        /// Exponential rather than logarithmic, and the distinction is the design rather than a word:
+        /// a logarithm's increments DECREASE, so a log curve is steep early and flat late - the
+        /// opposite of wanting later floors to ramp significantly more. An exponential's increments
+        /// increase. Over floors 1-14 the per-floor step grows from 0.05 to 0.22, a 4x increase, and
+        /// is still growing at the last floor.
         /// </summary>
-        public const double DepthHpGrowth = 2.60, DepthHpTau = 8;
-        public const double DepthRateGrowth = 0.95, DepthRateTau = 10;
-        public const double DepthBodyGrowth = 5.6;
+        public const double DepthGrowth = 0.40;
+        public const double DepthPow = 0.12;
+
+        /// <summary>
+        /// The reaction-time ceiling on the RATE dial, and the only one in the file. DERIVED, not
+        /// chosen: a ranged body starts at 0.648 px/tick against a player who moves at 1.20, and the
+        /// standing guarantee is that it never closes faster than 0.87. 0.87/0.648 is 1.343.
+        ///
+        /// The old ceiling was 1.95, which would allow 1.264 - FASTER THAN THE PLAYER. The old
+        /// ladder only stayed honest because its own saturation never reached that ceiling before the
+        /// content ran out, which is the real lesson: a safety limit that safety never needed is
+        /// indistinguishable from no limit until the day it is needed.
+        /// </summary>
+        public const double DepthRateCap = 1.34;
+
+        /// <summary>
+        /// Density is capped too, and for a DIFFERENT reason: not fairness but playability. Uncapped
+        /// it is 246 bodies by floor 40 and 1869 by floor 50 - not a hard fight, a hang. Past the
+        /// point where the room stops being playable the ladder leans on health, which costs the
+        /// player attention rather than the machine its frame budget.
+        /// </summary>
+        public const double DepthBodyPow = 0.085;
+        public const double DepthBodyCap = 28;
 
         /// <summary>
         /// The Brunch pack chance. The one dial on this ladder that is still linear, because it
@@ -362,22 +393,28 @@ namespace Depths
         public static int DepthSteps(int floor) => System.Math.Max(0, floor - 1);
 
         /// <summary>
-        /// The saturating shape, shared by the health and rate dials. Three dials written three ways
-        /// would drift apart the moment one of them was retuned, which is the geometry-in-two-places
-        /// failure wearing a balance patch instead of a hitbox.
+        /// The curve: 1 + growth*(e^(rate*steps) - 1). Exactly 1 on floor one, strictly increasing
+        /// for every floor after it, and unbounded - so the ladder is a DIRECTION rather than a number
+        /// the curve approaches. The -1 rather than a bare e^ is what makes floor one free.
         /// </summary>
-        public static double Sat(int steps, double growth, double tau) => 1 + growth * steps / (steps + (double)tau);
+        public static double Ramp(int steps, double growth, double rate) =>
+            1 + growth * (System.Math.Exp(rate * steps) - 1);
 
-        public static double DepthTough(int floor) => Sat(DepthSteps(floor), DepthHpGrowth, DepthHpTau);
-        public static double DepthRate(int floor) => Sat(DepthSteps(floor), DepthRateGrowth, DepthRateTau);
+        public static double DepthTough(int floor) => Ramp(DepthSteps(floor), DepthGrowth, DepthPow);
+        public static double DepthRate(int floor) =>
+            System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55));
 
         /// <summary>
-        /// Density is logarithmic rather than saturating, deliberately. Density is the one dial the
-        /// brief actually names, and a saturating curve would flatten a real difficulty lever just
-        /// to buy a tidier table. log(1+n) rather than log(n) so floor one adds nothing at all.
+        /// Density is its own exponent rather than the health one, because it is a different kind of
+        /// lever: health makes a fight LONGER and density makes it WIDER, and they should not move in
+        /// lockstep or every deep floor would be the same fight with more health. Capped, for the
+        /// playability reason on DepthBodyCap.
+        /// The -1 makes floor one add NOTHING, for the same reason the health curve has one: a first
+        /// floor has to be exactly the base experience, and a dial already 0.085 from zero on floor
+        /// one is a dial that was retuned without anybody deciding to retune floor one.
         /// </summary>
         public static double DepthBodies(int floor, int rolled) =>
-            rolled + DepthBodyGrowth * System.Math.Log(1 + DepthSteps(floor));
+            System.Math.Min(DepthBodyCap, rolled + DepthBodyPow * (System.Math.Exp(DepthPow * 1.7 * DepthSteps(floor)) - 1));
 
         public static double DepthPack(int floor, double brunchChance) =>
             System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor));
