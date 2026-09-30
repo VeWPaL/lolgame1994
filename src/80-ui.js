@@ -258,6 +258,21 @@ function renderCharSheet(){
   if(!host) return;
   host.textContent='';
   for(const s of Stats.sheet()){
+    /* MOMENTUM IS NOT ON THIS SHEET, and it used to be.
+
+       The sheet answers one question: what is this player CARRYING. Every other row is something that
+       was picked up, and a badge under the number says which item put it there. Momentum is the one
+       stat on the list that you did not pick up - there is no item that hands it to you - so its row
+       was the only one that could not be acted on. You cannot go and find the thing that raises it.
+
+       Worse, the sheet is a PAUSE screen. The only time the number was visible was when the player
+       was not playing, which is the worst possible place to put a stat whose entire appeal is that
+       you can see it move while you are fighting. It is on the HUD now, where it is legible in real
+       time, and the tutorial that explained it is gone - see the plate in drawHUD.
+
+       The stat itself is untouched. Momentum still exists, still charges, still costs you most of
+       itself on a hit, and still feeds acceleration and a share of top speed. Only the row moved. */
+    if(s.key==='momentum') continue;
     const row=document.createElement('div');
     row.className='statRow'+(s.kind==='meter'?' earned':'');
     row.dataset.stat=s.key;
@@ -288,17 +303,6 @@ function renderCharSheet(){
 
     row.appendChild(nm); row.appendChild(bar); row.appendChild(val);
     host.appendChild(row);
-  }
-
-  /* The one sentence that tells the player what the most unusual number on the sheet is FOR. Without
-     it, Momentum reads as a seventh damage number and the whole mechanic is invisible. */
-  const note=document.getElementById('charNote');
-  if(note){
-    const m=Stats.value('momentum');
-    note.innerHTML='<b>Momentum</b> is the one number here you did not pick up. It charges while you '+
-      'move with bodies in the room, bleeds if you stand still, and a hit costs you most of it. '+
-      'Right now it is worth <b>'+(moveSpeedBonus()*100).toFixed(1)+'%</b> speed and '+
-      '<b>'+Math.round(MOVE_ACCEL*(1+m*MOMENTUM_ACCEL)/MOVE_ACCEL*100-100)+'%</b> acceleration.';
   }
 
   const grid=document.getElementById('itemGrid'), head=document.querySelector('#charItems h3 span');

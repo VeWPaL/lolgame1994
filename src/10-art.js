@@ -189,6 +189,41 @@ function spellGlow(color,r){return glowCache[color+r]||(glowCache[color+r]=makeG
 const MUZZLE_GLOW=makeGlow(11,'rgba(230,200,255,1)','rgba(180,110,255,0)');
 const DASH_GLOW=makeGlow(14,'rgba(255,255,255,1)','rgba(255,255,255,0)');
 
+/* THE MOMENTUM RAMP - the blink trail, tinted by what the meter was when you blinked.
+
+   Momentum is the one stat that measures what you did rather than what you picked up, and a stat
+   like that cannot be taught with a sentence without becoming the thing the sentence is about. So it
+   is taught by the art instead: the blink you spend at a full meter leaves a green streak, and one
+   you spend at nothing leaves the white streak it always did. A player sees the colour two or three
+   times before they see the bar, and connects them on their own, which is the only way anything
+   sticks.
+
+   It is read off the blink's OWN momentum rather than live, baked into the trail when it is made. A
+   trail that re-reads the meter while it is still on screen would flicker through the whole ramp as
+   the meter moved, and a colour that changes under you is not a readout of anything.
+
+   FIVE steps, not a continuous blend, and the reason is that it has to be noticed. A smooth
+   interpolation between white and a pale green is a colour the eye cannot name, so it reads as
+   "something is different" and never becomes "I am moving well". Five discrete steps is a set of
+   states the player can learn, and the jump between them is a thing they can watch happen.
+
+   The green is a spring green rather than the Voidball's deep one, because this is a glow, and a
+   glow wants to be brighter than the thing it is lighting. */
+const MOMENTUM_STEPS=5;
+const MOMENTUM_COLD=[255,255,255], MOMENTUM_HOT=[120,255,160];
+const MOMENTUM_GLOW=[];
+for(let i=0;i<MOMENTUM_STEPS;i++){
+  const t=i/(MOMENTUM_STEPS-1);
+  const rgb=MOMENTUM_COLD.map((c,j)=>Math.round(c+(MOMENTUM_HOT[j]-c)*t));
+  MOMENTUM_GLOW.push(makeGlow(14,'rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',1)','rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0)'));
+}
+/* The step for a meter value, clamped at both ends. Momentum.level() rather than value(), because a
+   held meter is what the movement code reads, and the trail should agree with the speed it bought. */
+function momentumGlow(m){
+  const i=Math.round(Math.max(0,Math.min(1,m))*(MOMENTUM_STEPS-1));
+  return MOMENTUM_GLOW[i];
+}
+
 /* carved-wood + paper interface assets */
 const WOOD_TEX=(function(){
   const c=mk(96,96),g=c.getContext('2d');

@@ -20,7 +20,18 @@ function getBlinkDir(){
 }
 function doBlink(){
   const [ux,uy]=getBlinkDir();
-  for(let i=0;i<6;i++){const t=i/5;dashFX.push({x:player.x+ux*BLINK_DIST*t,y:player.y+uy*BLINK_DIST*t,life:DASH_TRAIL});}
+  /* The trail is tagged, and the tag carries the meter as it was AT THE MOMENT OF THE BLINK.
+
+     dashFX is shared - the lunge charge puff, the lunge trail and the Brunch absorb puff all live in
+     it - so a tint applied to every particle in the array would paint enemy telegraphs green too,
+     which is a lie about the enemy rather than a readout of the player. Tagging is what makes the
+     ramp mean anything: green on a body you own, white on a body you are reading.
+
+     Read once here rather than read live in the draw, because a trail that re-read the meter while it
+     was still on screen would flicker up the whole ramp as the meter moved underneath it. */
+  const mom=Momentum.level();
+  for(let i=0;i<6;i++){const t=i/5;dashFX.push({x:player.x+ux*BLINK_DIST*t,y:player.y+uy*BLINK_DIST*t,
+    life:DASH_TRAIL,mine:true,mom});}
   // the position the enemies aim at stays put and eases across over ~0.4s, which is the reaction
   // window a blink is supposed to buy. without it a gunner that was already tracking you gets a
   // free intercept shot the instant you vanish

@@ -135,10 +135,9 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
 .statRow .val{font:600 13px/1 ui-monospace,Menlo,Consolas,monospace;color:#dfe6f2;text-align:right;
   letter-spacing:.02em;}
 .statRow .val b{font-weight:400;color:#7fd4a8;}
-#charNote{margin:14px 0 0;padding:9px 11px;background:#0c1017;border:1px solid #212836;
-  border-left:2px solid #6a5230;border-radius:3px;font-size:11px;line-height:1.55;color:#8d98ab;
-  text-align:left;}
-#charNote b{color:#d6c08a;font-weight:400;}
+/* The #charNote block and its rules are gone. They held the one sentence that explained Momentum, and
+   Momentum is on the HUD now, where it explains itself by moving. A stat that has to be described
+   cannot be a stat you learn by playing it. */
 #charFoot{margin-top:14px;padding-top:12px;border-top:1px solid #232a37;display:flex;
   justify-content:space-between;gap:12px;font-size:11px;color:#6c7688;}
 /* ---- carried items ---------------------------------------------------------------------------
@@ -222,7 +221,6 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
   <h2>CHARACTER</h2>
   <p class="sub">Depths on this seed, and what has been done to it.</p>
   <div id="charStats"></div>
-  <p id="charNote"></p>
   <div id="charItems">
     <h3>Carried <span></span></h3>
     <div class="itemGrid" id="itemGrid"></div>

@@ -613,13 +613,27 @@ test('the character sheet shows every stat, and re-reads the build each time it 
       return out;
     };
     let sheet=read();
-    eq(Object.keys(sheet).length,Stats.ORDER.length,'the sheet drew '+Object.keys(sheet).length+' rows but the model has '+Stats.ORDER.length);
-    eq(Object.keys(sheet).sort().join(','),Stats.ORDER.slice().sort().join(','),
+    /* MOMENTUM IS NOT A SHEET ROW ANY MORE, and these two assertions used to say the opposite.
+
+       They asserted the sheet drew every stat the model defines, and that Momentum was marked `earned`
+       so it would read as the one number you earn rather than pick up. Both were written when the
+       meter lived here, and both encoded a decision that has since changed - a stat the player cannot
+       act on does not belong on the screen that answers "what am I carrying", and a PAUSE screen is
+       the worst place for the one number whose whole appeal is watching it move while you fight. It
+       is on the HUD now, and the tutorial that explained it is gone.
+
+       So the sheet's contract is "every stat EXCEPT momentum", and the interesting part is that the
+       exclusion is asserted rather than assumed: a stat silently vanishing off the sheet is the
+       failure this file has the most of, and momentum is now the one that has to be checked. */
+    const wantOnSheet=Stats.ORDER.filter(k=>k!=='momentum');
+    eq(Object.keys(sheet).length,wantOnSheet.length,'the sheet drew '+Object.keys(sheet).length+' rows but the model has '+wantOnSheet.length);
+    eq(Object.keys(sheet).sort().join(','),wantOnSheet.slice().sort().join(','),
        'the sheet is not showing the stats the model defines - the two lists have drifted apart, so a '+
        'stat exists that no player can see or one is shown that does not exist');
-    ok(sheet.momentum.earned,'Momentum is not marked as the earned stat, so on the sheet it reads as a '+
-       'seventh number you pick up rather than the one you earn');
-    for(const k in sheet) ok(!sheet[k].badge||k==='momentum',
+    ok(!sheet.momentum,'Momentum is back on the character sheet. It cannot be raised by anything the '+
+       'player can pick up, and the sheet is a pause screen, so the only time the number was visible '+
+       'was when the player was not playing. It belongs in the HUD.');
+    for(const k in sheet) ok(!sheet[k].badge,
       'stat '+k+' claims a contribution with nothing on the build: "'+sheet[k].badge+'"');
 
     // a build change must reach the sheet, which means it has to be re-read rather than cached
@@ -635,9 +649,11 @@ test('the character sheet shows every stat, and re-reads the build each time it 
        'badge and the value are in different units and the player cannot tell what the item did');
     ok(parseFloat(sheet.strength.fill)>0,'the STRENGTH bar did not move for a +3 item');
 
-    // and the one number with no item behind it must never claim one
-    ok(sheet.momentum.badge.indexOf('+')<0,'Momentum shows an item contribution ("'+sheet.momentum.badge+
-       '") when nothing on the build can possibly have given it');
+    // and it stays gone after a rebuild, because the sheet is rebuilt from the model on every open
+    // and a filter is exactly the kind of thing that quietly stops being applied
+    ok(!sheet.momentum,'Momentum came back to the character sheet after a build change. The exclusion '+
+       'is a filter inside the render loop, and a filter is one edit away from being dropped - so it is '+
+       'checked after a rebuild and not only on the first open.');
 
     // Escape resumes rather than merely hiding the card, or the player is left paused in a run they
     // cannot see - the worst state this game can be left in
@@ -5655,6 +5671,191 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        '"you are not".');
   });
 
+  test('the Momentum bar is in the HUD, it is a real plate, and it moves with the meter',()=>{
+    /* Momentum moved here from the character sheet, and the reason it had to move is worth keeping:
+       the sheet is a PAUSE screen, and the only time a stat is visible on it is when the player is
+       not playing. This is the one number the player is meant to watch move WHILE they fight, so a
+       screen you open once a fight to check your build is the worst possible home for it. The
+       tutorial paragraph that used to sit under the sheet is gone too - a stat that has to be
+       described cannot be a stat you learn by playing it. */
+    startGame();
+    const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+
+    const MARGIN_X=HUD_MARGIN_X, ROW_H=HUD_ROW_H, BLINK_W=HUD_BLINK_W, FRAME=HUD_FRAME;
+    const grab=(meter)=>{
+      Momentum.set(meter);
+      const plates=[],rects=[];
+      const realImg=ctx.drawImage.bind(ctx), realFill=ctx.fillRect.bind(ctx);
+      ctx.drawImage=(img,...a)=>{ if(a.length===2) plates.push({x:a[0],y:a[1],w:img.width,h:img.height}); };
+      ctx.fillRect=(x,y,w,h)=>{rects.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});};
+      try{ drawHUD(); }finally{ ctx.drawImage=realImg; ctx.fillRect=realFill; }
+      return {plates,rects};
+    };
+
+    const full=grab(1);
+    const plate=full.plates.find(p=>p.w===HUD_MOMENTUM_W&&p.h===ROW_H);
+    ok(plate,'no plate of the Momentum size was drawn, so the bar is not in the HUD');
+    // on the blink's row, beside it, sharing the row rather than sitting under everything. Blink is
+    // what you have LEFT and Momentum is what you are WORTH right now, and pairing the two says so
+    // without a word.
+    const blink=full.plates.find(p=>p.w===BLINK_W&&p.h===ROW_H);
+    ok(blink,'the blink plate is missing, so this test cannot check the row it shares');
+    eq(plate.y,blink.y,'the Momentum plate is not on the same row as the blink plate');
+    eq(plate.x,blink.x+blink.w+HUD_GAP,'the Momentum plate is not touching the blink plate');
+    ok(HUD_MOMENTUM_W>BLINK_W,'the Momentum plate is narrower than the blink plate, so the number the '+
+       'player is meant to watch move has the smaller instrument. At equal widths the word eats 40% of '+
+       'the plate and leaves a bar too short to read a change on.');
+    // and it must stay on screen: the row is now health+keys wide on one line and blink+momentum on
+    // the next, and only one of those was ever checked against the room
+    ok(plate.x+plate.w<ROOM_RIGHT,'the Momentum plate runs to '+(plate.x+plate.w)+
+       'px, past the room edge at '+ROOM_RIGHT+', so it is drawn off the play area');
+
+    // THE BAR MOVES. Not "a rect was drawn" - the fill width, read off the actual fillRects, at
+    // five meter values. Asserting that something happened is how a bar that never moves passes.
+    //
+    // The bar row carries THREE kinds of rect and only one of them moves. The track is always the
+    // full width, so taking the widest measures the track and returns the same number at every
+    // meter. The three graduation notches are 1px wide BY CONSTRUCTION - that is what a notch is -
+    // so taking the narrowest measures a notch, which also never moves. Both of those were tried
+    // and both report a bar that does not move while the bar is plainly moving.
+    //
+    // The fill is the widest rect on the row that is neither, and at an empty meter there is no
+    // fill at all, which is the answer zero.
+    const barY=plate.y+Math.floor(ROW_H/2)-6;
+    // EXACT y, not a tolerance. A +/-1 sweep is how this passed the minimap's 12x12 room marker,
+    // which sits at y=64 against a bar at y=63 and is narrower than the fill at half a meter -
+    // so the "narrowest rect on the row" was the minimap, and the bar reported a width that
+    // never changed. Dumped the row first; two guesses at the fixture were both wrong.
+    const rowAt=(m)=>grab(m).rects.filter(r=>r.y===barY&&r.h===12);
+    const fillAt=(m)=>{
+      const row=rowAt(m).filter(r=>r.w>2);
+      if(row.length<2) return 0;
+      return Math.min(...row.map(c=>c.w));
+    };
+    const levels=[0,0.25,0.5,0.75,1];
+    const widths=levels.map(fillAt);
+    for(let i=1;i<widths.length;i++)
+      ok(widths[i]>widths[i-1],'the Momentum bar did not grow from meter '+levels[i-1]+' to '+
+         levels[i]+': widths '+widths.join(','));
+    ok(widths[0]===0,'an empty meter still drew a filled bar '+widths[0]+'px wide, so the bar is not '+
+       'reporting the meter at all');
+    ok(widths[4]-widths[0]>60,'the bar spans '+widths[0]+'px to '+widths[4]+
+       'px across the whole range, which is not a range a player can watch move');
+    // and the notches are there, because Momentum is capped and for a capped stat the ceiling is
+    // the interesting part - a smooth fill cannot answer "how close am I"
+    eq(rowAt(0).filter(r=>r.w<=2).length,3,'the Momentum bar has '+
+       rowAt(0).filter(r=>r.w<=2).length+' graduation notches rather than 3, so the ceiling is '+
+       'not readable and a nearly-full bar looks the same as a full one');
+  });
+
+  test('the blink trail is tinted by the meter, and only the player\'s is',()=>{
+    /* The teaching device. Momentum is the one stat that measures what you did rather than what you
+       picked up, and a stat like that cannot be taught with a sentence without becoming the thing
+       the sentence is about - so the art teaches it: a blink spent at a full meter leaves a green
+       streak, and one spent at nothing leaves the white streak it always did. The player connects
+       the colour to the bar on their own, two or three blinks in.
+
+       Two properties make it a readout rather than decoration, and both are asserted here:
+
+       it is read off the blink's OWN meter, baked in when the trail is made, so a trail cannot
+       flicker up the whole ramp while the meter moves underneath it; and it is tagged, so a green
+       puff never appears on a lunger's windup - a colour cue that lies about an ENEMY, in the middle
+       of reading one, is worse than no cue. */
+    startGame();
+    const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
+    room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+
+    const trailAt=(meter)=>{
+      dashFX.length=0;
+      player.blinkCharges=2;
+      Momentum.set(meter);
+      doBlink();
+      const mine=dashFX.filter(f=>f.mine);
+      return {n:mine.length, moms:mine.map(f=>f.mom), all:mine.length===dashFX.length};
+    };
+    const lo=trailAt(0.02), hi=trailAt(0.98);
+    ok(lo.n>0,'the blink left no tagged trail, so the tint has nothing to read');
+    ok(lo.moms.every(m=>m<=0.05),'a blink spent at 0.02 recorded momentum '+
+       lo.moms.join(',')+' on its trail');
+    ok(hi.moms.every(m=>m>=0.95),'a blink spent at 0.98 recorded momentum '+
+       hi.moms.join(',')+' on its trail');
+    ok(lo.all,'the blink trail shares the dashFX array with enemy effects, so the player\'s own '+
+       'particles cannot be told apart from a lunger charge puff. The tint needs the tag.');
+
+    // the ramp is a RAMP, not a switch: five steps, and the ends are different pictures
+    ok(MOMENTUM_STEPS>=4,'the ramp has '+MOMENTUM_STEPS+' steps, so a player watching it change sees '+
+       'it change by a step they cannot name. A smooth blend between white and a pale green is a '+
+       'colour the eye cannot label, so it reads as "something differs" and never as a number.');
+    const cold=momentumGlow(0), hot=momentumGlow(1);
+    ok(cold!==hot,'the cold and hot ends of the ramp are the same sprite, so the blink does not '+
+       'change at all across the whole range');
+    // and the two ends have to be far enough apart to notice in a 0.23s trail
+    const px=g=>Array.from(g.getContext('2d').getImageData(14,14,1,1).data);
+    const a=px(cold), b=px(hot);
+    // GREENNESS, not total distance. The sum of absolute channel differences is 230 here, which out
+    // of a possible 765 sounds small and means nothing - a shift that keeps red and green level is
+    // just a dimmer white. What matters is that the colour stops being white and starts being green,
+    // so the quantity is green minus red, and it has to move by a wide margin to be readable.
+    const greenness=(c)=>c[1]-c[0];
+    ok(greenness(a)<=8,'the cold end of the ramp is already green (G-R='+greenness(a)+
+       '), so a full meter has nothing to look different from');
+    ok(greenness(b)>=110,'the hot end only reaches G-R='+greenness(b)+', which on a fifth of a '+
+       'second trail is not far enough from white to be a cue');
+    const shift=greenness(b)-greenness(a);
+    ok(shift>100,'the two ends differ by '+shift+' of greenness, which is under what the eye picks '+
+       'up on a trail that lives for 0.23s');
+
+    // THE GUARD. An enemy effect in the same array must not pick up the player's colour. The dashFX
+    // draw lives in drawRoom, which is the whole world, so the capture is deliberately narrow: it
+    // records which glow sprites are used and nothing else, and asserts only that the hot one is
+    // absent and the white one is present.
+    dashFX.length=0;
+    Momentum.set(1);
+    room.enemies.length=0;
+    dashFX.push({x:MIDX,y:MIDY,life:LUNGE_CHARGE_TRAIL,charge:true});
+    dashFX.push({x:MIDX,y:MIDY,life:LUNGE_TRAIL});
+    const realDraw=ctx.drawImage.bind(ctx);
+    const used=[];
+    ctx.drawImage=(img,...a)=>{ used.push(img); };
+    try{ drawRoom(); }finally{ ctx.drawImage=realDraw; }
+    ok(used.indexOf(hot)===-1,'an enemy effect in dashFX was drawn with the player\'s hot-momentum '+
+       'glow, so a green windup on a lunger is telling the player about their own meter in the middle '+
+       'of reading an enemy');
+    ok(used.indexOf(DASH_GLOW)>=0,'the enemy effects stopped using the white dash glow entirely, so '+
+       'a lunge puff and a player blink are no longer the same object');
+    dashFX.length=0;
+  });
+
+  test('Momentum is not on the character sheet, and the tutorial is gone',()=>{
+    /* The sheet answers "what am I carrying". Every row on it is something that was picked up, with
+       a badge saying which item put it there. Momentum is the one stat no item can give you, so its
+       row was the only one the player could not act on - and being on a pause screen meant the number
+       was only ever visible when the player was not playing.
+
+       The exclusion is a filter inside the render loop, and a filter is one edit away from being
+       dropped, so it is asserted - including after a rebuild, since the rows are re-rendered from the
+       model on every open. */
+    startGame(); Items.reset(); Stats.reset();
+    setPaused(true);
+    const rows=()=>[...document.querySelectorAll('#charStats .statRow')].map(r=>r.dataset.stat);
+    let on=rows();
+    ok(on.indexOf('momentum')===-1,'Momentum is back on the character sheet: '+on.join(','));
+    // everything else is still there. Moving one stat is not an excuse to lose another.
+    for(const k of Stats.ORDER){
+      if(k==='momentum') continue;
+      ok(on.indexOf(k)>=0,'moving Momentum off the sheet also lost '+k);
+    }
+    // the node and its rules are gone rather than left empty, because an empty paragraph is a gap in
+    // the layout that somebody will eventually fill with something
+    ok(!document.getElementById('charNote'),'the charNote element is still in the DOM holding the '+
+       'tutorial for a stat that is no longer on this screen');
+    // and the stat itself is untouched - only the ROW moved
+    Momentum.set(0.4);
+    eq(Math.round(Momentum.value()*100),40,'moving the row off the sheet changed what the meter does');
+    setPaused(false);
+  });
 
 
   /* BUILD-READS. The rules of the trait system, as tests, because the whole thing rests on one

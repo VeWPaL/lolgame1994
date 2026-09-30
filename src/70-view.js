@@ -243,8 +243,13 @@ function drawRoom(){
       ctx.globalAlpha=1;
       continue;
     }
+    /* The player's own blink, tinted by the meter it was spent at. `f.mine` is the tag from
+       doBlink; everything else in this array belongs to a body and keeps the white glow it always
+       had. A green puff on a lunger's windup would be telling the player about THEIR meter in the
+       middle of reading an ENEMY's, which is the one place a colour cue must not lie. */
+    const glow=(f.mine&&f.mom!==undefined)?momentumGlow(f.mom):DASH_GLOW;
     ctx.globalAlpha=0.35*f.life/DASH_TRAIL;
-    ctx.drawImage(DASH_GLOW,f.x-14,f.y-14);
+    ctx.drawImage(glow,f.x-14,f.y-14);
     ctx.globalAlpha=1;
   }
   // The committed line. A lunge is a straight shot at a point, so the point gets drawn: from where
@@ -456,6 +461,7 @@ function drawSlot(x,y,w,idx,side,color,ready){
    assertion now fires because it is reading the number the drawing is reading. */
 const HUD_MARGIN_X=15, HUD_MARGIN_Y=14, HUD_FRAME=6, HUD_GAP=1;
 const HUD_HP_H=40, HUD_ROW_H=30, HUD_KEY_W=62, HUD_KEY_H=34, HUD_BLINK_W=150, HUD_DEPTH_W=104;
+const HUD_MOMENTUM_W=208;
 
 function drawHUD(){
   /* The HUD is one block, laid out from a single table of numbers so that nothing can drift.
@@ -587,6 +593,77 @@ function drawHUD(){
     ctx.fillStyle='#ffffff';ctx.fillRect(sx,barY,BAR*fill,barH);
     ctx.strokeStyle='#5a4630';ctx.lineWidth=1;ctx.strokeRect(sx+0.5,barY+0.5,BAR-1,barH-1);
   }
+
+  /* THE MOMENTUM PLATE. On the blink's row, beside it, because these are the same kind of thing:
+     both are the two numbers that describe how the player is doing THIS SECOND rather than what they
+     have built. Blink is what you have left, Momentum is what you are worth right now, and pairing
+     them says so without a word.
+
+     It was on the character sheet before, and that was wrong for a reason worth writing down. The
+     sheet is a pause screen: the player opens it to find out what they are CARRYING, and Momentum is
+     the one number on it that they did not pick up. A row that answers a different question than the
+     other seven reads as a mistake, and worse, a stat you cannot change is a stat you cannot act on -
+     so the only time the player saw the number was when they were not playing.
+
+     In the HUD it is something to watch, which is the entire point of it. It charges while you move
+     with bodies in the room, bleeds when you stop, and a hit costs most of it, and every one of
+     those is legible from the bar alone if you can see it change. The sheet said that in a sentence.
+     The bar says it by being a bar.
+
+     NO TUTORIAL. Deliberately. The plate carries its own name, engraved the same way the depth
+     numeral is, and the bar carries the ceiling. A stat that has to be explained is a stat the
+     explanation has to keep up with, and this one is legible: it goes up when you are doing well and
+     down when you are not, which is the entire rule, visible in real time.
+
+     The bar is NOTCHED for the same reason the character sheet's was. Momentum is capped at 1, and for
+     a stat whose whole design is a ceiling that cannot be passed, the ceiling is the interesting
+     part - a smooth fill cannot answer "how close am I", and a nearly-full notched bar can.
+
+     The label and the bar split the plate the same way the depth plate splits it, so the row reads
+     as one grammar: an engraved mark on the left, a measured indicator on the right. */
+  const mX=hx+BLINK_W+GAP;
+  ctx.drawImage(woodPlate(HUD_MOMENTUM_W,ROW_H),mX,by);
+  drawInset(mX+FRAME,by+FRAME,HUD_MOMENTUM_W-FRAME*2,ROW_H-FRAME*2,'#1a1410');
+  const momVal=Momentum.level();
+  ctx.save();
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const mInsetW=HUD_MOMENTUM_W-FRAME*2;
+  const mCx=mX+FRAME+Math.floor(mInsetW*0.24), mCy=by+ROW_H/2;
+  ctx.font='700 10px "Courier New",monospace';
+  // struck into the plate, the same way the depth numeral is: a dark copy one pixel down and right,
+  // then the lit copy on top, so the word reads as cut into the wood rather than printed on it
+  ctx.fillStyle='#0d0a08';
+  ctx.fillText('MOMENTUM',mCx+1,mCy+1);
+  // the label warms with the meter too, so the plate is legible even in a glance at the corner of the
+  // eye. It is the same ramp as the blink trail, which is the point: one colour means one number.
+  const mr=Math.round(200+(120-200)*momVal), mg=Math.round(168+87*momVal);
+  ctx.fillStyle=momVal>0.04?'rgb('+mr+','+mg+','+Math.round(120+40*momVal)+')':'#c8a878';
+  ctx.fillText('MOMENTUM',mCx,mCy);
+  ctx.restore();
+  ctx.textBaseline='alphabetic';
+
+  // The bar takes everything the label does not, and it takes a LOT of it. This is the number the
+  // player is meant to watch move, so it gets the width: at 150px of plate the label ate 40% of the
+  // space and left a 40px bar, which is a decoration. A meter you cannot see travel is not a meter
+  // you can learn from.
+  const mTrackX=mX+FRAME+Math.floor(mInsetW*0.44), mTrackY=mCy-6;
+  const mTrackW=mInsetW-Math.floor(mInsetW*0.44)-9, mTrackH=12;
+  ctx.fillStyle='#0d0a08'; ctx.fillRect(mTrackX,mTrackY,mTrackW,mTrackH);
+  const mFill=Math.max(0,Math.min(1,momVal))*mTrackW;
+  if(mFill>0.5){
+    // the fill is the green from the blink ramp, so the bar and the trail agree about what "a lot"
+    // looks like. It is a meter the player is meant to want to fill, so it is drawn in the colour
+    // the game already uses for "you are doing well".
+    const fg=Math.round(120+90*momVal);
+    ctx.fillStyle='rgb('+Math.round(60+40*momVal)+','+fg+','+Math.round(90+40*momVal)+')';
+    ctx.fillRect(mTrackX,mTrackY,mFill,mTrackH);
+  }
+  // four notches over a 0..1 meter: one every quarter, which is coarse on purpose. A dense ruler on a
+  // bar this short reads as a progress bar for something enormous, and the ceiling is the only
+  // graduation that carries information - "am I nearly there" is the question, not "am I at 62%".
+  ctx.fillStyle='#6b563c';
+  for(let i=1;i<4;i++) ctx.fillRect(mTrackX+Math.round(mTrackW*i/4),mTrackY,1,mTrackH);
+  ctx.strokeStyle='#5a4630'; ctx.lineWidth=1; ctx.strokeRect(mTrackX+0.5,mTrackY+0.5,mTrackW-1,mTrackH-1);
 
 
 
