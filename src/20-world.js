@@ -105,9 +105,6 @@ function grow(rs,x,y,dir,len,strict,bias){
    and it is the same reason the key rooms were moved off fixed positions in the first place. */
 function isEndpoint(r){ return Object.keys(r.doors).length===1; }
 
-function endpointsOf(rs){
-  return Object.values(rs).filter(r=>r.type==='normal'&&isEndpoint(r));
-}
 
 /* One trunk, with side runs cut off it.
 

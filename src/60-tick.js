@@ -126,9 +126,6 @@ function bossCallWall(e,room){
 function clampX(x){
   return Math.max(ROOM_LEFT+60,Math.min(ROOM_RIGHT-60,x));
 }
-function clampY(y){
-  return Math.max(ROOM_TOP+60,Math.min(ROOM_BOTTOM-60,y));
-}
 
 
 /* The boss's turn. One move at a time, always the same shape: a TELL, a COMMIT, a RECOVER.
@@ -869,9 +866,6 @@ function update(){
              from wherever it ended up. The drift is exact rather than estimated: a body walking at
              e.speed covers e.speed*CAST_TIME, and it walks toward or away depending on the same
              standoff test that moved it a tick ago. */
-          /* The drift is what the standoff rule will REALLY do over the cast, not speed*CAST_TIME -
-             see standoffDrift, which exists because the difference between those two is forty pixels
-             of miss on a player running in a straight line. */
           /* WHERE THE MUZZLE WILL BE, simulated rather than approximated.
 
              Two approximations were tried and both left every shot about twenty pixels wide. The

@@ -677,31 +677,32 @@ const PRESSURE_CLOSURE=0.85, PRESSURE_CADENCE=0.4;
 const RESTORE_FX_SPAN=READY;
 
 /* HOW FAR a ranged body will actually have walked in N ticks, given the standoff rule it obeys.
-   It is emphatically not speed*N, and finding that out cost a day of a shooter missing a straight
-   runner by forty pixels.
 
-   The rule reverses at the body's own boundaries: it closes while further than `standoff`, stops in
-   the band between `standoff` and `close`, and backs away inside `close`. So a shooter starting at
-   200px with a close threshold of 150 walks in for fifty pixels, hits its own threshold, and spends
-   the rest of the cast walking back out again - thirty-two pixels of net travel, not the sixty-eight
-   that speed*CAST_TIME predicts. Aiming from a muzzle predicted with the naive figure put every
-   shot forty pixels wide, because the error is exactly the difference between the two.
+   RECORDED, NOT USED. There was a function called `standoffDrift` here and it is gone, and the reason
+   is worth more than the function was. It is named here so that a reader who goes looking for it
+   finds this, which is the whole point - a comment that names a function must name one that can be
+   called, and the comment in the tick used to send people to a function that could not be.
 
-   Simulated rather than solved in closed form, because the answer is a triangle wave with a kink in
-   it and the loop is a hundred iterations of arithmetic on the rarest thing in the game - a comment
-   in the code already notes that shells are the rarest thing in the game, which makes this the
-   cheapest place in the codebase to be exact. */
-function standoffDrift(dist,close,standoff,speed,ticks){
-  let d=dist,moved=0;
-  for(let i=0;i<ticks;i++){
-    const dir=d<close?-1:(d>standoff?1:0);
-    if(!dir) return moved;              // in the band: it is holding, and will keep holding
-    const room=dir>0?standoff-d:d-close;
-    const step=Math.min(speed,room);
-    d+=dir*step; moved+=dir*step;
-  }
-  return moved;
-}
+   It answered the question as a one-dimensional walk of the standoff DISTANCE, reversing at the two
+   thresholds - which is right about the distance and useless about the bearing. "Toward the player" is
+   a bearing, and a body walking a bearing while the player covers more ground underneath it is not
+   the same as a body walking a distance. It got the radial number correct and every shot still went
+   about twenty pixels wide, because the bearing rotates underneath it and a scalar cannot rotate.
+
+   What replaced it is the twenty-four-step loop in 60-tick.js that walks the muzzle forward against
+   the BELIEVED player position, obeying the same standoff rule that is moving the body. That is two
+   dimensions and it is right for the reason the scalar version was not.
+
+   Two things are kept here. The measurement, because the standoff rule genuinely does reverse and
+   speed*N genuinely is the wrong answer - a shooter starting at 200px with a close threshold of 150
+   walks in for fifty pixels, hits its own threshold and spends the rest of the cast walking back out
+   again, so the net travel is a third of what speed*CAST_TIME predicts. And the warning: a comment
+   in the tick used to point at the deleted function as the authority on this subject, which is the
+   failure this file has the most of - geometry living in two places, one of them dead, and a reader
+   sent to the wrong one.
+
+   A comment that names a function must name one that can be called. */
+
 // How far away a gunner has to be before counterstrafing buys anything. Half the width of the room
 // is the line, and the bonus is fully open by the time a body is a room-and-a-half away.
 /* Where the counterstrafe answer switches on, and where it is fully open.
