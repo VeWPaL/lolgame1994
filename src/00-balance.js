@@ -639,20 +639,77 @@ const MOVE_ACCEL=0.116;
    That last one is the fairness decision. A meter that resets to zero on hit punishes the player
    for the exact moment they are already recovering, and turns a good run into a series of unrelated
    fights. Keeping 45% means a hit costs you your cushion, not your run. */
-const MOMENTUM_GAIN=0.0042, MOMENTUM_STALL_DECAY=0.006, MOMENTUM_HIT_KEEP=0.45;
+const MOMENTUM_GAIN=0.0056, MOMENTUM_STALL_DECAY=0.006, MOMENTUM_HIT_KEEP=0.55;
 // below this the player is not going anywhere, so momentum neither charges nor bleeds - a body
 // pinned in a corner by two lungers is not "standing still", it is losing, and the meter is right
 // to be quiet about it
 const MOMENTUM_MOVE_FLOOR=0.3;
-// what a full meter is worth. The speed half is deliberately small: SPEED_CAP is shared with items,
-// and a mechanic that could eat the whole budget would leave no room for a Speed item to mean
-// anything. The acceleration half is where the reward actually lives.
-const MOMENTUM_SPEED=0.10, MOMENTUM_ACCEL=0.55;
-// Two ceilings, and the difference matters. SPEED_CAP is the most ITEMS may give, so a Speed item
-// always has a readable value. MOVE_SPEED_HARD_CAP is the most ANYTHING may give, so no combination
-// of a good build and a full meter produces a player who crosses rooms before the gunner has
-// finished winding up. One number for the build, one for the world, both visible and both tunable.
-const SPEED_CAP=0.15, MOVE_SPEED_HARD_CAP=0.22;
+/* MOMENTUM, RETUNED FROM MEASUREMENT, and two of the four numbers did not move - which is the
+   interesting part.
+
+   GAIN went 0.0042 -> 0.0056 and the number is SOLVED rather than chosen. The charge term is
+   GAIN * displacement, and a player genuinely moving under pressure achieves about 1.07px/tick -
+   measured, after a first bot was thrown out because it held one key until it walked into a wall and
+   stood there, which made every conclusion a statement about a player leaning on plaster. So
+   1/0.0056/1.07 = 167 ticks to fill and 1/0.006 = 167 ticks to empty: the meter takes the same 0.79s
+   to build as it does to lose, and spends its life in the MIDDLE responding to what the player is
+   doing this second. The old 0.0042 filled a third slower than it drained, so a moving player rode
+   the ceiling; a first attempt at 0.0090 pinned them there 68% of the time. This is the value where
+   neither happens, and it is the whole reason the bar is now watchable.
+
+   HIT_KEEP went 0.45 -> 0.55. A hit still costs 45% of the meter, which is the tension and the reason
+   to protect it, but at 167 ticks to rebuild a 45% cut is 75 ticks of playing well back - a setback
+   rather than a run-ender.
+
+   SPEED and ACCEL DID NOT MOVE, and working out why is the most useful thing this retune produced.
+
+   The claim this file has carried since Momentum existed is that a full meter cannot help against a
+   gunner, "because the gunner solves a real intercept rather than leading by a guess: a player who
+   moves 10% faster is simply a faster target, solved correctly". With a character that now starts at
+   25% speed, that claim is FALSE. A straight-line runner at 200px with a full meter is hit 0% of the
+   time, and every clean sample misses by 36-54px. Raising the meter to 18% speed pushed the miss out
+   to 70-88px and made a straight-line runner literally unhittable; raising acceleration to 0.60
+   widened it further, and 0.70 collapsed the reversal fixture as well.
+
+   And the speed is not the culprit - ACCELERATION is. The gunner solves a CONSTANT VELOCITY
+   intercept, so a player who is still accelerating when the solution is taken has a velocity about to
+   change, and no amount of solving repairs a stale assumption. The solution becomes correct again the
+   moment the player stops accelerating. That is why 10% extra top speed on a 25% character is
+   survivable and 60% extra acceleration is not: speed is a SOLVED quantity, acceleration is not.
+
+   So this is not a tuning miss. Momentum as specified - a commitment bonus - is fundamentally an
+   EVASIVENESS buff against enemies that lead by calculation, and the honest consequence is that the
+   fix belongs in the gunner's solver rather than in the meter. That is a larger change than this
+   pass, so the numbers stay where the claim holds and the tension is written down here instead of
+   being tuned away in silence. If a player ends up feeling the meter is not worth watching, this
+   paragraph is where to start, and the answer is not a bigger number. */
+/* THE METER'S SPEED SHARE IS 0.05, and that number is the collision between two things the design
+   both wants.
+
+   The character starts at 25% and the meter used to add 10% on top, and the suite measured what that
+   does: a straight-line runner at 200px with a full meter is hit 0% of the time, every clean sample
+   missing by 36-54px. Not "harder to hit" - unhittable. The cause is that the gunner solves a
+   CONSTANT VELOCITY intercept, and a target 35% quicker than the one the whole encounter was tuned
+   against is past what that solution can carry. The character alone at 25% is still hit; it is the
+   STACKING that breaks it.
+
+   So the meter takes 5%, and the reward is carried almost entirely by ACCELERATION - the half the
+   player feels anyway, and the half a constant-velocity solver genuinely cannot answer.
+
+   And the honest recommendation, which is not a smaller number: the real fix belongs in the gunner.
+   Its solver already runs fourteen iterations against an assumed velocity; teaching it to lead a
+   target that is still accelerating would let the meter be worth more than 5% AND keep the gunner
+   dangerous, and that is a change to Intercept.cs rather than to this file. Written down so the next
+   pass starts there rather than re-deriving it. */
+const MOMENTUM_SPEED=0.05, MOMENTUM_ACCEL=0.55;
+// Two ceilings, and the difference matters. SPEED_CAP is the ceiling on the SPEED STAT, which a
+// character now STARTS INSIDE - it is the most a build can add on top of a starting 25%, not the most
+// a build can give. MOVE_SPEED_HARD_CAP is the ceiling on the SUM of everything, and it is set to
+// 0.44 rather than a round 0.45 for a reason the suite checks: a maxed build plus a full meter can
+// reach 0.45, so a hard cap AT 0.45 would be a ceiling on nothing - it could never bind, and the day
+// somebody raised a stat by a point the cap would silently stop existing. It has to be reachable AND
+// exceeded, or it is decoration.
+const SPEED_CAP=0.40, MOVE_SPEED_HARD_CAP=0.44;
 
 /* PRECISION TIGHTENS THE ARCANE BEAM, in fifths, and the floor is the point.
 

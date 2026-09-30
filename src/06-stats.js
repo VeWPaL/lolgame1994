@@ -104,6 +104,77 @@ const Stats=(function(){
   const base={}, flat={}, earned={}, value={};
   for(const k of ORDER){ base[k]=DEFS[k].base; flat[k]=0; earned[k]=0; value[k]=DEFS[k].base; }
 
+  /* CHARACTER CLASSES, and the reason the starting numbers are not a DEFS field any more.
+
+     A stat's BASE used to be a constant in DEFS, which quietly assumed there is exactly one
+     character and always will be. The moment there is a second one, "what does a Warden start
+     with" has no home: it either goes in DEFS, where two characters cannot both be written down, or
+     it gets written inline at the call site, where two places will disagree about it.
+
+     So the base is DATA on a class, and a class is a row. That is the whole shape, and it is built
+     now rather than when the menu is, because retrofitting a second source of base values into a
+     live stat pipeline is exactly the sort of change that quietly makes old runs unreadable.
+
+     Anticipating the menu, and the three things it will need that are worth deciding NOW:
+
+       - a class is identified by a stable string id, not by its position in a list, because a menu
+         will sort them for readability and an index would renumber under it. Same rule as the
+         weapon ids, which are derived from the display name for the same reason.
+       - selecting a class is `applyClass`, and it REPLACES every base rather than adding to it.
+         Additive would mean a character who picked the same class twice got a double-dipped start,
+         and the fix for that is the kind of thing nobody finds until a save file does it for them.
+       - a class carries a `blurb` and a `glyph` from the start, because both are menu furniture and
+         inventing them later means going back to every class to fill them in.
+
+     The sheet already renders a stat's breakdown, so a class change needs no new plumbing there at
+     all - the base simply starts non-zero and the existing `fromItems` badge stays correct, because
+     a class is not an item and must never claim to be one. */
+  const CLASSES={
+    /* THE STARTER. It is the plain human: competent at everything, expert in nothing. The numbers
+       were chosen so the character sheet is a real sheet rather than a row of zeroes, because a
+       stat that reads 0 tells the player nothing about what it does or what it is for.
+
+         STRENGTH     3   flat damage on every hit, before falloff
+         SPEED        25% a real baseline to build on; the meter is worth more ON TOP of this, which
+                       is the only way the meter is a thing you watch
+         INTELLIGENCE 1   one arcana key from the first room. It is a hidden system - the doors are
+                       the only place it is ever visible - so a starting player should be able to
+                       open exactly one thing and find out what it is for
+         LUCK         0   nothing. It is a weight on a distribution, and a character that started
+                       lucky would be a different character, not a better one
+         VIGOR        8   THE HEALTH POOL, not a bonus on top of one. See applyVitals
+         PRECISION    0   the Arcane Beam is unusable without it and a starter does not have it */
+    wyrd:{name:'Wyrd', blurb:'Nobody in particular, which is the point.',
+      glyph:'W', color:'#c79bff',
+      stats:{strength:3, speed:0.25, momentum:0, intelligence:1, luck:0, vigor:8, precision:0}},
+  };
+  let classId='wyrd';
+
+  /* A missing stat in a class is a ZERO, not a fallback to DEFS. A class that forgets Momentum is
+     starting with whatever DEFS happens to say, and DEFS is the absence of a character - so the two
+     would differ by exactly the thing a new class is most likely to get wrong. */
+  function setBase(k,v){ check(k); base[k]=v||0; }
+
+  /* It does NOT call applyVitals, and that omission is load-bearing rather than an oversight.
+
+     This file is loaded before the player exists, and `player` is declared with `let` in a LATER
+     module - so the first time this runs, at load, touching it is a temporal dead zone ReferenceError
+     rather than a readable `undefined`, and the `if(!player)` guard inside applyVitals cannot help
+     because the throw happens on the way to evaluating it. It took out the rest of the module on the
+     first attempt, and it was found by a console error rather than by a failing test, which is the
+     worst way to find anything.
+
+     So the rule from here on: this file decides NUMBERS, and the run decides BODIES. Whoever changes
+     the character calls applyVitals afterwards, and startGame already does. */
+  function applyClass(id){
+    const c=CLASSES[id];
+    if(!c) throw new Error('Stats: no character class called "'+id+'"');
+    for(const k of ORDER) setBase(k,c.stats[k]||0);
+    classId=id;
+    derive();
+    return classId;
+  }
+
   /* The rebuild. Everything else in this file exists to make sure that when a build changes, this
      is the only path that produces a stat value. */
   function derive(){
@@ -116,6 +187,12 @@ const Stats=(function(){
 
   function reset(){
     for(const k of ORDER){ flat[k]=0; earned[k]=0; }
+    // The class RE-APPLIES, because a new run is played by the same character. Resetting only the
+    // build would leave the previous character's bases in place, so a run started after a
+    // hypothetical second class would silently inherit the first one's stats - and the sheet would
+    // show them, so it would look correct.
+    const c=CLASSES[classId]||CLASSES.wyrd;
+    for(const k of ORDER) setBase(k,c.stats[k]||0);
     derive();
   }
 
@@ -140,6 +217,16 @@ const Stats=(function(){
 
   return {
     ORDER:ORDER, DEFS:DEFS,
+    /* the character table, and which one this run is playing. Exposed because the pause sheet and
+       the future selection menu both need to read them, and a menu that had to reach into this IIFE
+       to list the classes would be a menu that could not be written. */
+    CLASSES:CLASSES,
+    get classId(){ return classId; },
+    classOf:function(id){ return CLASSES[id||classId]; },
+    applyClass:applyClass,
+    /* the raw base of a stat, for the sheet's "starts at" line. Separate from value() on purpose:
+       value() is derived and moves, this one only moves when the character changes. */
+    baseOf:function(k){ check(k); return base[k]; },
     reset:reset, derive:derive,
     /* An item's contribution. One way in, because there is only one way. */
     flat:function(k,v){ check(k); flat[k]+=v; derive(); return value[k]; },
@@ -231,17 +318,23 @@ const loadout={items:[]};
 
    Losing the current health when the ceiling drops is deliberate rather than convenient: an item
    that takes Vigor away should cost you hearts now, because a build that can be made worse by
-   picking something up has to be able to do that visibly. */
-const BASE_HP=8;
+   picking something up has to be able to do that visibly.
+
+   VIGOR IS THE POOL, not a bonus on a constant beside it. It used to be `BASE_HP + vigor` with
+   BASE_HP a literal 8, which is a second place that knows what the starting health is - and the
+   starting health is now a CHARACTER's number. Two places that know it is the same bug as the two
+   HUD layouts, the two RNG streams and the two copies of the margin, and every one of those cost
+   something. So there is one number and it is vigor. A character with 8 vigor has 8 health, full
+   stop, and "+2 Vigor" means two more hearts rather than two more hearts on top of eight. */
 function applyVitals(){
   // there may be no player yet: the test harness resets the build before the first startGame, and
   // resetting a build is a thing you can do to nothing. typeof rather than a try, because player is
   // a module-scope let and touching it in its temporal dead zone throws rather than reading undefined.
   if(!player) return;   // undefined before the first startGame, and never null - but not worth betting on
-  const max=BASE_HP+Math.max(0,Stats.value('vigor'));
+  const max=Math.max(1,Stats.value('vigor'));
   if(max!==player.maxHp){
     player.maxHp=max;
     if(player.hp>max) player.hp=max;
   }
 }
-Stats.reset();
+Stats.applyClass('wyrd');
