@@ -237,6 +237,87 @@ Everything below is a **proposal, not a rule**. Strike what does not earn its pl
 
 ---
 
+## The blink grace — forgiveness, not invulnerability
+
+The user asked for a 0.1s window to press blink and avoid a hit. The game already grants **0.40s**
+after a blink (`BLINK_IFRAMES` 0.17 + `DASH_TRAIL` 0.23, set *after* the teleport), so 0.1s would
+have been strictly inside immunity already in force and would have changed nothing at all. Measured
+what the window was actually being asked to cover, by firing a shell to arrive N ticks after a
+blink:
+
+```
+i-frames cover to        84t (0.40s)
+a slow shell still connected up to  196t (0.93s)
+```
+
+So the real complaint was never *blinked too late*. It was: dodged the first thing, then took the
+second while the meter was still down. `BLINK_GRACE` is **0.6s**, and the measured edge of
+forgiveness is 0.62–0.66s across 1.0–2.0 px/tick shells — it does not depend on projectile speed,
+because the window is measured in time and a shell is judged on when it *arrives*.
+
+**The distinction is the entire safety argument.** The grace is not a longer i-frame window. The hit
+is allowed to land and is then handed back:
+
+- knockback stays — the shell arrived, the body still feels it
+- the Momentum meter still takes it — the player spent a charge and did not win the trade
+- **no post-hit i-frames are granted.** Granting `IFRAMES` there would have made one blink into
+  0.6s of grace *plus* a full second of immunity the moment it was spent. That is a second health
+  bar, and it is exactly how the grace would have made a room of gunners toothless.
+- one hit only, spent on use. `graceSpent` resets per blink, never per room.
+
+Measured: **two shells 40 ticks apart after a blink cost 1.80 hp, identical to no blink at all.**
+The grace buys the first; the second still has to be answered.
+
+**Known gap:** the 0.93s tail is not covered. Closing it means a longer window, or per-lunge rather
+than per-blink — a different design, not a tuning number.
+
+## The Scatter is buckshot, and the wave was a spawn-line bug
+
+The report was that the Scatter felt like a wave shot. It was one, and the cause was one line:
+
+```js
+off = (i-(count-1)/2)*spread      // eight evenly spaced rays from ONE origin
+```
+
+That is a diffraction pattern, not shot, and because the divergence was purely **angular** it opened
+into a V that widened with range — the same shape as the Arcane Beam, which is why the two read as
+the same weapon. Three numbers now replace the one:
+
+| field | value | what it does |
+|---|---|---|
+| `muzzleJitter` | 5px | random muzzle **position**. Real shot leaves the barrel from across the bore, not a point. This term is constant with range, which is the whole mechanism: a column cannot become a cone. |
+| `pelletAngle` | 0.008 rad | random aim error per pellet, small enough to stay a column. 3.6px at the far corner. |
+| `pelletSpeedVar` | 0.25 | per-pellet speed variance. **The chaos.** |
+
+Measured, old vs new, per single 8-pellet volley:
+
+| range | old width | new width | old evenness | new evenness |
+|---|---|---|---|---|
+| 60px | 19px | 8px | 1.01 | 2.61 |
+| 120px | 38px | 8px | 1.01 | 2.60 |
+| 200px | 64px | 8px | 1.01 | 2.59 |
+| 300px | 95px | 9px | 1.01 | 2.54 |
+| 450px | 143px | 10px | 1.01 | 2.49 |
+
+**Evenness** is max gap / mean gap across a volley: 1.00 means all seven gaps identical, which is a
+ruler. The old cone is 1.00 *by construction* — that is the control, not a coincidence. Along the
+aim the new pattern spans 112px against the old 77px, and that longitudinal spread is the
+de-synchronisation.
+
+**A per-tick drag was written first and removed.** The reasoning was that it would let fast pellets
+fall behind slow ones and open the column with range. It cannot: a drag shared by every pellet
+scales all their velocities by one factor, so the ratio between fastest and slowest is exactly what
+it was at the muzzle, forever. It amplifies nothing and only slows the shot down — paying range for
+a cosmetic that speed spread already provides for free (0.6px/tick of difference, 50px apart by
+200px out). The measurement is in the code so it does not get tried again.
+
+**Damage is unchanged**: 8 × 2.60 = 20.80, exactly as before. A redistribution of where the damage
+lands, not a buff. The old `spread*(count-1)` cone assertions were deleted rather than adjusted —
+they measured an angle that no longer decides anything and would have kept passing while describing
+a weapon that is not in the game.
+
+---
+
 ## Parked, with the measurements that produced it
 
 **The Arcane Beam.** The user reported its "raw TTK is way below the Bolt". Measured over 10 seconds
@@ -271,7 +352,7 @@ falloff alone; the best long-range retention in the game is the Beam's identity.
 ## Current state
 
 - `depths.html` — a shell loading fourteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` — **128 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` — **134 checks**, every test seeded to an identical world. All must pass at
   every commit.
 - `csharp/Depths.Core` + `Depths.Tests` — 19 checks, parity-verified against the JavaScript.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
