@@ -481,22 +481,30 @@ function drawActivePlate(x,y,w,held){
     return;
   }
   const def=Content.get('item',held.id);
-  drawItemIcon(held.id,x+w/2,y+h/2-3,30);
+  /* A CAPTION STRIP, because the first version drew Q and the count straight onto the tile and they
+     landed on its bottom corners - a 34px tile in a 50px plate leaves no room for a second row, and
+     "Q" over the tile's lower-left bevel reads as part of the item's own artwork. The neighbours get
+     to own their whole plate too: theirs fill a background, this gets a strip at the foot and the tile
+     sits above it. The tile is 26 rather than 34 because it is a FILLED square and the weapon icons are
+     sparse sprites - at equal nominal size the square carries more mass, not less, so this reads level
+     with its neighbours rather than smaller. */
+  ctx.fillStyle='rgba(8,4,2,0.74)';
+  ctx.fillRect(x+7,y+h-20,w-14,14);
+  drawItemIcon(held.id,x+w/2,y+17,26);
   // the count, bottom-right, in the item's own colour so it reads as belonging to it
-  if(held.charges!=null){
-    ctx.textAlign='right'; ctx.textBaseline='alphabetic';
-    ctx.font='bold 13px monospace';
-    if(held.charges===Infinity){
-      ctx.fillStyle='#5fa8a0';
-      ctx.fillText('x',x+w-9,y+h-9);
-    }else{
-      ctx.fillStyle=held.charges>0?(def.color||'#e8dcc0'):'#8a3a3a';
-      ctx.fillText('x'+held.charges,x+w-9,y+h-9);
-    }
+  ctx.textBaseline='alphabetic';
+  ctx.font='bold 12px monospace';
+  if(held.charges===Infinity){
+    ctx.textAlign='right';
+    ctx.fillStyle='#5fa8a0';
+    ctx.fillText('x',x+w-9,y+h-9);
+  }else{
+    ctx.textAlign='right';
+    ctx.fillStyle=held.charges>0?(def.color||'#e8dcc0'):'#c85a5a';
+    ctx.fillText('x'+held.charges,x+w-9,y+h-9);
   }
   // the key, bottom-left, dim once there is nothing to press
   ctx.textAlign='left';
-  ctx.font='bold 13px monospace';
   ctx.fillStyle=held.charges>0?'#e8dcc0':'#6b5a44';
   ctx.fillText('Q',x+9,y+h-9);
   ctx.textAlign='center';

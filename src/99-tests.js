@@ -998,13 +998,27 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     Items.give('tin_cup');
     const cup=Items.equipped('tin_cup');
     eq(cup.charges,3,'the cup did not arrive with its three charges');
-    Items.use('tin_cup');
-    eq(Items.equipped('tin_cup').charges,2,'using the cup did not spend a charge');
+    // A PRESS AT FULL HEALTH SPENDS NOTHING, and this is the assertion that pins it. It used to heal
+    // nobody, report success, and cost a charge - so two reflexive presses cost half a tin, and from the
+    // player's side the item looked broken rather than the game looking busy. The hook now reports
+    // whether it did anything and the charge follows the answer.
+    player.hp=player.maxHp;
+    const c0=Items.equipped('tin_cup').charges;
+    ok(Items.use('tin_cup')!==null,'a press at full health reported success');
+    eq(Items.equipped('tin_cup').charges,c0,'a press at full health spent a charge for no healing');
+    // and a press that CAN heal spends exactly one
+    player.hp=3;
+    const h0=player.hp;
+    eq(Items.use('tin_cup'),null,'a wounded press reported a failure');
+    eq(player.hp,h0+2,'the cup healed 2 while wounded');
+    eq(Items.equipped('tin_cup').charges,c0-1,'a wounded press did not spend a charge');
     // a second copy stacks INTO the same slot rather than taking another one
     Items.give('tin_cup');
-    eq(Items.equipped('tin_cup').charges,5,'a second cup did not add its charges');
+    eq(Items.equipped('tin_cup').charges,c0-1+3,'a second cup did not add its charges');
     eq(loadout.items.filter(s=>s.id==='tin_cup').length,1,'a second cup took a second slot instead of stacking');
-    for(let i=0;i<5;i++) Items.use('tin_cup');
+    // spent down to nothing, rewounding each time so every press lands - at full health it declines,
+    // which is the behaviour above and must not be mistaken for the cup failing to come off charges
+    for(let i=0;i<5;i++){ player.hp=1; Items.use('tin_cup'); }
     ok(!Items.equipped('tin_cup'),'the cup is still carried after its last charge, so its slot is never freed');
     ok(Items.use('tin_cup'),'using something you no longer carry should be refused, not silently succeed');
     // and the reusable case is the same code path with a different number
@@ -1066,19 +1080,32 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(one.dropped===null,'the first active reported displacing something, so something was already there');
     eq(two.dropped,actives[0],'the second active did not report the first as displaced');
     ok(!Items.equipped(actives[0])&&Items.equipped(actives[1]),'both actives ended up held');
-    // 4. Q presses it, and pressing with an empty slot is a no-op rather than an error
+    // 4. Q presses it, and pressing with an empty slot is a no-op rather than an error. The player is
+    //    WOUNDED first, because a hook that reports nothing happened does not spend a charge, and a
+    //    full-health Tin Cup is now exactly that - so a healthy fixture here would be testing the
+    //    decline rather than the press.
     Items.reset();
     ok(!Items.useActive(),'pressing with no active reported a use, so something answered with empty hands');
     Items.give('tin_cup');
+    player.hp=3;
     const charges=Items.equipped('tin_cup').charges;
     ok(Items.useActive(),'Q did nothing with an active in the slot');
     eq(Items.equipped('tin_cup').charges,charges-1,'Q did not spend a charge');
-    // 5. the one refusal left, and it is not a capacity limit
+    // 5. and there is no refusal left to assert. A duplicate sigil stacks, which the test that walks
+    //    the whole roster covers end to end; this is here so the shape of a build is stated in one
+    //    place: many sigils, one active, and the counts are what they are because nothing rationed them.
     Items.reset();
-    ok(Items.give('heavy_hands').taken,'the control give failed');
-    ok(!Items.give('heavy_hands').taken,'a passive was taken twice, so it applies twice');
-    eq(Stats.value('strength'),Stats.baseOf('strength')+1,
-       'one Heavy Hands is worth 1 Strength and a second was refused, so a duplicate doubled a passive');
+    Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='active') Items.give(id); });
+    Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='passive') Items.give(id); });
+    eq(loadout.items.length,sigils+1,'a full build is '+loadout.items.length+' items, not one active '
+       +'plus all '+sigils+' sigils - so something is still rationing');
+    // and Q reaches THAT build's active rather than any sigil, with a wounded player so the press lands
+    const act=Items.active();
+    player.hp=3;
+    const c0=act.charges, sig=loadout.items.filter(s=>s.slot===-1).length;
+    press('q');
+    ok(Items.active()===null||Items.active().charges<c0,'with nine sigils held, Q did not spend the active');
+    eq(loadout.items.filter(s=>s.slot===-1).length,sig,'Q spent a sigil instead of pressing the active');
     // 6. and the roster may not reintroduce a per-item slot, which is how the collision came back
     for(const id of ids){
       const d=Content.get('item',id);
@@ -1117,6 +1144,8 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     Items.give('tin_cup');
     const before=Items.equipped('tin_cup').charges;
     ok(before>0,'the fixture gave a Tin Cup with no charges, so there is nothing to spend');
+    player.hp=3;   // wounded: a press that heals nothing does not spend a charge, so a full-health
+                   // fixture here would be testing the decline rather than the binding
     press('q');
     const after=Items.equipped('tin_cup')&&Items.equipped('tin_cup').charges;
     eq(after,before-1,'pressing Q did not spend a charge of the active item');
@@ -1566,21 +1595,87 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(Stats.value('strength')-before,2,'Strength after picking up a +2');
     eq(r.pickups.length,0,'the pickup is still on the floor after being taken');
   });
-  test('an item the build cannot take stays on the floor',()=>{
-    // The failure this rules out is silent and looks like a bug in the item rather than a full build:
-    // the tile vanishes on contact and nothing happens, so a playtester concludes the item is broken.
+  test('EVERY item on the floor can be picked up, including a duplicate',()=>{
+    /* The invariant, tested over the whole roster rather than one example.
+
+       This replaces a test that asserted the opposite - that an item already held would stay on the
+       floor - because that behaviour was the last silent dead pickup in the game: a tile you can walk
+       onto forever that does nothing, with no message, in the one room whose whole job is handing you
+       things. It read as a broken item rather than as a full build.
+
+       So the claim is now that no pickup is refused, and it is checked by offering EVERY item twice -
+       once into an empty build and once into a build that already holds it - because "a duplicate is
+       the hard case" is only true while duplicates are a special case. */
     startGame();
-    Items.reset();
-    ok(Items.give('heavy_hands').taken,'the control give failed, so this test is not testing anything');
-    const r=goTo('item');
-    r.pickups.length=0; r.enemies.length=0;
-    r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'item',id:'heavy_hands'});
-    const n=loadout.items.length;
-    for(let i=0;i<30;i++){
-      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; keys={}; update();
+    const ids=Content.ids('item');
+    const missed=[], dupMissed=[];
+    for(const id of ids){
+      Items.reset();
+      const r=goTo('item');
+      r.pickups.length=0; r.enemies.length=0;
+      r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'item',id});
+      for(let i=0;i<20;i++){
+        player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; keys={}; update();
+      }
+      if(!Items.equipped(id)||r.pickups.length!==0) missed.push(id);
+      // and again, into a build that already holds it
+      Items.reset();
+      Items.give(id);
+      const held=Items.equipped(id);
+      const before=loadout.items.length, stat=Stats.value('strength');
+      r.pickups.length=0; r.enemies.length=0;
+      r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'item',id});
+      for(let i=0;i<20;i++){
+        player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; keys={}; update();
+      }
+      const copies=loadout.items.filter(s=>s.id===id).length;
+      const grew=loadout.items.length>before||copies>1||!Items.equipped(id);
+      if(!grew||r.pickups.length!==0) dupMissed.push(id);
     }
-    eq(r.pickups.length,1,'an item already held vanished from the floor instead of staying put');
-    eq(loadout.items.length,n,'the build changed while standing on an item it cannot take');
+    eq(missed.length,0,'these items sat on the floor and could not be taken: '+missed.join(', '));
+    // 2. and into a build that already holds a DIFFERENT item, which is the case the pool can really
+    //    produce. A passive stacks as a second entry; an active displaces the one you were carrying.
+    const swapMissed=[];
+    for(const id of ids){
+      const other=ids.find(x=>x!==id&&Content.get('item',x).use==='passive');
+      Items.reset();
+      Items.give(other);
+      const r=goTo('item');
+      r.pickups.length=0; r.enemies.length=0;
+      r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'item',id});
+      const before=loadout.items.length;
+      for(let i=0;i<20;i++){
+        player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; keys={}; update();
+      }
+      const changed=loadout.items.length!==before||r.pickups.length!==0;
+      if(!changed||!Items.equipped(id)) swapMissed.push(id);
+    }
+    eq(swapMissed.length,0,'these items vanished or did nothing when offered on top of another: '+
+      swapMissed.join(', '));
+    // 3. a stacked sigil really does add its stat twice, rather than silently doing nothing
+    Items.reset();
+    const b0=Stats.value('strength');
+    Items.give('heavy_hands');
+    const b1=Stats.value('strength');
+    Items.give('heavy_hands');
+    const b2=Stats.value('strength');
+    eq(b1-b0,1,'one Heavy Hands is worth 1 Strength');
+    eq(b2-b1,1,'a second Heavy Hands was taken and did not add its Strength, so the tile left the '+
+      'floor and bought nothing');
+    // 4. ONE case is still refused, and the assertion is that the POOL never offers it rather than that
+    //    the refusal is fine. A Bone Whistle carries infinite charges, so a second copy has nothing to
+    //    add and there is no honest way to take it - which makes the pool's job the whole of the answer.
+    Items.reset();
+    Items.give('bone_whistle');
+    ok(!Items.give('bone_whistle').taken,'an unlimited active accepted a second copy, so what did it add?');
+    const heldIds=Content.all('item').filter(x=>Items.equipped(x));
+    let offeredHeld=0;
+    for(let i=0;i<400;i++){
+      const p=Items.pool(2,Items.rollRarity(3),heldIds);
+      if(p.some(x=>heldIds.indexOf(x)>=0)) offeredHeld++;
+    }
+    eq(offeredHeld,0,'the loot pool offered an item the player already holds in '+offeredHeld+
+      ' of 400 draws, so the one un-takeable item is reachable in play');
   });
   test('weapon pickup swaps, and waits for you to step off',()=>{
     startGame(); const r=goTo('item'); const [pk,other]=r.pickups;

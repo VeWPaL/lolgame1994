@@ -145,6 +145,23 @@ const Items=(function(){
     // and the roster already has an item that IS two Heavy Hands. Stacking passives would blur the
     // difference between the cheap stat and the deliberate one, and the floor never offers a duplicate
     // anyway because the pool excludes what the player holds.
+    /* A passive stacks, as a second entry in the build. `rebuild` applies each entry's stats on its own, so
+     two Heavy Hands is +2 Strength without anything here needing to know that "stacking" is a thing.
+
+     This used to refuse, on the argument that two Heavy Hands is just Weighted Rod with extra steps
+     and the roster already has an item that IS two Heavy Hands. That argument was about the ROSTER
+     being tidy and it was the wrong priority: it left the one case where a pickup on the floor does
+     absolutely nothing, silently, which is the worst failure a loot room can have. The blur is real but
+     it costs a player nothing - taking a second Heavy Hands gets them the same +2 they would have got
+     from Weighted Rod, and it took a slot and a floor to do it.
+
+     The loot pool still excludes what the player holds, so this is only reachable deliberately. That
+     stays: an accidental duplicate in the pool would be a wasted offer, not a build choice. */
+    if(already&&d.slot!=='active'&&already.charges==null){
+      loadout.items.push({id,name:d.name,charges:null,slot:-1});
+      rebuild();
+      return {taken:true,dropped:null};
+    }
     if(already) return {taken:false,dropped:null};
     /* ONE active, and it is the one the player presses. So an active does not displace a SPECIFIC key
        - there is only the one - it replaces whatever is in the active slot, which is to say it
@@ -183,8 +200,15 @@ const Items=(function(){
     return true;
   }
 
-  /* Use an active item. The charge is spent FIRST, so a hook that throws cannot leave a free use
-     behind, and the hook is looked up by name - a mod's item works without this file knowing it. */
+  /* Use an active item. The hook is looked up by name - a mod's item works without this file knowing
+     it - and A HOOK REPORTS WHETHER IT DID ANYTHING. Its return value is what decides the charge.
+
+     It used to count the hooks it FOUND and spend a charge on that, discarding what they returned. So a
+     Tin Cup pressed at full health healed nobody, reported success, and cost one of three charges -
+     which reads as a broken item rather than as a game declining, and two presses cost half a tin. That
+     was the rule, not an oversight in one hook: nothing in the system could express "nothing happened",
+     so nothing in the system could avoid charging for it. Every hook now returns a boolean and the
+     charge follows the answer. */
   function use(id){
     const slot=equipped(id);
     if(!slot) return 'you are not carrying that';
@@ -196,8 +220,7 @@ const Items=(function(){
     for(const h in hooks){
       const fn=HOOKS[h];
       if(!fn){ continue; }
-      fn(hooks[h],d,id);
-      ran++;
+      if(fn(hooks[h],d,id)) ran++;
     }
     if(!ran) return 'nothing happens when you use that yet';
     if(slot.charges!=null) slot.charges--;
@@ -285,22 +308,41 @@ function useActive(){
 
 /* ------------------------------------------------------------------ the hooks -------------- */
 
-HOOKS.heal_self=function(n){ player.hp=Math.min(player.maxHp,player.hp+(n||2)); };
+/* Returns whether it actually did something, which is how a charge is protected.
+
+   `use` counts truthy hook returns and only spends a charge if at least one fired, so a hook that
+   returns a bare truthy has just told the player their charge was well spent on nothing. At full health
+   the Tin Cup healed 0, reported success, and decremented - which reads as the item being broken rather
+   than as the game declining politely, and it cost two of three charges if you pressed it twice
+   reflexively.
+
+   Declining is also the better answer than healing anyway: a heart at full health is not a wasted
+   moment to the player, it is a moment where they learned they are fine. */
+HOOKS.heal_self=function(n){
+  const before=player.hp;
+  player.hp=Math.min(player.maxHp,player.hp+(n||2));
+  return player.hp>before;
+};
 HOOKS.reveal_room=function(){
-  for(const e of currentRoom().enemies) e.alerted=true;
-  for(const pk of currentRoom().pickups) pk.shown=true;
+  let n=0;
+  for(const e of currentRoom().enemies) if(!e.alerted){ e.alerted=true; n++; }
+  for(const pk of currentRoom().pickups) if(!pk.shown){ pk.shown=true; n++; }
+  return n>0;                     // nothing new to show is nothing spent
 };
 HOOKS.pull_pickups=function(){
+  let n=0;
   for(const pk of currentRoom().pickups){
     if(pk.kind==='exit') continue;                 // the way out is not loot and does not come to you
     const d=Math.hypot(pk.x-player.x,pk.y-player.y)||1;
     if(d>200) continue;
     pk.x=player.x+(pk.x-player.x)/d*90;
     pk.y=player.y+(pk.y-player.y)/d*90;
+    n++;
   }
+  return n>0;                     // an empty room spends nothing
 };
 /* A named hook that is deliberately not implemented. It exists so that a definition using it
    VALIDATES - which is the seam that lets companions and the rest of the roster be written down
    before the behaviour behind them exists, and so a mod can reference it and get an honest "nothing
    happens yet" rather than a crash. */
-HOOKS.spawn_companion=function(){ run.companionPending=(run.companionPending||0)+1; };
+HOOKS.spawn_companion=function(){ run.companionPending=(run.companionPending||0)+1; return true; };

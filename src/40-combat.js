@@ -424,7 +424,31 @@ function fireWeapon(){
   // the curve collapses all four into one gun with a different colour. It was a sheet entry and
   // nothing else for the whole of the item framework's first day; a stat that is printed and not
   // read is worse than no stat, because the player is told they have it.
-  const dmg=w.dmg+Stats.value('strength');
+  /* STRENGTH IS ADDED ONCE PER SHOT, NOT ONCE PER PELLET, and that distinction is the whole reason
+     the Scatter was not merely strong but WRONG.
+
+     It used to read `w.dmg + strength` and then fire `w.count` projectiles each carrying that whole
+     value. For a weapon with one pellet - Bolt, Beam, Voidball - that is identical to adding it once.
+     For the Scatter, with eight pellets, +3 Strength contributed +24 damage a shot instead of +3.
+     A "+1 Strength" sigil was therefore worth EIGHT times as much to the shotgun as to the Bolt, and
+     the roster's own note on the stat says why that is wrong:
+
+       "Flat and not multiplicative on purpose: falloff is what gives each of the four guns its shape,
+        and a multiplier applied to it collapses all four into one gun with a different colour. Bolt's
+        whole identity is one committed hit that hurts more than anything else; that only survives while
+        damage is a thing you add."
+
+     Per-pellet addition is exactly the multiplication that note rules out, and it is why the Scatter
+     measured as the best single-target gun in the game despite having the slowest rate of fire: its
+     nominal DPS was 28.3 against the Beam's 26.8, the Bolt's 11.1 and the Voidball's 12.75.
+
+     So the shot's total damage is `count x dmg + strength` and the pellets share it. One pellet is
+     unaffected; eight pellets get the flat bonus once, as written. Measured effect on the START build
+     against armour 0.66: a lunger took 29.57 a volley before and 15.70 after, so the Scatter no longer
+     one-shots the largest common body - while still one-shots a Brunch, a Shooter and a Gunner, which
+     is the identity it is supposed to have. At MAX strength (9) it one-shots a lunger again, which is
+     what a finished build is for. */
+  const shotDmg=w.dmg*w.count+Stats.value('strength'), dmg=shotDmg/w.count;
   for(let i=0;i<w.count;i++){
     /* BUCKSHOT, for a weapon with more than one pellet.
 
