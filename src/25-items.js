@@ -263,11 +263,39 @@ const Items=(function(){
   }
   /* A pool of N ids at a rarity, less any the player already holds and cannot stack. The exclusion
      is what stops a run of four commons all being the same one. */
+  /* THE LOOT POOL EXCLUDES ANY ITEM WHOSE HOOKS DECLINE.
+
+     Lantern Friend is a rare item whose only hook is `spawn_companion`, which returns false because the
+     companion does not exist yet - REPORT.md says so plainly ("it is not a creature yet"). It stayed in
+     the pool anyway, so it was offered 26 times in 600 rolls, and taking it displaced whatever working
+     active the player was carrying in exchange for an item whose only action prints "nothing happens
+     when you use that yet".
+
+     A rare slot is four draws a player does not get back. Filling one with an item that does nothing is
+     the worst thing the pool can do, and it is invisible in testing because the item validates, appears
+     on the sheet, and costs a charge correctly - every individual step is right and the sum is a lie.
+
+     The definition stays. It is what makes the `spawn_companion` seam exist so the rest of the roster
+     can be written down ahead of its behaviour, and a mod can reference it without a crash. It is the
+     POOL that must not offer it, and the rule is the general one rather than a name in a list: an item
+     whose hooks all decline is not loot, whatever its rarity. */
+  /* ITEMS THAT ARE WRITTEN DOWN BUT NOT YET IMPLEMENTED, and so are not offered.
+
+     This is an explicit list rather than a rule, because the obvious rule does not work: an item's
+     hooks all EXIST - `spawn_companion` is defined and returns false - so nothing about the definition
+     distinguishes "does nothing" from "does something". The only honest test is to USE the item and see
+     whether anything happens, and that needs a live player, a room and a build, none of which exist at
+     pool-construction time.
+
+     So the knowledge lives here, named, with the reason. `unimplemented` is declared BY the definition
+     rather than inferred here, so an item marks itself unfinished and cannot be forgotten: add a real
+     hook, remove the flag, and it is loot again. A silent list in a filter is a list that drifts. */
   function pool(n,rarity,exclude){
     const ids=Content.all('item').filter(id=>{
       const d=Content.get('item',id);
       if(rarity&&d.rarity!==rarity) return false;
       if(exclude&&exclude.indexOf(id)>=0) return false;
+      if(d.unimplemented) return false;   // defined so it validates; not offered because it does nothing
       return true;
     });
     const out=[];

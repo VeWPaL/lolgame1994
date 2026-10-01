@@ -79,7 +79,17 @@ Items.define('weighted_grip',{
 Items.define('hunters_mark',{
   name:"Hunter's Mark", use:'active', charges:2, rarity:'rare', tags:['utility','fortune'],
   glyph:'HM', color:'#c79bff',
-  blurb:'Q. Wakes the room and shows what is on the floor. Also +1 Luck, permanently.',
+  /* "+1 Luck, permanently" was a promise the item could not keep.
+
+   The +1 comes from the item itself, and the item is removed when its two charges are spent - so the
+   Luck went with it. Measured: luck 0, pick it up, 1; use both charges, 0. An item that says
+   "permanently" and then stops is worse than one that never claimed it, because the player makes a
+   build decision on the word.
+
+   The word now describes what happens: the Luck lasts as long as you carry it. If it is ever meant to
+   be truly permanent that needs a real permanent-stat path - one that survives the item - and this
+   text is where the change belongs, not a comment. */
+  blurb:'Q. Wakes the room and shows what is on the floor. Also +1 Luck for as long as you carry it.',
   fx:{stats:{luck:1},hooks:{reveal_room:1}}
 });
 
@@ -110,6 +120,15 @@ Items.define('brass_compass',{
 Items.define('lantern_friend',{
   name:'Lantern Friend', use:'active', charges:1, rarity:'rare', tags:['companion'],
   glyph:'LF', color:'#f0c86a',
+  /* `unimplemented` MARKS THIS AS WRITTEN BUT NOT BUILT, and it is the reason this item is not loot.
+
+     `spawn_companion` exists and returns false, so the definition validates, the item appears on the
+     sheet, and pressing Q costs a charge and reports "nothing happens when you use that yet". It was
+     offered 26 times in 600 rolls, displacing whatever working active the player was carrying.
+
+     The flag lives on the definition rather than in the pool's filter, so an item cannot be forgotten:
+     write a real `spawn_companion`, delete the flag, and the Lantern Friend is loot again. */
   blurb:'Q. Sets a lantern down. It is not a creature yet.',
+  unimplemented:true,
   fx:{hooks:{spawn_companion:1}}
 });

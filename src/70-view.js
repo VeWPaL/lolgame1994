@@ -767,9 +767,30 @@ function drawHUD(){
      in the same frame of reference, which is what they are. */
   const MARGIN_X=HUD_MARGIN_X, MARGIN_Y=HUD_MARGIN_Y, FRAME=HUD_FRAME, GAP=HUD_GAP;
   const HP_H=HUD_HP_H, ROW_H=HUD_ROW_H, KEY_W=HUD_KEY_W, KEY_H=HUD_KEY_H, BLINK_W=HUD_BLINK_W;
-  // the heart plate grows with maxHp, so everything that has to line up with it is measured after it
+  /* THE HEART PLATE GROWS WITH maxHp, AND maxHp HAS NO CEILING - so it needs a ceiling of its OWN.
+
+     Vigor is unbounded by design, so a build with enough Iron Ribs puts 28 hearts in the plate, and
+     28 hearts at 26px is 810px from a margin of 15. The minimap plate begins at 798. From maxHp 56 the
+     two overlap: the heart plate is drawn over the map, and the map - the thing that tells you where
+     the boss is and which rooms you have seen - is unreadable for the rest of a run.
+
+     This is theoretical in the way a lot of balance bugs are theoretical: it takes twenty-one Iron
+     Ribs, no other sigils, and a floor deep enough to have found them. Nothing catches it because
+     nothing plays that build.
+
+     Two fixes, and both are needed. The plate CAPS its width at what the screen can hold, so it can
+     never reach the minimap however much health there is - and the number of hearts actually DRAWN is
+     capped with it, because 28 half-hearts at 26px is unreadable whatever space they have. The full
+     health is still on the plate, because the HUD already prints it as a number next to the hearts and
+     a player with 98 health who cannot see 28 of them still knows they have 98. */
   const hearts=Math.ceil(player.maxHp/2), armorSlots=Math.ceil(MAX_ARMOR/2);
-  const healthW=30+(hearts+armorSlots)*26;
+  const heartSlot=26;
+  /* the minimap plate starts here: W - MARGIN_X - (GRID*17 + 28), with a gutter of its own */
+  const miniLeft=W-MARGIN_X-(GRID*17+28);
+  const roomForHearts=Math.max(4,Math.floor((miniLeft-HUD_GAP-MARGIN_X-30)/heartSlot)-armorSlots);
+  const heartsDrawn=Math.min(hearts,roomForHearts);
+  const heartsHidden=hearts-heartsDrawn;
+  const healthW=30+(heartsDrawn+armorSlots)*heartSlot;
   const hx=MARGIN_X, hy=MARGIN_Y;
 
   // row 1: health, with the keys on its right shoulder, top-aligned and touching
@@ -779,15 +800,32 @@ function drawHUD(){
   // the left margin and the right margin with two different expressions, and the armour slots added
   // four more pixels on the right on top of that, so the last heart always sat closer to the frame
   // than the first did. One expression for the first slot, and the whole row follows from it.
-  const insetX=hx+FRAME, insetW=healthW-FRAME*2, heartSlotW=26;
-  const rowW=(hearts+armorSlots)*heartSlotW;
+  const insetX=hx+FRAME, insetW=healthW-FRAME*2, heartSlotW=heartSlot;
+  const rowW=(heartsDrawn+armorSlots)*heartSlotW;
   const slotX=insetX+Math.floor((insetW-rowW)/2)+13;   // +13: the sprite is 26 wide, origin is its left edge
   const heartY=hy+HP_H/2;
-  for(let i=0;i<hearts;i++){
-    // each heart is worth 2hp, so the fill is this heart's share of one, clamped: a slot further
-    // along the plate can have a large `val` and must still read as simply full
-    const fill=Math.max(0,Math.min(1,(player.hp-i*2)/2));
+  /* WHEN THE PLATE CANNOT SHOW EVERY HEART, IT SHOWS THE ONES THAT MATTER.
+
+     A capped row drawn from the left would be full and then empty, which reads as "I am nearly dead at
+     98 health" - the exact opposite of the truth. So when hearts are hidden the row is drawn from the
+     RIGHT: the last heart is the one that tells you how close you are, and the empties that fall off the
+     left end are the ones whose absence costs nothing. The number is printed beside it either way. */
+  for(let i=0;i<heartsDrawn;i++){
+    /* Each heart is worth 2hp, so the fill is this heart's share of one, clamped: a slot further along
+       the plate can have a large `val` and must still read as simply full.
+
+       `fromEnd` is the distance of this slot FROM THE END OF THE ROW, not its index. That matters only
+       when hearts are hidden: the row is drawn from the right, so the visible slots are the LAST ones,
+       and measuring them by index would ask "how much health is left after the 23 hearts I am not
+       drawing" - which is nothing at all, at every health, so the whole row read empty. */
+    const fromEnd=heartsDrawn-1-i;
+    const fill=Math.max(0,Math.min(1,(player.hp-fromEnd*2)/2));
     drawHeart(slotX+i*heartSlotW,heartY,fill,'red',3);
+  }
+  if(heartsHidden>0){
+    ctx.font='bold 11px monospace';ctx.textAlign='right';ctx.fillStyle='#e8c9a0';
+    ctx.fillText('+'+heartsHidden,slotX-rowW+armorSlots*heartSlotW-6,heartY+4);
+    ctx.textAlign='left';
   }
   // The last point of life gets a halo so "one heart left" can never be misread as "none left".
   // It matters more than it sounds: at 1hp the plate shows one half heart and five empties, and
@@ -813,7 +851,19 @@ function drawHUD(){
     ctx.globalAlpha=0.35+0.55*pulse;
     ctx.fillStyle='#e8395a';
     ctx.beginPath();
-    ctx.arc(slotX,heartY,15+3*pulse,0,7);
+    /* on the LAST HEART DRAWN, which is not the first slot. With a capped plate the row is drawn from the
+     right, so the heart that says "this is the last of it" is the last one on screen - and the halo on
+     the first slot would pulse a heart that is nowhere near the player's actual health. */
+  if(Math.round((player.hp/2)*2)/2<=1&&player.hp>0){
+    const pulse=0.5+0.5*Math.sin(frameCount*0.16/SPEEDUP);
+    ctx.save();
+    ctx.globalAlpha=0.35+0.55*pulse;
+    ctx.fillStyle='#e8395a';
+    ctx.beginPath();
+    ctx.arc(slotX+Math.max(0,heartsDrawn-1)*heartSlotW,heartY,15+3*pulse,0,7);
+    ctx.fill();
+    ctx.restore();
+  }
     ctx.fill();
     ctx.restore();
   }

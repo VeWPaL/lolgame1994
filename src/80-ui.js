@@ -125,6 +125,8 @@ const FIXES={
   'the blink lands with momentum, and only along the way it went':['movement and being hit','the burst was a level bleeding a fraction per tick, so it lasted ten seconds instead of the tenth of one the comment beside it promised - and a flat gain meant you could blink away and immediately walk back at full speed, which is a free displacement rather than momentum'],
   'every body obeys one armour rule, and the table declares it':['enemies and AI','the Warden took 1.52x more damage per hit than anything else in the game, because spawnEnemy read c.armour||1 and the boss row simply never mentioned armour - and the comment beside that row said the omission was deliberate. Every hit landed harder on the boss than on an identical hit anywhere else, so its effective health was 19x a lunger\'s rather than the 29x its HP implied, and because the ladder multiplies health without limit the gap GREW with depth instead of staying a property of the body. The C# port had already taken the opposite answer (0.66, because an omitted double there reads 0), so the two ports disagreed about the boss and neither marked the other wrong. Armour is now stated by every row, applied by SIZE rather than by name - a shooter is exactly as wide as a lunger, so treating it as chip would have been arbitrary - and the Brunch stays unarmoured because it is half a lunger\'s radius, is what ARMOUR\'s own comment calls "a big body" when it excludes it, and armouing it broke the alt blast\'s promise that one budget deletes a small group: a blast into three Brunch left all three standing'],
   'HUD draws one heart per 2 max hp, and always the full set of armour slots':['HUD and interface','the health plate grew with health but the slots were placed by hand'],
+  'the heart plate never reaches the minimap, however much health there is':['HUD and interface','Vigor is unbounded, so past maxHp 56 the plate grew over the map and hid which rooms you had seen'],
+  'a negative stat prints as a number, not as nothing':['HUD and interface','a -1 Luck printed as "even", so Glass Wands reported its own cost as neutrality'],
   'both keys always sit in the HUD, dimmed while unheld':['HUD and interface','a key you were not carrying was simply absent, which read as a broken frame'],
   'the minimap reveals only rooms a door actually leads to':['HUD and interface','the map showed rooms that were merely touching you on the grid, with no way in'],
   'an uncleared boss room is marked on the map, and a cleared one is not':['HUD and interface','the boss mark was left behind after the fight was over'],
@@ -341,7 +343,18 @@ const statSpan=s=>STAT_SPAN[s.key]||10;
 const statIsPct=s=>!!s.asPct||s.kind==='meter';
 function statDisplay(s){
   if(statIsPct(s)) return Math.round(s.value*100)+'%';
-  if(s.kind==='roll') return s.value>0?'+'+Math.round(s.value*10)/10:'even';
+  /* A ROLL STAT PRINTS ITS SIGN, INCLUDING A NEGATIVE ONE.
+
+     This read `value>0 ? '+'+value : 'even'`, so a -1 Luck printed as "even" - the same word as a
+     zero. Glass Wands takes 1 Luck and is the only item in the roster with a cost, and the character
+     sheet reported its cost as neutrality. A penalty that reads as no change is a penalty the player
+     cannot weigh, on the one screen whose job is weighing them.
+
+     Zero still prints "even", which is a real answer to a real question: what does +0 Luck mean. */
+  if(s.kind==='roll'){
+    const v=Math.round(s.value*10)/10;
+    return v>0?'+'+v:v<0?String(v):'even';
+  }
   return String(Math.round(s.value*100)/100);
 }
 function statFraction(s){
@@ -838,6 +851,20 @@ window.addEventListener('keydown',e=>{
      TAB needed a key of its own rather than sharing F1's. */
     if(k==='tab'&&first){ e.preventDefault(); toggleSheet(); return; }
     if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','shift','tab'].includes(k)) e.preventDefault();
+    /* A FUNCTION KEY THE GAME CLAIMS MUST NOT ALSO REACH THE BROWSER.
+
+       The game binds F1 (bench), F2/F3/F4/F6/F7 (lab) and none of them were preventDefault-ed, so each
+       also did whatever the browser does with it: F1 is Help in Chrome and Edge, F3 is find-in-page,
+       F6 is the address bar in several, F7 is caret-browsing help. The lab's own comment admits F5
+       reloads the page "and uses the key anyway" - F5 was moved to F7 for exactly that reason, and the
+       class of bug was left in place for the others.
+
+       The list is the keys the game actually binds. F5 is deliberately absent: it is not a game key,
+       and claiming it would break reload for everyone who wants it. Note this cannot be verified in a
+       headless browser, which does not implement the browser-level actions - so it is written from what
+       the platform documents rather than from a measurement, and the comment says so rather than
+       implying it was tested. */
+    if(/^f([1-9]|1[0-2])$/.test(k)&&k!=='f5') e.preventDefault();
   keys[k]=true;
   if(k==='f'&&first) showPerf=!showPerf;
   if(k==='g'&&first) showSpawn=!showSpawn;

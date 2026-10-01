@@ -1049,7 +1049,23 @@ function update(){
     else if(pk.kind==='armor'){ if(player.armor>=MAX_ARMOR) continue; player.armor=Math.min(MAX_ARMOR,player.armor+2); }
     else if(pk.kind==='key') player.hasSilver=true;
     else if(pk.kind==='goldkey') player.hasGold=true;
-    else if(pk.kind==='hook'){ player.altMode='hook'; run.hook=true; }
+    /* THE RIGHT CLICK IS A WEAPON, SO IT SWAPS LIKE ONE.
+
+     The Hook replaces the Blast permanently: `player.altMode` is overwritten and nothing puts the Blast
+     back. Weapons do not behave like that - picking up a wand drops the one you were holding, so no
+     wand is ever lost - and the code already had a branch for `kind==='blast'`, which nothing in the
+     game ever creates. That is a swap-back that was designed and never wired to anything, which is why
+     this reads as an oversight rather than a decision.
+
+     So the displaced Blast is dropped on the tile the Hook was standing on, exactly as a displaced item
+     or a displaced wand is, and `hold` stops the next tick handing it straight back. The secret room
+     still offers the Hook; it just no longer costs the Blast. */
+    else if(pk.kind==='hook'){
+      if(player.altMode!=='hook'){
+        player.altMode='hook'; run.hook=true;
+        r.pickups.push({x:pk.x,y:pk.y,r:16,kind:'blast',hold:true});
+      } else run.hook=true;
+    }
     else if(pk.kind==='blast'){ player.altMode='blast'; run.hook=false; }
     /* An item goes in the slot it declares, and whatever was on that key is left where the new one was
        standing - the same swap a weapon gets, and for the same reason: a limit on what a build may

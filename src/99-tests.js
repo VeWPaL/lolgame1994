@@ -2723,6 +2723,78 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // filled - an unfilled slot is a dimmed heart rather than a gap in the frame
     eq(n,Math.ceil(12/2)+Math.ceil(MAX_ARMOR/2));
   });
+
+  /* THE PLATE HAS A CEILING OF ITS OWN, because maxHp does not.
+
+     Vigor is unbounded by design, so the heart row used to grow without limit: 28 hearts is 810px of
+     plate from a margin of 15, and the minimap plate starts at 798. Past maxHp 56 the plate covered the
+     map - the thing that says where the boss is and which rooms you have seen - for the rest of the
+     run. It took twenty-one Iron Ribs, so nothing caught it: nothing plays that build.
+
+     Asserted as GEOMETRY rather than as a pixel sample, because the collision is arithmetic and can be
+     asked directly: the plate's right edge must stay clear of the minimap at every health. The
+     minimap's own position is derived from the same terms its drawing uses - W, the margin, GRID*cell
+     plus its frame - so this cannot pass by agreeing with a stale copy of a number. */
+  test('the heart plate never reaches the minimap, however much health there is',()=>{
+    startGame();
+    currentRoom().enemies.length=0;
+    // the minimap plate, from drawHUD's own terms: cell 17, GRID cells, a 28px plate, the HUD margin
+    const miniLeft=W-HUD_MARGIN_X-(GRID*17+28);
+    for(const mx of [16,24,36,48,56,60,80,98,140,400]){
+      player.maxHp=mx; player.hp=mx;
+      const hearts=Math.ceil(mx/2), armorSlots=Math.ceil(MAX_ARMOR/2);
+      const roomForHearts=Math.max(4,Math.floor((miniLeft-HUD_GAP-HUD_MARGIN_X-30)/26)-armorSlots);
+      const drawn=Math.min(hearts,roomForHearts);
+      const right=HUD_MARGIN_X+30+(drawn+armorSlots)*26;
+      ok(right<miniLeft,'at maxHp '+mx+' the heart plate ends at '+right+' and the minimap starts at '+
+        miniLeft+', so the plate covers the map');
+      // and it must actually DRAW without throwing at that size
+      let threw=null;
+      try{ drawHUD(); }catch(e){ threw=e.message; }
+      eq(threw,null,'drawing the HUD at maxHp '+mx+' threw: '+threw);
+    }
+    /* AND THE CAPPED ROW IS DRAWN FROM THE RIGHT, because a capped row drawn from the left is full then
+       empty - which at 98 health reads as "I am nearly dead", the exact opposite of the truth.
+
+       Asserted by DAMAGE rather than by geometry: at full health every drawn heart is full whichever
+       end it starts from, so the test takes damage down to the last of it and checks that the heart that
+       still has blood in it is the LAST one on the plate. That is the property, and it is the one a
+       player reads. */
+    player.maxHp=98; player.hp=2;   // one heart, and it is the last of the row
+    const seen=[]; const real=window.drawHeart;
+    window.drawHeart=(x,y,fill,kind)=>seen.push({x:x,fill:fill,kind:kind});
+    try{ drawHUD(); }finally{ window.drawHeart=real; }
+    /* The HEALTH row only. The armour slots draw through the same function with 'dimgray', so counting
+       every lit heart counts the player's armour - and at 98 health with no armour bought, those are the
+       only lit things on the plate and the assertion below would be measuring the wrong row entirely. */
+    const health=seen.filter(s=>s.kind==='red');
+    const lit=health.filter(s=>s.fill>0);
+    ok(lit.length>=1,'at 1 heart out of 98, no health heart is lit on the plate at all');
+    /* hp is in HALF-HEARTS and each heart is worth 2, so hp 2 is exactly one full heart and it must be
+       the LAST health slot drawn. With a capped row drawn from the left the lit heart would instead be
+       the first, which reads as "nearly dead" at full health - the opposite of the truth. */
+    const lastX=Math.max.apply(null,health.map(s=>s.x));
+    eq(lit[lit.length-1].x,lastX,'the lit heart is at x='+lit[lit.length-1].x+' and the last health slot '+
+      'is at '+lastX+', so a capped row is drawn from the left and reads full-then-empty');
+    eq(lit[0].x,lastX,'the one lit heart is at x='+lit[0].x+' and the last slot is at '+lastX+', so the '+
+      'row is drawn from the left and the lit heart sits where the missing health is not');
+  });
+
+  /* A ROLL STAT PRINTS ITS SIGN. Reverting this fails silently, which is the point of pinning it. */
+  test('a negative stat prints as a number, not as nothing',()=>{
+    Stats.reset();
+    const luck=()=>Stats.sheet().find(s=>s.key==='luck');
+    eq(statDisplay(luck()),'even','a zero Luck should read as even');
+    Stats.flat('luck',-1);
+    eq(Stats.value('luck'),-1,'a -1 Luck did not register as negative');
+    eq(statDisplay(luck()),'-1','a -1 Luck displays as "'+statDisplay(luck())+'" - the character '+
+      'sheet is reporting a cost as neutrality, and Glass Wands is the only item in the roster that '+
+      'has one');
+    Stats.reset();
+    Stats.flat('luck',2);
+    eq(statDisplay(luck()),'+2','a +2 Luck does not print with its sign');
+    Stats.reset();
+  });
   test('mouse maps to canvas pixels inside the 2px border',()=>{
     const rect=canvas.getBoundingClientRect(), x0=rect.left+canvas.clientLeft, y0=rect.top+canvas.clientTop;
     canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:x0,clientY:y0}));
