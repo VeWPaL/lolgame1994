@@ -1,7 +1,17 @@
 # Report and development plan
 
-Written during an unattended session. Two parts: what was done and found, then what to build next
-and why. Every claim here was measured; where something is an estimate it says so.
+Written during a working session, resumed after an unattended one ended in a power cut. Two parts:
+what was done and found, then what to build next and why. Every claim here was measured; where
+something is an estimate it says so.
+
+> **On time spent.** The unattended session below was reported as spanning 00:03–02:39 by commit
+> timestamps. That was a mistake in arithmetic dressed as a measurement: commits land at task
+> boundaries, so the gap between the first and last one is a *lower* bound on the work, and it is not
+> the session — the session began before the first commit, at the point the interrupted suite run was
+> resumed. The user went to bed at about 01:00, so the true figure is **roughly one hour**, and the
+> machine lost power at 02:39 with nothing uncommitted. Reports from here on state elapsed time from a
+> start timestamp recorded at the beginning of the session (`.session-start`, gitignored), not
+> inferred from commit times.
 
 ---
 
@@ -162,6 +172,58 @@ documented opportunity instead.
 
 **State at end of session:** JS 178/178 · C# 88/88 · `verify.ps1` exits 0 · LF-only, no BOM, no U+FFFD.
 Commits: `5f64c85`, `01342ed`.
+
+---
+
+# Part 1b — the working session, resumed
+
+**38 minutes, 2 commits** (`85d3ae0`, `d5df5c3`). It began by restoring the test harness: the dev
+server died with the machine, `python` on this box is a Microsoft Store alias rather than an
+interpreter, and the browser tool refuses `file://`. There is now a PowerShell static server in the
+temp directory — loopback only, traversal rejected, and bytes served **exactly as on disk** with no
+transcoding, because a server that "helpfully" converted CRLF would break an encoding canary the files
+are correct on.
+
+Then the plan's first item. **The report above was wrong about it**, which is the headline:
+
+- It claimed no boss health bar existed. **One did** — a 56px sliver, twice a body's, riding the body
+  as it walks. The measurement that "proved" its absence called `spawnEnemy(false, …)`, which returns
+  a *lunger*. A grep for a function that does not exist and a body that does not exist look identical
+  from outside, and I took the first as evidence about the second.
+- What was missing was that the bar could not be **read**: no phase markers, so crossing 66% and 33%
+  — which changes the move bag from 3 moves to 4 to 7 and adds the wall in phase 2 — was invisible; it
+  moved with the boss; and the Warden had **no name field at all**.
+- It is now full-width, fixed at the top of the room, with both thresholds notched on it at the same
+  constants the tick loop reads, plus name and per-phase colour.
+
+**Three defects found while building it**, none of which the source alone would have shown:
+
+1. **Placed at y 84 — straight across the momentum row.** `MARGIN_Y 14 + HP_H 40 + ROW_H 30 = 84`.
+   Only the screenshot showed it. Worse, the test asserted *"above the room"*, which was **true of the
+   broken version and false of the fix** — a correct fix would have failed the test. It now asserts the
+   collision: where the plates **end** versus where the bar **starts**.
+2. **Sized for one room.** `BOSS_BAR_W`/`BOSS_BAR_Y` were baked from `ROOM_W`/`ROOM_TOP` at load time,
+   so in the Lab — 1680×760 against a floor's 700×450 — it drew a floor-sized bar in a Lab-sized room.
+   A constant that describes a room is wrong the moment there is more than one room. Now
+   `bossBarRect()`, per draw.
+3. **A fixture trap I had already hit twice.** `noticeTimer>0` makes the tick loop skip the body
+   entirely, so a freshly spawned boss ignores several updates and its phase never advances. I read
+   that failure as a bug in the phase logic before measuring it; the logic is fine.
+
+There are now **three** documented fixtures that return something usable-looking instead of what you
+asked for, and they are a table in `CONVENTIONS.md` because each has cost real time:
+
+| call | gives you | you wanted |
+|---|---|---|
+| `spawnEnemy(false, …)` | a lunger | the boss — the flag is the **first** argument |
+| `spawnEnemy(true, …)` | a body in nowhere | a body pushed into the room by hand |
+| a body with `noticeTimer>0` | `continue`, skipped | a body the tick loop acts on |
+
+**Six tests, all mutation-checked.** The most useful asserts the thing that is easy to get wrong: at
+exactly the threshold health, the fill's edge **is** the notch's pixel, because both are
+`Math.round(w*f)`. Comparing them as fractions gives 0.0006 and looks like a mismatch; it is not one.
+
+**JS 184/184 · C# 88/88 · `verify.ps1` exits 0.**
 
 ---
 

@@ -35,3 +35,10 @@ obj/
 # Session reports. The whitelist is by exception, so a new doc needs naming here or it is invisible
 # to git - which is exactly what happened to REPORT.md, written and then silently not committed.
 !REPORT.md
+
+# Scratch state for a session in progress. The start timestamp is written here at the beginning of
+# a working session so that a report can state how long it took WITHOUT relying on remembering to
+# note the time - an unattended session that ends in a power cut otherwise has no start time at all,
+# which is exactly how the last one came to report 2h36m of commits as if it were a duration.
+# Untracked on purpose: it is per-machine, per-session, and worthless to anyone else.
+.session-start
