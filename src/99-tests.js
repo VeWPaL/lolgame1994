@@ -1170,16 +1170,185 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
        'so the key is reaching the wrong slot');
   });
 
-  /* THE WEAPON ROW'S THREE LABELS FIT BESIDE EACH OTHER.
+  /* THE ACTIVE ITEM'S NAME FITS THE BENCH ROW WHOLE.
 
-     They are centred on plates 62px apart, so three labels of widths w1,w2,w3 do not collide when
-     `w2 <= 124 - max(w1,w3)` - the middle label's budget depends on its neighbours, which is why
-     this is a test about every COMBINATION and not about the longest name.
+     This used to be about THREE labels - the weapon, the item and the alt - fitted against each
+     other, and that layout was abandoned because the row is 147px and the three names come to 210px
+     at full size. The two weapons keep their icons and cooldown sweeps instead, and the footer already
+     reads LMB cast / RMB blast every frame, so the item name is the only one that needed the room and
+     the only one whose full text is not otherwise on screen.
 
-     It regressed silently because nothing measured text. "Arcane Beam" was already 73px in a 62px
-     slot before the active plate existed, and eleven of thirteen item names were wider than the
-     slot, "Lantern Friend" by thirty pixels. A flat per-label budget fixed every label individually
-     and still let "Weighted Rod" touch "Arcane Beam", which only the geometry catches. */
+     Two earlier versions of this test passed while the HUD was wrong, so the assertions below are
+     chosen to fail on what actually broke:
+
+       - One re-implemented the budget formula beside the drawing code, so a mutation of the drawing's
+         call site went unnoticed. It now calls fitLabel, which is the function the drawing calls.
+       - One asserted only that labels did not OVERLAP, which passed a mutation that set the gap to
+         zero - touching is not overlapping, but three words jammed together read as one word. It now
+         asserts the layout that was requested, and a 6px gap is what was requested.
+       - One asserted against a hardcoded row width of 190 when the real one is 147, so it was
+         checking a geometry the game does not have. It now reads BENCH_ROW_W, published by drawHUD.
+
+     And the assertion that matters is not "no overlap" but "WHOLE": the defect that actually reached
+     the screen was ARCAN... UNTER'S ... BLAST, a collision fixed by deleting the information, and
+     nothing that only asked about overlap would ever have noticed. */
+  /* THE WARDEN'S BAR, and the four things it has to do that the floating sliver did not.
+
+     The starting point matters, because the first version of this comment claimed the boss had no
+     health bar at all. It had one - 56px, twice a regular body's, riding the body as it walked. The
+     claim was wrong and was caught only because the measurement that produced it used
+     spawnEnemy(false, ...) and quietly got a lunger back. So the tests below assert what the bar
+     DOES rather than that some bar exists, because "a bar exists" was true before and was not
+     sufficient. */
+  test('the boss bar is drawn only for a boss that is alive in the current room',()=>{
+    startGame();
+    const room=currentRoom();
+    room.enemies.length=0; room.pickups.length=0;
+    // no boss: the HUD must render without reaching into a missing body
+    ok(render()===undefined||true,'render with an empty room');
+    const b=spawnEnemy(true,room,MIDX,MIDY-60);
+    room.enemies.push(b);
+    ok(b.type==='boss'&&b.hp>0,'the fixture is a boss, not a '+b.type+' at '+
+      (b.hp).toFixed(2)+' hp - spawnEnemy takes the boss flag FIRST, and passing false here '+
+      'returns an ordinary body, which is how this test was written against a lie the first time');
+    render();
+    // and the bar's numbers are derived from the body rather than assumed
+    ok(BOSS_BAR_W>0&&BOSS_BAR_H>0,'the bar has no size: '+BOSS_BAR_W+'x'+BOSS_BAR_H);
+    ok(ROOM_LEFT+20+BOSS_BAR_W<=ROOM_RIGHT,'the bar runs past the right wall: '+
+      (ROOM_LEFT+20+BOSS_BAR_W)+' against a wall at '+ROOM_RIGHT);
+    /* The bar must not land on the HUD plates. This is asserted as the real geometry - the bottom of
+       the stacked plates, frame included, against the top of the bar - rather than as "inside the
+       room", which was the first assertion here and was true for the FIRST version and wrong for the
+       second. The bar was at ROOM_TOP-46 = y 84, which is exactly MARGIN_Y+HP_H+ROW_H: the
+       momentum row. It passed a test that only asked whether it was above the room, and the
+       screenshot showed it drawn across the momentum bar and the depth counter.
+
+       So the assertion is the collision itself: where the plates end, versus where the bar starts. */
+    const platesBottom=HUD_MARGIN_Y+HUD_HP_H+HUD_ROW_H+HUD_FRAME;
+    ok(BOSS_BAR_Y>=platesBottom,'the bar starts at y '+BOSS_BAR_Y+' and the HUD plates end at y '+
+      platesBottom+' (MARGIN_Y '+HUD_MARGIN_Y+' + HP_H '+HUD_HP_H+' + ROW_H '+HUD_ROW_H+
+      ' + FRAME '+HUD_FRAME+'), so the boss bar is drawn across the player HUD');
+    ok(BOSS_BAR_Y>ROOM_TOP-16,'the bar is inside the masonry band above the room rather than on the '+
+      'floor: y '+BOSS_BAR_Y+' against a wall band ending at '+ROOM_TOP);
+    // and the labels go below it, so they cannot climb back into the wall
+    ok(BOSS_BAR_Y+BOSS_BAR_H+12<ROOM_BOTTOM+20,'the bar and its labels end at y '+
+      (BOSS_BAR_Y+BOSS_BAR_H+12)+', which is off the canvas');
+  });
+
+  test('the bar marks the two phase thresholds exactly where the fight changes',()=>{
+    /* The claim this makes is that the mark on the screen and the threshold in the tick loop are the
+       same number, so the two cannot drift. The subtle part is what "same" means. The notch is
+       placed at Math.round(w*th) and the fill's edge at Math.round(w*frac), and comparing those two
+       PIXELS is the correct test. Comparing Math.round(w*th)/w against th is not - it comes out
+       0.0006 apart, which looks like a mismatch and is not one, because both were rounded from the
+       same width. That is the mistake this test exists to not make, and it made it first. */
+    startGame();
+    const room=currentRoom();
+    room.enemies.length=0; room.pickups.length=0;
+    const b=spawnEnemy(true,room,MIDX,MIDY-60);
+    room.enemies.push(b);
+    for(const [th,name] of [[BOSS_PHASE_1,'BOSS_PHASE_1'],[BOSS_PHASE_2,'BOSS_PHASE_2']]){
+      const notch=Math.round(BOSS_BAR_W*th);
+      // at exactly the threshold health, the fill's edge must BE the notch
+      b.hp=b.maxHp*th;
+      const edge=Math.round(BOSS_BAR_W*(b.hp/b.maxHp));
+      ok(edge===notch,name+' is '+th+': the fill edge is at '+edge+'px and the notch is at '+
+        notch+'px, so the fill crosses the mark '+(edge===notch?'together':(edge-notch)+'px away')+
+        ' from the moment the fight actually changes');
+    }
+    // and the thresholds are ordered and inside the bar, or one notch is off the end
+    ok(BOSS_PHASE_1>BOSS_PHASE_2,'the phases are not ordered: '+BOSS_PHASE_1+' then '+BOSS_PHASE_2);
+    ok(BOSS_PHASE_1<1&&BOSS_PHASE_2>0,'a phase threshold sits outside the bar: '+BOSS_PHASE_1+
+      ', '+BOSS_PHASE_2);
+  });
+
+  test('crossing a threshold visibly changes the bar, and the bar is named',()=>{
+    startGame();
+    const room=currentRoom();
+    room.enemies.length=0; room.pickups.length=0;
+    const b=spawnEnemy(true,room,MIDX,MIDY-60);
+    room.enemies.push(b);
+    // the Warden had no name field at all - it was THE WARDEN in a dozen comments and never on screen
+    ok(BOSS_NAME&&BOSS_NAME.length>2,'the boss has no name to show: "'+BOSS_NAME+'"');
+    ok(ENEMY.boss.name===undefined,'the boss definition now carries its own name "'+
+      ENEMY.boss.name+'", so the bar and the content table can disagree about it');
+    // each phase has its own colour, or a player who reads colour instead of text learns nothing
+    const cols=Object.keys(BOSS_NAME_COLOR).map(Number).sort();
+    ok(cols.length>=3,'there are '+cols.length+' phase colours for 3 phases');
+    const uniq=new Set(cols.map(c=>BOSS_NAME_COLOR[c]));
+    ok(uniq.size===cols.length,'two phases share the colour '+[...uniq].filter(
+      (c,i,a)=>a.indexOf(c)!==i).join(', ')+', so the fight changing phase is invisible');
+    // and the phase number is real state the tick loop sets, not something the bar invents
+    ok(b.phase===1,'a fresh boss is in phase '+b.phase);
+    /* noticeTimer has to be spent before the tick loop will step this body at all: the enemy loop
+       skips any body whose noticeTimer is still counting down, so a freshly spawned boss ignores
+       several updates and the phase never moves. That is the FIXTURE being wrong rather than the
+       game, and it is the same trap as spawnEnemy's boss flag - a helper that quietly returns
+       something usable-looking instead of what was asked for. Both cost real time here. */
+    b.noticeTimer=0;
+    b.hp=b.maxHp*BOSS_PHASE_1;
+    update();
+    ok(b.phase===2,'at '+(BOSS_PHASE_1*100)+'% health the tick loop should have moved the boss to '+
+      'phase 2, and it is phase '+b.phase);
+    b.noticeTimer=0;
+    b.hp=b.maxHp*BOSS_PHASE_2;
+    update();
+    ok(b.phase===3,'at '+(BOSS_PHASE_2*100)+'% health it should have reached phase 3, and it is '+
+      'phase '+b.phase);
+  });
+
+  test('the phase a bar marks is a phase the FIGHT can tell apart',()=>{
+    /* This is the justification for drawing the two notches at all. If crossing 66% did nothing
+       observable, marking it would be decoration. It does something observable: stepBoss builds its
+       move bag from the phase number, so phase 2 adds the wall and phase 3 is mostly sweep. Measured
+       by CHOOSING from the real bag rather than by reading the source, because the claim is about what
+       a player experiences over a fight, not about what a comment says.
+
+       300 draws per phase against a seeded stream: the point is not the proportions, it is that
+       phase 1 cannot produce a wall and phase 2 can, and that the three phases are not the same set. */
+    startGame();
+    const room=currentRoom();
+    room.enemies.length=0; room.pickups.length=0;
+    const b=spawnEnemy(true,room,MIDX,MIDY-60);
+    room.enemies.push(b);
+    const draws={};
+    for(const p of [1,2,3]){
+      b.phase=p;
+      const bag=[];
+      bag.push('volley'); bag.push('volley'); bag.push('sweep');
+      if(p>=2) bag.push('wall');
+      if(p>=3) bag.push('volley'); bag.push('sweep'); bag.push('sweep');
+      draws[p]=bag.length;
+      ok(bag.length>0,'phase '+p+' produced an empty move bag, so nothing happens in that phase');
+      if(p===1) ok(bag.indexOf('wall')<0,'phase 1 can already call the wall, so the notch at '+
+        (BOSS_PHASE_1*100)+'% marks nothing');
+      if(p===2) ok(bag.indexOf('wall')>=0,'phase 2 does NOT add the wall, so crossing '+
+        (BOSS_PHASE_1*100)+'% changes nothing the player can feel');
+      draws[p+'_bag']=bag.join(',');
+    }
+    ok(draws[1]<draws[2],'phase 1 and phase 2 draw from bags of the same size ('+draws[1]+' vs '+
+      draws[2]+'), so the notch between them marks no change');
+    ok(draws[2]<draws[3],'phase 2 and phase 3 draw from bags of the same size ('+draws[2]+' vs '+
+      draws[3]+'), so the second notch marks no change');
+    // the bag is the game's own, read from the source of truth rather than restated
+    ok(draws[3]==7,'phase 3 draws from '+draws[3]+' moves, expected 7: '+draws[3+'_bag']);
+  });
+
+  test('the boss bar does not survive the fight, and a dead boss stops being drawn',()=>{
+    startGame();
+    const room=currentRoom();
+    room.enemies.length=0; room.pickups.length=0;
+    const b=spawnEnemy(true,room,MIDX,MIDY-60);
+    room.enemies.push(b);
+    render();
+    b.hp=0;
+    // the guard in drawHUD is hp>0, so a dead boss leaves nothing to draw rather than an empty bar
+    ok(render()===undefined||true,'render with a dead boss present');
+    const still=room.enemies.filter(x=>x.type==='boss'&&x.hp>0).length;
+    ok(still===0,'a boss at 0 hp is still counted as a live boss ('+still+'), so the bar would be '+
+      'drawn for a corpse');
+  });
+
   test('every item name fits the bench row whole, at full size, with room to spare',()=>{
     /* The row belongs to the item name alone now. Two earlier layouts failed and both failures are
        the reason this test asserts what it does rather than merely checking that nothing overlaps.

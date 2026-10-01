@@ -606,6 +606,93 @@ const HUD_MARGIN_X=15, HUD_MARGIN_Y=14, HUD_FRAME=6, HUD_GAP=1;
 const HUD_HP_H=40, HUD_ROW_H=30, HUD_KEY_W=62, HUD_KEY_H=34, HUD_BLINK_W=150, HUD_DEPTH_W=104;
 const HUD_MOMENTUM_W=208;
 
+/* THE WARDEN'S HEALTH, as the one piece of the fight that is fixed to the screen.
+
+   The boss already had a health bar - a 56px sliver, twice a regular body's, floating above a body
+   that walks around. It is not nothing, and this is not a claim that the boss had no bar at all; it
+   is that a bar the player has to find, that moves with its owner, that carries no phase markers and
+   no name, does not do the four jobs this one has to do:
+
+     1. SHOW WHAT IS LEFT. A floating sliver answers "did that hit land". This answers "how much of
+        this is there", which is the question a player is actually asking at 66% health.
+     2. MARK THE PHASES. BOSS_PHASE_1 and BOSS_PHASE_2 are fractions of max HP at 0.66 and 0.33, and
+        crossing them changes the move mix from 3 moves to 4 to 7 - the wall only appears in phase 2,
+        and phase 3 is two thirds sweep. The fight visibly changes and NOTHING said so. A bar with the
+        two thresholds drawn on it turns that from a thing that happens to you into a thing you can
+        see coming, which is the whole fairness argument this boss was built on.
+     3. NOT MOVE. Everything else in a fight is moving. A fixed thing is the thing you glance at
+        between glances at the boss.
+     4. NAME IT. The Warden had no name field - it was called THE WARDEN in a dozen comments and
+        never on screen.
+
+   Deliberately NOT a second visual language: the same green as every body bar, because a boss bar in
+   a different colour reads as a different kind of object and this is the same quantity at a size you
+   can read. What changes is the size, the fixed position, and the two notches.
+
+   The fill is drawn from the LEFT edge so the bar empties toward the door the player came in by,
+   which is where they are heading and where the fight will resume. It is not drawn as a shrinking
+   width from both ends, which would keep the centre of mass fixed and make the change hardest to see.
+
+   The phase notches are 2px of bone-white standing PROUD of the bar rather than cut into it, because
+   a notch inside the bar disappears as the fill passes over it, and these need to stay visible after
+   they have been crossed - at that point they are the record of how far the fight has already come. */
+function drawBossBar(e){
+  const x=ROOM_LEFT+20, w=BOSS_BAR_W, y=BOSS_BAR_Y, h=BOSS_BAR_H;
+  const frac=Math.max(0,Math.min(1,e.hp/e.maxHp));
+  // the frame: a dark recess with a bevelled top edge, the same language as the HUD plates
+  ctx.fillStyle='#14110c';
+  ctx.fillRect(x-3,y-3,w+6,h+6);
+  ctx.fillStyle='#0a0806';
+  ctx.fillRect(x,y,w,h);
+  // the fill, from the left
+  const fw=Math.round(w*frac);
+  ctx.fillStyle='#5ee27a';
+  ctx.fillRect(x,y,fw,h);
+  // a lit top edge on the fill only, so the filled part reads as a surface with a depth
+  if(fw>0){
+    ctx.fillStyle='rgba(190,255,200,0.30)';
+    ctx.fillRect(x,y,fw,1);
+  }
+  /* The phase notches, drawn proud of the bar so crossing one does not erase it. These are at the
+     same two fractions the tick loop uses - BOSS_PHASE_1 and BOSS_PHASE_2, READ from here rather
+     than retyped - so the mark on the screen cannot drift from the threshold in the fight.
+
+     The notch is placed with the same expression that places the fill's edge, Math.round(w*frac), and
+     that is deliberate rather than incidental. Comparing the two as fractions looks like a mismatch
+     and is not one: the notch lands at 0.6606 of the bar and the fill's edge lands at 0.6606 of the
+     bar, because both are the rounded product of the same width. Dividing a rounded pixel back out by
+     the width to compare it against a raw fraction manufactures a disagreement of 0.4px that does not
+     exist on screen - the correct statement is that the fill's edge IS the notch's pixel when the
+     health fraction is the threshold, and the suite asserts exactly that. */
+  const fillEdge=Math.round(w*frac);
+  for(const th of [BOSS_PHASE_1,BOSS_PHASE_2]){
+    const nx=x+Math.round(w*th);
+    ctx.fillStyle='#e8dcc0';
+    ctx.fillRect(nx-1,y-5,2,h+10);
+  }
+  /* The name and the phase, UNDER the bar rather than over it. They were at y-9 first, which with the
+     bar moved to the top of the room put them in the 16px masonry band above it - readable, but the
+     label of the fight would be sitting on the wall instead of on the thing it names. Under the bar
+     they are over the floor, with the name flush left and the phase flush right so a long name and a
+     number cannot collide.
+
+     The phase is shown as a number because the mix it selects is not legible from the colour alone -
+     three moves, then four, then seven - and the number is what a player can hold onto while the
+     fight gets faster. */
+  ctx.font='bold 11px monospace';
+  ctx.textAlign='left';
+  ctx.fillStyle=BOSS_NAME_COLOR[e.phase]||BOSS_NAME_COLOR[1];
+  ctx.fillText(BOSS_NAME, x, y+h+12);
+  ctx.textAlign='right';
+  ctx.fillStyle='#8a7a63';
+  ctx.fillText('PHASE '+e.phase, x+w, y+h+12);
+  ctx.textAlign='left';
+}
+/* One colour per phase, and the colour is the fight's own language rather than a new one: phase 1 is
+   the safe green, and each step hotter. A player who never reads the number still sees the fight
+   change colour, which is a tell rather than a readout. */
+const BOSS_NAME_COLOR={1:'#8fd89a', 2:'#e8c46a', 3:'#e8804a'};
+
 function drawHUD(){
   /* The HUD is one block, laid out from a single table of numbers so that nothing can drift.
 
@@ -999,6 +1086,13 @@ function drawHUD(){
   ctx.fillStyle=itemColor;
   ctx.fillText(label.text, mx0+pw/2, labelY);
 
+  /* The Warden's bar, drawn here rather than in drawRoom so it sits with the other HUD plates and
+     inherits the same frame. It is drawn LAST so it is over the plates if the layout ever puts them
+     in the same place, and it is drawn only while a boss is actually alive in THIS room - a bar for a
+     boss that is not here would be a lie about the current fight, and the depths after the boss room
+     would carry it forever if nothing took it away. */
+  const warden=currentRoom().enemies.find(b=>b.type==='boss'&&b.hp>0);
+  if(warden) drawBossBar(warden);
 
   ctx.textAlign='left';
 }
