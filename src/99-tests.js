@@ -1363,6 +1363,67 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       eq(ws.length,2,'weapon count'); ok(ws[0]!==ws[1],'same weapon offered twice ('+ws+')'); ok(!ws.includes(player.weaponIdx),'offers the held weapon');
     }
   });
+  /* THE ITEM HALF OF THE LOOT POOL. Thirteen items existed, validated and wired to the sheet, and not
+   one could be picked up: there was no `item` pickup kind anywhere, so `Items.pool` and
+   `Items.rollRarity` were called from nowhere and every number in the roster was a guess about how a
+   thing feels rather than a measurement. These three are the difference between "the roster exists"
+   and "the roster can be playtested". */
+  test('loot room: two distinct items, and never one you already hold',()=>{
+    for(let i=0;i<120;i++){
+      startGame();
+      // hold a spread of the roster, including two passives and one active, so the exclusion is
+      // actually being asked to exclude something rather than passing because nothing was held
+      Items.reset();
+      ['heavy_hands','iron_ribs','tin_cup'].forEach(id=>{ if(i%2) Items.give(id); });
+      if(i%3===0) Items.give('hunters_mark');
+      const held=Content.all('item').filter(id=>Items.equipped(id));
+      const got=goTo('item').pickups.filter(p=>p.kind==='item').map(p=>p.id);
+      eq(got.length,2,'item count with '+held.length+' already held');
+      ok(got[0]!==got[1],'the same item offered twice ('+got.join(',')+')');
+      const clash=got.filter(id=>held.indexOf(id)>=0);
+      ok(clash.length===0,'the room offered '+clash.join(',')+' which the player already holds, and a '
+        +'passive cannot be taken twice - so one of those two pickups would silently do nothing');
+      // and the rarity travels with the pickup, because the floor draws a rarity bar from it. A pickup
+      // whose rarity is missing does not look wrong - it looks like a common, which is the one answer
+      // a player would never challenge during a playtest.
+      const bare=goTo('item').pickups.filter(p=>p.kind==='item'&&!(p.rarity in Items.RARITY));
+      eq(bare.length,0,'these pickups carry a rarity the game does not know: '+
+        bare.map(p=>p.id+'='+p.rarity).join(', '));
+    }
+  });
+  test('an item pickup joins the build and its numbers actually land',()=>{
+    // Weighted Rod is +2 Strength, stated. Asserted as a literal rather than read back out of the
+    // item's own fx, because a test that computes its expectation from the same table the code reads
+    // passes when the table is wrong - which is the shape of bug this file has the most of.
+    startGame();
+    Items.reset();
+    const before=Stats.value('strength');
+    const r=goTo('item');
+    r.pickups.length=0;
+    r.enemies.length=0;
+    r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'item',id:'weighted_rod'});
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; keys={};
+    update();
+    ok(Items.equipped('weighted_rod'),'walked onto a Weighted Rod and it is not in the build');
+    eq(Stats.value('strength')-before,2,'Strength after picking up a +2');
+    eq(r.pickups.length,0,'the pickup is still on the floor after being taken');
+  });
+  test('an item the build cannot take stays on the floor',()=>{
+    // The failure this rules out is silent and looks like a bug in the item rather than a full build:
+    // the tile vanishes on contact and nothing happens, so a playtester concludes the item is broken.
+    startGame();
+    Items.reset();
+    ok(Items.give('heavy_hands'),'the control give failed, so this test is not testing anything');
+    const r=goTo('item');
+    r.pickups.length=0; r.enemies.length=0;
+    r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'item',id:'heavy_hands'});
+    const n=loadout.items.length;
+    for(let i=0;i<30;i++){
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; keys={}; update();
+    }
+    eq(r.pickups.length,1,'an item already held vanished from the floor instead of staying put');
+    eq(loadout.items.length,n,'the build changed while standing on an item it cannot take');
+  });
   test('weapon pickup swaps, and waits for you to step off',()=>{
     startGame(); const r=goTo('item'); const [pk,other]=r.pickups;
     player.weaponIdx=0; pk.w=2; other.w=3; player.cooldown=50;

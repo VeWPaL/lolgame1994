@@ -1039,6 +1039,10 @@ function update(){
     else if(pk.kind==='goldkey') player.hasGold=true;
     else if(pk.kind==='hook'){ player.altMode='hook'; run.hook=true; }
     else if(pk.kind==='blast'){ player.altMode='blast'; run.hook=false; }
+    // An item the build cannot take stays on the floor. Same rule as a heart at full health: the
+    // alternative is a pickup that vanishes and takes nothing with it, which reads as a broken item
+    // rather than a full one - and a passive that is already held is the case that actually happens.
+    else if(pk.kind==='item'){ if(!Items.give(pk.id)) continue; }
     r.pickups.splice(i,1);
   }
 

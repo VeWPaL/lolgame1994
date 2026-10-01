@@ -422,8 +422,37 @@ function enterRoom(nx,ny,fromDir){
     else if(r.type==='secret') r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'hook'});
     else if(r.type==='item'){
       const [w1,w2]=pickWeapons(2,player.weaponIdx);
-      r.pickups.push({x:MIDX-110,y:MIDY,r:16,kind:'weapon',w:w1});
-      r.pickups.push({x:MIDX+110,y:MIDY,r:16,kind:'weapon',w:w2});
+      r.pickups.push({x:MIDX-255,y:MIDY,r:16,kind:'weapon',w:w1});
+      r.pickups.push({x:MIDX+255,y:MIDY,r:16,kind:'weapon',w:w2});
+      /* THE ITEM HALF OF THE LOOT POOL, which did not exist until now.
+
+         Thirteen items have been defined, validated and wired to the character sheet since the
+         framework was built, and NOT ONE of them could be picked up, because there was no `item`
+         pickup kind anywhere in the game. The roster was the only content in the project that had
+         no way to reach a player - which means "playtest the items" was not possible at all, and
+         every number in the roster was a guess about how a thing feels rather than a measurement.
+
+         The machinery was already here and unused: `Items.pool` picks N ids at a rarity and
+         `Items.rollRarity` is what Luck feeds. They were called from nowhere.
+
+         What the player already holds is excluded, and that is load-bearing rather than tidy. A
+         passive cannot be taken twice - `Items.give` returns false for one - so a room offering two
+         copies of Heavy Hands would show two pickups that one of them silently cannot take. Worse,
+         for a playtest it would look like a broken item rather than a full one. The pool is asked
+         for what is not held first, and only falls back to the whole table if that runs dry, so the
+         room always offers something takeable.
+
+         PROVISIONAL. Two items beside the existing two weapons, laid out as a row of four, is a
+         layout chosen for legibility and for getting the roster into a player's hands quickly -
+         not a balance decision. One item per floor, or two on alternate floors, is the question
+         this raises and it should be answered from play rather than from here. */
+      const held=Content.all('item').filter(id=>Items.equipped(id));
+      let ids=Items.pool(2,Items.rollRarity(Stats.value('luck')),held);
+      if(ids.length<2) ids=ids.concat(Items.pool(2-ids.length,null,held));
+      ids.forEach((id,i)=>{
+        const d=Content.get('item',id);
+        r.pickups.push({x:MIDX+(i?-85:85),y:MIDY,r:16,kind:'item',id,rarity:d.rarity});
+      });
     }
   }
   if(fromDir==='N'){player.x=MIDX;player.y=ROOM_TOP+34;}

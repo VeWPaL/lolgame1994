@@ -302,6 +302,7 @@ function drawRoom(){
     if(pk.kind==='exit') drawExitPortal(pk.x,pk.y,frameCount);
     else if(pk.kind==='weapon') drawIcon(pk.w,pk.x,pk.y+Math.sin(frameCount*0.08/SPEEDUP+pk.x)*2);
     else if(pk.kind==='hook'||pk.kind==='blast') drawIcon(pk.kind,pk.x,pk.y+Math.sin(frameCount*0.08/SPEEDUP+pk.x)*2);
+    else if(pk.kind==='item') drawItemIcon(pk.id,pk.x,pk.y+Math.sin(frameCount*0.09/SPEEDUP+pk.x)*2,34,pk.rarity);
     else if(KEY_SKIN[pk.kind]) drawSprite(KEY_ROWS,KEY_SKIN[pk.kind],pk.x,pk.y+Math.sin(frameCount*0.1/SPEEDUP)*2,3,null,pk.kind+'3');
     else drawHeart(pk.x,pk.y,1,pk.kind==='heart'?'red':'gray',2);
   }
