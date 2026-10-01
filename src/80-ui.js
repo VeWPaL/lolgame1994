@@ -294,7 +294,12 @@ function uiHoldsInput(){ return !!uiOverlay()||devOpen; }
    it through or TAB does nothing while the sheet is up - which is the one moment it is most wanted.
    'f7' is here and 'f5' deliberately is not: F5 reloads the page in every browser, so a lab key on F5
    was never a shortcut but a way to lose the room you were setting up. */
-const UI_KEYS=['escape','h','b','s','p','r','tab','f1','f2','f3','f4','f6','f7','1','2','3','4'];
+/* 'g' was missing, so the gold-key shortcut the bench footer advertised could never fire: while the
+   bench was open the suppressor ate every key not on this list, and 'g' was not on it. A documented
+   control that silently does nothing is the same failure as an undocumented one, except it looks like
+   a bug in the game rather than in the docs. It is here because the lab is where the shortcuts now
+   live. */
+const UI_KEYS=['escape','h','b','s','p','r','g','tab','f1','f2','f3','f4','f6','f7','1','2','3','4'];
 /* Lowercases before comparing, and that is a fix rather than a style choice. Every key in UI_KEYS is
    lowercase and the handler lowercases its own key immediately afterwards, so this one comparison was
    the only place in the input path that saw the raw `e.key` - which is "Tab", "Escape", "ArrowUp",
@@ -662,15 +667,28 @@ function showBugPanel(results){
 
   const btn=document.createElement('button');
   btn.id='bugBtn';
-  /* The button leads with whatever is wrong, and an unbacked fix outranks a red one - a failing
-     check tells you the fix stopped working, while an unbacked one tells you it was never working
-     and nobody could tell. */
-  btn.textContent=orphans.length?orphans.length+' UNVERIFIED'
-    :(allClear?'fixes: '+pass+'/'+total+' pinned':(total-pass)+' FAILED');
+  /* THE BADGE LEADS WITH THE WHOLE SUITE, because a green light on the smaller number is a lie.
+
+     It read `fixes: pass/total pinned`, where both numbers come from the FIXES table - 104 historical
+     bug fixes. The suite runs 197 checks, so 93 of them could fail and the badge would sit there green
+     saying everything is fine. That is the worst possible shape for a status light: it is green, it is
+     on screen at all times, and the failures it hides are the ones nobody is looking for.
+
+     The suite is the thing that is actually green or red, so it is what the badge says. The pinned
+     count is still shown - it is the interesting number, and it is the one that means "this build has
+     been through something" - but as a second clause, after the part that can be red.
+
+     Ordering, most alarming first: a red suite, then an unverified fix (a fix with no test behind it),
+     then green. */
+  const suitePass=live?results.filter(r=>r.ok).length:0;
+  const suiteRed=live&&suitePass<suiteTotal;
+  btn.textContent=suiteRed?(suiteTotal-suitePass)+' FAILED'
+    :orphans.length?orphans.length+' UNVERIFIED'
+    :'ok '+suitePass+'/'+suiteTotal+'  ·  fixes '+pass+'/'+total;
   btn.title='Bug fixes (B)';
   btn.style.cssText='position:fixed;left:10px;bottom:10px;z-index:11;padding:7px 12px;cursor:pointer;'+
-    'background:rgba(12,14,20,.92);color:'+(orphans.length?'#e8c04a':(allClear?'#5ee27a':'#ff6b6b'))+';border:1px solid '+
-    (orphans.length?'#6b5c2f':(allClear?'#2f6b46':'#6b2f2f'))+';'+
+    'background:rgba(12,14,20,.92);color:'+(suiteRed?'#ff6b6b':orphans.length?'#e8c04a':'#5ee27a')+';border:1px solid '+
+    (suiteRed?'#6b2f2f':orphans.length?'#6b5c2f':'#2f6b46')+';'+
     'border-radius:4px;font:12px ui-monospace,monospace;letter-spacing:.04em';
   document.body.appendChild(btn);
 
@@ -770,10 +788,23 @@ window.addEventListener('keydown',e=>{
   if(devOpen){
     if(k==='escape'||k==='f1'){ toggleDev(false); return; }
     if(first&&k>='1'&&k<='4'){ devSwap(parseInt(k,10)-1); return; }
-    if(first&&k==='g'){ player.hasGold=true; return; }
-    if(first&&k==='s'){ player.hasSilver=true; return; }
-    if(first&&k==='h'){ player.hp=player.maxHp; player.cooldown=0; player.altCooldown=0;
-      player.blinkCharges=2; player.blinkRegen=0; return; }
+    /* THE THREE SHORTCUTS BELOW ARE A DEBUG TOOL, NOT A GAME RULE, AND THEY WERE REACHABLE DURING A
+       REAL RUN. With the bench open - which is F1, in any game, at any depth, with the run in progress
+       behind it - H refilled the health, S handed over the silver key and G the gold key. The panel's own
+       footer advertised all three, so it was a written-down cheat available to anyone who pressed F1.
+
+       Swapping guns is the one thing the bench legitimately does, because a weapon is not a reward: it
+       is a comparison, and comparing needs both sides. Keys are the objective and hearts are the run,
+       and neither is a comparison - a panel that can grant them is not a panel.
+
+       They live in the lab instead (F2), which is a state built for exactly this and is entered
+       deliberately rather than by pressing a function key mid-fight. */
+    if(state==='dev'){
+      if(first&&k==='g'){ player.hasGold=true; return; }
+      if(first&&k==='s'){ player.hasSilver=true; return; }
+      if(first&&k==='h'){ player.hp=player.maxHp; player.cooldown=0; player.altCooldown=0;
+        player.blinkCharges=2; player.blinkRegen=0; return; }
+    }
     return;
   }
   if(k==='f1'&&first&&player){ toggleDev(true); return; }
@@ -819,7 +850,23 @@ window.addEventListener('keydown',e=>{
   // a player dies while reading your menu.
   if(k==='s'&&first&&(state==='start'||paused)){ toggleSeedSheet(); return; }
   if(k==='escape'&&uiHoldsInput()){ uiCloseTop(); return; }
-  if(state==='start'){startGame();return;}
+  /* "PRESS ANY KEY" DOES NOT MEAN ANY KEY, AND THESE ARE NOT KEYS.
+
+     Alt+Tab to change window delivers a keydown while the title screen is up, and it started a run. The
+     player switched away, switched back, and found a game already paused part-way into a floor nobody
+     chose, under a seed nobody agreed to. Control, Shift and Meta are the modifiers themselves, so
+     pressing and releasing one is not a request to play either - and on some layouts a modifier on its
+     own arrives as 'Dead' or 'Unidentified', which is a title screen that starts the game by itself.
+
+     The click path below deliberately keeps its own unconditional `startGame`: clicking IS a keypress
+     as far as a player is concerned, and there is no modifier that makes a click ambiguous. */
+  if(state==='start'){
+    if(e.altKey||e.ctrlKey||e.metaKey) return;
+    if(k==='alt'||k==='control'||k==='shift'||k==='meta'||k==='os'||k==='capslock') return;
+    if(k==='dead'||k==='unidentified') return;
+    startGame();
+    return;
+  }
   if(!first) return;
   if((k==='escape'||k==='p')&&state==='playing'){setPaused(!paused);return;}
   if(k==='r'&&(paused||state==='gameover'||state==='win')){startGame(run.rootSeed);return;}

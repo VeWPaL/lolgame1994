@@ -457,15 +457,33 @@ function drawSpawnPlan(){
   ctx.beginPath();ctx.moveTo(ex-16,ey);ctx.lineTo(ex+16,ey);ctx.moveTo(ex,ey-16);ctx.lineTo(ex,ey+16);ctx.stroke();
   ctx.font='11px monospace';ctx.fillStyle='rgba(255,210,61,0.9)';
   ctx.fillText('entry '+entryDir,ex+18,ey+4);
+  /* THE MARK IS DRAWN AT THE PLAN'S OWN POSITION, and the line goes to whatever body is standing there -
+       NOT to `enemies[i]`.
+
+       This paired `spawnPlan[i]` with `enemies[i]`, which is wrong in two independent ways:
+
+       - a Brunch PACK is one entry in the plan and SEVERAL bodies in the room, so every body after the
+         first is annotated with the plan line of some other spawn entirely;
+       - dead bodies leave `enemies`, so the indices slide and every mark after the first kill points at
+         the wrong body.
+
+       Both produce the same result: a tuning overlay that confidently annotates the wrong enemy. It is
+       debug-only, which is why it survived - but an overlay you cannot trust is worse than none, because
+       it gets read as evidence about spacing. So the mark is where the plan says it is, the line goes to
+       whatever actually occupies that spot, and a planned spawn with nobody on it says so rather than
+       borrowing its neighbour's annotation. */
   r.spawnPlan.forEach((s,i)=>{
-    const e=r.enemies[i];
-    ctx.strokeStyle=e&&e.alerted?'#ff6b6b':'rgba(94,226,122,0.8)';
-    ctx.beginPath();ctx.arc(s.x,s.y,e?e.r:12,0,7);ctx.stroke();
-    if(e&&e.type!=='lunger'&&e.type!=='boss'){
+    const here=r.enemies.find(e=>Math.abs(e.x-s.x)<14&&Math.abs(e.y-s.y)<14);
+    ctx.strokeStyle=here&&here.alerted?'#ff6b6b':'rgba(94,226,122,0.8)';
+    ctx.beginPath();ctx.arc(s.x,s.y,here?here.r:12,0,7);ctx.stroke();
+    if(here&&here.type!=='lunger'&&here.type!=='boss'){
       ctx.strokeStyle='rgba(255,106,106,0.28)';
-      ctx.beginPath();ctx.moveTo(e.x,e.y);ctx.lineTo(s.x,s.y);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(here.x,here.y);ctx.lineTo(s.x,s.y);ctx.stroke();
       ctx.fillStyle='rgba(255,106,106,0.9)';
-      ctx.fillText(e.type+' '+Math.round(s.d)+'px',s.x+8,s.y-8);
+      ctx.fillText(here.type+' '+Math.round(s.d)+'px',s.x+8,s.y-8);
+    } else if(!here){
+      ctx.fillStyle='rgba(150,150,150,0.7)';
+      ctx.fillText('empty',s.x+8,s.y-8);
     }
   });
 }
@@ -1528,20 +1546,27 @@ function drawDevMenu(){
     ctx.textAlign='left';
   }
 
-  // footer: the two keys and a heal, because a playtest that has to be restarted every time you
-  // spend your charges is a playtest you stop doing
+  // footer: the two keys and a heal - IN THE LAB ONLY, because a playtest that has to be restarted
+  // every time you spend your charges is a playtest you stop doing. Outside the lab there is nothing to
+  // advertise: granting a key or a heart during a real run is not a shortcut, it is a cheat with a
+  // label on it, and this panel is reachable from any game at any depth with F1.
   const fy=G.foot;   // the band devLayout budgeted, not a second guess at where the footer is
   ctx.fillStyle='rgba(90,60,30,0.35)';ctx.fillRect(L,fy-12,G.pw-52,1);
   ctx.font='11px monospace';
   const cap=(label,x,on)=>{const c=devCap(label,on);ctx.drawImage(c,x,fy+4);return x+c.width+5;};
   ctx.fillStyle=INK_SOFT;
   let x=L;
-  x=cap('G',x,player.hasGold);ctx.fillStyle=player.hasGold?'#ffd23d':INK_SOFT;
-  ctx.fillText(player.hasGold?'gold key held':'give gold key',x,fy+17);x+=130;
-  x=cap('S',x,player.hasSilver);ctx.fillStyle=player.hasSilver?'#d8dee9':INK_SOFT;
-  ctx.fillText(player.hasSilver?'silver key held':'give silver key',x,fy+17);x+=140;
-  x=cap('H',x,false);ctx.fillStyle=INK_SOFT;
-  ctx.fillText('refill heart and cooldowns',x,fy+17);
+  if(state==='dev'){
+    x=cap('G',x,player.hasGold);ctx.fillStyle=player.hasGold?'#ffd23d':INK_SOFT;
+    ctx.fillText(player.hasGold?'gold key held':'give gold key',x,fy+17);x+=130;
+    x=cap('S',x,player.hasSilver);ctx.fillStyle=player.hasSilver?'#d8dee9':INK_SOFT;
+    ctx.fillText(player.hasSilver?'silver key held':'give silver key',x,fy+17);x+=140;
+    x=cap('H',x,false);ctx.fillStyle=INK_SOFT;
+    ctx.fillText('refill heart and cooldowns',x,fy+17);
+  } else {
+    ctx.fillStyle=INK_SOFT;
+    ctx.fillText('1-4 swap wand  ·  ESC or F1 close  ·  F2 for the lab, where keys and hearts are free',x,fy+17);
+  }
 
   ctx.textAlign='right';ctx.fillStyle=INK_SOFT;ctx.font='10px monospace';
   ctx.fillText('strength '+str+'   ·   tempo '+showNum(TEMPO.rate,2)+'x   ·   tick '+TICK_HZ+'Hz',R,fy+30);
@@ -1622,8 +1647,20 @@ function summaryLayout(s){
   head();
   row('Deepest floor',String(records.deepest));
   row('Best rooms explored',String(records.rooms));
-  row('Fastest clear',records.fastest?fmtTime(records.fastest):'not yet');
-  row('Dungeons cleared',String(records.wins));
+  /* TWO ROWS THAT COULD NOT EVER CHANGE, REPLACED BY TWO THAT DO.
+
+     "Fastest clear" and "Dungeons cleared" were written when killing the boss ended the run, and they
+     printed `records.fastest` and `records.wins`. Nothing increments those any more - a cleared boss
+     room opens a way out and the run continues - so `endRun(true)` has no callers left and both rows
+     printed 'not yet' and '0' on every summary in the game, forever. A record the player cannot move
+     is not a record, and a permanent zero reads as "you have done nothing" rather than "this line is
+     from a version that no longer exists".
+
+     What replaces them is what THIS run did, which is the question the rest of the card is answering:
+     how far you got, how much of the floor you saw, how many bodies you killed, and how well you shot.
+     Accuracy is shown as a percentage rather than as a ratio of two numbers the reader has to divide. */
+  row('Bodies killed',String(s.kills));
+  row('Accuracy',s.shots>0?Math.round(s.hits/s.shots*100)+'%':'-');
 
   // the card is as tall as the list, plus the air at the top and the foot. Nothing about this number
   // is a design decision, which is the point.

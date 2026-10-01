@@ -447,6 +447,20 @@ const Lab=(function(){
        everything and want it back without waiting - which is what you want after changing a build and
        coming back to see the effect. */
     if(k==='f6'){ for(const s of shelf) s.gone=0; syncShelfPickups(); return true; }
+    /* THE BENCH'S THREE SHORTCUTS LIVE HERE, because the lab is where they are safe.
+
+       The weapon bench had H for a full heal, S for the silver key and G for the gold key, and it was
+       reachable with F1 during an actual run - so the panel's own footer advertised a written-down way
+       to hand yourself the run's objective and undo a bad room. Keys are the objective and hearts are
+       the run; a tool that grants them is not a tool.
+
+       Swapping guns stayed on the bench, because a weapon is a comparison rather than a reward and
+       comparing needs both sides on screen. The three that change the RUN are here, where entering is a
+       deliberate two-press action and leaving is the same key. */
+    if(k==='g'){ player.hasGold=true; return true; }
+    if(k==='s'){ player.hasSilver=true; return true; }
+    if(k==='h'){ player.hp=player.maxHp; player.cooldown=0; player.altCooldown=0;
+      player.blinkCharges=2; player.blinkRegen=0; return true; }
     /* F5 is NOT a lab key: it reloads the page. It is listed here so the legend does not invite
        anyone to press it, and so the omission reads as a decision rather than a gap. */
     if(k==='f5') return false;

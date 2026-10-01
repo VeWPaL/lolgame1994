@@ -71,8 +71,17 @@ if (-not $serverUp) {
   Note "   server not answering on 8731 - starting it"
   $sh = Join-Path $env:TEMP 'depths-server.ps1'
   $body = @'
+# The project root, derived from where this script lives. A hardcoded absolute path made the script
+# work on exactly one machine and quietly serve an empty 404 everywhere else, which is the worst
+# failure mode for a gate: it starts, it prints reassuring headings, and it checks nothing.
 $root = Split-Path -Parent $PSScriptRoot
-$root = "C:\Users\neefloW\Documents\Default Project"
+if (-not $root -or -not (Test-Path (Join-Path $root 'depths.html'))) {
+  $root = $PSScriptRoot
+}
+if (-not (Test-Path (Join-Path $root 'depths.html'))) {
+  Write-Error "verify.ps1 cannot find depths.html - looked in '$root' and '$PSScriptRoot'."
+  exit 1
+}
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://127.0.0.1:8731/")
 $listener.Start()
