@@ -326,9 +326,22 @@ function drawRoom(){
       drawSprite(frames[frame],pal,ex,ey,e.art,'#ffffff',e.type+e.art+frame+'f');
       ctx.globalAlpha=1;
     }
-    const barY=e.y-e.bar;
-    ctx.fillStyle='#000';ctx.fillRect(e.x-e.r,barY,e.r*2,4);
-    ctx.fillStyle='#5ee27a';ctx.fillRect(e.x-e.r,barY,e.r*2*(e.hp/e.maxHp),4);
+    /* The floating bar over a body - every body EXCEPT the boss.
+
+       The boss used to get one of these too, on top of the fixed bar at the bottom of the screen, and
+       two health bars for the same health is one too many: they disagree the instant they are both
+       on screen (the floating one is 4px tall and rounded to whole pixels, the fixed one is 10px and
+       notched), and the player has to decide which one to believe. It is redundant with the player
+       having their own bar as well - the fight has two health bars and one of them is the boss.
+
+       So the boss's health is drawn once, in one place, by drawBossBar. Every other body keeps its
+       floating sliver: at 4px over a 14px body it is a glance, not a reading, and that is the right
+       amount of attention for a Brunch. */
+    if(e.type!=='boss'){
+      const barY=e.y-e.bar;
+      ctx.fillStyle='#000';ctx.fillRect(e.x-e.r,barY,e.r*2,4);
+      ctx.fillStyle='#5ee27a';ctx.fillRect(e.x-e.r,barY,e.r*2*(e.hp/e.maxHp),4);
+    }
     // Stars over a held body. The hook's entire value is that it holds a knot on the floor for a
     // second and a half, and until now nothing said "this one is stuck" - the walk simply stopped,
     // which is also what a body at the edge of its aggro does. Three little stars orbiting the head
@@ -614,8 +627,11 @@ const HUD_MOMENTUM_W=208;
    captured before the Lab changed the room. A constant that describes a room is wrong the moment
    there is more than one room, and the Lab exists precisely to prove those are not the same thing. */
 function bossBarRect(){
-  return {x:ROOM_LEFT+BOSS_BAR_INSET_X, y:ROOM_TOP+BOSS_BAR_INSET_Y,
-          w:ROOM_RIGHT-ROOM_LEFT-BOSS_BAR_INSET_X*2, h:BOSS_BAR_H};
+  const bottom=canvas.height-BOSS_BAR_MARGIN;
+  return {x:ROOM_LEFT+BOSS_BAR_INSET_X,
+          y:bottom-BOSS_BAR_H,
+          w:ROOM_RIGHT-ROOM_LEFT-BOSS_BAR_INSET_X*2,
+          h:BOSS_BAR_H};
 }
 
 /* THE WARDEN'S HEALTH, as the one piece of the fight that is fixed to the screen.
@@ -678,24 +694,23 @@ function drawBossBar(e){
   for(const th of [BOSS_PHASE_1,BOSS_PHASE_2]){
     const nx=x+Math.round(w*th);
     ctx.fillStyle='#e8dcc0';
-    ctx.fillRect(nx-1,y-5,2,h+10);
+    ctx.fillRect(nx-1,y-4,2,h+8);
   }
-  /* The name and the phase, UNDER the bar rather than over it. They were at y-9 first, which with the
-     bar moved to the top of the room put them in the 16px masonry band above it - readable, but the
-     label of the fight would be sitting on the wall instead of on the thing it names. Under the bar
-     they are over the floor, with the name flush left and the phase flush right so a long name and a
-     number cannot collide.
+  /* The name and the phase, ABOVE the bar. Below is the canvas edge - the bar hangs in the 20px strip
+     below the room, so there is no room under it for a caption, and putting the labels there would
+     push them off the bottom of the screen. Above, they sit over the floor in the bottom of the room,
+     which is dead space during a boss fight, because the player is looking at the boss.
 
-     The phase is shown as a number because the mix it selects is not legible from the colour alone -
-     three moves, then four, then seven - and the number is what a player can hold onto while the
-     fight gets faster. */
+     The name is flush left and the phase flush right so a long name and a number cannot collide
+     however wide the bar is, and the phase is shown as a number because the mix it selects is not
+     legible from colour alone - three moves, then four, then seven. */
   ctx.font='bold 11px monospace';
   ctx.textAlign='left';
   ctx.fillStyle=BOSS_NAME_COLOR[e.phase]||BOSS_NAME_COLOR[1];
-  ctx.fillText(BOSS_NAME, x, y+h+12);
+  ctx.fillText(BOSS_NAME, x, y-6);
   ctx.textAlign='right';
   ctx.fillStyle='#8a7a63';
-  ctx.fillText('PHASE '+e.phase, x+w, y+h+12);
+  ctx.fillText('PHASE '+e.phase, x+w, y-6);
   ctx.textAlign='left';
 }
 /* One colour per phase, and the colour is the fight's own language rather than a new one: phase 1 is

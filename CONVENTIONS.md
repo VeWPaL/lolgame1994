@@ -830,7 +830,32 @@ rather than whether the last shot landed; it **marks both phase thresholds**, so
 is visible instead of merely having happened; it is **fixed** while everything else in the fight moves;
 and the Warden has a **name** at all — it had none, and was `THE WARDEN` in a dozen comments.
 
-**Two traps in the layout, and neither is visible in the source.** The first put it at
+**THREE PLACEMENTS, ALL WRONG, and none of them visible in the source.** It started at
+`ROOM_TOP-46` = y 84, which is exactly `MARGIN_Y + HP_H + ROW_H` — the momentum row, caught only by a
+screenshot. The test for it asserted *"above the room"*, which was **true of the broken version and
+false of the fix**, so a correct fix would have failed it. It moved inside the room's top edge, which
+cleared the HUD plates and then sat **in the playing area** — reported as disruptive. It is now in the
+20px strip **below** the room, at the bottom of the screen.
+
+That position forced the one genuinely structural decision: **the bar is anchored to the CANVAS, not
+to the room.** A room-anchored bar at the bottom works on a floor, where the room ends 20px above the
+canvas edge and the camera is pinned — but the Lab is 1680×760, its room runs to y 890, and the camera
+scrolls, so a room-anchored bar lands 290px **off-screen** in the one place the bar exists to be
+looked at. The tests now assert the two properties that survived every version — *on the canvas* and
+*out of the room* — rather than a description of where it is.
+
+`BOSS_BAR_MARGIN` is **23**, not the 14 it started at: the bar carries a 3px frame, and at 14 that
+frame straddled the room's bottom wall (wall at y 580, frame ending at 589), so the bar looked bolted to
+the masonry. The labels sit **above** the bar, because below is the canvas edge.
+
+**ONE BAR, NOT TWO.** The boss also had the floating sliver every other body gets, on top of this one.
+Two bars for one health disagree the moment both are on screen — the floating one is 4px and rounded
+to whole pixels, the fixed one 10px and notched — and it was redundant with the player's own bar: the
+fight had two health bars and one belonged to a third party. `drawBossBar` is now the only place the
+boss's health is drawn. Every other body keeps its sliver: at 4px over a 14px body it is a glance,
+not a reading, which is the right amount of attention for a Brunch.
+
+**THE FIRST TWO PLACEMENTS, for the record.** The bar was first put at
 `ROOM_TOP-46` = y 84, which is exactly `MARGIN_Y + HP_H + ROW_H` — the momentum row. The test for it
 asserted "above the room," which was true of the broken version and false of the fixed one, so the
 correct fix would have failed it. It now asserts the collision: where the plates **end** versus where
@@ -960,7 +985,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **184 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **185 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
   `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
   figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.

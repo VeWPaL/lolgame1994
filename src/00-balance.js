@@ -441,18 +441,23 @@ const BOSS_VOLLEY_N=3,        // shells per volley. Three is a pattern with a sh
          tall where a body's is 4 - this is the one health bar the player is meant to watch rather than
          glance at, and it is the only one that shows what is LEFT rather than what just happened. */
       BOSS_BAR_H=10,
-      /* The bar's INSETS, as fractions of nothing - the bar's actual rectangle is worked out from
-         the room AT DRAW TIME by bossBarRect, and only these offsets are constants.
+      /* The bar's rectangle is anchored to the CANVAS, not to the room, and that is not a preference.
 
-         That indirection exists because the first version baked the rectangle out of ROOM_W and
-         ROOM_TOP at load time, and the Lab resizes the room to 1680x760 - so a bar sized 660px wide
-         for a 700px room was being drawn 660px wide inside a 1680px one, positioned by a ROOM_TOP
-         captured before the Lab changed it. A constant that describes a room is wrong the moment
-         there is more than one room, and the Lab is the second room.
+         A room-anchored bar at the bottom works on a floor, where the room ends 20px above the canvas
+         bottom and the camera is pinned - but the Lab is 1680x760 and its room runs to y 890 with the
+         camera scrolling, so a room-anchored bar lands 290px off-screen. The Lab is where every tell
+         gets checked without playing a run, so a bar that disappears there is a bar that is only
+         really drawn in one of the two places it can be drawn.
 
-         20px inset each side and ROOM_TOP+6 rather than a fixed y: the bar then belongs to whatever
-         room it is drawn in, which is the only version of this that is correct in both. */
-      BOSS_BAR_INSET_X=20, BOSS_BAR_INSET_Y=6,
+         So it hangs off the canvas bottom edge, which is fixed in both, in the 20px strip below the
+         room. 20px is not much: the bar is 10 tall with a 3px frame, and the name and phase go ABOVE
+         it rather than below, because below is the canvas edge. Everything else about it is unchanged
+         and it still spans the room's width so the two notches stay legible across 660px. */
+      BOSS_BAR_MARGIN=23,   // canvas bottom to the bottom of the BAR. 23 rather than the 14 it started at,
+                       // because the bar carries a 3px frame and at 14 the frame straddled the room's
+                       // bottom wall (wall at y 580, frame ending at 589) so the bar looked bolted to
+                       // the masonry. 23 puts the frame's bottom edge exactly on the wall line.
+      BOSS_BAR_INSET_X=20,  // inset each side from the room's own walls, so it lines up with the play area
       BOSS_RECOVER=sec(1.1),   // dead time after every move. The gap the player spends reading the next
       BOSS_CD_MIN=sec(3.2), BOSS_CD_VAR=sec(1.0),   // seconds BETWEEN moves. The single most
                                 // important number on the boss, and the one that was wrong first.

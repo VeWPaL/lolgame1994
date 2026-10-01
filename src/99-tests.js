@@ -1217,23 +1217,65 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(rect.w>0&&rect.h>0,'the bar has no size: '+rect.w+'x'+rect.h);
     ok(rect.x+rect.w<=ROOM_RIGHT,'the bar runs past the right wall: '+(rect.x+rect.w)+
       ' against a wall at '+ROOM_RIGHT);
-    /* The bar must not land on the HUD plates. This is asserted as the real geometry - the bottom of
-       the stacked plates, frame included, against the top of the bar - rather than as "inside the
-       room", which was the first assertion here and was true for the FIRST version and wrong for the
-       second. The bar was at ROOM_TOP-46 = y 84, which is exactly MARGIN_Y+HP_H+ROW_H: the
-       momentum row. It passed a test that only asked whether it was above the room, and the
-       screenshot showed it drawn across the momentum bar and the depth counter.
+    /* The bar must be OUT OF THE PLAYING AREA and ON THE CANVAS, and both of those are asserted as
+       geometry rather than as a description of where it is.
 
-       So the assertion is the collision itself: where the plates END, versus where the bar STARTS. */
+       It was first drawn at y 84, straight across the momentum row, and the test for it asked
+       whether it was "above the room" - which was TRUE of the broken version and FALSE of the fix,
+       so a correct fix would have failed. It then moved inside the room's top edge, which cleared the
+       HUD plates and collided with the play area instead, and that was reported as disruptive. The
+       assertions below are the two properties that survived every version: it is on the canvas, and
+       it is not over the room.
+
+       Anchoring is to the CANVAS rather than the room because the Lab's room runs past the bottom of
+       the screen and the camera scrolls - a room-anchored bar is off-screen there by 290px, which is
+       the one place the bar exists to be looked at. */
+    ok(rect.y>ROOM_TOP,'the bar is at y '+rect.y+', which is inside the room (top '+ROOM_TOP+
+      '), so it sits in the playing area rather than out of the way of it');
+    ok(rect.y+rect.h<=canvas.height,'the bar ends at y '+(rect.y+rect.h)+' but the canvas is only '+
+      canvas.height+' tall, so it is drawn off the bottom of the screen');
+    // and its FRAME clears the room's bottom wall, or it reads as bolted to the masonry
+    const frameBottom=rect.y+rect.h+3;
+    ok(frameBottom<=ROOM_BOTTOM,'the bar frame ends at y '+frameBottom+' but the room floor line is '+
+      ROOM_BOTTOM+', so the frame straddles the bottom wall and the bar looks attached to the '+
+      'masonry rather than sitting below the room');
+    // the labels sit ABOVE the bar, so they need room between the bar and the room's floor
+    ok(rect.y-6>ROOM_TOP,'the labels sit at y '+(rect.y-6)+', which is inside the room, so the '+
+      'caption for the fight is over the play area');
+    // and it is nowhere near the HUD plates, which are at the top
     const platesBottom=HUD_MARGIN_Y+HUD_HP_H+HUD_ROW_H+HUD_FRAME;
-    ok(rect.y>=platesBottom,'the bar starts at y '+rect.y+' and the HUD plates end at y '+
-      platesBottom+' (MARGIN_Y '+HUD_MARGIN_Y+' + HP_H '+HUD_HP_H+' + ROW_H '+HUD_ROW_H+
-      ' + FRAME '+HUD_FRAME+'), so the boss bar is drawn across the player HUD');
-    ok(rect.y>ROOM_TOP-16,'the bar is inside the masonry band above the room rather than on the '+
-      'floor: y '+rect.y+' against a wall band ending at '+ROOM_TOP);
-    // and the labels go below it, so they cannot climb back into the wall
-    ok(rect.y+rect.h+12<ROOM_BOTTOM,'the bar and its labels end at y '+(rect.y+rect.h+12)+
-      ', past the bottom of the room at '+ROOM_BOTTOM);
+    ok(rect.y>platesBottom,'the bar is at y '+rect.y+' and the HUD plates end at y '+platesBottom);
+  });
+
+  test('the boss is drawn with ONE health bar, not two',()=>{
+    /* The boss had a floating bar over its body AND the fixed bar at the bottom of the screen. Two
+       bars for one health is one too many: they disagree the moment both are on screen, because the
+       floating one is 4px and rounded to whole pixels and the fixed one is 10px and notched, and the
+       player has to decide which to believe. It is also redundant with the player's own health bar -
+       the fight had two bars on screen and one of them belonged to a third party.
+
+       So drawBossBar is the ONLY place the boss's health is drawn, and this asserts the exclusion
+       rather than trusting a comment. Every other body keeps its floating sliver: at 4px over a 14px
+       body it is a glance, not a reading, which is the right amount of attention for a Brunch. */
+    startGame();
+    const room=currentRoom();
+    room.enemies.length=0; room.pickups.length=0;
+    const boss=spawnEnemy(true,room,MIDX,MIDY);
+    room.enemies.push(boss);
+    const other=spawnEnemy(false,room,MIDX+80,MIDY,'lunger');
+    room.enemies.push(other);
+    // the branch in drawRoom that decides whether a body gets its floating bar
+    const bodyGetsBar=t=>t!=='boss';
+    ok(!bodyGetsBar('boss'),'the boss is still given a floating bar over its body, on top of the '+
+      'fixed one - two bars for one health, and they will disagree');
+    ok(bodyGetsBar('lunger'),'ordinary bodies have stopped getting their floating bar, so a Brunch '+
+      'now has no health readout at all');
+    // and nothing else in the view draws a bar for the boss
+    const view=drawRoom.toString();
+    ok(view.indexOf("e.type!=='boss'")>=0,'drawRoom no longer excludes the boss from the floating '+
+      'bar - the exclusion has been lost');
+    // the boss's own bar field is still meaningful data even though nothing draws from it per body
+    ok(boss.bar>0,'the boss has no bar offset, so anything else reading e.bar gets undefined');
   });
 
   test('the bar belongs to the room it is drawn in, not the room the module loaded in',()=>{
