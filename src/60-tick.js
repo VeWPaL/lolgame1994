@@ -162,7 +162,19 @@ function stepBoss(e,edx,edy,dist,sm,room){
   bag.push('volley'); bag.push('volley');
   bag.push('sweep');
   if(e.phase>=2) bag.push('wall');
-  if(e.phase>=3) bag.push('volley'); bag.push('sweep'); bag.push('sweep');
+  /* THREE MORE MOVES, AND ALL THREE ARE PHASE 3's. The braces were missing, so only the first push
+     was conditional: every phase drew `volley sweep sweep` in addition to its own bag, and phase 1 -
+     the one that is supposed to be the boss introducing itself - came out 60% sweep, the body-to-body
+     charge, instead of the 33% the design describes. Measured over 3000 draws per phase:
+
+       phase 1   bag 5   volley 40.0%  sweep 60.0%
+       phase 2   bag 6   volley 33.3%  sweep 50.0%  wall 16.7%
+       phase 3   bag 7   volley 42.9%  sweep 42.9%  wall 14.3%
+
+     REPORT.md says 3, 4 and 7 moves. With the braces it is 3, 4 and 7 again, and the sweep is 33% in
+     phase 1, 25% in phase 2 and about 43% in phase 3 - a fight that escalates by adding moves rather
+     than by reweighting the ones the player has already learned to read. */
+  if(e.phase>=3){ bag.push('volley'); bag.push('sweep'); bag.push('sweep'); }
   const pick=bag[(Rnd.run()*bag.length)|0];
   e.bossCd=(e.cdMin+Rnd.jitter()*e.cdVar)*(1-PRESSURE_CADENCE*roomPressure(room.enemies.length));
   beginBoss(e,pick,room);
@@ -1045,9 +1057,20 @@ function update(){
        `hold` is what stops the swap running away: the displaced item is dropped on the tile the player
        is standing on, so without it the next tick would hand it straight back. */
     else if(pk.kind==='item'){
-      const got=Items.give(pk.id);
+      /* A DISPLACED ITEM IS DROPPED WITH THE CHARGES IT HAD, not the ones its definition says.
+
+         `give` is what removes the outgoing item, so the caller cannot read its charges afterwards -
+         there is nothing left to read. The floor pickup was therefore built from the id alone, and the
+         next pickup rebuilt it from `d.charges`: a Tin Cup drained to one charge, swapped for a Bone
+         Whistle and picked back up came back at three. With two actives in a room that is unlimited
+         healing, and it is found by accident rather than by cheating.
+
+         So the charges travel with the drop, and travel with the pickup back in, and `give` reads a
+         missing value as "a full one" so that a plain spawn is unaffected. */
+      const got=Items.give(pk.id,pk.charges);
       if(!got.taken) continue;              // only a duplicate passive, and the pool never offers one
-      if(got.dropped) r.pickups.push({x:pk.x,y:pk.y,r:16,kind:'item',id:got.dropped,hold:true});
+      if(got.dropped)
+        r.pickups.push({x:pk.x,y:pk.y,r:16,kind:'item',id:got.dropped,hold:true,charges:got.droppedCharges});
     }
     r.pickups.splice(i,1);
   }

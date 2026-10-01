@@ -1894,39 +1894,99 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
 
   test('the phase a bar marks is a phase the FIGHT can tell apart',()=>{
     /* This is the justification for drawing the two notches at all. If crossing 66% did nothing
-       observable, marking it would be decoration. It does something observable: stepBoss builds its
-       move bag from the phase number, so phase 2 adds the wall and phase 3 is mostly sweep. Measured
-       by CHOOSING from the real bag rather than by reading the source, because the claim is about what
-       a player experiences over a fight, not about what a comment says.
+       observable, marking it would be decoration. It does something observable: the boss builds its move
+       bag from the phase number, so phase 2 adds the wall and phase 3 is mostly sweep.
 
-       300 draws per phase against a seeded stream: the point is not the proportions, it is that
-       phase 1 cannot produce a wall and phase 2 can, and that the three phases are not the same set. */
+       AND IT ASKS THE GAME, WHICH IS THE WHOLE POINT. This used to rebuild the bag by hand:
+
+           bag.push('volley'); bag.push('volley'); bag.push('sweep');
+           if(p>=2) bag.push('wall');
+           if(p>=3) bag.push('volley'); bag.push('sweep'); bag.push('sweep');
+
+       - which is a COPY of the line in 60-tick.js, braces and all. When that line was missing its
+       braces the copy was missing them too, so the two agreed perfectly and the test passed against a
+       boss that charged 60% of the time in its introductory phase. A test that restates the rule it is
+       checking cannot discover that the rule is wrong; it can only confirm that the statement and the
+       implementation are identical, which is a different and much weaker thing.
+
+       So the bag is read out of the game, by counting the moves it actually performs. `stepBoss` picks
+       with `Rnd.run()`, so it is asked thousands of times and the moves are tallied from what the boss
+       does - beginBoss is intercepted so the fight does not actually play out 9000 times. */
     startGame();
     const room=currentRoom();
     room.enemies.length=0; room.pickups.length=0;
     const b=spawnEnemy(true,room,MIDX,MIDY-60);
     room.enemies.push(b);
-    const draws={};
-    for(const p of [1,2,3]){
-      b.phase=p;
-      const bag=[];
-      bag.push('volley'); bag.push('volley'); bag.push('sweep');
-      if(p>=2) bag.push('wall');
-      if(p>=3) bag.push('volley'); bag.push('sweep'); bag.push('sweep');
-      draws[p]=bag.length;
-      ok(bag.length>0,'phase '+p+' produced an empty move bag, so nothing happens in that phase');
-      if(p===1) ok(bag.indexOf('wall')<0,'phase 1 can already call the wall, so the notch at '+
-        (BOSS_PHASE_1*100)+'% marks nothing');
-      if(p===2) ok(bag.indexOf('wall')>=0,'phase 2 does NOT add the wall, so crossing '+
-        (BOSS_PHASE_1*100)+'% changes nothing the player can feel');
-      draws[p+'_bag']=bag.join(',');
-    }
-    ok(draws[1]<draws[2],'phase 1 and phase 2 draw from bags of the same size ('+draws[1]+' vs '+
-      draws[2]+'), so the notch between them marks no change');
-    ok(draws[2]<draws[3],'phase 2 and phase 3 draw from bags of the same size ('+draws[2]+' vs '+
-      draws[3]+'), so the second notch marks no change');
-    // the bag is the game's own, read from the source of truth rather than restated
-    ok(draws[3]==7,'phase 3 draws from '+draws[3]+' moves, expected 7: '+draws[3+'_bag']);
+    /* Count what the game chooses. beginBoss is the function that ACTS on a chosen move, so wrapping it
+       turns a real draw into an observation without running the fight. */
+    const realBegin=beginBoss;
+    const tally={};
+    beginBoss=function(e,pick,rm){ tally[pick]=(tally[pick]||0)+1; };
+    try{
+      const draws={};
+      for(const p of [1,2,3]){
+        b.phase=p;
+        const before={};
+        for(const k in tally) before[k]=tally[k];
+        let n=0;
+        /* `stepBoss` resolves an IN-PROGRESS move and returns (line 154: `if(e.move!=='idle')`), so a
+           boss that is mid-attack never reaches the draw. Because `beginBoss` is stubbed out, nothing
+           ever ends the move either - so without these two resets the boss picks exactly one move in
+           the whole phase and every distinct-move count comes out as 1. It is a stub artefact, not a
+           fact about the fight. */
+        for(let i=0;i<3000;i++){
+          b.move='idle'; b.moveT=0; b.bossCd=0;
+          stepBoss(b,player.x-b.x,player.y-b.y,100,1,room);
+          n++;
+        }
+        const got={};
+        for(const k in tally) got[k]=tally[k]-(before[k]||0);
+        let total=0; for(const k in got) total+=got[k];
+        eq(total,n,'phase '+p+' drew '+n+' moves but '+total+' were observed, so the count is not '+
+          'measuring what the game chooses');
+        draws[p]={total:total,got:got,names:Object.keys(got).filter(k=>got[k]>0).sort()};
+        ok(total>0,'phase '+p+' produced an empty move bag, so nothing happens in that phase');
+        if(p===1) ok(!got.wall,'phase 1 chose the wall '+(got.wall||0)+' times in '+total+
+          ' draws, so the notch at '+(BOSS_PHASE_1*100)+'% marks nothing');
+        if(p>=2) ok(got.wall>0,'phase '+p+' never chose the wall in '+total+
+          ' draws, so crossing '+(BOSS_PHASE_1*100)+'% changes nothing the player can feel');
+      }
+      /* THE LADDER OF MOVES PER PHASE: 3, then 4, then 7, which is what REPORT.md describes. That is a
+         count of ENTRIES IN THE BAG, and a bag can hold the same move twice - phase 1 is
+         `volley volley sweep`, so it has three entries and two DISTINCT moves, and volley is meant to
+         be the common one. So this asserts entries, and the distinct set is asserted separately as
+         "which behaviours exist", because those are two different questions and conflating them is how
+         the wrong bag hides.
+
+         Entries are read as the number of draws divided by the draws per entry... which is circular.
+         So they come from the PROPORTIONS instead: with an entry counted once per appearance, the bag
+         size is the reciprocal of nothing measurable - and what IS measurable is that each phase can
+         produce the moves it claims and only those. The distinct-move sets below are the real
+         assertion; these two are the escalation. */
+      const size=p=>draws[p].names.length;
+      ok(size(2)>size(1),'phase 2 can choose '+size(2)+' distinct moves and phase 1 only '+size(1)+
+        ', so the first notch adds no new behaviour');
+      /* Phase 3 ADDS NO NEW MOVE - it has the same three as phase 2 and simply uses them more, which is
+         the escalation the design describes ("3 to 4 to 7" is entries, not behaviours). So the second
+         notch cannot be asserted as a new move; it is asserted as a CHANGE OF MIX below. */
+      eq(draws[1].names.join(','),'sweep,volley','phase 1 can choose '+draws[1].names.join(',')+
+        ' - it should be exactly the volley and the charge');
+      eq(draws[2].names.join(','),'sweep,volley,wall','phase 2 can choose '+draws[2].names.join(',')+
+        ' - it should add exactly the wall');
+      eq(draws[3].names.join(','),'sweep,volley,wall','phase 3 can choose '+draws[3].names.join(',')+
+        ' - it should add no NEW behaviour, only more of them');
+      /* AND THE SHAPE OF EACH PHASE, because a bag can be the right size and still hold the wrong
+         fight. The missing braces put three phase-3 moves into every phase, which is what made the
+         charge - a body-to-body move, and the one that ends a careless player - 60% of phase 1. */
+      const share=(p,m)=>draws[p].got[m]/draws[p].total;
+      ok(share(1,'sweep')<0.45,'phase 1 charges the body-to-body move '+share(1,'sweep')*100+
+        '% of the time, so the phase that is supposed to introduce the boss is its most dangerous one');
+      ok(share(2,'wall')>0.20,'the wall is only '+share(2,'wall')*100+
+        '% of phase 2, so the notch at '+(BOSS_PHASE_1*100)+'% adds a move that barely appears');
+      ok(share(3,'sweep')>share(1,'sweep'),'phase 3 charges less often than phase 1 ('+
+        (share(3,'sweep')*100).toFixed(0)+'% vs '+(share(1,'sweep')*100).toFixed(0)+
+        '%), so the fight gets safer as it goes on');
+    } finally { beginBoss=realBegin; }
   });
 
   test('the boss bar does not survive the fight, and a dead boss stops being drawn',()=>{
@@ -3552,6 +3612,49 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     for(let i=1;i<BRUNCH.pack.length;i++)
       ok(counts[BRUNCH.pack[i]]<counts[BRUNCH.pack[i-1]],'a pack of '+BRUNCH.pack[i]+' is not rarer than '+BRUNCH.pack[i-1]);
     ok(counts[BRUNCH.pack[BRUNCH.pack.length-1]]<counts[BRUNCH.pack[0]]*0.5,'the biggest pack is nearly as common as the smallest');
+    /* THE BODIES OF A PACK MUST SHARE ONE ID, or there is no pack. This is the assertion the whole wall
+       mechanic rests on, and it is asked of rooms THE GENERATOR BUILT rather than of a pack this file
+       assembled by hand.
+
+       The generator incremented its pack counter once per body as well as once per pack, so each Brunch
+       received its own packId. The wall rule counts bodies sharing an id and compares that count to
+       BRUNCH_WALL_MIN, so every pack scored 1 and no pack could ever form: 1227 bodies across 221 rooms,
+       1227 distinct ids, zero walls. Every other wall test built its own pack with a hardcoded shared
+       id, which is the arrangement the mechanic needs, so none of them could see it.
+
+       Measured over 40 seeds rather than asserted from one room, because the failure was uniform and a
+       single room would not have shown that. */
+    let bodies=0,packs=0,ableToWall=0,roomsWithBrunch=0,largest=0;
+    for(let s=0;s<40;s++){
+      startGame();
+      for(const n of Object.values(rooms).filter(r=>r.type==='normal')){
+        enterRoom(n.x,n.y,'W'); readyT=0; fadeT=0; roomFade=0;
+        const by={};
+        currentRoom().enemies.forEach(e=>{
+          if(e.type!=='brunch') return;
+          ok(e.packId!==undefined,'a Brunch was spawned with no pack id at all, so it cannot belong to anything');
+          by[e.packId]=(by[e.packId]||0)+1;
+        });
+        const ids=Object.keys(by);
+        if(!ids.length) continue;
+        roomsWithBrunch++;
+        bodies+=currentRoom().enemies.filter(e=>e.type==='brunch').length;
+        packs+=ids.length;
+        for(const id of ids){
+          largest=Math.max(largest,by[id]);
+          if(by[id]>=BRUNCH_WALL_MIN) ableToWall++;
+        }
+      }
+    }
+    ok(roomsWithBrunch>50,'only '+roomsWithBrunch+' rooms in 40 seeds contained Brunch, so this '+
+      'assertion is not looking at enough of anything to mean anything');
+    ok(packs<bodies,'every Brunch is its own pack ('+packs+' packs for '+bodies+
+      ' bodies), so a pack of three or more can never be recognised as a pack');
+    eq(ableToWall,packs,'only '+ableToWall+' of '+packs+' generated packs can form a wall, so the '+
+      'wall mechanic is dead in the game and alive only in this file');
+    ok(largest>BRUNCH_WALL_MIN,'the largest generated pack is '+largest+', which never exceeds '+
+      BRUNCH_WALL_MIN+', so no pack could ever qualify');
+
     // and a real room rolls one knot in one place
     startGame();
     let sawPack=false;
@@ -3563,6 +3666,9 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       if(!pack.length) continue;
       sawPack=true;
       ok(pack.length>=BRUNCH.pack[0]&&pack.length<=BRUNCH.pack[BRUNCH.pack.length-1],'a pack of '+pack.length+' is outside the band');
+      /* and they are one pack, which is the thing the wall depends on */
+      eq(new Set(pack.map(e=>e.packId)).size,1,'a pack of '+pack.length+
+        ' arrived spread across '+new Set(pack.map(e=>e.packId)).size+' pack ids');
       let cx=0,cy=0; for(const e of pack){cx+=e.x/pack.length;cy+=e.y/pack.length;}
       const spread=Math.max.apply(null,pack.map(e=>Math.hypot(e.x-cx,e.y-cy)));
       ok(spread<40,'the pack did not arrive as a knot ('+spread.toFixed(0)+'px)');
@@ -6947,6 +7053,20 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   //                   damage. If that ever stops being true, the only answer to a wall is a blink,
   //                   which is a different game.
   test('a Brunch pack holds a wall: it forms, it holds, and it can still be walked around',()=>{
+    /* THE PACKS BELOW ARE BUILT BY HAND WITH `packId=777`, and that is a hole in this test worth
+       naming rather than quietly keeping.
+
+       Every other Brunch wall test builds its pack itself and hands it a shared id, which is the
+       arrangement the mechanic NEEDS - so the test could not tell the difference between a game that
+       shares ids and a game that does not. The generator incremented its pack counter once per BODY as
+       well as once per pack, so every Brunch in a real pack got its own id, every real pack counted
+       as a single body, and BRUNCH_WALL_MIN was never reached by anything the game itself produced.
+       Measured: 1227 bodies across 221 rooms, 1227 distinct ids, zero packs able to form a wall. An
+       entire mechanic was dead while this test passed.
+
+       So the generation of packs is asserted separately, below, against rooms the GENERATOR built. This
+       test still builds its own - it needs an exact size and an exact position to measure a formation
+       against - but it is no longer the only place the wall is claimed to work. */
     const build=(n,atX)=>{
       startGame(); const r=goTo('normal');
       r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;

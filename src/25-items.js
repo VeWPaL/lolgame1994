@@ -130,13 +130,26 @@ const Items=(function(){
      needs the displaced id to drop it, and a `give` that returned a bare boolean would force the
      caller to go and look up what is on that key - a second reader of the same fact, in the one place
      where the two would drift. */
-  function give(id){
+  /* `give(id, charges)` takes the charges to place at, when the caller knows them.
+
+     It is how a DISPLACED item comes back to the floor and then into the hand again without being
+     restored to full. `give` builds every entry from the definition's `d.charges`, which is correct for
+     a fresh pickup off the floor and wrong for one that was just taken off the floor carrying a
+     half-spent Tin Cup - so the charges had to be able to travel with the item, and the only place they
+     can live is on the pickup.
+
+     Anything that does not say otherwise gets the definition's own number, which is what every other
+     caller means. */
+  function give(id,charges){
     const d=Content.get('item',id);
     const already=equipped(id);
+    const start=charges===undefined?d.charges:charges;
     // A second copy of something with charges goes into the SAME slot as more charges, which is what
     // makes a consumable stack and a passive simply not be duplicated.
     if(already&&already.charges!=null&&already.charges!==Infinity){
-      already.charges+=d.charges!=null?d.charges:1;
+      // stacking adds whatever this copy is WORTH, so a half-spent one returning from the floor
+      // contributes what is left of it rather than a full set
+      already.charges+=start!=null?start:1;
       rebuild();
       return {taken:true,dropped:null};
     }
@@ -173,15 +186,20 @@ const Items=(function(){
        fourth number to stack, and it means picking up a second active is a real swap rather than a
        silent overwrite. The floor drops the displaced one where the new one was standing. */
     const slot=d.use==='active'?ACTIVE_SLOT:-1;
-    let dropped=null;
+    let dropped=null, droppedCharges=null;
     if(slot>=0){
       const prev=loadout.items.find(s=>s.slot===slot);
-      if(prev) dropped=prev.id;
+      if(prev){ dropped=prev.id; droppedCharges=prev.charges; }
     }
     if(dropped) loadout.items.splice(loadout.items.indexOf(equipped(dropped)),1);
-    loadout.items.push({id,name:d.name,charges:d.charges!=null?d.charges:null,slot});
+    loadout.items.push({id,name:d.name,charges:start!=null?start:null,slot});
     rebuild();
-    return {taken:true,dropped:dropped};
+    /* The displaced item's charges are captured HERE, while the entry still exists.
+
+       The caller cannot get them afterwards - `give` is what removes it, so a read from outside finds
+       nothing and the pickup is written with no charges, and the next pickup restores the definition's
+       full set. That is how a Tin Cup drained to one charge came back at three. */
+    return {taken:true,dropped:dropped,droppedCharges:droppedCharges};
   }
 
   /* Losing an item is a rebuild, so it cannot leave a residue. The charges go with it.
@@ -331,12 +349,32 @@ HOOKS.reveal_room=function(){
 };
 HOOKS.pull_pickups=function(){
   let n=0;
-  for(const pk of currentRoom().pickups){
+  const r=currentRoom();
+  for(const pk of r.pickups){
     if(pk.kind==='exit') continue;                 // the way out is not loot and does not come to you
     const d=Math.hypot(pk.x-player.x,pk.y-player.y)||1;
     if(d>200) continue;
-    pk.x=player.x+(pk.x-player.x)/d*90;
-    pk.y=player.y+(pk.y-player.y)/d*90;
+    /* ONLY EVER TOWARD THE PLAYER, AND ONLY AS FAR AS THE WALL ALLOWS.
+
+       This set the new position to exactly 90px from the player along the line to the pickup, for any
+       distance at all - including a distance of 9px. So a heart lying almost under the player was
+       pushed AWAY from them to 90px, and if they were near a wall that push put it outside the room,
+       where it can never be picked up again. Reproduced with the player against the left wall and a
+       heart 9px away: the heart ended up 77px outside the map.
+
+       Two changes, and the first is the one that matters:
+
+       1. NOTHING MOVES TOWARD A POINT IT IS ALREADY PAST. A pickup closer than the target distance is
+          simply left where it is. "Come here" cannot mean "go over there", and a spell that moves
+          something AWAY from you is not a pull.
+       2. Whatever happens, the result is CLAMPED INTO THE ROOM. The player is inside the room and the
+          pickup's new position is computed from them, so clamping is a formality - but it is the
+          formality that makes the rule true rather than merely intended. */
+    if(d<=90) continue;
+    let nx=player.x+(pk.x-player.x)/d*90, ny=player.y+(pk.y-player.y)/d*90;
+    nx=Math.max(ROOM_LEFT+pk.r,Math.min(ROOM_RIGHT-pk.r,nx));
+    ny=Math.max(ROOM_TOP+pk.r,Math.min(ROOM_BOTTOM-pk.r,ny));
+    pk.x=nx; pk.y=ny;
     n++;
   }
   return n>0;                     // an empty room spends nothing
