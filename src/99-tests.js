@@ -1368,6 +1368,191 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     }
   });
 
+  /* THE LAB IS A REAL PLACE, not a mock-up: F2 alone reaches it, and everything on its rail can be
+     taken. Four defects were found by walking into it, and each of them is a class worth a test.
+
+     None of them are subtle from the source. What they share is that the lab was built to LOOK at,
+     so the things that only happen when you USE it were never exercised - which is the standing
+     argument of this project, in its own house. */
+  test('the lab is reachable from a key alone, and its shelf items can be picked up',()=>{
+    startGame();
+    ok(state==='playing','a fresh game is in state '+state);
+    Lab.key('f2',true);
+    ok(state==='dev','F2 alone did not reach the lab; state is '+state);
+    const r=currentRoom();
+    const shelf=r.pickups.filter(pk=>pk.labShelf!==undefined);
+    ok(shelf.length===Content.ids('item').length,'the shelf offers '+shelf.length+' pickups for a '+
+      'roster of '+Content.ids('item').length+' items, so some items cannot be taken in the lab');
+    ok(shelf.every(pk=>pk.kind==='item'&&pk.id),'a shelf pickup is not a real item pickup: '+
+      JSON.stringify(shelf[0]||{}));
+    ok(shelf.every(pk=>!pk.hold),'shelf pickups are flagged `hold`, which makes the game skip them '+
+      'until the player steps off - so walking into one does nothing');
+    // and it really is takeable, through the game's own path
+    const pk=shelf[Math.floor(shelf.length/2)];
+    player.x=pk.x; player.y=pk.y; player.lagX=pk.x; player.lagY=pk.y;
+    for(let i=0;i<4;i++) update();
+    ok(r.pickups.filter(q=>q.labShelf===pk.labShelf).length===0,'walking into a shelf item did not '+
+      'consume it: the pickup is still there, so nothing was equipped');
+    ok(Lab.shelfData()[pk.labShelf].gone>0,'the alcove it came from is not marked empty, so the '+
+      'shelf would refill itself while the player is still standing there');
+    Lab.key('f2',true);   // leave
+  });
+
+  test('leaving the lab takes its shelf with it, so no run inherits a free roster',()=>{
+    /* This one hid behind two owners of one field. The shelf rebuilt `r.pickups` by REASSIGNING it
+       while the game's pickup loop in 60-tick held the old array and spliced as it went. Leaving the
+       lab then filtered the new array, so the old one kept its items - and the next run started with
+       free items lying on the floor. The symptom was "3 pickups left after F2" with no plausible
+       cause; the cause was that two things thought they owned the reference.
+
+       So the assertions are about the room's pickups after an actual leave, and the array identity
+       is checked as well - two owners of one field is the whole bug. */
+    startGame();
+    Lab.key('f2',true);
+    const r=currentRoom();
+    const arrayBefore=r.pickups;
+    Lab.key('f6',true);   // make sure every alcove is full before we leave
+    ok(r.pickups.filter(pk=>pk.labShelf!==undefined).length===Content.ids('item').length,
+      'F6 did not refill the shelf, so this test cannot tell a clean exit from a dirty one');
+    Lab.key('f2',true);
+    ok(state!=='dev','F2 did not leave the lab');
+    const after=currentRoom();
+    ok(after.pickups.filter(pk=>pk.labShelf!==undefined).length===0,
+      after.pickups.filter(pk=>pk.labShelf!==undefined).length+' shelf pickups survived the exit, '+
+      'so the next run starts with items on the floor that nobody put there');
+    ok(after.pickups===arrayBefore,'the lab REASSIGNED r.pickups ('+(after.pickups===arrayBefore?
+      'same':'different')+' reference after the exit). The game splices that array in place; a '+
+      'second owner of the reference means consumed pickups and rebuilt pickups live in different '+
+      'arrays, which is how an item survives leaving a room it was never in');
+    // and a fresh run has nothing on the floor
+    startGame();
+    ok(currentRoom().pickups.length===0,'a fresh run starts with '+currentRoom().pickups.length+
+      ' pickups on the floor');
+  });
+
+  test('the shelf refills on its own, and F6 refills it at once',()=>{
+    startGame();
+    Lab.key('f2',true);
+    const r=currentRoom();
+    const pk=r.pickups.filter(q=>q.labShelf!==undefined)[2];
+    player.x=pk.x; player.y=pk.y; player.lagX=pk.x; player.lagY=pk.y;
+    for(let i=0;i<4;i++) update();
+    const wait=Lab.shelfData()[pk.labShelf].gone;
+    ok(wait>0,'the alcove did not start a refill timer');
+    /* THE PLAYER STEPS AWAY FIRST, and that is not tidiness - it is the whole test.
+
+       The alcove refills at the end of its timer and the game consumes a pickup the instant the
+       player touches it. So a test that keeps the player standing on the rail watches the alcove
+       return at zero ticks and get taken again on the next one, which is CORRECT and looks exactly
+       like a shelf that never refills. It cost me two wrong diagnoses: first that the timer was not
+       running (it was, 522 down to 516), then that the refill branch was unreachable (it fires on the
+       tick the timer reaches zero). Measured tick by tick: gone=2,1,0 with the pickup back, then 525
+       again because the player was standing on it.
+
+       So the player moves off the alcove, the timer runs out, and the item is observed to be back -
+       which is the thing a player walking along the rail actually sees. */
+    player.x=pk.x+220; player.y=pk.y; player.lagX=player.x; player.lagY=player.y;
+    for(let i=0;i<wait+1;i++) update();
+    ok(Lab.shelfData()[pk.labShelf].gone===0,'the alcove timer ran out but the alcove is still marked '+
+      'empty after '+(wait+1)+' ticks');
+    ok(r.pickups.filter(q=>q.labShelf===pk.labShelf).length===1,'the alcove refilled on its timer '+
+      'but its item is not back on the floor');
+    // and F6 is the instant version, for when you have changed a build and want the shelf back
+    const pk2=r.pickups.filter(q=>q.labShelf!==undefined)[7];
+    player.x=pk2.x; player.y=pk2.y; player.lagX=pk2.x; player.lagY=pk2.y;
+    for(let i=0;i<4;i++) update();
+    ok(Lab.shelfData()[pk2.labShelf].gone>0,'the second alcove was not emptied');
+    Lab.key('f6',true);
+    ok(Lab.shelfData()[pk2.labShelf].gone===0,'F6 did not reset alcove '+pk2.labShelf);
+    ok(r.pickups.filter(q=>q.labShelf===pk2.labShelf).length===1,'F6 reset the flag but did not put '+
+      'the item back on the floor');
+    Lab.key('f2',true);
+  });
+
+  test('the lab brazier flame burns in the bowl, and its floor has no lattice over it',()=>{
+    /* Both of these were only ever visible in a screenshot, which is the argument for looking.
+
+       THE FLAME. The brazier and the flame are two separate baked sprites, each centred on its own
+       middle, so the features inside them sit at offsets: the bowl is at o-21 within the brazier, and
+       the flame's BASE is at o+25 within the flame. Drawn at two unrelated offsets those put the
+       flame's base 166px below the bowl - a fifth of a brazier's height - which read as a lit line on
+       the floor beside a stand rather than as fire in a dish.
+
+       The relationship that matters is the only one that means anything: the flame's base must land
+       on the bowl's centre. So the test measures both offsets out of the sprites' own geometry and
+       checks the drawn position against the bowl.
+
+       THE GRID. The lab drew a 120px grid over a floor that is otherwise a seamless speckle. A room
+       1680 wide has 14 of those verticals, and over an untextured background they read as tiles
+       rather than as a ruler on the ground. A dungeon room has NO grid at all - which is exactly why
+       the dungeon floor looks like ground and the lab floor looked like squares. */
+    const ga=Lab.gridAlphas();
+    // the minor pass must contribute nothing: it is the lattice, and the lattice is what tiled
+    ok(ga.minor===0,'the minor grid is still drawn at alpha '+ga.minor+', and a '+
+      ga.minorStep+'px lattice over a 1680px room is the tiled-floor look, not a measuring aid');
+    ok(ga.major<ga.minor||ga.minor===0,'the major lines are no longer the only ones drawn');
+
+    // the flame geometry, from the numbers the drawing itself uses
+    const G=Lab.BRAZIER_GEOM();
+    const bowlScreen=G.r+G.bowlY;           // the bowl is BOWL_Y above the sprite's top-left edge
+    const flameTop=bowlScreen-G.flameBaseY; // so the flame's BASE lands on the bowl
+    ok(flameTop+G.flameBaseY===bowlScreen,'the flame is drawn so its base is at '+(flameTop+G.flameBaseY)+
+      ' and the bowl is at '+bowlScreen+', so the fire sits '+
+      (flameTop+G.flameBaseY-bowlScreen)+'px from the dish it belongs in');
+    ok(flameTop>=0,'the flame is drawn at y '+flameTop+', above the top of the '+G.r+
+      'px brazier sprite, so it is off its own geometry');
+    ok(flameTop+G.flameR*2<=G.r*2,'the flame extends to '+(flameTop+G.flameR*2)+' inside a '+
+      (G.r*2)+'px sprite, so it is drawn well past the bottom of the brazier');
+    // and the two sprites must agree about where UP is, which is the bug that was there
+    ok(G.flameBaseY>0,'the flame base offset is '+G.flameBaseY+', which places the fire BELOW its '+
+      'own centre rather than above it');
+
+    /* AND WHAT IS ACTUALLY DRAWN. Everything above computes from the constants, so it cannot see a
+       wrong call site - a mutation that put the flame back at the old y-48 passed all of it, because
+       the constants were still correct while the drawing ignored them. That is the third time in this
+       work that a test verified the data while the defect was in the drawing, and the third time a
+       screenshot found it first.
+
+       So this measures the draw calls themselves. `drawImage` is wrapped for one frame and every
+       flame-sized sprite recorded with its y. It cannot be fooled by a constant that nothing uses,
+       and it does not care how the call is spelled.
+
+       The player is moved onto a brazier first, and that is load-bearing rather than cosmetic: the
+       braziers are laid out from the room's own origin at 175px in and 300px apart, and the camera
+       follows the player, so a test that renders wherever the player happens to be standing may have
+       no brazier in frame at all. "No flame was drawn" is then a true report about the wrong place. */
+    Lab.enter();
+    const b=currentRoom().bounds;
+    const brX=b.l+175, brY=b.t+175;             // the first brazier the lab places
+    player.x=brX; player.y=brY+60; player.lagX=player.x; player.lagY=player.y;
+    updateCamera();
+    const realDraw=ctx.drawImage;
+    const seen=[];
+    ctx.drawImage=function(img,x,y){
+      if(img&&img.width===G.flameR*2) seen.push(y);
+      return realDraw.apply(this,arguments);
+    };
+    try{ render(); } finally { ctx.drawImage=realDraw; }
+    ok(seen.length>0,'no flame sprite was drawn at a brazier the player is standing on ('+
+      seen.length+' found), so there is nothing to check');
+    if(seen.length){
+      // The flame's BASE is its top plus the base offset inside its own sprite.
+      const baseY=seen[0]+G.flameBaseY;
+      /* And the bowl is ABOVE the brazier's centre: it is baked at `o-bowlY` inside a sprite drawn
+         with its top-left at `y-BRAZIER_R`, so on screen it sits at `y-BRAZIER_R-bowlY`. The first
+         version of this line had the sign the other way round - `y-BRAZIER_R+bowlY` - and reported the
+         FIXED drawing as 42px wrong. Which is worth stating plainly: a test written to check a
+         geometry bug, getting that geometry backwards and failing against correct code, is the same
+         failure as the one it was meant to catch. The screenshot agreed with the code and not with
+         the test, which is why the code was left alone and the test was fixed. */
+      const bowlWorld=brY-G.r-G.bowlY;
+      const drawn=Math.round(baseY-cam.y), want=Math.round(bowlWorld-cam.y);
+      ok(Math.abs(drawn-want)<=2,'the flame burns '+(want-drawn)+'px from its bowl: drawn base at '+
+        'screen y '+drawn+', the bowl is at '+want+' (camera y '+Math.round(cam.y)+')');
+    }
+    Lab.leave();
+  });
+
   test('the boss bar is drawn only for a boss that is alive in the current room',()=>{
     startGame();
     const room=currentRoom();

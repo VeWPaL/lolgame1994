@@ -169,6 +169,24 @@ const Lab=(function(){
      plates under it. The row count is derived from the room width rather than fixed, so a narrower
      lab wraps to three rows instead of overflowing again. */
   const SHELF_ROWS=2;
+  /* THE SHELF IS A PICKUP, not a picture of one.
+
+     It was lab-owned data and deliberately not pushed into `r.pickups`, on the reasoning that the
+     shelf is something to be LOOKED at - everything on it is already equipped, so walking into one
+     should do nothing. That reasoning was about the shelf and missed the obvious: in a room with a
+     roster on a rail, the first thing anyone does is walk up and take one, and the shelf was the one
+     place in the game where items could not be picked up at all. A dev view that refuses to do the
+     thing the game does is testing something other than the game.
+
+     So each alcove is also a real pickup at the same position. Taking it equips it through exactly
+     the same code path as a chest in a real room - `Items.give`, the same displacement of the item
+     that was already held, the same drop-on-the-floor. Which means the lab now exercises the swap
+     path, which is the single most intricate piece of the item system, on every walk past the rail.
+
+     The alcoves RESPAWN. Without that the shelf empties itself the first time it is used and the
+     thing you came to test is gone, so each alcove carries a flag and refills a short time after it
+     is taken. The wait is in ticks rather than milliseconds because the game thinks in ticks. */
+  const SHELF_RESPAWN_TICKS=sec(2.5);
   function layShelf(){
     const r=currentRoom(), b=r.bounds;
     const ids=Content.ids('item');
@@ -182,8 +200,71 @@ const Lab=(function(){
       const inRow=Math.min(perRow,ids.length-row*perRow);
       const x=b.l+b.w/2+(col-(inRow-1)/2)*gap;
       return {id:id,name:d.name,glyph:d.glyph,color:d.color,blurb:d.blurb,
-              slot:d.slot,rarity:d.rarity,x:x,y:shelfY(b)+(row?1:-1)*58,row:row};
+              slot:d.slot,rarity:d.rarity,x:x,y:shelfY(b)+(row?1:-1)*58,row:row,
+              gone:0};
     });
+    syncShelfPickups();
+  }
+  /* One pickup per alcove, carrying the alcove's index so the alcove can be emptied when it is taken.
+     `hold` is deliberately NOT set: that flag exists to stop a just-dropped item being handed straight
+     back, and these are meant to be picked up the moment the player touches them. */
+  function syncShelfPickups(){
+    const r=currentRoom();
+    if(!r) return;
+    /* IN PLACE, never by reassignment. `r.pickups` has two owners: this and the game's pickup loop
+       in 60-tick, which splices as it goes. Reassigning the field here replaced the array the loop
+       was holding, so a shelf pickup could be consumed out of one array while the alcoves were
+       rebuilt in another - and leaving the lab then filtered the new array, leaving the old one
+       intact. One leftover shelf item survived the exit and the next run started with a free
+       item on the floor. The symptom was three pickups left after F2 and no plausible cause; the
+       cause is that two things thought they owned the field.
+
+       So the shelf removes its own entries with splice, exactly as the game does, and the field
+       keeps one owner for its identity. */
+    for(let i=r.pickups.length-1;i>=0;i--){
+      if(r.pickups[i].labShelf!==undefined) r.pickups.splice(i,1);
+    }
+    for(let i=0;i<shelf.length;i++){
+      const s=shelf[i];
+      if(s.gone>0) continue;
+      r.pickups.push({x:s.x,y:s.y,r:18,kind:'item',id:s.id,labShelf:i});
+    }
+  }
+  /* An alcove that has been emptied comes back, so the rail can be used again. Driven from the lab's
+     own tick rather than from the pickup loop, because the pickup loop owns `r.pickups` and must not
+     be made to know that a shelf exists.
+
+     An alcove is emptied by the pickup loop removing its pickup, which happens the moment the player
+     walks into it. So "has this alcove still got its pickup" is the question, and asking it is more
+     robust than being told: a pickup consumed by any path at all - including one added later - refills
+     the alcove, and nothing has to remember to report it. */
+  function tickShelf(){
+    const r=currentRoom();
+    if(!r) return;
+    const live=new Set();
+    for(const pk of r.pickups) if(pk.labShelf!==undefined) live.add(pk.labShelf);
+    let changed=false;
+    for(let i=0;i<shelf.length;i++){
+      const s=shelf[i];
+      if(s.gone>0){
+        /* Counting down. When it reaches zero the alcove is put back on the rail on THIS tick, and
+           `gone` is left at zero rather than immediately restarted. The first version did the refill
+           and then fell through to the next tick, which found the alcove marked empty, found no pickup
+           where one should be - because the refill had not happened yet - and started the timer again.
+           The alcove therefore oscillated between one tick available and 522 ticks gone, and a player
+           standing on the rail could never pick the same item up twice.
+
+           The two states are kept distinct on purpose: `gone > 0` means "waiting to come back", and
+           `gone === 0` with a pickup present means "on the rail". Refilling sets the pickup and stops
+           there, so the next tick sees both and leaves it alone. */
+        if(--s.gone===0) changed=true;   // back on the rail this tick; `gone` stays 0
+      } else if(!live.has(i)){
+        // the alcove is marked available but its pickup is gone: it was just taken
+        s.gone=SHELF_RESPAWN_TICKS;
+        changed=true;
+      }
+    }
+    if(changed) syncShelfPickups();
   }
 
   /* ------------------------------------------------------------------ the drove -------------- */
@@ -265,6 +346,13 @@ const Lab=(function(){
      somebody's afternoon. */
   function leave(){
     on=false; numbers.length=0; lastHp.clear();
+    /* The shelf's pickups go with it. They live in `r.pickups`, and leaving the lab does not destroy
+       the room - it only changes the state - so without this, thirteen un-takeable items are still on
+       the rail the next time a run starts, and the run would hand the player a free full roster. */
+    const r=currentRoom();
+    if(r&&r.pickups) for(let i=r.pickups.length-1;i>=0;i--)
+      if(r.pickups[i].labShelf!==undefined) r.pickups.splice(i,1);
+    for(const s of shelf) s.gone=0;
     state='start';
     keys={};
   }
@@ -341,6 +429,11 @@ const Lab=(function(){
     if(k==='f3'){ frozen=!frozen; return true; }
     if(k==='f4'){ dropper=(dropper+1)%LAB_SPECIMENS.length; return true; }
     if(k==='f5'){ drove(); return true; }
+    /* F6 REFILLS THE SHELF. The alcoves respawn on their own after two and a half seconds, which is
+       right when you are walking past the rail collecting things, and useless when you have taken
+       everything and want it back without waiting - which is what you want after changing a build and
+       coming back to see the effect. */
+    if(k==='f6'){ for(const s of shelf) s.gone=0; syncShelfPickups(); return true; }
     return false;
   }
 
@@ -377,6 +470,34 @@ const Lab=(function(){
      room size and origin. The same argument as the floor, which was already cached for exactly this
      reason before the lab existed. */
   const MINOR=120, MAJOR=480, gridCache=new Map();
+  /* The grid is a MEASURING AID, so it is faint, and it used not to be. It is drawn at
+     rgba(150,160,180,0.055) for minor lines over a floor that is already a seamless speckle - and
+     over a 1680x760 room that is 14 verticals and 7 horizontals, which reads as a tiled floor rather
+     than as a floor with a ruler on it. A dungeon room is 700x450 and has NO grid at all, which is
+     exactly why the dungeon floor looks like ground and the lab floor looked like squares: the lab
+     was carrying a visual element the game does not have, over the element the game does have.
+
+     So the minor lines are gone entirely and only the majors remain, at a quarter of the old
+     strength. What is left is 3 verticals and 2 horizontals in a room this size: enough to judge
+     distance and camera travel by, not enough to tile the floor. The centre cross stays because it
+     is one mark, not a lattice. */
+  const GRID_MINOR_ALPHA=0;      // was 0.055 - a 120px lattice over a 1680px room is a tiled floor
+  const GRID_MAJOR_ALPHA=0.055;  // was 0.13
+  function gridAlphaFor(step){ return step===MINOR?GRID_MINOR_ALPHA:GRID_MAJOR_ALPHA; }
+  /* The two brazier offsets and the flame's half-size, published so the suite can check the flame
+     against the bowl without re-deriving numbers that only mean something together.
+
+     It is a FUNCTION, not a constant, and that is not a style preference. The first version built the
+     object here, at the top of the file, out of BRAZIER_BOWL_Y and FLAME_BASE_Y - which are declared
+     70 lines further down. `const` does not hoist, so the Lab module threw a ReferenceError the
+     moment it loaded, `Lab` never existed, and 32 tests failed for a reason that had nothing to do
+     with any of them: an object literal reads its values at the moment it is built, so building it
+     before the values are declared cannot work however far apart they are.
+
+     Reading them inside a function defers that to the moment of the call, which is the only thing
+     that makes the order irrelevant. The failure was silent in the worst way - the console showed a
+     ReferenceError from a line that looked entirely reasonable. */
+  const BRAZIER_GEOM=()=>({bowlY:BRAZIER_BOWL_Y, flameBaseY:FLAME_BASE_Y, flameR:FLAME_R, r:BRAZIER_R});
   function gridSprite(b){
     const key=b.w+'x'+b.h+'@'+b.l+','+b.t;
     let c=gridCache.get(key);
@@ -385,7 +506,11 @@ const Lab=(function(){
     const g=c.getContext('2d');
     for(let pass=0;pass<2;pass++){
       const step=pass?MAJOR:MINOR;
-      g.strokeStyle=pass?'rgba(214,178,110,0.13)':'rgba(150,160,180,0.055)';
+      // a pass whose alpha is zero is skipped rather than stroked invisibly: stroking 21 invisible
+      // lines costs a path build and a rasterise per frame for a lattice nobody can see
+      if(gridAlphaFor(step)===0) continue;
+      g.strokeStyle=pass?'rgba(214,178,110,'+gridAlphaFor(step)+')'
+                        :'rgba(150,160,180,'+gridAlphaFor(step)+')';
       g.lineWidth=1;
       g.beginPath();
       for(let x=0;x<=b.w;x+=step){ g.moveTo(x+0.5,0); g.lineTo(x+0.5,b.h); }
@@ -433,6 +558,13 @@ const Lab=(function(){
      sat outside the frame at every camera position and the lab rendered with no light in it at all.
      A count of "eight braziers placed" says nothing about how many are visible. */
   const BRAZIER_R=168, BRAZIER_FRAMES=5, brazierCache=new Map();
+  /* WHERE THE FLAME GOES, derived rather than guessed. BRAZIER_BOWL_Y is the bowl's centre inside the
+     brazier sprite (baked at o-21 in brazierSprite); FLAME_BASE_Y is the flame's base inside the
+     flame sprite (baked at o+25 in flameFrame); FLAME_R is the half-size of the flame sprite. The
+     flame is drawn so its base lands exactly on the bowl's centre - which is the only relationship
+     between the two numbers that means anything visually, and which the previous pair of constants
+     did not have. */
+  const BRAZIER_BOWL_Y=21, FLAME_BASE_Y=25, FLAME_R=36;
   function brazierSprite(){
     let c=brazierCache.get('body');
     if(c) return c;
@@ -491,7 +623,20 @@ const Lab=(function(){
       ctx.globalAlpha=0.86+0.14*Math.sin(frameCount*0.21/SPEEDUP);
       ctx.drawImage(body,x-BRAZIER_R,y-BRAZIER_R);
       ctx.globalAlpha=1;
-      ctx.drawImage(flame,x-36,y-48);
+      /* THE FLAME SITS IN THE BOWL, and it used to sit on the floor beside the stand.
+
+         Both sprites are baked around their own centre, so their features live at an offset inside
+         them, and the two offsets were never reconciled: the bowl is drawn at `o-21` within the
+         brazier sprite (so `y - BRAZIER_R - 21` on screen) while the flame's BASE is baked at `o+25`
+         within the flame sprite (so `y - 48 + 25 = y - 23`). That put the flame's base 166px below the
+         bowl it belongs to - which is a fifth of a brazier's height - and read as a lit line on the
+         floor beside a stand, rather than as fire in a dish.
+
+         The offsets are now named and derived from the sprites themselves rather than from whatever
+         two numbers were typed next to each other, so moving the bowl in the brazier sprite moves the
+         flame with it. BRAZIER_BOWL_Y is where the bowl sits inside the brazier sprite, and
+         FLAME_BASE_Y where the flame's base sits inside the flame sprite. */
+      ctx.drawImage(flame, x-FLAME_R, y-BRAZIER_R-BRAZIER_BOWL_Y-FLAME_BASE_Y);
       ctx.restore();
     }
   }
@@ -680,7 +825,8 @@ const Lab=(function(){
     ['F2','leave the lab'],
     ['F3','freeze / release the row'],
     ['F4','arm the dropper'],
-    ['F5','drop a dozen']
+    ['F5','drop a dozen'],
+    ['F6','refill the shelf']
   ];
   function drawLegend(){
     if(!on) return;
@@ -722,5 +868,7 @@ const Lab=(function(){
 
   return {on:()=>on, frozen:()=>frozen, dropper:()=>dropper, toggle, enter, leave, key,
           build, layRow, layShelf, drove, tickNumbers, freeze, remember, draw, drawNumbers, drawLegend,
-          shelfData, numbers:()=>numbers, LAB_W, LAB_H};
+          shelfData, numbers:()=>numbers, LAB_W, LAB_H, tickShelf, syncShelfPickups, BRAZIER_GEOM,
+          gridAlphas:()=>({minor:GRID_MINOR_ALPHA, major:GRID_MAJOR_ALPHA, minorStep:MINOR, majorStep:MAJOR}),
+          refill:()=>{ for(const s of shelf) s.gone=0; syncShelfPickups(); }};
 })();

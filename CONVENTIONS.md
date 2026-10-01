@@ -870,7 +870,61 @@ those are not the same thing. It is `bossBarRect()`, worked out per draw.
 > not one. Dividing a rounded pixel back out and comparing it to a raw fraction manufactures a
 > disagreement that does not exist on screen.
 
-## The lab — a game state that is not a game
+## The lab — four defects that only walking into it could find
+
+`src/35-devlab.js`. **F2** in and out, **F3** freeze the row, **F4** arm the dropper, **F5** drop a
+dozen, **F6** refill the shelf. A 1680x760 room, so the camera genuinely moves.
+
+The room in this file is a 1680x760 room and the canvas is 960x600, so the camera is not optional here —
+it is the only way to see most of the room at all. That makes the lab the project's one testbed for
+anything about a moving camera, and it is worth knowing that when judging a HUD that has to work while
+the world scrolls under it.
+
+Four things were wrong with it, and **none of them are findable by reading the module.** They are what
+you get when a view is built to be looked at and the things that only happen when you *use* it are
+never exercised — which is the standing lesson of this project, happening inside its own house.
+
+1. **The flame was on the floor beside the brazier, not in it.** Two separately baked sprites, each
+   centred on its own middle, so their features sit at offsets: the bowl at `o-21` inside the brazier,
+   the flame's base at `o+25` inside the flame. Drawn at two unrelated numbers those put the fire
+   **166px below the dish** — a fifth of a brazier's height. The only relationship between the two
+   numbers that means anything is that the flame's base must land on the bowl's centre, and the code
+   now says exactly that.
+2. **The floor was a grid of white squares.** The lab drew a 120px lattice over a floor that is
+   otherwise a seamless speckle; 14 verticals in a 1680px room, which reads as tiles. **A dungeon room
+   has no grid at all** — which is the whole reason the dungeon floor looks like ground and the lab
+   floor did not. The lab was carrying a visual element the game does not have, over the element the
+   game does have. The minor lattice is gone; only 3 majors remain.
+3. **Items could not be picked up.** The shelf was lab-owned data, deliberately not pushed into
+   `r.pickups`, on the reasoning that it is a thing to look at. In a room with a roster on a rail, the
+   first thing anyone does is walk up and take one — and this was the one place in the game where that
+   was impossible. A dev view that refuses to do what the game does is testing something else. Each
+   alcove is now a real pickup through the game's own `Items.give` path, so the lab exercises the
+   displacement-and-drop logic on every walk past the rail. **F6** refills them at once.
+4. **Leaving the lab leaked thirteen items into the next run.** Two owners of one field: the shelf
+   rebuilt `r.pickups` by *reassigning* it while the pickup loop in `60-tick` spliced the old array in
+   place. Leaving filtered the new array, leaving the old one intact. Both sides now splice in place.
+
+> **`const` does not hoist, and an object literal reads its values when it is built.** Publishing the
+> brazier geometry as `const BRAZIER_GEOM={bowlY:BRAZIER_BOWL_Y,…}` near the top of the file, from
+> constants declared seventy lines lower, threw a `ReferenceError` the moment the module loaded — `Lab`
+> never existed and **32 tests failed for reasons that had nothing to do with any of them.** It is a
+> function now, so the order cannot matter.
+
+**Three things the tests for these got wrong first**, each the same shape as the ones before them:
+
+- The flame test computed from the constants and so **could not see a wrong call site** — a mutation
+  putting the flame back at `y-48` passed it. It measures the `drawImage` calls now.
+- The first version of that measurement had the bowl's sign backwards and **failed against correct
+  code**, reporting the fixed drawing as 42px wrong. The screenshot agreed with the code. A test
+  written to catch a geometry bug, getting that geometry backwards, is the same failure it was
+  written to catch.
+- The shelf test **stood the player on the alcove**, so the refill was consumed again the instant it
+  appeared — correct behaviour that looks exactly like a shelf that never refills. Two wrong diagnoses
+  came out of that before measuring tick by tick: `gone=2,1,0` with the pickup back, then `525` again
+  because the player was still standing there.
+
+### The lab itself
 
 `src/35-devlab.js`. **F2** in, **F2** out, **F3** freeze/release the row, **F4** arm the dropper,
 **F5** drop a dozen. A 1680x760 room, so the camera genuinely moves.
@@ -985,7 +1039,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **185 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **191 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
   `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
   figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.

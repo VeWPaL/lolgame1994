@@ -1074,7 +1074,7 @@ function update(){
      that is one tick stale and therefore wrong exactly when it matters: a burst that lands on one
      tick would be attributed to the next, and a reader comparing the number against the flash would
      find them a tick apart and conclude the readout is broken. */
-  if(state==='dev') Lab.tickNumbers();
+  if(state==='dev'){ Lab.tickNumbers(); Lab.tickShelf(); }
 }
 
 /* The way out. It is a pickup slot so that the existing touch-to-collect code carries it, but it is
