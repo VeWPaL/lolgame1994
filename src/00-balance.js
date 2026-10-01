@@ -527,7 +527,62 @@ const WEAPONS=[
    Precision narrows it from 9.2 degrees to 0.4, a twenty-three-fold range that no other gun has, and
    that range is the whole reason Precision exists as a stat. Tightening it would have cost the weapon
    its identity to buy a tenth of a second. */
- {name:'Arcane Beam',color:'#3fa9ff',cooldown:5.2*SPEEDUP,speed:4,dmg:1.55,count:1,spread:0.16,spreadFromPrecision:true,r:4,fNear:170,fFar:470,fMin:0.6},
+ /* THE BEAM IS 0.5, AND THAT IS THE POINT. It was 1.55. This reverses the last change to this
+   number and the earlier reasoning is kept above so the disagreement is visible rather than buried.
+
+   It was raised off 0.84 because a low base made one item break the weapon: "Strength is added FLAT,
+   so a +4 is +476% on a 0.84 gun and +258% on a 1.55 one. The beam was the weapon a single item
+   broke, which is the opposite of what a low base is supposed to do."
+
+   That is a real problem and it is also the identity. Strength is a per-SHOT flat bonus, and the beam
+   fires 17.31 times a second against the Bolt's 2.37 - so a flat bonus is a per-SECOND bonus in
+   disguise and the rate is the multiplier. A low base is therefore not weakness, it is headroom: the
+   gun starts as the worst thing you can hold and becomes the best thing you have put work into.
+
+   Measured damage per second, 20 trials, one immortal lunger at 200px, as Strength sigils go in:
+
+     sigils   strength    Bolt     Beam    Beam/Bolt
+         0       +3       13.9     19.0      x1.37
+         1       +4       15.3     25.3      x1.65
+         2       +5       16.7     30.4      x1.82
+         3       +6       18.1     34.5      x1.91
+         4       +7       19.5     40.8      x2.09
+         6       +9       22.3     51.2      x2.30
+         9      +12       26.4     68.9      x2.61
+
+   So the first sigil is worth +35% of the beam's damage and +10% of the Bolt's - 3.5x, not the 7.3x
+   the raw arithmetic suggests, because the beam misses 57% of its shots at this range. That is the
+   canvas, and it is measured rather than argued.
+
+   NOTE WHAT TTK HIDES. Judged by time-to-kill the first sigil looks worth -21% to BOTH guns, which is
+   how this nearly got recorded as a non-effect. TTK is quantised by whole shots - a gun needing four
+   hits and a gun needing twenty-one both step in chunks - so it cannot show a scaling curve. The
+   damage-per-second table above is the one that answers the question, and the two disagree because
+   they are measuring different things.
+
+   Tuned at 200px, one body, mean of 25 trials, on a lunger:
+
+     Bolt 2.00s     Beam at 1.55: 1.17s   x0.58   (1.7x faster than the Bolt)
+     Bolt 2.00s     Beam at 0.50: 1.41s   x0.70   (1.4x faster - slightly ahead, not dominant)
+
+   0.5 is the measured value and not a rounder one nearby: 0.25 measures x0.72 and 0.10 measures
+   x0.80, which is past the point where the gun stops feeling like a gun at all.
+
+   The floor is worth stating because it is not a tuning failure. With the beam's damage at ZERO it
+   still measures x0.77 - still faster than the Bolt - because Strength alone is already larger per
+   shot than the whole per-shot budget the Bolt needs. No damage number reaches parity, because the
+   rate alone guarantees it. 0.5 is as close to "slightly faster" as this weapon can be made without
+   taking the trigger off it, and the trigger is the weapon.
+
+   THE NICHE THIS BUYS, which does not exist yet: anything applied PER BULLET - poison, bleeding, a
+   stacking burn - is worth 17.31 applications a second here and 2.37 on the Bolt. That is the larger
+   half of the canvas, and right now only Strength sigils feed it. Balance is provisional on that
+   content arriving; if it never does, this number should be revisited upward.
+
+   200px is the range this was tuned at and it is a choice, not a fact. The beam's hit rate is 81% at
+   100px and 27% at 300px, so it is a considerably different weapon at either end and the balance is
+   only pinned for the middle. */
+  {name:'Arcane Beam',color:'#3fa9ff',cooldown:5.2*SPEEDUP,speed:4,dmg:0.5,count:1,spread:0.16,spreadFromPrecision:true,r:4,fNear:170,fFar:470,fMin:0.6},
   {name:'Voidball',color:'#3f8a4a',cooldown:24*SPEEDUP,speed:3.2,dmg:3.4,count:1,spread:0.02,fNear:150,fFar:440,fMin:0.55,pierce:3},
 ];
 // What each pass through a body is worth, as a fraction of the first. A pierced bolt that does full

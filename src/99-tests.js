@@ -2004,20 +2004,47 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
   test('weapons: every gun kills a lunger fast at the range it is meant to be used at',()=>{
     startGame();
-    // The Scatter is deliberately not in this. It is a buckshot gun: a tight cone of eight pellets
-    // behind a long cooldown, so it is the biggest thing you own with your nose on the target and
-    // the worst thing you own across the room. The other three are meant to hold up at range.
+    /* The Scatter is deliberately not in this. It is a buckshot gun: a tight cone of eight pellets
+       behind a long cooldown, so it is the biggest thing you own with your nose on the target and
+       the worst thing you own across the room. The other three are meant to hold up at range.
+
+       The BEAM is in it, but at a BUILT strength rather than at base - and that is the assertion
+       worth having. Its damage is deliberately low (0.50) because Strength is added per shot and it
+       fires 17.31 times a second against the Bolt's 2.37, so every Strength sigil is worth several
+       times more to it. At base it is the slowest gun in the roster by design; at +6 it meets the same
+       bar as everything else. A test that only checked the base case would be asserting that a canvas
+       is not a canvas.
+
+       Note this arithmetic is off the TABLE, with Strength and armour applied by hand, because that is
+       what the table means. It still omits the Beam's miss rate - it sprays, landing 81% at 100px and
+       27% at 300px - so it is a floor on how fast the gun can be, not a prediction of how fast it is. */
+    const STRENGTH=6, ARMOUR=ENEMY.lunger.armour||1;
+    const tableTTK=(wp,d)=>{
+      const mult=wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
+      return ENEMY.lunger.hp/((wp.dmg+STRENGTH)*mult*wp.count*ARMOUR)*(wp.cooldown/TICK_HZ);
+    };
     for(const wp of WEAPONS){
       if(wp.name==='Scatter') continue;
-      const cd=wp.cooldown/TICK_HZ;
-      const mult=d=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
-      const ttk=d=>ENEMY.lunger.hp/(wp.dmg*mult(d)*wp.count)*cd;
-      ok(ttk(0)<3,wp.name+' takes '+ttk(0).toFixed(1)+'s point blank');
-      ok(ttk(250)<4.2,wp.name+' takes '+ttk(250).toFixed(1)+'s at 250px');
-      ok(ttk(wp.fFar)<6.5,wp.name+' takes '+ttk(wp.fFar).toFixed(1)+'s at full range');
-      ok(ttk(250)/ttk(0)>1.15,wp.name+' barely loses anything to distance');
-      ok(cd<1,wp.name+' fires slower than once a second');
+      const at=(d,limit,what)=>{
+        const s=tableTTK(wp,d);
+        ok(s<limit,wp.name+' at +'+STRENGTH+' strength takes '+s.toFixed(1)+'s '+what+
+           ', which is past the ceiling of '+limit+'s');
+      };
+      at(0,3,'point blank');
+      at(250,4.2,'at 250px');
+      at(wp.fFar,6.5,'at full range');
+      ok(tableTTK(wp,250)/tableTTK(wp,0)>1.15,wp.name+' barely loses anything to distance');
+      ok(wp.cooldown/TICK_HZ<1,wp.name+' fires slower than once a second');
     }
+    // and the canvas is real: at base the beam is the slowest thing you can hold, and by +6 it is not.
+    const beamBase=ENEMY.lunger.hp/(WEAPONS[2].dmg*1*WEAPONS[2].count)*(WEAPONS[2].cooldown/TICK_HZ);
+    const beamBuilt=tableTTK(WEAPONS[2],0);
+    ok(beamBase>tableTTK(WEAPONS[0],0),
+      'the beam is not the slowest gun at base either (base '+beamBase.toFixed(1)+'s, Bolt '+
+      tableTTK(WEAPONS[0],0).toFixed(1)+'s), so a low base is not doing anything');
+    ok(beamBuilt<tableTTK(WEAPONS[0],0)*1.15,
+      'at +'+STRENGTH+' the beam is still slower than the Bolt ('+beamBuilt.toFixed(1)+
+      's vs '+tableTTK(WEAPONS[0],0).toFixed(1)+'s), so the headroom never pays off');
     // and the shotgun identity, asserted rather than assumed. This is about the SHOT, not sustained
     // dps: the biggest single hit in the game, behind the longest wait, in the tightest cone, and the
     // steepest collapse with distance of anything you can hold. Armour is a per-hit multiplier, so
