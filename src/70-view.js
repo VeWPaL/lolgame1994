@@ -1264,7 +1264,46 @@ function fmtTime(ticks){
   const tenths=Math.floor(ticks*10/TICK_HZ), m=Math.floor(tenths/600), s=Math.floor(tenths%600/10);
   return m+':'+(s<10?'0':'')+s+'.'+tenths%10;
 }
-function fmtHearts(half){const h=half/2;return h+(h===1?' heart':' hearts');}
+/* A DISPLAYED NUMBER, at the precision the reader can act on.
+
+     `toFixed(2)` on a derived value prints the binary rounding error along with the number: a per-pellet
+     damage of 2.6 * 1.0 comes out as "2.60" by luck, but 0.5 + 0.66 and 1.8 * 0.8 produce "1.1600000000000001"
+     and "1.44" from the same expression. Those digits are not information - they are the mantissa, and
+     a player reading a damage panel is reading a number they intend to compare against a fight.
+
+     So every player-facing number goes through here, with the precision chosen per quantity rather than
+     applied as a blanket default: a tenth where the number is a rate or a time, none where it is a
+     multiplier the player reads as "roughly double". The value is NOT rounded in the simulation - this
+     is presentation, and rounding a hit to 1 damage would be a balance change. */
+function showNum(v,dp){
+  if(!isFinite(v)) return '—';
+  const r=Math.round(v*Math.pow(10,dp===undefined?1:dp))/Math.pow(10,dp===undefined?1:dp);
+  return String(r);
+}
+
+/* HEARTS, for the player. Rounded to the nearest HALF heart, and that is the whole argument.
+
+     Health in this game is measured in half-hearts and displayed as hearts, so a half-heart is the
+     smallest thing the player has ever been shown - quoting anything finer than that is quoting a
+     number the interface has no way to represent. The damage that goes in is genuinely fractional:
+     LUNGER_PAY 0.96 through ARMOUR 0.66 is 0.6336 half-hearts a hit, accumulated over a floor, so an
+     unrounded total reaches things like "10.625 hearts" and "17.375 hearts" - which read as a bug
+     rather than as a measurement, and invite the player to check the arithmetic instead of reading
+     the result.
+
+     NOT rounded at the simulation. Damage stays exact; only the display is rounded. Rounding health
+     itself would make every hit worth at least one heart, because the smallest hit in the game is
+     under half a heart - that is a balance change wearing a formatting costume, and this game's whole
+     difficulty ladder is fractional on purpose (ARMOUR 0.66, LUNGER_PAY 0.96, TEMPO.rate).
+
+     Rounded to the half rather than the whole, because a heart with a half in it is what the game
+     already draws: the heart plate has an armour row of half-slots. */
+function fmtHearts(half){
+  let h=Math.round((half/2)*2)/2;         // nearest half heart, from half-hearts
+  h=Math.round(h*10)/10;                   // kill float noise like 3.5000000000000004
+  const s=String(h);
+  return s+(h===1?' heart':' hearts');
+}
 
 /* end-of-run summary: paper sheet on a wood plate, same materials as the HUD */
 const INK='#3a2616', INK_SOFT='#7a6040', INK_NEW='#b3261e';
@@ -1429,18 +1468,18 @@ function drawDevMenu(){
       (w.count>1?(w.count+' pellets'):'single hit')+(w.pierce?'  ·  pierces '+w.pierce:''),tx,y+35);
     const base=w.dmg*w.count;
     ctx.fillStyle=str>0?'#d8a23c':INK_SOFT;
-    ctx.fillText(str>0?('base '+base.toFixed(2)+'  →  with +'+str+' Strength  '+(base+str*w.count).toFixed(2))
-                 :('base '+base.toFixed(2)+' a pull, single target'),tx,y+48);
+    ctx.fillText(str>0?('base '+showNum(base)+'  →  with +'+str+' Strength  '+showNum(base+str*w.count))
+                 :('base '+showNum(base)+' a pull, single target'),tx,y+48);
 
     const dps100=devDps(w,str,100), dps250=devDps(w,str,250);
     const pulls=TICK_HZ/(w.cooldown/TEMPO.rate);
     const per=(w.dmg+str)*w.count;
     ctx.textAlign='center';ctx.font='11px monospace';
-    ctx.fillStyle=INK;ctx.fillText(per.toFixed(2),G.px+150,y+28);
+    ctx.fillStyle=INK;ctx.fillText(showNum(per),G.px+150,y+28);
     ctx.fillText(pulls.toFixed(1),G.px+238,y+28);
     ctx.fillStyle=dps250>=bestDps-0.01?'#5ee27a':INK;ctx.fillText(dps100.toFixed(1),G.px+310,y+28);
     ctx.fillStyle=dps250>=bestDps-0.01?'#5ee27a':INK;ctx.fillText(dps250.toFixed(1),G.px+372,y+28);
-    ctx.fillText((18*TOUGH/dps250).toFixed(2)+'s',G.px+446,y+28);
+    ctx.fillText(showNum(18*TOUGH/dps250)+'s',G.px+446,y+28);
     // REL is a bar, not a number: "is this one stronger" is a comparison and a bar answers it at a
     // glance, where four numbers in a column have to be read against each other one at a time
     const bw=54, bx=R-bw, by=y+22;
@@ -1466,7 +1505,7 @@ function drawDevMenu(){
   ctx.fillText('refill heart and cooldowns',x,fy+17);
 
   ctx.textAlign='right';ctx.fillStyle=INK_SOFT;ctx.font='10px monospace';
-  ctx.fillText('strength '+str+'   ·   tempo '+TEMPO.rate.toFixed(2)+'x   ·   tick '+TICK_HZ+'Hz',R,fy+30);
+  ctx.fillText('strength '+str+'   ·   tempo '+showNum(TEMPO.rate,2)+'x   ·   tick '+TICK_HZ+'Hz',R,fy+30);
   ctx.font='bold 11px monospace';ctx.fillStyle=INK;
   const c=devCap('ESC',false);ctx.drawImage(c,R-c.width,fy+44);
   ctx.fillStyle=INK_SOFT;ctx.font='10px monospace';

@@ -924,6 +924,82 @@ never exercised — which is the standing lesson of this project, happening insi
   came out of that before measuring tick by tick: `gone=2,1,0` with the pickup back, then `525` again
   because the player was still standing there.
 
+## THE NUMBERS THE PLAYER READS, and the arithmetic accident underneath them
+
+Three separate defects, worth keeping apart because only one looks like what it is.
+
+**1. `BOSS_SHELL_DMG = SHOT_DMG * 0.8` evaluated to `1.4400000000000002`.** Seventeen significant
+digits for a tuning number, and it propagates into everything derived from it. The intent was `1.44`;
+that is now what is written. A constant that is a product evaluated in binary floating point is not a
+design decision, it is an accident that has been copied forward.
+
+**2. `fmtHearts(21.25)` printed `"10.625 hearts"`.** A real total, in a unit the interface cannot draw.
+Health is *measured and displayed* in half-hearts, so anything finer is noise — and a number the player
+cannot reconcile by eye invites them to check the arithmetic instead of reading the result. Now rounded
+to the nearest **half** heart: `10.5 hearts`, `17.5 hearts`, `1 heart`.
+
+**3. The dev panel printed `toFixed(2)` on derived products**, so `0.5+0.66` rendered as `1.16` or
+`1.1600000000000001` depending on the day. All of it goes through `showNum(v, dp)`, precision chosen per
+quantity rather than as a blanket default.
+
+> **The simulation is NOT rounded — only the display is.** A lunge costs `LUNGER_PAY 0.96 × ARMOUR 0.66
+> = 0.6336` half-hearts. Rounding *that* at the source makes every sub-half hit worth a whole heart,
+> which is a balance change wearing a formatting costume. This ladder is fractional on purpose —
+> `ARMOUR 0.66`, `LUNGER_PAY 0.96`, `TEMPO.rate`. There is a test that asserts the fraction survives
+> into the player's health bar, precisely so "tidy the numbers" cannot quietly become "rebalance the
+> game".
+
+Two fixture traps cost a wrong diagnosis each, both recorded at the test: `startGame()` leaves the
+player in invulnerability and `damagePlayer` returns false on iframes *before* subtracting anything (so
+the first version reported "the lunge did no damage" as though the model were broken); and taking a hit
+*grants* i-frames, so a second `damagePlayer` in the same test is refused with no obvious reason.
+
+## THE FLAME, four attempts and a lesson about where to look
+
+Both sprites are baked centred on their own middle and drawn by their **top-left** corner, so a feature
+at sprite-row *F* appears on screen at `spot − R + F`. Every error below came from getting one letter of
+that wrong:
+
+| version | error | what went wrong |
+|---|---|---|
+| original | **2px** | it was nearly right, and I called it 166px |
+| fix 1 | **−168px** | read the bowl as 21px *below* centre, and subtracted the radius again |
+| fix 2 | **+11px** | read a *distance-from-centre* as an *absolute sprite row* |
+| now | **0px** | `FLAME_BASE_ROW` is a named row, and the drawing cannot misuse it |
+
+`flameFrame` bakes `moveTo(o, o + FLAME_BASE_Y)` where `o` is already `S/2 = FLAME_R`, so the base row
+is `FLAME_R + FLAME_BASE_Y = 61` in a 72-row sprite. **The 25 is a distance from the sprite's middle, not
+a row.** Reading it as a row put the fire one whole half-size too low — which is exactly why it kept
+landing on the base of the stand.
+
+> Three tests asserted this by computing from the constants, and **all three passed while the flame was
+> in the wrong place**, because the formula and the mistake shared the same wrong idea. A test written
+> from the implementation checks that the implementation agrees with itself.
+>
+> The one that works reads the **framebuffer**: it finds the warm pixels of the fire and the cool pixels
+> of the metal it sits in, and requires the fire to be inside the bowl rather than beside it. That is a
+> property of the picture, which is the thing that was wrong. It is a property of the output rather than
+> of the code, which is the only kind of check that cannot share a blind spot with the bug.
+>
+> Its first version sampled 60×120 and reported the fire spanning −43..58 — below the bowl — because it
+> was measuring the brazier's **radial light pool**, a warm gradient baked 336px across. The sample is now
+> the stand's own width and a 70px window.
+
+**The fire was also running at 14Hz.** The cycle was 5 frames every 3 ticks at `TICK_HZ 210`: a full loop
+in **71ms**, changing **70 times a second**. That is a strobe, not a flicker — and because consecutive
+frames differed *only* in height (19 → 24, the same shape at five sizes) the eye had nothing to track
+and read it as a buzz. Now `BRAZIER_FRAME_TICKS = 18`: a **429ms** loop, **11.7 changes/second**, inside
+the range a real flame flickers at, with each frame also varying in **lean** and **waist** so there is a
+shape change to follow rather than only a size one.
+
+## F5 IS NOT A LAB KEY
+
+**F7 drops a dozen.** F5 was, and it is *reload in every browser* — so "drop a dozen" reloaded the page
+instead, throwing away the room you were setting up to test. There was nothing to intercept: the page
+reloads before the handler runs. F7 is unbound in every major browser. The whole lab block is F2–F4/F6/F7
+for the same reason (F5 reloads, F6 focuses the address bar in some, F11 fullscreen, F1 the weapon bench),
+and `Lab.key('f5')` now explicitly returns false so the omission reads as a decision rather than a gap.
+
 ### The lab itself
 
 `src/35-devlab.js`. **F2** in, **F2** out, **F3** freeze/release the row, **F4** arm the dropper,
@@ -1039,7 +1115,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **191 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **195 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
   `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
   figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.

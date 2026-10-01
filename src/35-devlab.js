@@ -428,12 +428,28 @@ const Lab=(function(){
     if(!first) return false;
     if(k==='f3'){ frozen=!frozen; return true; }
     if(k==='f4'){ dropper=(dropper+1)%LAB_SPECIMENS.length; return true; }
-    if(k==='f5'){ drove(); return true; }
+    /* F7 DROPS A DOZEN. It was F5, which the browser owns.
+
+     F5 is reload in every browser, so "drop a dozen" reloaded the page instead - which is the worst
+     possible failure for a dev tool, because it throws away the room you were setting up to test. The
+     key was never `preventDefault`-ed, so it was never even a conflict: the page reloaded first and
+     the handler never ran.
+
+     F7 is used because it is unbound in every major browser (F5 reload, F6 focus the address bar in
+     some, F11 fullscreen, F12 devtools). The whole lab key block moved to F2-F4/F6/F7 for the same
+     reason: F5 is not available and F1 is the weapon bench.
+
+     `keys[k]=true` runs after this, so the key is still recorded - which is what stops a held key from
+     firing twice, and `preventDefault` for the function keys is the game's business, not the lab's. */
+    if(k==='f7'){ drove(); return true; }
     /* F6 REFILLS THE SHELF. The alcoves respawn on their own after two and a half seconds, which is
        right when you are walking past the rail collecting things, and useless when you have taken
        everything and want it back without waiting - which is what you want after changing a build and
        coming back to see the effect. */
     if(k==='f6'){ for(const s of shelf) s.gone=0; syncShelfPickups(); return true; }
+    /* F5 is NOT a lab key: it reloads the page. It is listed here so the legend does not invite
+       anyone to press it, and so the omission reads as a decision rather than a gap. */
+    if(k==='f5') return false;
     return false;
   }
 
@@ -505,7 +521,8 @@ const Lab=(function(){
      Reading them inside a function defers that to the moment of the call, which is the only thing
      that makes the order irrelevant. The failure was silent in the worst way - the console showed a
      ReferenceError from a line that looked entirely reasonable. */
-  const BRAZIER_GEOM=()=>({bowlY:BRAZIER_BOWL_Y, flameBaseY:FLAME_BASE_Y, flameR:FLAME_R, r:BRAZIER_R});
+  const BRAZIER_GEOM=()=>({bowlY:BRAZIER_BOWL_Y, flameBaseY:FLAME_BASE_Y, flameBaseRow:FLAME_BASE_ROW,
+          flameR:FLAME_R, r:BRAZIER_R, flameFrames:BRAZIER_FRAMES});
   function gridSprite(b){
     const key=b.w+'x'+b.h+'@'+b.l+','+b.t;
     let c=gridCache.get(key);
@@ -566,6 +583,21 @@ const Lab=(function(){
      sat outside the frame at every camera position and the lab rendered with no light in it at all.
      A count of "eight braziers placed" says nothing about how many are visible. */
   const BRAZIER_R=168, BRAZIER_FRAMES=5, brazierCache=new Map();
+  /* HOW FAST THE FIRE BURNS, and it was far too fast to read as fire.
+
+     Measured, at TICK_HZ 210: the cycle was 5 frames every 3 ticks, so a full loop took 71ms and the
+     flame changed 70 times a second. That is not a flicker, it is a strobe - and because consecutive
+     frames differed ONLY in height (19, 20.25, 21.5, 22.75, 24 - the same shape, the same colours, a
+     5px scale), the eye had nothing to track and read the whole thing as a buzz.
+
+     BRAZIER_FRAME_TICKS 3 -> 18 makes the loop 429ms and the changes 11.7 a second, which is inside
+     the range a real flame actually flickers at. The frames also differ in lean and waist now, so
+     there is a shape change to follow rather than only a size one.
+
+     The counter divides by a constant rather than stepping a modulus per brazier, so every brazier in
+     the frame flickers in unison - correct, since they are one sprite, and drawing them out of step
+     would need one sprite per brazier per phase. */
+  const BRAZIER_FRAME_TICKS=18;
   /* WHERE THE FLAME GOES, and the sign convention that makes it mean something.
 
      Both sprites are baked centred on their own middle and drawn by their TOP-LEFT corner, so a
@@ -586,8 +618,19 @@ const Lab=(function(){
 
      So the derivation is written out here, in full, in the file, where the next person can check it. */
   const BRAZIER_BOWL_Y=21,   // the bowl is this many rows ABOVE the brazier sprite's middle
-        FLAME_BASE_Y=25,     // the flame's base is this many rows BELOW the flame sprite's top
-        FLAME_R=36;          // half-size of the flame sprite, for centring it on the brazier
+        FLAME_R=36,          // half-size of the flame sprite
+        /* THE FLAME'S BASE ROW, in absolute sprite rows - which is what the drawing needs, and is NOT
+           the same number as the constant flameFrame bakes with.
+
+           flameFrame draws `moveTo(o, o+FLAME_BASE_Y)` where `o` is already S/2 = FLAME_R. So the
+           base lands at row `FLAME_R + FLAME_BASE_Y` = 61 in a 72-row sprite, and the 25 is a
+           *distance from the sprite's middle*, not a row. Reading it as a row put the flame's base
+           36px - one whole half-size - below where it belonged, which is why it kept landing on the
+           base of the stand: 11px predicted, 14px measured, and the difference is the antialiased
+           edge. Two attempts at this failed the same way, both by treating an offset-from-centre as an
+           absolute row, so the derived row is a NAMED value now and the drawing cannot misuse it. */
+        FLAME_BASE_ROW=61,
+        FLAME_BASE_Y=25;      // the distance from the sprite's middle, for baking the shape
   function brazierSprite(){
     let c=brazierCache.get('body');
     if(c) return c;
@@ -606,25 +649,39 @@ const Lab=(function(){
     brazierCache.set('body',c);
     return c;
   }
-  /* FIVE BAKED FLAMES, not a blend. The same reasoning as the momentum ramp: a blend is a colour
-     the eye cannot name, and a flame that is always exactly one of five heights reads as a flame
-     cycling rather than as a rendering artefact. */
+  /* FIVE BAKED FLAMES, not a blend. The same reasoning as the momentum ramp: a blend is a colour the eye
+     cannot name, and a flame that is always exactly one of five heights reads as a flame cycling
+     rather than as a rendering artefact.
+
+     Each frame varies in FOUR things rather than one. The original made five copies of the same
+     silhouette at five heights, which is a zoom rather than a fire - and at the old 71ms cycle the eye
+     had no time to read even that. So each frame leans by its own amount and shifts its waist, which
+     is what actually distinguishes one instant of a flame from the next: the tip wanders sideways and
+     the body narrows and widens, it does not simply get taller.
+
+     The lean values are fixed per frame rather than random, because a random sprite re-baked per frame
+     shimmers - the same reason the seed tag is cached and the floor is baked once. Five frames is
+     enough for a loop that no longer runs at 14Hz. */
+  const FLAME_LEAN=[0,-1.6,0.9,1.7,-1.1];       // tip offset, px
+  const FLAME_WAIST=[1,1.14,0.88,1.05,0.94];    // body width multiplier
   function flameFrame(i){
     const key='f'+i;
     let c=brazierCache.get(key);
     if(c) return c;
     const S=72, o=S/2, fh=19+5*(i/(BRAZIER_FRAMES-1));
+    const lean=FLAME_LEAN[i%FLAME_LEAN.length], waist=FLAME_WAIST[i%FLAME_WAIST.length];
+    const tip=o+lean, wid=10*waist, wid2=5*waist;
     c=mk(S,S);
     const g=c.getContext('2d');
     g.globalCompositeOperation='lighter';
     g.fillStyle='rgba(255,120,40,0.6)';
     g.beginPath(); g.moveTo(o,o+FLAME_BASE_Y);
-    g.quadraticCurveTo(o+10,o+FLAME_BASE_Y-fh*0.6,o,o+FLAME_BASE_Y-fh);
-    g.quadraticCurveTo(o-10,o+FLAME_BASE_Y-fh*0.6,o,o+FLAME_BASE_Y); g.fill();
+    g.quadraticCurveTo(o+wid,o+FLAME_BASE_Y-fh*0.6,tip,o+FLAME_BASE_Y-fh);
+    g.quadraticCurveTo(o-wid,o+FLAME_BASE_Y-fh*0.6,o,o+FLAME_BASE_Y); g.fill();
     g.fillStyle='rgba(255,220,150,0.85)';
     g.beginPath(); g.moveTo(o,o+FLAME_BASE_Y);
-    g.quadraticCurveTo(o+5,o+FLAME_BASE_Y-fh*0.4,o,o+FLAME_BASE_Y-fh*0.6);
-    g.quadraticCurveTo(o-5,o+FLAME_BASE_Y-fh*0.4,o,o+FLAME_BASE_Y); g.fill();
+    g.quadraticCurveTo(o+wid2,o+FLAME_BASE_Y-fh*0.4,tip*0.92+o*0.08,o+FLAME_BASE_Y-fh*0.6);
+    g.quadraticCurveTo(o-wid2,o+FLAME_BASE_Y-fh*0.4,o,o+FLAME_BASE_Y); g.fill();
     brazierCache.set(key,c);
     return c;
   }
@@ -641,7 +698,7 @@ const Lab=(function(){
     for(let x=b.l+175;x<=b.r-175;x+=stepX)
       for(let y=b.t+175;y<=b.b-175;y+=250) spots.push([x,y]);
     const body=brazierSprite();
-    const flame=flameFrame(Math.floor(frameCount/3)%BRAZIER_FRAMES);
+    const flame=flameFrame(Math.floor(frameCount/BRAZIER_FRAME_TICKS)%BRAZIER_FRAMES);
     for(const s of spots){
       const x=s[0],y=s[1];
       ctx.save();
@@ -661,7 +718,17 @@ const Lab=(function(){
          two numbers were typed next to each other, so moving the bowl in the brazier sprite moves the
          flame with it. BRAZIER_BOWL_Y is where the bowl sits inside the brazier sprite, and
          FLAME_BASE_Y where the flame's base sits inside the flame sprite. */
-      ctx.drawImage(flame, x-FLAME_R, y-FLAME_BASE_Y-BRAZIER_BOWL_Y);
+      /* The flame's BASE must land on the bowl's centre, which is `spot - BRAZIER_BOWL_Y` (the brazier
+     radius cancels: the bowl is baked at row `R - BRAZIER_BOWL_Y` in a sprite drawn at `spot - R`).
+     Drawn at top T, the base is at `T + FLAME_BASE_ROW`. So:
+
+         T + FLAME_BASE_ROW = -BRAZIER_BOWL_Y
+         T = -(FLAME_BASE_ROW + BRAZIER_BOWL_Y)
+
+     One term, each with a reason to exist: the row because that is where the fire's bottom actually
+     is in its sprite, and the bowl because that is where the dish actually is in the other sprite.
+     Neither is a fudge and neither is a distance-from-centre pretending to be something else. */
+    ctx.drawImage(flame, x-FLAME_R, y-FLAME_BASE_ROW-BRAZIER_BOWL_Y);
       ctx.restore();
     }
   }
@@ -850,7 +917,7 @@ const Lab=(function(){
     ['F2','leave the lab'],
     ['F3','freeze / release the row'],
     ['F4','arm the dropper'],
-    ['F5','drop a dozen'],
+    ['F7','drop a dozen'],
     ['F6','refill the shelf']
   ];
   function drawLegend(){

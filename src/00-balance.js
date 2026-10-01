@@ -461,7 +461,12 @@ const BOSS_VOLLEY_N=3,        // shells per volley. Three is a pattern with a sh
       BOSS_RECOVER=sec(1.1),   // dead time after every move. The gap the player spends reading the next
       BOSS_CD_MIN=sec(3.2), BOSS_CD_VAR=sec(1.0),   // seconds BETWEEN moves. The single most
                                 // important number on the boss, and the one that was wrong first.
-      BOSS_SHELL_DMG=SHOT_DMG*0.8,   // 1.44, not 2.88. A body firing THREE shells at a time cannot
+      BOSS_SHELL_DMG=1.44,   // was SHOT_DMG*0.8, which is 1.4400000000000002 in binary floating point -
+                                // seventeen significant digits for a tuning number, and an arithmetic
+                                // accident that then propagates into everything derived from it. The
+                                // intent was always 1.44, so that is what is written here.
+                                //
+                                // 1.44, not 2.88. A body firing THREE shells at a time cannot
                                 // also hit for 36% of the player's health bar per shell, or the
                                 // player has to dodge 94% of what is fired and reading the tells
                                 // stops mattering - which is the one thing a boss may not do.

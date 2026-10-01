@@ -292,9 +292,9 @@ function uiHoldsInput(){ return !!uiOverlay()||devOpen; }
    it poisons the rest of the run. */
 /* 'tab' is here for the same reason 'f1' and 'h' are: the sheet owns it, so the suppressor must let
    it through or TAB does nothing while the sheet is up - which is the one moment it is most wanted.
-   Without this the suppressor eats TAB the instant the sheet opens, and the key that opens a sheet is
-   the one key that cannot close it. 'f6' is here for the same reason as the other lab keys. */
-const UI_KEYS=['escape','h','b','s','p','r','tab','f1','f2','f3','f4','f5','f6','1','2','3','4'];
+   'f7' is here and 'f5' deliberately is not: F5 reloads the page in every browser, so a lab key on F5
+   was never a shortcut but a way to lose the room you were setting up. */
+const UI_KEYS=['escape','h','b','s','p','r','tab','f1','f2','f3','f4','f6','f7','1','2','3','4'];
 /* Lowercases before comparing, and that is a fix rather than a style choice. Every key in UI_KEYS is
    lowercase and the handler lowercases its own key immediately afterwards, so this one comparison was
    the only place in the input path that saw the raw `e.key` - which is "Tab", "Escape", "ArrowUp",

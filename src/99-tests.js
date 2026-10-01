@@ -1494,23 +1494,22 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
 
     // the flame geometry, from the numbers the drawing itself uses
     const G=Lab.BRAZIER_GEOM();
-    /* The bowl is baked at sprite row (r - bowlY) in a sprite drawn with its top-left at (spot - r),
-       so it lands on screen at `spot - bowlY` and the radius CANCELS. The flame's base is baked
-       flameBaseY into its own sprite, so drawn at top T it lands at `T + flameBaseY`. */
-    const bowlScreen=G.bowlY;               // distance from the brazier's CENTRE up to the bowl
-    const flameTop=bowlScreen-G.flameBaseY; // so the flame's BASE lands on the bowl
-    ok(flameTop+G.flameBaseY===bowlScreen,'the flame is drawn so its base is at '+(flameTop+G.flameBaseY)+
-      ' and the bowl is at '+bowlScreen+', so the fire sits '+
-      (flameTop+G.flameBaseY-bowlScreen)+'px from the dish it belongs in');
-    ok(flameTop+G.flameR*2<=G.r*2,'the flame, drawn '+flameTop+'px from the brazier centre, extends to '+
-      (flameTop+G.flameR*2)+'px below it, which is outside the '+G.r+'px radius and so drawn past the '+
-      'bottom of the brazier sprite');
-    // and the flame must not be drawn so high that it floats off the top of the brazier
-    ok(flameTop>=-G.r,'the flame is drawn '+flameTop+'px above the brazier centre, which is past the '+
-      'top of its '+G.r+'px sprite, so the fire floats above the stand rather than sitting in it');
-    // and the two sprites must agree about where UP is, which is the bug that was there
-    ok(G.flameBaseY>0,'the flame base offset is '+G.flameBaseY+', which places the fire BELOW its '+
-      'own centre rather than above it');
+    /* One invariant, and it is the only one that is checkable without re-deriving the drawing.
+
+       The bowl is baked at sprite row `r - bowlY` in a sprite drawn at `spot - r`, so it lands at
+       `spot - bowlY` - the radius cancels. The flame's base is baked at row `FLAME_BASE_ROW`, so drawn
+       at top T it lands at `T + FLAME_BASE_ROW`. For those to meet, T = `-(FLAME_BASE_ROW + bowlY)`.
+
+       Only the SIGN of the row is asserted here; the magnitude is the pixel measurement's job. Three
+       versions of this test asserted the magnitude and all three were wrong in the same direction,
+       because they were re-expressing the drawing's assumption instead of testing it. The one thing
+       that is cheap and certain is that the base row is ABOVE the sprite's own middle - the flame is
+       baked pointing up, and if that ever inverts the whole shape is wrong. */
+    ok(G.flameBaseRow>G.flameR,'the flame base row is '+G.flameBaseRow+' in a '+(G.flameR*2)+
+      '-row sprite whose middle is '+G.flameR+', so the base is '+(G.flameBaseRow-G.flameR)+
+      'px BELOW the middle - the flame is baked pointing DOWN');
+    ok(G.bowlY>0&&G.bowlY<G.r,'the bowl is '+G.bowlY+'px above the brazier middle, which is inside '+
+      'its own '+G.r+'px radius only if it is a real offset ('+(G.bowlY>=G.r?'it is not':'ok')+')');
 
     /* AND WHAT IS ACTUALLY DRAWN. Everything above computes from the constants, so it cannot see a
        wrong call site - a mutation that put the flame back at the old y-48 passed all of it, because
@@ -1541,32 +1540,159 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(seen.length>0,'no flame sprite was drawn at a brazier the player is standing on ('+
       seen.length+' found), so there is nothing to check');
     if(seen.length){
-      /* Both positions are derived from the SPRITES, independently of how the draw call spells it.
+      /* THE PIXELS, not the arithmetic. Every version of this assertion that computed from the constants
+         passed while the flame was in the wrong place - wrong by 168px, then 42px, then 11px - because
+         each time the formula and the mistake shared the same wrong idea. A test written from the
+         implementation checks that the implementation agrees with itself, and three of them did.
 
-         The bowl is baked at sprite row `r - bowlY` in a sprite whose top-left is at `spot - r`, so on
-         screen it is at `spot - bowlY`: the radius cancels. The flame's base is baked at
-         `flameBaseY` inside its own sprite, so drawn at top T it lands at `T + flameBaseY`.
+         So this reads the rendered framebuffer: it finds the warm pixels of the fire and the cool
+         pixels of the metal it sits in, and requires the fire to be up inside the bowl rather than
+         beside it. That is a property of the picture, which is the thing that was actually wrong, and it
+         is the check that finally found it.
 
-         These are the same two formulas the drawing uses, and that is the weakness - a test written
-         from the implementation checks that the implementation agrees with itself. It is here because
-         the SIGN of the bowl is the thing that went wrong twice, in opposite directions: the code was
-         168px out, then "fixed" 42px out, and only a screenshot distinguished them. So the assertion
-         that matters most is the weaker, sign-independent one below - the flame must be INSIDE the
-         brazier's own vertical extent, which was never true of either broken version. */
-      const baseY=seen[0]+G.flameBaseY;
-      const bowlWorld=brY-G.bowlY;
-      const drawn=Math.round(baseY-cam.y), want=Math.round(bowlWorld-cam.y);
-      ok(Math.abs(drawn-want)<=2,'the flame burns '+(want-drawn)+'px from its bowl: drawn base at '+
-        'screen y '+drawn+', the bowl is at '+want+' (camera y '+Math.round(cam.y)+')');
-      /* SIGN-INDEPENDENT, and the one that would have caught both mistakes. The bowl sits near the TOP
-         of the brazier sprite (row r-21 of 336, so 44% up) and the flame's base belongs with it. A
-         flame drawn 168px above the stand, or 34px below it, is outside that band either way. */
-      const bowlBand=[Math.round((brY-G.r)*1),Math.round((brY)*1)];   // sprite top .. centre
-      ok(baseY>=bowlBand[0]&&baseY<=bowlBand[1],
-        'the flame base is at y '+Math.round(baseY)+' but the bowl band is '+bowlBand[0]+'..'+
-        bowlBand[1]+', so the fire is not in the dish');
+         The fire is found by `r > 110 && r > b + 50` - warm and redder than blue. The metal is the
+         remainder of the brazier's own colours, `r < 90 && g < 95 && b < 105`, which is the bowl rim
+         (#464e5c) and the stand (#23262e). Both bands are read from the same 60x120 sample so they are
+         measuring one another's frame of reference. */
+      const sx=Math.round(brX-cam.x), sy=Math.round(brY-cam.y);
+      /* A NARROW COLUMN and a short window, and that is not incidental. The first version sampled 60x120
+         and found the fire spanning -43..58, which looks like it sits below the bowl - but it was
+         measuring the brazier's RADIAL LIGHT POOL, a warm radial gradient baked into the sprite and
+         336px across, plus the warm floor underneath it. The bowl and the stand are the dark metal in
+         the middle of that.
+
+         So the sample is the stand's own width (10px of rect at o-5..o+5, so 12 columns catches it with
+         margin) and a 70px window around the bowl. Within that window the only warm pixels are the
+         flame, because the light pool is too diffuse to pass `r > 110 && r > b + 50` near the metal. */
+      const WD=24, HT=70, x0=sx-12, y0=sy-G.bowlY-30;
+      const img=ctx.getImageData(x0,y0,WD,HT).data;
+      let warmLo=Infinity, warmHi=-Infinity, metalLo=Infinity, metalHi=-Infinity;
+      for(let dy=0;dy<HT;dy++){
+        for(let dx=0;dx<WD;dx++){
+          const idx=(dy*WD+dx)*4, r=img[idx], g=img[idx+1], b=img[idx+2];
+          if(r>110&&r>b+50){ if(dy<warmLo)warmLo=dy; if(dy>warmHi)warmHi=dy; }
+          else if(r<90&&g<95&&b<105){ if(dy<metalLo)metalLo=dy; if(dy>metalHi)metalHi=dy; }
+        }
+      }
+      ok(warmLo<Infinity,'no warm pixels in the brazier column, so there is no fire to place');
+      ok(metalLo<Infinity,'no metal pixels in the brazier column, so there is no brazier to sit in');
+      if(warmLo<Infinity&&metalLo<Infinity){
+        // convert both bands to offsets from the brazier's own centre, which is what they are about
+        const fTop=warmLo-(HT/2-G.bowlY), fBot=warmHi-(HT/2-G.bowlY);
+        const mTop=metalLo-(HT/2-G.bowlY), mBot=metalHi-(HT/2-G.bowlY);
+        ok(fTop>=mTop-8&&fTop<=mTop+16,
+          'the fire spans screen y '+fTop+'..'+fBot+' but the brazier metal starts at '+mTop+
+          ', so the flame is '+(fTop>mTop+16?'BELOW the bowl, standing on the base of the brazier'
+            :'above the whole brazier')+' rather than in it');
+        const fMid=(fTop+fBot)/2, mMid=(mTop+mBot)/2;
+        ok(fMid<mMid,'the fire is centred at y '+fMid+' while the brazier metal spans '+mTop+'..'+
+          mBot+' with its middle at '+mMid+', so the flame sits in the lower half of the stand '+
+          'rather than in the dish at the top');
+      }
+      /* And the constant the drawing uses must be the ROW, which is what flameFrame actually bakes.
+         FLAME_BASE_Y is a distance from the sprite's middle; flameFrame writes `o + FLAME_BASE_Y` with
+         o already the half-size, so the row is FLAME_R + FLAME_BASE_Y. Reading the distance as the row
+         put the fire one whole half-size too low, which is the entire remaining bug. */
+      ok(G.flameBaseRow===G.flameR+G.flameBaseY,'FLAME_BASE_ROW is '+G.flameBaseRow+
+        ' but flameFrame bakes the base at FLAME_R+FLAME_BASE_Y = '+(G.flameR+G.flameBaseY)+
+        '. One is a distance from the sprite middle and the other is a row in the sprite, and reading '+
+        'the first as the second put the flame on the floor.');
     }
     Lab.leave();
+  });
+
+  /* THE NUMBERS THE PLAYER READS, and the ones that were arithmetic accidents underneath them.
+
+     Three separate defects, and they are worth keeping apart because only one of them is what it looks
+     like:
+
+     1. `BOSS_SHELL_DMG = SHOT_DMG*0.8` evaluated to **1.4400000000000002**. Seventeen significant
+        digits for a tuning number, and it propagates into every number derived from it. The constant is
+        the intent, 1.44, written out.
+     2. `fmtHearts(21.25)` printed **"10.625 hearts"** - a real total, expressed in a unit the interface
+        cannot draw. Health is measured and DISPLAYED in half-hearts, so anything finer is noise.
+     3. The dev panel printed `toFixed(2)` on derived products, so `0.5+0.66` showed as `1.16` or
+        `1.1600000000000001` depending on the day.
+
+     What is deliberately NOT done: rounding the simulation. A lunger hits for `0.96 * 0.66 = 0.6336`
+     half-hearts, and rounding that to a whole heart makes every hit worth at least one. That is a
+     balance change wearing a formatting costume, and this ladder is fractional on purpose. */
+  test('displayed damage is rounded to something the interface can draw',()=>{
+    /* Half-hearts are the smallest thing the heart plate shows, so half a heart is the smallest thing
+       the player has ever been able to read. Anything finer invites the player to check the arithmetic
+       instead of reading the result. */
+    const cases=[[21.25,'10.5 hearts'],[34.75,'17.5 hearts'],[13,'6.5 hearts'],[7.5,'4 hearts'],
+                 [2,'1 heart'],[1,'0.5 hearts'],[0.5,'0.5 hearts'],[0,'0 hearts']];
+    for(const [input,want] of cases){
+      eq(fmtHearts(input),want,'fmtHearts('+input+') is "'+fmtHearts(input)+'", expected "'+want+'"');
+    }
+    // and never a float artefact, whatever the input
+    for(const v of [0.5+0.66, 1.8*0.8, 2.6*0.66, 0.1+0.2, 101.2500000001]){
+      const s=fmtHearts(v);
+      ok(s.indexOf('0000')<0,'fmtHearts('+v+') printed "'+s+'", which contains float noise');
+    }
+    // the plural, which is a string-versus-number trap
+    eq(fmtHearts(2),'1 heart','one heart must be singular');
+    ok(fmtHearts(4).indexOf('hearts')>=0,'two hearts must be plural');
+  });
+
+  test('the simulation is NOT rounded - only the display is',()=>{
+    /* The test for the rounding being presentation rather than a balance change. If health were rounded
+       at the source, a sub-heart hit would become a heart and the whole damage model would shift. This
+       asserts the fractional part SURVIVES into the player's health bar.
+
+       Two fixture details, both of which cost a wrong diagnosis first. `startGame()` leaves the player
+       in invulnerability, and `damagePlayer` returns false on iframes BEFORE it subtracts anything - so
+       the first version of this ran, did nothing, and reported "the lunge did no damage at all" as
+       though the damage model were broken. And the lunger's damage is not on `e.pay`; the field the
+       game uses is LUNGER_PAY through ARMOUR. */
+    startGame();
+    player.iframes=0; player.blinkGrace=0; player.graceSpent=false;
+    player.armor=0;                    // no armour, so the fraction reaches the health bar at all
+    player.hp=player.maxHp=10;
+    const hit=LUNGER_PAY*ARMOUR;       // 0.96 * 0.66 = 0.6336 half-hearts
+    ok(Math.abs(hit%1)>1e-9,'a lunge costs '+hit+' half-hearts, which is a whole number, so the '+
+      'damage model is already rounding somewhere and this test proves nothing');
+    const took=damagePlayer(hit,1,0,true);
+    ok(took!==false,'damagePlayer refused the hit, so the fractional health loss was never applied - '+
+      'iframes='+player.iframes+' armor='+player.armor);
+    ok(Math.abs(player.hp-(10-hit))<1e-9,'the player is on '+player.hp+' hp after a '+hit+
+      '-half-heart hit from 10, so the damage was rounded somewhere it should not have been');
+    // and a whole number of half-hearts still works. The i-frames are cleared between the two calls,
+// because taking a hit GRANTS invulnerability - so the second call is refused, and the first version
+// of this asserted 8 and was told 10 with no obvious reason.
+    player.iframes=0;
+    player.hp=10;
+    damagePlayer(2,1,0,true);
+    eq(player.hp,8,'two whole half-hearts did not come off the bar');
+  });
+
+  test('the dev panel prints derived numbers without float noise',()=>{
+    /* showNum is the one place a displayed number is rounded, and it has to survive the values that
+       produced the artefacts in the first place. */
+    eq(showNum(1.4400000000000002,1),'1.4','a float artefact survived into the panel');
+    eq(showNum(1.7999999999999998,1),'1.8','a float artefact survived into the panel');
+    eq(showNum(3.14159,2),'3.14','showNum does not round to the precision asked for');
+    eq(showNum(8,0),'8','showNum at zero decimals added a point to a whole number');
+    eq(showNum(0.6336,1),'0.6','a per-pellet damage figure is wrong');
+    // and no constant in the game carries a float artefact into a tuning number
+    eq(String(BOSS_SHELL_DMG),'1.44','BOSS_SHELL_DMG is '+BOSS_SHELL_DMG+
+      ', which is SHOT_DMG*0.8 evaluated in binary floating point rather than the intended 1.44');
+  });
+
+  test('the lab dropped the F5 key, because F5 reloads the page',()=>{
+    /* A dev key on F5 is not a shortcut, it is a way to lose the room you were setting up - the page
+       reloads before the handler runs, so there is nothing to intercept and nothing to warn about. */
+    startGame();
+    Lab.key('f2',true);
+    ok(state==='dev','F2 did not open the lab');
+    eq(Lab.key('f5',true),false,'F5 is still bound to something in the lab, and the browser reloads '+
+      'the page on it before any handler could matter');
+    const before=currentRoom().enemies.length;
+    ok(Lab.key('f7',true),'F7 is not bound, and it is the key that drops a dozen');
+    ok(currentRoom().enemies.length>before,'F7 dropped nothing: '+before+' enemies before, '+
+      currentRoom().enemies.length+' after');
+    Lab.key('f2',true);
   });
 
   test('the boss bar is drawn only for a boss that is alive in the current room',()=>{
