@@ -540,22 +540,41 @@ function seedDescend(){
   else{
     n=Rnd.decode(raw);
     if(n===null){
-      // refused LOUDLY and in place, keeping what was typed. Silently starting a random dungeon
-      // because a letter was mistyped is the one outcome that makes this feel broken.
-      if(err) err.textContent='That is not a seed. Seven letters and digits, like '+Rnd.seedText+'.';
+      /* Refused LOUDLY and in place, keeping what was typed. Silently starting a random dungeon
+         because a letter was mistyped is the one outcome that makes this feel broken.
+
+         Two different refusals share this box, and they say different things because they mean
+         different things. A code with the wrong SHAPE is a typo. A code with the right shape but a
+         number too large for the generator - anything above 1Z141Z3 - is a code this game cannot
+         store at all, and telling such a player "that is not a seed" when it plainly looks like one
+         is the confusing half of the pair. */
+      const shaped=String(raw).toUpperCase().replace(/[^0-9A-Z]/g,'');
+      const tooBig=shaped.length<=Rnd.WIDTH&&parseInt(shaped,36)>0xFFFFFFFF;
+      if(err) err.textContent=tooBig
+        ? 'That code is larger than this game can store. Seeds run from 0000000 to 1Z141Z3 - try one of those.'
+        : 'That is not a seed. Seven letters and digits, like '+Rnd.seedText+'.';
       if(inp){ inp.focus(); inp.select(); }
       return;
     }
   }
-  Rnd.set(n);
+  // startGame(n) reseeds to exactly what was typed, so the dungeon on screen is the one the code names
   seedClose();
-  startGame();
+  startGame(n);
 }
 document.getElementById('seedGo').addEventListener('click',seedDescend);
+/* "New seed" must NOT touch the live run.
+
+   This called Rnd.set(Rnd.fresh()) on the click, which reseeded the generator underneath a run in
+   progress. Everything already rolled - this floor's rooms, the enemies in them - stayed as it was,
+   and everything not yet rolled came from the new seed instead. The result is a run that is half of
+   one seed and half of another, which nobody can reproduce by typing anything, including the seed the
+   summary shows at the end.
+
+   The button now only fills the field. Going on that seed is what seedDescend() does, and it does it
+   deliberately, the same way typing a code does. */
 document.getElementById('seedRand').addEventListener('click',()=>{
-  Rnd.set(Rnd.fresh());
   const inp=document.getElementById('seedInput'), err=document.getElementById('seedErr');
-  if(inp) inp.value=Rnd.seedText;
+  if(inp) inp.value=Rnd.encode(Rnd.fresh());
   if(err) err.textContent='';
 });
 document.getElementById('seedClose').addEventListener('click',seedClose);
@@ -803,7 +822,7 @@ window.addEventListener('keydown',e=>{
   if(state==='start'){startGame();return;}
   if(!first) return;
   if((k==='escape'||k==='p')&&state==='playing'){setPaused(!paused);return;}
-  if(k==='r'&&(paused||state==='gameover'||state==='win')){startGame();return;}
+  if(k==='r'&&(paused||state==='gameover'||state==='win')){startGame(run.rootSeed);return;}
   /* BLINK, AND WHY IT CHECKES FOR A RUN RATHER THAN FOR A STATE.
 
      This asked for `state==='playing'`, which is true of a run and false of the lab - so blink did

@@ -38,6 +38,21 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   Math.random=function(){ strayRandom++; return 0.5; };
   const TEST_SEED=12345;
   Rnd.set(TEST_SEED);
+  /* `Rnd.fresh` IS STUBBED, and it has to be, because `startGame()` now calls it.
+
+     startGame takes an optional seed and reseeds before it builds anything - that is the fix for
+     pressing R producing a different dungeon under the same code. With no argument it asks
+     `Rnd.fresh()` for a seed, which reads `crypto.getRandomValues`.
+
+     So every one of the ~100 fixtures that says `startGame()` - meaning "start a run from the seed
+     this test already established" - was quietly getting a RANDOM dungeon, and the suite went
+     flaky rather than red: six consecutive runs gave 197, 197, 197, 197, 195, 197. A test suite that
+     fails at random is worse than one that fails always, because people learn to re-run it.
+
+     Stubbing `fresh` puts the ambient seed back: a bare `startGame()` means TEST_SEED, exactly as it
+     did before startGame learned to reseed. Fixtures that care about a particular seed pass it. */
+  const realFresh=Rnd.fresh;
+  Object.defineProperty(Rnd,'fresh',{value:()=>TEST_SEED,configurable:true});
   const results=[];
   /* Every test starts from the same world: the same seed, the same locked meter, and the same UI
      state. The UI part was added after watching three unrelated tests fail because the four before
@@ -265,7 +280,15 @@ if(new URLSearchParams(location.search).has('test')) (function(){
     }
     return s;
   };
-  const runAt=seed=>{Rnd.set(seed);startGame();return probeRun();};
+  /* `startGame(seed)` is now how a run is STARTED AT A KNOWN SEED, and it reseeds the generator before
+   it builds anything. This used to be `Rnd.set(seed); startGame();` - two statements, with startGame
+   deliberately NOT touching the generator, which is what let pressing R produce a different dungeon
+   under the same code.
+
+   So every fixture that meant "build the dungeon for this seed" said two things when it meant one,
+   and the second one was quietly ignored. Written as the single call the game itself makes, a
+   fixture cannot drift from the behaviour it is checking again. */
+  const runAt=seed=>{startGame(seed);return probeRun();};
 
   test('a seed is a short fixed-width string that survives the trip through text',()=>{
     // A seed is worthless if the player cannot copy it reliably. It has to be typable, come back
@@ -314,16 +337,14 @@ if(new URLSearchParams(location.search).has('test')) (function(){
     Rnd.set(12345);
     for(let i=0;i<20000;i++){ Rnd.jitter(); }
     for(let i=0;i<20000;i++){ Rnd.art(); }
-    startGame();
+    startGame(12345);
     eq(probeRun(),base,'drawing 20000 jitter values and 20000 art values changed the dungeon');
 
     // and playing the game - which spends jitter on every body it rolls - must not either, or the
     // same seed would not replay
-    Rnd.set(12345);
-    startGame();
+    startGame(12345);
     for(let i=0;i<600;i++){ keys={d:1}; update(); }
-    Rnd.set(12345);
-    startGame();
+    startGame(12345);
     eq(probeRun(),base,'playing six hundred ticks changed what the seed produced afterwards');
 
     // the streams must also be counted, or "isolation" is only an intention. This is the number
@@ -468,12 +489,20 @@ test('typing a seed goes into the field and not into the game',()=>{
     // The summary is the artefact a player actually sends to a friend. If it does not carry the
     // seed then the seed is decoration - the player has no way to hand anybody the dungeon they
     // are talking about, which was the entire point of showing them one.
-    startGame();
-    Rnd.set(4242);
+    startGame(4242);
     endRun(false);
     eq(state,'gameover','ending a run did not reach the summary screen');
     eq(lastRun.seed,Rnd.encode(4242),'the summary did not record which seed produced the run');
     ok(/^[0-9A-Z]{7}$/.test(lastRun.seed),'the recorded seed is not something a player could type back in: '+lastRun.seed);
+    /* AND THE ROOT, NOT WHATEVER THE GENERATOR HAPPENS TO HOLD. The summary read `Rnd.seedText`, which
+       after a descent is floorSeed(root, floor) rather than the root - so a player who died on floor 3
+       was handed a code that reproduces somebody else's floor 3. Since the summary is the artefact you
+       send to a friend, that is the one place where printing the wrong number breaks the feature. */
+    startGame(4242);
+    Rnd.set(Rnd.floorSeed(run.rootSeed,run.floor+1));   // what descend() does
+    endRun(false);
+    eq(lastRun.seed,Rnd.encode(4242),'after a descent the summary printed the FLOOR seed ('+lastRun.seed+
+      ') instead of the run seed the player would type to replay this dungeon');
     // and it has to FIT. stampText centres on its x, so a value right-aligned by centring hangs
     // half its width over the paper and the last character falls off the edge - which prints
     // "000039" for a seed that is "000039U", and a seed missing a character is a dungeon that will
@@ -2650,7 +2679,14 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // open - and the room count is only required to VARY across dungeons.
     const shapes=new Set(), counts=new Set();
     for(let i=0;i<200;i++){
-      startGame();
+      /* A DIFFERENT SEED EACH TIME, stated rather than inherited. This loop used to rely on the
+         generator simply carrying on from where the previous dungeon left it, which is exactly the
+         behaviour `startGame(seed)` was introduced to remove - so it built the SAME dungeon 200 times
+         and the "the room count must vary" assertion below failed on a generator that varies fine.
+
+         The multiplier is the one the neighbouring seed-space test already uses, so the two agree on
+         what "a different seed" means. */
+      startGame((i*2654435761)>>>0);
       const all=Object.values(rooms);
       const one=f=>all.filter(f).length;
       eq(one(r=>r.type==='boss'),1,'boss rooms'); eq(one(r=>r.type==='item'),1,'upgrade rooms');

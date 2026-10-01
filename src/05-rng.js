@@ -56,13 +56,37 @@ const Rnd=(function(){
      will mistype. Fixed width, so a seed is always the same shape on screen. */
   const WIDTH=7, ALPHABET='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const encode=n=>{let s=(n>>>0).toString(36).toUpperCase();while(s.length<WIDTH)s='0'+s;return s;};
+  /* THE SEED SPACE IS 32 BITS, AND A SEED THAT DOES NOT FIT IS REJECTED RATHER THAN WRAPPED.
+
+     This returned `n>>>0`, which silently truncated. A seed is 7 base-36 characters and the screen
+     accepts any 7 of them, but 36^7 is 78.4 BILLION and the generator is mulberry32 - 32 bits, 4.29
+     billion. So 94.5% of everything a player can type was quietly folded onto something else:
+
+         DUNGEON  ->  01FO0UV
+         ZZZZZZZ  ->  0HFZ0FZ
+         1Z141Z4  ->  0000000        (wraps past the top of the range)
+
+     The player types a code, shares it with a friend, and the friend gets a different dungeon with
+     no message. A seed exists so two people can play the same run; a seed that silently becomes a
+     different seed is worse than no seed at all, because it looks like it worked.
+
+     Seven digits is still the right width - it covers the whole 32-bit space with room to spare - so
+     the fix is not to shorten the code but to refuse the codes that cannot be stored. `null` is what
+     the seed sheet already treats as "That is not a seed", so this reuses that path rather than
+     inventing one.
+
+     It also means the set of usable seeds is the whole 0 .. 2^32-1 range and nothing wraps into it,
+     so `encode(decode(x)) === x` holds for every accepted code, which is what makes the round trip
+     assertable. */
   function decode(text){
     if(text==null) return null;
     const t=String(text).trim().toUpperCase().replace(/[^0-9A-Z]/g,'');
     if(!t||t.length>WIDTH) return null;
     const n=parseInt(t,36);
     if(!Number.isFinite(n)||n<0) return null;
-    return n>>>0;
+    // the whole 7-character space is 78.4 billion, so this rejects the top 94.5% rather than wrapping
+    if(n>0xFFFFFFFF) return null;
+    return n;
   }
 
   let seed=0, runFn=null, jitFn=null, artFn=null;
@@ -118,6 +142,10 @@ const Rnd=(function(){
 
   return {
     set:set, encode:encode, decode:decode, fresh:fresh, floorSeed:floorSeed,
+    /* WIDTH and MAX are exported so a caller can explain WHY a code was refused without repeating the
+       numbers. The seed sheet has to tell a player that 1Z141Z4 is too large rather than calling it a
+       typo, and it should not have to hard-code a 7 and a 1Z141Z3 to do it. */
+    WIDTH:WIDTH, MAX:0xFFFFFFFF,
     get seed(){return seed;},
     get seedText(){return encode(seed);},
     calls:calls,

@@ -70,13 +70,26 @@ function doBlink(){
   player.boostX=ux; player.boostY=uy;
 }
 
-function startGame(){
+function startGame(root){
   /* A new run starts from nothing, and that means the BUILD and not merely the numbers. This used to
      call Stats.reset() alone, which zeroed every stat while leaving loadout.items populated - so after
      pressing R the character sheet listed the previous run's items with none of their effects
      applied. The same lie as an inert stat, in the other order: the sheet and the game disagreed, and
      the sheet was the one that had been right a moment earlier. */
   if(typeof Items!=='undefined') Items.reset(); else Stats.reset();
+  /* REPRODUCIBLE, WHICH TAKES AN ARGUMENT. Pressing R used to call this with nothing, and the
+     generator simply carried on from wherever the previous run stopped. The seed on screen never
+     changed - it still read back the same seven characters - so restarting produced a different
+     dungeon under an identical code, and a player trying to improve on a run they had just died in
+     was not repeating it at all.
+
+     A seed is only worth having if it means something, and this is the line that gives it one: the
+     generator is rewound to `root` before a single room is generated, so the same code produces the
+     same dungeon every time, on this machine and on anyone else's.
+
+     With no argument it takes a fresh seed, which is what starting from the title screen wants and
+     what the seed sheet wants after it has decoded the code the player typed. */
+  Rnd.set(root===undefined?Rnd.fresh():root);
   generateDungeon();
   cur={x:START,y:START};
   // the wall shorthand, re-synced before the player is placed: the line below puts the player at
@@ -163,7 +176,7 @@ function descend(){
   player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
   player.vx=0; player.vy=0; player.kvx=0; player.kvy=0;
   clearTransient();
-  bossUnlocked=false; itemUnlocked=false; trans=null; respawnT=0;
+  bossUnlocked=false; itemUnlocked=false; trans=null;
   unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
   // The blink comes back full, because arriving at a new floor with no escape is a punishment for
   // arriving at a new floor, and the depth ladder is supposed to be the only thing that is harder.
@@ -216,7 +229,16 @@ function endRun(won){
   const all=Object.values(rooms), explored=all.filter(x=>x.visited).length;
   const s={won,ticks:run.ticks,floor:run.floor,floorTicks:run.floorTicks,explored,total:all.length,
     kills:run.kills,dmgTaken:run.dmgTaken,shots:run.shots,hits:run.hits,
-    weapon:WEAPONS[player.weaponIdx].name,seed:Rnd.seedText,
+    weapon:WEAPONS[player.weaponIdx].name,
+    /* THE ROOT SEED, NOT Rnd.seedText. This read the live generator, which after a descent holds
+       floorSeed(root, floor) rather than the root itself - so the summary showed a code that
+       reproduces a DIFFERENT dungeon than the one just played. Typing it in gives someone else's
+       floor 3, not your floor 1.
+
+       It is the one number the seed is FOR: it is what a player copies to a friend so both of them
+       play the same run. A summary that prints anything else is a broken promise with a
+       seven-character receipt. */
+    seed:Rnd.encode(run.rootSeed),
     newRooms:false,newFastest:false,newDepth:false};
   if(explored>records.rooms){records.rooms=explored;s.newRooms=true;}
   if(run.floor>records.deepest){records.deepest=run.floor;s.newDepth=true;}
