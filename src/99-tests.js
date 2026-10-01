@@ -1170,6 +1170,87 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
        'so the key is reaching the wrong slot');
   });
 
+  /* THE WEAPON ROW'S THREE LABELS FIT BESIDE EACH OTHER.
+
+     They are centred on plates 62px apart, so three labels of widths w1,w2,w3 do not collide when
+     `w2 <= 124 - max(w1,w3)` - the middle label's budget depends on its neighbours, which is why
+     this is a test about every COMBINATION and not about the longest name.
+
+     It regressed silently because nothing measured text. "Arcane Beam" was already 73px in a 62px
+     slot before the active plate existed, and eleven of thirteen item names were wider than the
+     slot, "Lantern Friend" by thirty pixels. A flat per-label budget fixed every label individually
+     and still let "Weighted Rod" touch "Arcane Beam", which only the geometry catches. */
+  test('every item name fits the bench row whole, at full size, with room to spare',()=>{
+    /* The row belongs to the item name alone now. Two earlier layouts failed and both failures are
+       the reason this test asserts what it does rather than merely checking that nothing overlaps.
+
+       Labels were first centred in their own plates and overlapped, because eleven of thirteen item
+       names are wider than a 62px plate. Then all three names were fitted onto one 147px row, which
+       does not fit at 12px (the worst case is 210px), and the version of that test asserted against a
+       hardcoded row width of 190 - so it passed while checking a geometry the game does not have.
+
+       So the row width is READ from the drawing, and the assertion is not "no overlap" but "every
+       name whole at 12px", because the defect that actually reached the screen was never an overlap.
+       It was "ARCAN... UNTER'S ... BLAST": a collision fixed by deleting the information. */
+    startGame(); render();
+    const ROW=BENCH_ROW_W;
+    ok(ROW>0,'BENCH_ROW_W is still '+ROW+', so drawHUD has not run and this test would check nothing');
+    const budget=ROW-8;                       // the 4px the caller keeps at each end of the row
+    const items=Content.ids('item').map(id=>Content.get('item',id).name).concat(['nothing']);
+    const cut=[], shrunk=[], edge=[];
+    for(const n of items){
+      const r=fitLabel(n,budget);
+      if(r.truncated) cut.push('"'+n+'" -> "'+r.text+'"');
+      if(r.size<12) shrunk.push('"'+n+'" at '+r.size+'px');
+      // the fitted line must sit inside the row with the margin the caller reserved
+      const half=r.w/2;
+      if(half>ROW/2-4) edge.push('"'+n+'" spans '+Math.round(half*2)+'px of a '+ROW+'px row');
+    }
+    ok(cut.length===0,'these item names are shown as stubs, which deletes the one piece of '+
+      'information the player cannot read off the icon or find on the sheet: '+cut.join(', '));
+    ok(shrunk.length===0,'these item names are shown below full size, which is the same defect at a '+
+      'different scale: '+shrunk.join(', '));
+    ok(edge.length===0,edge.join('; '));
+    // the empty case must say so, not fall through to the last item's colour
+    ok(fitLabel('nothing',budget).text==='nothing','the empty slot lost its label');
+
+    /* The overflow branch, exercised deliberately. Every name in the roster fits, which means the
+       shrink and truncation paths never run - so a test that only walks the roster cannot see whether
+       they work at all. A mutation that removed the shrink passed 178/178 for exactly that reason,
+       and the branch it disabled is the one that protects the next item name somebody adds. So a
+       name far too long for the row is fitted here and the result is checked for the three properties
+       that matter: it terminates, it fits, and it admits what it did. */
+    const huge='Weighted Grip Of The Lantern Friend Of The Very Long Name';
+    const r=fitLabel(huge,budget);
+    ok(r.w<=budget,'a name of '+huge.length+' characters came back '+r.w+'px wide in a '+
+      budget+'px budget, so it does not fit');
+    ok(r.truncated,'a name this long was cut but fitLabel did not report having cut it');
+    ok(r.text.length>=2&&r.text.endsWith('...'),'the cut name is "'+r.text+'", which neither '+
+      'shortened enough nor admitted to being cut');
+    ok(r.text!==huge,'the cut name came back uncut');
+    // and a name that only just overflows must shrink rather than be cut
+    ctx.font='12px monospace';
+    const near='A'.repeat(Math.ceil(budget/ctx.measureText('A').width));
+    const r2=fitLabel(near,budget);
+    ok(!r2.truncated,'"'+near+'" is '+Math.round(ctx.measureText(near).width)+'px, just over the '+
+      budget+'px budget, and was cut to "'+r2.text+'" instead of shrunk to '+r2.size+'px');
+  });
+
+  test('the bench row is wide enough for the longest name in the game without help',()=>{
+    // stated separately because it is the number the layout decision rests on
+    startGame(); render();
+    const budget=BENCH_ROW_W-8;
+    const longest=Content.ids('item').map(id=>Content.get('item',id).name)
+      .reduce((a,n)=>ctx.measureText(n).width>ctx.measureText(a).width?n:a,'');
+    ctx.font='12px monospace';
+    const w=ctx.measureText(longest).width;
+    ok(w<=budget,'the longest item name is "'+longest+'" at '+Math.round(w)+'px, which does not fit '+
+      'the '+budget+'px budget the '+BENCH_ROW_W+'px row leaves - the row layout was chosen on the '+
+      'assumption that it does, so this is the assumption failing rather than one name');
+    ok(budget-w>=8,'"'+longest+'" fits with only '+Math.round(budget-w)+
+      'px to spare, which is too tight to be comfortable');
+  });
+
   test('a doorway clears every lingering effect, and a hook laid in the last room cannot reach this one',()=>{
     startGame();
     const hook=hookFields, burst=burstFX, dash=dashFX;

@@ -260,10 +260,22 @@ behind — the cover the player has been building is now something the fight tak
 different fight rather than the same one with different dice. They are fractions of max HP, not
 absolute, because the depth ladder scales body health.
 
-**Sized from measured dps: 520*TOUGH = 702 HP.** 25.7s Scatter, 28.4s Beam, 28.6s Bolt, 28.6s
-Voidball. The spread is left alone on purpose — the slow gun *should* take longer, and flattening it
-would mean tuning to the median weapon and telling the player their choice does not matter. No
-armour, deliberately: irregular chunks make it impossible to tell how much of a volley landed.
+**343*TOUGH = 463.05 HP, at `ARMOUR`.** Re-measured whenever a weapon changes; on the starting build
+at 400px, mean of 25 trials: 22.2s Scatter, 29.1s Voidball, 29.9s Bolt, 12.5s Arcane Beam, a spread
+of x2.39. The spread is left alone on purpose, the slow gun *should* take longer, and flattening it
+would mean tuning to the median weapon and telling the player their choice does not matter.
+
+**HP was 520*TOUGH until the armour rule was unified.** The boss used to take *full* damage where
+every other body took 66%, so its effective health was 19x a lunger's rather than the 29x its HP
+implied — and because the ladder multiplies health without limit, that gap *grew with depth* rather
+than staying a property of the body. HP absorbed the factor so the fight length held.
+
+**The suite asserts the boss fight as a SPREAD (x4), not as a window in seconds.** It used to assert
+18-70s while its loop could only reach 42.9s, so three of four guns were reporting the loop cap as a
+measurement and the ceiling could never fail. Absolute seconds go stale every time a weapon is
+tuned; a ratio between the fastest and slowest gun is the actual design claim. The floor of that
+spread is the Arcane Beam with zero Strength — 87.2s — which is the price of a weapon whose base
+damage is low so that Strength sigils are worth 3.5x more to it than to any other gun.
 
 ### The number that decides whether any of it works
 
@@ -752,6 +764,48 @@ because every room in the game fits on screen and so that line had never execute
 So the big-room checks assert the *moving* case, and reverting the clamp makes them fail with both
 numbers in the message.
 
+## The bench row — why only the item is named
+
+The row under the minimap is three plates: the weapon, the **active item** (Q), and the alt. For most
+of this project's life each carried a text label centred under it, which overlapped — `Arcane Beam` is
+73px in a 62px plate, and eleven of the thirteen item names are wider than their plate, `Lantern
+Friend` by thirty pixels.
+
+Three layouts were tried and **two of them passed the suite while being wrong**, which is the reason
+this is written down:
+
+1. **A budget per label, derived from its neighbours.** Correct arithmetic — three labels 62px apart
+   do not collide when `w2 <= 124 - max(w1,w3)`. The screenshot read
+   **`ARCAN...   UNTER'S ...   BLAST`**. It fixed a collision by deleting the information.
+2. **All three names as one line of text**, which is the right *shape* and still does not fit: the row
+   is **147px**, and the three names at 12px come to **210px** worst case. Its test asserted against a
+   hardcoded row width of **190**, so it passed while checking a geometry the game does not have. A
+   test that cannot read the number it is about has to guess it, and a guess comfortably larger than
+   the truth fails nothing.
+3. **The item name alone, across the whole row** — what ships. The two weapons keep their icons and
+   their cooldown sweeps, the footer already reads `LMB cast / RMB blast / SHIFT blink` every frame,
+   and the sheet (F1) lists both weapon names in full. The item name is the one that is new,
+   unbounded, and absent from the sheet until you go looking — so it is the one that gets the space.
+   Every name in the roster now fits **whole at 12px**, the longest with 47px to spare.
+
+Two things follow from this that the suite enforces rather than trusts:
+
+- **The row width is published (`BENCH_ROW_W`) and read by the test.** Hardcoding it is how version 2
+  passed.
+- **The overflow branch is exercised by a name that overflows.** Every real name fits, so the shrink
+  and truncation paths never run — and a mutation that deleted the shrink passed 178/178 for exactly
+  that reason. A test that only walks current content cannot see whether the paths that protect the
+  *next* item name work at all.
+
+One trap worth naming: truncating by dropping the last character and re-appending `...` is an
+**infinite loop**, because the string never gets shorter. It surfaced as a frozen test run rather
+than a failure, and no current name reaches it, so it would have shipped. The truncation is built
+from a prefix and re-measured each step, which is monotonic by construction.
+
+> The defect that reached the screen was never the overlap. It was a collision fixed by shortening the
+> text until the collision could not happen — and the shortening was invisible to every check that
+> asked only whether anything overlapped.
+
 ## The lab — a game state that is not a game
 
 `src/35-devlab.js`. **F2** in, **F2** out, **F3** freeze/release the row, **F4** arm the dropper,
@@ -867,7 +921,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **176 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **178 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
   `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
   figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.
@@ -875,7 +929,7 @@ having is the one that says what happens when the content outgrows the code.
   reported **UNVERIFIED** in amber rather than scored as a pass. The panel prints both numbers and
   names each, because they are genuinely different — the table is bugs found and pinned, the suite
   is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` - **79 checks**, parity-verified against the JavaScript.
+- `csharp/Depths.Core` + `Depths.Tests` - **88 checks**, parity-verified against the JavaScript.
   Still no world state; see the section on the port boundary above.
 
 ### The port's own drift, and the test that was defending it
@@ -932,7 +986,7 @@ teaches; the other three exist to make a room's answer depend on which of them i
 
 `csharp/Depths.Core` has `Balance` (all the tuning, plus the depth ladder), `Hit` (the player hit
 test), `Intercept` (lunge and gun solutions), `Mulberry32` and `Rng` (the three streams, the floor
-seed, the base36 codec). `csharp/Depths.Tests` has **79 checks**, all parity-verified against numbers
+seed, the base36 codec). `csharp/Depths.Tests` has **88 checks**, all parity-verified against numbers
 read out of the running JavaScript.
 
 **There is no world in the port yet.** No player, no body, no projectile, no room, no tick. Everything

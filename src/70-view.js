@@ -467,6 +467,62 @@ function drawSpawnPlan(){
    that function: a frame you can see is a slot, and a gap is a mistake. The Q is drawn on the plate
    rather than only in the controls sheet, because this is the one key that acts on the thing in this
    frame and a player should not have to remember which frame it was. */
+/* The width of the label row, written by drawHUD each frame and read by the suite. Zero until the
+   HUD has drawn once, which is why the test draws before it measures rather than trusting this. */
+let BENCH_ROW_W=0;
+
+/* ONE LABEL, SHRUNK TO FIT THE WIDTH IT IS GIVEN, and only truncated as a last resort.
+
+   This replaced a three-label row fitter, and the reason is worth keeping because both earlier
+   versions of that fitter looked correct and were not.
+
+   The first fitted each name into the 62px plate under it. Eleven of the thirteen item names are
+   wider than that, and "Arcane Beam" was 73px, so the labels overlapped.
+
+   The second fixed the overlap by shrinking and truncating each label against a budget derived from
+   its neighbours, and a screenshot of it read:
+
+       ARCAN...   UNTER'S ...   BLAST
+
+   which is worse than the overlap, because a stub in the active-item slot removes the one piece of
+   information the player cannot get anywhere else. Shrinking to 9-10px is the same failure wearing
+   different clothes: a row of 10px type is unreadable in exactly the situation it matters.
+
+   The third fitted all three as one line of text, which is correct arithmetic and still wrong: the
+   row is 147px, and the three names at 12px come to 210px in the worst case. It also carried a test
+   that asserted against a hardcoded row width of 190, so it passed while checking a geometry the game
+   does not have - which is the failure mode that let all three versions look right.
+
+   The row now belongs to the item name alone, so this fits ONE string, and the honest claim is simply
+   that every name in the roster fits whole at full size. It does: the longest, "Lantern Friend", is
+   92px in a 139px budget.
+
+   Truncation remains for a future name that does not fit, and it is built from a prefix and
+   re-measured each step. The first version dropped the last character and re-appended '...', which is
+   an INFINITE LOOP - the string never gets shorter - and it was found by a mutation that stopped the
+   suite responding rather than reporting a failure. A freeze is the worst defect this function could
+   have, and no current name reaches that branch, so it would have shipped.
+
+   Returns the text, the size it settled on, its width, and whether it had to cut, so a test can
+   assert the last one rather than trusting that it never happens. Sets ctx.font and ctx.textAlign and
+   leaves them set, as the drawing code already assumes. */
+function fitLabel(text,maxW){
+  const base=12, floor=9;
+  ctx.textAlign='center';
+  const measure=(n,s)=>{ ctx.font=s+'px monospace'; return ctx.measureText(n).width; };
+  let size=base, w=measure(text,size);
+  while(size>floor && w>maxW){ size--; w=measure(text,size); }  // re-measure every step
+  let shown=text;
+  if(w>maxW){
+    let cut=shown.length;
+    while(cut>0 && measure(shown.slice(0,cut)+'...',size)>maxW) cut--;
+    shown=cut>0?shown.slice(0,cut)+'...':'...';
+    w=measure(shown,size);
+  }
+  ctx.font=size+'px monospace';
+  return {text:shown, size:size, w:Math.round(w), truncated:shown!==text};
+}
+
 function drawActivePlate(x,y,w,held){
   const h=50;
   ctx.drawImage(woodPlate(w,h),x,y);
@@ -906,20 +962,42 @@ function drawHUD(){
   // to within a pixel, so the row cannot be off-centre.
   const slotY=my0+pw+GAP, slotH=50, slotGap=2;
   const slotW=Math.floor((pw-slotGap*2)/3);
+  /* The row width the labels are fitted into, published so the test can assert against the value the
+     drawing actually uses. It was a hardcoded 190 in the suite, and the real value is 147 - so the
+     test was checking a geometry the game does not have, and passed while doing it. A test that
+     cannot read the number it is about has to guess it, and a guess that is comfortably larger than
+     the truth is the worst kind: it fails nothing. */
+  BENCH_ROW_W=pw;
   const midX=mx0+slotW+slotGap, midW=pw-slotW*2-slotGap*2;
   const wp=WEAPONS[player.weaponIdx], alt=activeAlt();
   const held=Items.active();
   drawSlot(mx0,slotY,slotW,player.weaponIdx,'left',wp.color,1-player.cooldown/(player.cooldownMax||wp.cooldown));
   drawActivePlate(midX+Math.round((midW-slotW)/2),slotY,slotW,held);
   drawSlot(mx0+pw-slotW,slotY,slotW,player.altMode==='hook'?'hook':'alt','right',alt.color,1-player.altCooldown/(player.altCooldownMax||alt.cooldown));
-  // labels centred under their own plate, on one baseline
+  /* Only the ITEM is named on this row, and it is named across the whole row.
+
+     Three names on one line was tried and it does not work, and the measurements are the reason
+     rather than taste: the row is 147px, and the three of them at 12px come to 210px for the worst
+     case ("Arcane Beam" + "Lantern Friend" + "Blast"), 197px for the next, 184px for the next. Only
+     "Bolt" + "Tin Cup" + "Blast" fits unshrunk. Everything else had to shrink to 9-10px or lose
+     letters, and a row of 10px type is the same legibility problem as a row of stubs - it just
+     fails more quietly.
+
+     So the middle plate gets the row to itself, and the two weapons keep only what the player cannot
+     already read off them. That is not a loss of information: the weapon plate carries its icon and
+     its cooldown sweep, the alt plate carries its icon and the footer already says "LMB cast /
+     RMB blast" and "SHIFT blink" every frame, and the character sheet (F1) lists both weapon names in
+     full. The item name is the one that is new, unbounded in length, and absent from the sheet
+     until you go looking for it - so it is the one that gets the space.
+
+     The row is drawn as a single centred line rather than under the middle plate, because the middle
+     plate is 47px wide and "Lantern Friend" is 92px. Anchoring it to the plate is what produced the
+     original overlap; letting it use the row is what fits it at 12px with 8px to spare either side. */
   const labelY=slotY+slotH+14;
-  ctx.font='12px monospace';
-  ctx.textAlign='center';
-  ctx.fillStyle='#e8dcc0';ctx.fillText(wp.name,mx0+slotW/2,labelY);
-  ctx.fillStyle=held?(Content.get('item',held.id).color||'#e8dcc0'):'#6b5a44';
-  ctx.fillText(held?held.name:'nothing',mx0+pw/2,labelY);
-  ctx.fillStyle=alt.color;ctx.fillText(player.altMode==='hook'?'Hook':'Blast',mx0+pw-slotW/2,labelY);
+  const itemColor=held?(Content.has('item',held.id)?(Content.get('item',held.id).color||'#e8dcc0'):'#e8dcc0'):'#6b5a44';
+  const label=fitLabel(held?held.name:'nothing', pw-8);
+  ctx.fillStyle=itemColor;
+  ctx.fillText(label.text, mx0+pw/2, labelY);
 
 
   ctx.textAlign='left';

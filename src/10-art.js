@@ -123,12 +123,20 @@ const ENEMY={
      and 5.24s. That is not a fight: it is the same walk with a health bar on it, and a player would
      learn in one attempt that the boss is a formality between the gold key and the next floor.
 
-     Sized so the fight is a fight with the gun the player is actually holding. 520*TOUGH = 702 HP,
-     which is 22.9s to the Scatter, 27.6s to the Arcane Beam, 39.6s to the Bolt and 54.4s to the
-     Voidball. The spread is left alone deliberately - the slow gun SHOULD take longer, and flattening
-     it would mean tuning the boss to the median weapon and telling the player their choice does not
-     matter. The depth ladder multiplies all of it, so a floor 10 boss is a long fight by exactly the
-     same rule that made everything else on that floor harder.
+     Sized so the fight is a fight with the gun the player is actually holding, and re-measured every
+     time a weapon changed. On the starting build, 400px, mean of 25 trials:
+
+        Scatter 22.2s    Voidball 29.1s    Bolt 29.9s    Arcane Beam 12.5s
+
+     a spread of x2.39. The spread is left alone deliberately - the slow gun SHOULD take longer, and
+     flattening it would mean tuning the boss to the median weapon and telling the player their choice
+     does not matter. The depth ladder multiplies all of it, so a floor 10 boss is a long fight by
+     exactly the same rule that made everything else on that floor harder.
+
+     The floor is the Arcane Beam with nothing invested in it, which is deliberate - it is a weapon
+     whose base damage is low so that Strength sigils are worth several times more to it than to any
+     other gun. At zero Strength that gun takes 87.2s here, which is a minute and a half, and the
+     4x spread bound in the suite is what stops that from becoming the norm.
 
      NO ARMOUR, deliberately. Armour would flatten the read: a player watching a health bar fall in
      irregular chunks cannot tell how much of a volley landed, and the whole design is that a player
