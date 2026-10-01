@@ -870,6 +870,17 @@ that a test has stopped describing the thing it claims to check.
 **AZERTY, and why the obvious fix is not the fix.** Movement reads `e.key`, which is the CHARACTER the
 layout produces rather than the key's position — so on a French keyboard the key where QWERTY keeps A
 produces `q`, and since **Q is the item button here**, a player pressing "left" spends their item while
+"up" does nothing. Reading `e.code` instead would fix exactly that in about four lines.
+
+It is deliberately **not** done. A keybind system is coming later and will make movement remappable for
+the same reason, so a half-migration now would mean writing the physical-key path and then replacing it,
+and shipping a state where `A` moves left on one layout and does nothing on another. Accessibility is a
+real gap and this is a fair note to have raised; the answer is the keybind screen, not a patch in the
+input layer. Left as-is deliberately, not missed.
+
+---
+layout produces rather than the key's position — so on a French keyboard the key where QWERTY keeps A
+produces `q`, and since **Q is the item button here**, a player pressing "left" spends their item while
 "up" does nothing. Reading `e.code` instead would fix exactly that in about four lines: `KeyA` is that
 key on every layout, and the item, the sheets and the bench could stay on the character because those
 are labelled on screen in words.
