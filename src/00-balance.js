@@ -543,29 +543,40 @@ const WEAPONS=[
 
       Note the Brunch needs exactly ONE pellet (2.7 hp, no armour), so this does nothing to them -
       a shotgun killing a chip body should be free, and the pack numbers still hold. */
-   /* The effective range is a CIRCLE of 233px radius - a THIRD of a 700px room - and inside it the
-      gun does FULL damage. A room is 700x450 (measured, every room, five seeds), so a third is 233
-      and a half is 350; falloffMult is already radial (it measures hypot from the shot origin), so
-      fNear IS that radius and no new machinery was needed.
+   /* The effective range is a CIRCLE of 180px radius - a QUARTER of a 700px room - and inside it the
+      gun does FULL damage. A room is 700x450 (measured: every room, every type, five seeds), so a
+      quarter is 175, a third is 233 and a half is 350. falloffMult is already radial (it measures
+      hypot from the shot origin), so fNear IS that radius and no new machinery was needed.
 
-      It was 175 before, which was measured against a room half this size and so was really only a
-      quarter of one. Measured consequence of the old band: the Scatter one-shot EVERY normal body
-      out to 350px - half a room - and the gunner, shooter and Brunch all the way to the far wall,
-      because even at the 0.45 floor the volley was worth more than their health. A shotgun that
-      clears a room from the far corner has no range, and no room in which another gun is the right
-      choice.
+      This number has been walked down twice and the reasons are the point. It was 175 to begin with,
+      which was measured against a room half the size and was really a quarter of one - the comment
+      beside it called it "half a room" for a room that is 700 wide. At a 0.45 floor the Scatter
+      one-shot EVERY normal body out to 350px, and the gunner, shooter and Brunch all the way to the
+      far wall, because even the floor was worth more than their health. A shotgun that clears a room
+      from the far corner has no range and no room in which another gun is the right choice.
 
-      fFar 350 is where the curve reaches its floor, and 350 is half a room on purpose: past the
-      middle of a room the Scatter is a bad idea, which is the half where the Bolt and the Voidball
-      earn their place. fMin 0.30 is the floor the user tested for, chosen so a shooter or a gunner
-      takes TWO volleys past the third of the room rather than one.
+      Then 233 with a 0.30 floor, which was still reported too easy at medium range: a lunger at 350px
+      - a body in the middle of the left of the room, the player in the middle of the right - still
+      died in 2 volleys / 2.2 seconds. So the threshold came back DOWN to a quarter and the floor to
+      0.22, and the lunger at 350px costs three.
 
-        233px and in  one shot, every body including a 20.25 hp lunger
-        350px and out shooter 2   gunner 2   lunger 3   Brunch still 1
+      fFar 320 is where the curve reaches its floor, comfortably inside half a room, so a shot is
+      never caught mid-curve against plaster. fMin 0.22 is the number that actually decides the 350px
+      case: measured live, 0.30 gives 2 volleys there and 0.22 gives 3.
 
-      The Brunch needing one pellet at any range is deliberate and unchanged: they are 2.70 hp with
+        180px and in  one shot against everything, including a 20.25 hp lunger
+        350px       shooter 2   gunner 3   lunger 3   Brunch still 1
+
+      MEASURED IN THE SIMULATION, and the table is not enough: a lunger WALKS TOWARD THE PLAYER while
+      the volley is in the air - 350px when fired, ~318px when the last pellet arrives - and
+      falloffMult is read at the moment of the hit. The eight pellets of one volley are taxed at eight
+      different distances, multipliers running 0.302 then 0.376 then 0.491. The static table says a
+      lunger takes 5 volleys at 350px; it takes 3. Any fairness claim about this gun has to be
+      measured, because the table describes a fight that does not happen.
+
+      The Brunch needing one pellet at close range is deliberate and unchanged: they are 2.70 hp with
       no armour and a shotgun should not have to work for them. */
-   fNear:233, fFar:350, fMin:0.30,
+   fNear:180, fFar:320, fMin:0.22,
    muzzleJitter:5,pelletAngle:0.008,pelletSpeedVar:0.25},
 
 /* THE ARCANE BEAM RAISED 0.84 -> 1.55, and the reasoning is worth keeping because two earlier

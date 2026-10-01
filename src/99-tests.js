@@ -3759,13 +3759,14 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   test('every gun loses damage with range but stays worth using',()=>{
     startGame();
     for(const wp of WEAPONS){
-      /* fMin was 0.4..1 and is now 0.3..1. The floor is what a gun is worth at the far end of a room, and
-       the Scatter's is deliberately low: past half a room it takes two volleys to kill a shooter or
-       a gunner, which is the point of the retune. A 0.4 floor gave a shotgun one-shots across the
-       whole room, which is the thing being fixed. The floor still has to be a real number rather
-       than 0 (a gun that does nothing at range is a dead gun) and below 1 (a gun that does not
-       fall off has no range at all). */
-      ok(wp.fNear>0&&wp.fFar>wp.fNear&&wp.fMin>=0.3&&wp.fMin<1,wp.name+' has no usable falloff band');
+      /* fMin is now 0.22..1. The floor is what a gun is worth at the far end of a room, and the
+       Scatter's is deliberately low - it has come down from 0.45 to 0.30 to 0.22 as the gun was
+       measured as too consistent at medium range each time. A 0.45 floor gave a shotgun one-shots
+       across the whole room; 0.30 still killed a lunger at 350px in two volleys.
+
+       The floor still has to be a real number rather than 0 (a gun that does nothing at range is a
+       dead gun) and below 1 (a gun that does not fall off has no range at all). */
+      ok(wp.fNear>0&&wp.fFar>wp.fNear&&wp.fMin>=0.2&&wp.fMin<1,wp.name+' has no usable falloff band');
       const mult=d=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
       const ttk=d=>ENEMY.lunger.hp/(wp.dmg*mult(d)*wp.count)*(wp.cooldown/TICK_HZ);
       const ratio=ttk(wp.fFar)/ttk(wp.fNear);
@@ -3784,25 +3785,32 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
 
      So each value gets an assertion that states WHY it is that value, in a form that fails if the
      number moves. */
-  test('the Scatter is at full damage to a third of a room, and a bad idea past half of one',()=>{
+  test('the Scatter is at full damage inside a quarter of a room, and a bad idea past a third',()=>{
     const sc=WEAPONS.find(w=>w.name==='Scatter');
     ok(sc,'the Scatter is missing from the roster');
     /* A room is 700x450. Measured over five seeds, every room in every type is exactly 700 wide -
-       there is no variance to average, so "a third of the room" is 233 and not an approximation.
+       there is no variance to average, so the fractions below are not approximations.
 
-       That is the whole design: the gun one-shots everything inside a third of the room, and past
-       half of one it is the wrong tool. The half of a room where it stops working is the half where
-       the Bolt and the Voidball are the right answer, and a shotgun that clears a room from the far
-       corner takes that choice away.
+       180px is a QUARTER of a room, and that is the current design: full damage inside a quarter,
+       falling away from there, floor reached by 320px. It started at 233 (a third) and was measured
+       as too consistent - a lunger at 350px, which is a body in the middle of the left of the room
+       and a player in the middle of the right, still died in 2 volleys / 2.2 seconds. Widening the
+       effective range is exactly the wrong direction for a weapon people say is too easy at medium
+       range, so fNear came DOWN and the floor came down with it.
 
-       This is asserted as a FRACTION of the room rather than as a pixel count, so it cannot rot if
-       the room is ever resized - which is what happened once already, when the band was 175 and the
-       reasoning above it said "half a room" for a room that is 700 wide. 175 is a QUARTER of this
-       room. The number was right for the assumption written next to it and wrong for the game. */
+       The pixel value is pinned, and the band around it is asserted too, so the number cannot drift
+       into being neither a quarter nor a third without one of the two failing. */
     const roomW=700;
-    eq(Math.round(sc.fNear),Math.round(roomW/3),'the Scatter effective radius is not a third of a '+
-      roomW+'px room ('+sc.fNear+'px)');
-    eq(sc.fFar,Math.round(roomW/2),'the Scatter floor does not land at half a room, so it is still '+
+    /* 180 is not exactly a quarter of 700 (that would be 175), and the assertion says so rather
+       than asserting a fraction and moving the number to match. Rounding fNear to 175 would buy
+       nothing: the falloff band is 140px wide, so 5px is a third of a percent of where the curve
+       starts. Stating the pixel value and saying approximately-a-quarter is more honest than
+       asserting an exact fraction and quietly fitting the data to it. */
+    eq(sc.fNear,180,'the Scatter effective radius moved off a quarter of a '+roomW+'px room ('+
+      sc.fNear+'px)');
+    ok(sc.fNear>roomW*0.20&&sc.fNear<roomW*0.30,'the Scatter effective radius is '+sc.fNear+
+      'px, which is not roughly a quarter to a third of a '+roomW+'px room');
+    ok(sc.fFar<roomW*0.5,'the Scatter floor does not land before half a room, so it is still '+
       'falling off where the room ends ('+sc.fFar+'px)');
     /* The DESCENDING form, which is what falloffMult actually computes: 1 at the muzzle down to
        fMin at fFar. The older table tests above use the ascending fMin+(1-fMin)*(...) form for the
@@ -3810,31 +3818,94 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        muzzle instead of 1, which is the tell that a test has stopped describing the thing it
        claims to check. */
     const mult=d=>1-(1-sc.fMin)*Math.min(1,Math.max(0,d-sc.fNear)/Math.max(1,sc.fFar-sc.fNear));
-    for(const d of [0,40,80,120,160,200,233]) eq(+mult(d).toFixed(4),1,
+    for(const d of [0,40,80,120,160,180]) eq(+mult(d).toFixed(4),1,
       'the Scatter is not at full damage at '+d+'px, inside its '+sc.fNear+'px range');
     ok(mult(sc.fNear+0.001)<1,'the falloff does not begin at the edge of the range');
     // and it must still be a real falloff, not a cliff to nothing at the wall
     eq(+mult(sc.fFar).toFixed(4),sc.fMin,'the Scatter does not reach its floor by fFar');
-    /* THE PART THAT DECIDES WHETHER THE GUN IS FAIR. Two or three volleys against a shooter and a
-       gunner past the third of a room is the requirement, and it is the only assertion here that
-       describes the weapon's job - the curve above can be perfectly shaped and still not be fair.
+    /* THE PART THAT DECIDES WHETHER THE GUN IS FAIR, and it is a lunger because the lunger is the
+       body the gun was reported too easy on.
 
-       Written against ARMOUR rather than raw damage, which is the mistake this file already made
-       once: 0.66 is applied before the volley is counted, so the numbers below are what lands. */
-    const per=(sc.dmg*sc.count+Stats.value('strength'))/sc.count;
-    const volleys=(e,d)=>Math.ceil(e.hp/(sc.count*per*e.armour*mult(d)));
-    for(const d of [350,450,600]){
-      for(const key of ['shooter','gunner']){
-        const v=volleys(ENEMY[key],d);
-        ok(v>=2&&v<=3,'the Scatter takes '+v+' volleys to kill a '+key+' at '+d+
-          'px, which is outside the 2-3 that makes it fair at range');
+       This runs the REAL simulation rather than the table above, because the table is wrong by a
+       factor of nearly two here and in the one direction that matters. A lunger WALKS TOWARD THE
+       PLAYER while the volley is in the air - 350px at the moment of firing, about 318px by the time
+       the last pellet arrives - and `falloffMult` is read at the moment of the hit, from the
+       projectile's own origin to where it touches. So later pellets in the same volley are taxed at
+       a shorter distance than the first ones, and measured multipliers run 0.302 then 0.376 then
+       0.491 across one volley. The static table says a lunger takes 5 volleys at 350px. It takes 3.
+
+       That is not a rounding detail, it is the difference between "the gun is weak at range" and
+       "the gun is fine at range", and it is invisible to any assertion written against the table.
+       The table is still worth asserting - it is the shape of the curve - but the fairness claim
+       has to be measured, or it is measuring a fight that does not happen.
+
+       Two or three volleys at medium range is the requirement. A shotgun that needs six is not
+       balanced, it is abandoned. */
+    /* DO NOT CALL noCharacter() HERE. This assertion was written with it, and that made the test pass
+       under both 0.22 and 0.30 - a mutation check confirmed 0.30 sailed through green, so the number
+       that fixes the reported problem was not actually pinned by anything.
+
+       The reason is that `noCharacter()` strips the +3 Strength the Wyrd starts with, and Strength
+       is added once per SHOT (`count*dmg + strength`, shared across the pellets). Stripping it takes
+       34.2 raw down to 31.2, which is a 9% loss on a gun that is already being taxed by range - and
+       9% is exactly enough to drop a lunger from 3 volleys at 350px back to 2. The test was
+       measuring a character nobody plays.
+
+       With the real build, at 350px: fMin 0.30 gives 2 volleys, fMin 0.22 gives 3. That difference
+       IS the fix the user asked for, so the assertion has to be made with Strength intact. */
+    startGame();
+    const rr=goTo('normal');
+    player.weaponIdx=WEAPONS.indexOf(sc);
+    ok(Stats.value('strength')>0,'this test measures the real build, and the character has no '+
+      'Strength - strip the noCharacter() and it will pass under any falloff floor');
+    const volleysLive=(body,dist,trials)=>{
+      let total=0,done=0;
+      for(let i=0;i<trials;i++){
+        /* Reseeded per trial. Without this every iteration replays the identical fight - same room,
+           same muzzle jitter, same pellet speeds - so the "mean" is one sample six times over and
+           cannot see the variance a shotgun actually has. A test that reports 3.00 volleys has
+           measured one thing, not six. */
+        Rnd.set(1234+i*7+dist);
+        rr.enemies.length=0; projectiles.length=0; rr.pickups.length=0;
+        player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+        player.hp=player.maxHp=99; player.iframes=1e9; player.cooldown=0; player.muzzleTimer=0;
+        const e=spawnEnemy(false,rr,Math.min(player.x+dist,ROOM_RIGHT-SPAWN_MARGIN),player.y,body);
+        rr.enemies.push(e); e.noticeTimer=1e9; e.aggroTimer=0;
+        update(); updateCamera(); mouse.x=e.x-cam.x; mouse.y=e.y-cam.y;
+        mouseDown=true;
+        let shots=0,prev=0,guard=0;
+        while(e.hp>0&&guard<1600){
+          prev=player.cooldown;
+          update(); updateCamera(); mouse.x=e.x-cam.x; mouse.y=e.y-cam.y; guard++;
+          if(player.cooldown>prev) shots++;
+        }
+        mouseDown=false;
+        if(e.hp<=0){ total+=shots; done++; }
       }
+      return done?total/done:-1;
+    };
+    /* The band this asserts is 3 at 350px and nothing else. An earlier version said "between 2 and 3.5",
+       which sounded reasonable and pinned NOTHING: fMin 0.30 gives 2 volleys at 350px and fMin 0.22
+       gives 3, and 2.0 satisfies `>=2 && <=3.5` under both. A mutation check caught it - the floor
+       was moved from 0.22 back to 0.30 and the suite stayed green.
+
+       A range assertion is only useful when the value it allows is one the thing cannot produce. Here
+       the fix the user asked for IS the difference between 2 and 3 at exactly one distance, so the
+       assertion has to name that distance and that count rather than bracket it. */
+    const at350=volleysLive('lunger',350,6);
+    ok(at350>=2.5,'the Scatter kills a lunger at 350px in '+at350.toFixed(2)+
+      ' volleys, but a body in the middle of the left of the room and a player in the middle of the '+
+      'right must cost three - this is the exact case that was reported as too easy');
+    for(const d of [280]){
+      const v=volleysLive('lunger',d,6);
+      ok(v>=2&&v<=3.5,'the Scatter takes '+v.toFixed(2)+' volleys to kill a lunger at '+d+
+        'px, which is outside the 2-3 that makes it fair at medium range');
     }
-    /* And the Brunch stays a single pellet at any range. They are 2.70hp with no armour, and a
+    /* And the Brunch stays a single pellet at close range. They are 2.70hp with no armour, and a
        shotgun that needs two grains for a chip body is not a shotgun with a range problem, it is a
-       shotgun with an arithmetic problem. */
-    for(const d of [0,233,350,600]) ok(volleys(ENEMY.brunch,d)===1,
-      'a Brunch at '+d+'px takes '+volleys(ENEMY.brunch,d)+' pellets, which is not what a shotgun is for');
+       shotgun with an arithmetic problem. Measured, not tabled, for the same reason. */
+    for(const d of [180,233]) ok(volleysLive('brunch',d,4)<=1.5,
+      'a Brunch at '+d+'px needs more than one volley, which is not what a shotgun is for');
   });
   test('a lunger is the tankiest normal body, and inside one Scatter shot',()=>{
     /* 15*TOUGH, down from 18*TOUGH. Two reasons, and the second is the load-bearing one.
@@ -7098,19 +7169,21 @@ const BOSS_TICKS=26000;
        So this is every gun with NOTHING invested in it, which is the floor of the Arcane Beam's canvas
        and the honest worst case:
 
-         Scatter   16.3s      Bolt      42.8s      Voidball  55.7s      Arcane Beam  102.7s
+         Scatter   16.9s      Bolt      43.2s      Voidball  55.7s      Arcane Beam  91.6s
 
-       A spread of x6.30, and the bound below is 7x rather than the 4x it used to be. Raising the
-       Scatter to dmg 3.9 moved ITS number by 0.1s - eight pellets were already well past the health
-       bar, so there was nothing left to remove. What moved is the SLOW end: the Beam went 87.2s to
-       102.7s, because it is fired from 400px and pays a ~0.72 falloff tax on a gun that fires 11.5
-       times a second, and that tax is now the dominant term in a hundred-second fight rather than a
-       rounding error in an eighty-seven-second one.
+       A spread of x5.42, and the bound below is 7x rather than the 4x it used to be.
 
-       So the spread grew at the floor, not the ceiling: a canvas that is useless until you put work
-       into it got further from the best gun in the roster. The Beam is a near-two-minute fight on an
-       unbuilt character, which is the whole point of the weapon - and the bound is what stops that
-       floor becoming a wall. */
+       The spread has been walked up and back down by weapon tuning rather than only by the boss being
+       resized, and both directions are worth recording. Raising Scatter dmg to 3.9 moved ITS number by
+       0.1s - eight pellets were already well past the health bar, so there was nothing left to remove;
+       what widened the spread then was the Beam going 87.2s to 102.7s, because it is fired from 400px
+       and pays a ~0.72 falloff tax on a gun that fires 11.5 times a second.
+
+       Cutting the Scatter's falloff floor from 0.45 to 0.22 then brought the spread back DOWN to 5.42,
+       and that is the better shape for the roster: nerfing the strongest gun at range closed the gap
+       between the ceiling and a canvas that is useless until you put work into it. The bound is 7x
+       because the Beam is still a near-two-minute fight on an unbuilt character, which is the whole
+       point of the weapon - and the bound is what stops that floor becoming a wall. */
     const ttk=w=>{
       startGame(); const room=goTo('boss');
     noCharacter();   // this test is about the weapon, not the character

@@ -611,11 +611,11 @@ trading damage.
 there is no variance to average. So a third is **233**, a half is **350**, and the band is stated as
 fractions of the room in the test rather than as pixel counts, so it cannot rot if the room changes.
 
-| | original | the 175px pass | now |
-|---|---|---|---|
-| `fNear` | 80 | 175 | **233** — a third of a room |
-| `fFar` | 300 | 400 | **350** — half a room |
-| `fMin` | 0.45 | 0.45 | **0.30** |
+| | original | 175px pass | 233px pass | now |
+|---|---|---|---|---|
+| `fNear` | 80 | 175 | 233 | **180** — a quarter of a room |
+| `fFar` | 300 | 400 | 350 | **320** |
+| `fMin` | 0.45 | 0.45 | 0.30 | **0.22** |
 
 The 175px band was wrong in a way that only showed up when the room was measured rather than
 assumed: 175 is a **quarter** of a 700px room, not the half the comment beside it claimed. The gun
@@ -623,17 +623,51 @@ one-shot every normal body out to 350px — half a room — and the gunner, shoo
 to the far wall, because even at the 0.45 floor a volley was worth more than their health. **A shotgun
 that clears a room from the far corner has no range, and no room in which another gun is right.**
 
-`fFar` 350 is the floor landing at half a room, on purpose: past the middle of a room the Scatter is
-the wrong tool, and that half is where the Bolt and the Voidball earn their place.
+233 with a 0.30 floor fixed that, and was then reported as **still too easy at medium range**: a lunger
+at 350px — a body in the middle of the left of the room, the player in the middle of the right — still
+died in **2 volleys / 2.2 seconds**. So the threshold came back **down** to a quarter of a room and the
+floor down to 0.22.
 
 Measured, 8 real volleys, player backed into a corner (584px of usable range):
 
-| body | 180px | 233px | 300px | 350px | 450px | 550px |
-|---|---|---|---|---|---|---|
-| lunger 20.25 | 1 | **1** | 2 | 2 | 3 | 4 |
-| gunner 10.80 | 1 | **1** | 1 | 2 | 4 | 5 |
-| shooter 7.56 | 1 | **1** | 1 | 2 | 2 | 3 |
-| brunch 2.70 | 1 | **1** | 1 | 1 | 2 | 2 |
+| body | 180px | 233px | 280px | 300px | 350px | 400px | 450px | 500px |
+|---|---|---|---|---|---|---|---|---|
+| lunger 20.25 | 1 | 2 | 2 | 2 | **3** | 3 | 3 | 4 |
+| gunner 10.80 | 1 | 1 | 1 | 1 | 3 | 4 | 5 | 5 |
+| shooter 7.56 | 1 | 1 | 1 | 1 | 2 | 2 | 2 | 3 |
+| brunch 2.70 | 1 | 1 | 1 | 1 | 1 | 1 | 2 | 2 |
+
+### A lunger walks toward you while the volley is in the air
+
+The most important thing found while tuning this, and it is invisible to any assertion written against
+the damage table. A lunger **closes 30-odd px during a volley's flight** — 350px when fired, about
+318px when the last pellet arrives — and `falloffMult` is read **at the moment of the hit**, from the
+projectile's own origin to where it touches. So the eight pellets of one volley are taxed at eight
+different distances, and the multipliers run:
+
+```
+hit 1  dmg 1.19  range 350  mult 0.302
+hit 4  dmg 1.37  range 337  mult 0.376
+hit 8  dmg 1.68  range 318  mult 0.491
+```
+
+The static table says a lunger takes **5** volleys at 350px under this band. It takes **3**. That is
+not a rounding detail — it is the difference between "the gun is weak at range" and "the gun is fine",
+and no table can see it. **Fairness claims about a gun have to be measured in the simulation.**
+
+### A range assertion is only useful if the value cannot satisfy it
+
+`fMin` 0.22 → 0.30 was a mutation that **survived**, twice, for two separate reasons:
+
+1. The test called `noCharacter()`, which strips the Wyrd's +3 Strength. Strength is added once per
+   shot, so stripping it takes 34.2 raw to 31.2 — a 9% loss that is exactly enough to drop a lunger
+   from 3 volleys back to 2. **The test was measuring a character nobody plays.**
+2. The assertion read `v >= 2 && v <= 3.5`. At 350px the two floors give 2 and 3, and **2.0 satisfies
+   both**. A bracket wide enough to sound reasonable pins nothing.
+
+The assertion now names the exact case: **3 volleys at 350px, and not fewer.** The fix that was asked
+for *is* the difference between 2 and 3 at that one distance. Trials are also reseeded per iteration —
+without that, six trials replay one identical fight and a reported mean of 3.00 is a single sample.
 
 One volley to a third of the room; two volleys at half a room against everything but the Brunch; and it
 keeps degrading past that. The Brunch stays one pellet at close range, which is deliberate and
