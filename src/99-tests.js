@@ -5286,12 +5286,16 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   // number and of nothing else. Not the player's health, not their build, not how many items they
   // are carrying. The first test is the one that matters, and it is deliberately hostile: a naked
   // player and a maxed one must meet the same fight on the same floor.
+  // The field name out of a snapshot entry like `lunger:hp=25.0000`. Declared BEFORE the test that
+  // uses it rather than after: these run in definition order, so a helper defined below its caller
+  // is a temporal-dead-zone error the moment that caller executes.
+  const nameOf=field=>String(field).split('=')[0];
   test('difficulty reads the floor and never the player',()=>{
     // Two runs on the same floor, one stripped bare and one carrying everything the framework can
     // give. If the ladder ever reads a stat, an item count, or hp, these two sets of bodies differ.
     const snapshot=build=>{
       startGame();
-      run.floor=build?7:7;
+      run.floor=7;   // the same floor for both halves - comparing two floors would prove nothing
       if(build){
         // the most a build can possibly do, all at once
         for(const k of Stats.ORDER){
@@ -5315,10 +5319,42 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
              ',pack='+depthPack().toFixed(6);
     };
     const bare=snapshot(false), full=snapshot(true);
-    ok(bare===full,'the same floor produced different enemies for a different player.\n        naked: '+bare+
-       '\n        maxed: '+full+
-       '\n        => something in the depth ladder is reading the player, which turns "how deep" into a '+
-       'measure of how many hats you collected');
+    /* THE INVARIANT IS SPLIT IN TWO, and the split is the point of this rewrite.
+
+       This used to be one assertion - a byte-identical snapshot - which was right for the game as it
+       stood. It is wrong the moment ADAPT goes live, because ADAPT is SPECIFIED to read how the
+       player is performing, and two runs can differ in performance while sharing a floor and a
+       build. Whoever wires it would be told they had broken a core invariant, and the tempting
+       response is to delete the test rather than read what it was for.
+
+       So the claim is stated as what it actually is, in two parts, and the part that may move is
+       named as the part that may move:
+
+         PERMANENTLY player-independent - the enemy's health, its damage, its cadence, the depth
+         multiplier. These read the FLOOR and nothing else, forever. A difficulty that reads a stat
+         is a difficulty that punishes a good build, and no adaptive system may touch them.
+
+         DELIBERATELY player-dependent - the ADAPT term, which is zero today and is the one dial
+         allowed to differ between two runs.
+
+       Until ADAPT is live both halves are identical, so the test is as strong as it was. After it,
+       the first half still guards the thing that actually matters and the second one documents the
+       exception instead of hiding it.
+
+       ADAPT_TERMS is the list of snapshot fields permitted to differ. It is empty now, and adding a
+       name to it is a deliberate act with a reviewable diff - which is the point. */
+    const ADAPT_TERMS=[];
+    const fields=s=>s.split('|');
+    const bareF=fields(bare), fullF=fields(full);
+    eq(bareF.length,fullF.length,'the two snapshots have a different number of fields, so comparing them proves nothing');
+    for(let i=0;i<bareF.length;i++){
+      const name=ADAPT_TERMS.includes(nameOf(bareF[i]))?nameOf(bareF[i]):null;
+      if(name) continue;   // permitted to differ
+      ok(bareF[i]===fullF[i],'the same floor produced different enemies for a different player.\n        field: '+
+        nameOf(bareF[i])+'\n        naked: '+bareF[i]+'\n        maxed: '+fullF[i]+
+        '\n        => something in the depth ladder is reading the player, which turns "how deep" into a '+
+        'measure of how many hats you collected');
+    }
   });
   test('the ladder is exponential, climbs unbroken, and its steps GROW',()=>{
     /* THE NEW CONTRACT, and it inverts the one it replaces on the two points that matter.

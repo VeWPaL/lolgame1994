@@ -192,6 +192,26 @@ function descend(){
    that grows without meaning anything - floor 12 alone has more rooms than floor 1, so a player who
    died early would show a respectable total for having seen very little. */
 function endRun(won){
+  /* THE LAB CANNOT END A RUN, and the guard is HERE rather than at the call sites.
+
+     There are four `endRun(false)` calls in the tick and the lab's immortality was enforced in one
+     place - damagePlayer, which floors health at 1 - because that is the only thing in the shipped
+     game that REDUCES health. That is true today and it is a fragile thing to rely on: any future
+     system that writes hp directly, or any of the four checks reached by a path that bypasses
+     damage, would reach this function and fold a death into the records. A probe setting hp to 0
+     directly already does exactly that, which is how the hole was found.
+
+     The failure mode is the reason to care. Nothing throws, nothing is drawn, and the only symptom
+     is a records file that claims the player died in a debug view. That is silent, it is
+     permanent, and it is the one thing a debug view must not be able to do.
+
+     So the invariant lives at the one function that would break it, where it cannot be bypassed by
+     adding a fifth call site. It is one line, and it is the difference between the guarantee being
+     true and the guarantee being currently-unviolated.
+
+     It returns `false` rather than silently no-oping so a caller that cared could tell - none does
+     yet, and the comment is here for whoever writes the fifth one. */
+  if(state==='dev') return false;
   state=won?'win':'gameover';
   const all=Object.values(rooms), explored=all.filter(x=>x.visited).length;
   const s={won,ticks:run.ticks,floor:run.floor,floorTicks:run.floorTicks,explored,total:all.length,

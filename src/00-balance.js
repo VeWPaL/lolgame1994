@@ -80,7 +80,6 @@ const boundsOf=(r)=>{
 };
 const roomL=(r)=>boundsOf(r).l, roomR=(r)=>boundsOf(r).r, roomT=(r)=>boundsOf(r).t, roomB=(r)=>boundsOf(r).b;
 const roomW=(r)=>boundsOf(r).r-boundsOf(r).l, roomH=(r)=>boundsOf(r).b-boundsOf(r).t;
-const roomCX=(r)=>(roomL(r)+roomR(r))/2, roomCY=(r)=>(roomT(r)+roomB(r))/2;
 
 /* THE ONE WRITER. Everything above that is a `let` is written here and nowhere else, and this is the
    function to look at when a wall is in the wrong place. */
@@ -588,10 +587,11 @@ const TOUGH=1.35;
    you gone" a number that means anything, because the number is not secretly a measure of how many
    hats you collected.
 
-   Everything below is BOUNDED, and it was linear until it was measured, which is the whole reason
-   this comment is here. The brief asked for linear "for now", which was the right instinct - a
-   linear ladder is the simplest thing that could be right and the easiest to reason about - and it
-   turns out three linear ladders multiplied together is not a difficulty curve, it is a brick:
+   It was LINEAR until it was measured, which is the whole reason this comment is here, and the
+   measurement is still the best argument in the file. The brief asked for linear "for now", which
+   was the right instinct - a linear ladder is the simplest thing that could be right and the easiest
+   to reason about - and it turns out three linear ladders multiplied together is not a difficulty
+   curve, it is a brick:
 
      floor  tough  rate  bodies  shells/s per gunner  time to kill one lunger on the Bolt
        1    1.00   1.00      6          1.3                    0.72s
@@ -604,34 +604,44 @@ const TOUGH=1.35;
    floor 50 was asking for FOUR HUNDRED of them. That is not a hard game, it is a game that cannot
    be finished, and "hundreds of hours" was the brief - so the wall cannot be at floor 20.
 
-   THE RATE COLUMN IS THE ONE THAT REALLY MATTERS, and it is worth separating from the other two,
-   because it is the only one of the three that was quietly breaking a stated rule. The brief says
-   difficulty comes from rate and density and never from anything the player cannot read. A ranged
-   body at 8.84x does not merely arrive more often, it arrives FASTER: `e.speed` is scaled by the
-   same depthRate as the cadence, so at floor 50 a gunner crosses the room at 3.98 px/tick against
-   a player who moves at 1.2, and its shell cadence is 0.8s / (PRESSURE.rate * 8.84) = 60ms, or
-   about seventeen shells a second. Seventeen shells a second is not a fight, it is a video of a
-   fight, and no amount of player skill reads that. Scaling a BODY'S SPEED with depth is a
-   reaction-time tax wearing the costume of a difficulty curve, and the fix is to bound it rather
-   than to remove it: a body that outruns you is a body the player must pre-empt rather than
-   respond to, and pre-empting is a different game from the one this is.
+   IT WAS THEN SATURATING, which fixed that and introduced a quieter problem: `1 + growth*n/(n+tau)`
+   rises toward an asymptote it never reaches, so floor 14 already sat at 2.5 of a 3.6 ceiling and
+   every floor after it was spent approaching a number it had nearly hit. The deep floors were
+   shallower than the table made them look, and the ceiling was a promise the content would
+   eventually outgrow.
 
-   So the shape is `1 + growth * steps / (steps + tau)`. Exactly 1 on the first floor, rising
-   monotonically forever, approaching `1 + growth` without ever reaching it - so a floor 1000 and a
-   floor 50 are nearly the same fight, which is what a ladder wants to be. Three dials, one shape,
-   each with its own growth and its own time constant:
+   IT IS NOW EXPONENTIAL, and unbounded on health. The table below is MEASURED, not derived, and it
+   is the one to trust - the two above it are history and are kept because the reasoning still
+   holds even though the numbers do not:
 
-     HP     growth 2.60, tau  8   -> 1.00 / 1.87 / 2.38 / 2.83 / 3.23 at floors 1/5/10/20/50
-     RATE   growth 0.95, tau 10   -> 1.00 / 1.27 / 1.45 / 1.62 / 1.79, ceiling 1.95
-     BODIES growth 5.00, log(1+n) -> 6 / 11 / 14 / 18 / 22, where it asked for 400
+     floor  tough  rate  bodies   per-floor step on health
+       1    1.000  1.000   4.08          -
+       5    1.246  1.121   4.19        0.073
+      10    1.778  1.324   4.53        0.133
+      14    2.504  1.340   5.21        0.215
+      20    4.511  1.340   8.10
+      30   13.584  1.340  28.00
+      50  143.724  1.340  28.00
 
-   BODIES is LOGARITHMIC rather than saturating, and deliberately so: density is the one dial the
-   brief actually names, and a saturating one would flatten a real difficulty lever just to buy a
-   curve shape. A logarithm keeps density rising forever while spending less and less to do it -
-   the first ten floors of a log are worth more than the next hundred, which is the right shape for
-   a game that wants one player to reach floor 30 and a different player to reach floor 60.
+   The step GROWS, 0.051 at the second floor to 0.215 at the fourteenth, and is still growing at the
+   last one - which is the design and is asserted as a shape, because a saturating ladder is also
+   monotonic while doing the exact opposite.
 
-   The rate ceiling is the one number here that is not taste. 1.95 is chosen so a gunner's worst
+   THE RATE COLUMN IS THE ONE THAT REALLY MATTERS, and it is the one that is still capped, for the
+   same reason as before. The brief says difficulty comes from rate and density and never from
+   anything the player cannot read. `e.speed` is scaled by the same depthRate as the cadence, so an
+   uncapped rate hands a ranged body an approach speed the player cannot answer: at the old 1.95
+   ceiling it closes at 1.264 px/tick against a player who moves at 1.20. FASTER THAN THE PLAYER.
+   A body that outruns you is a body you must pre-empt rather than respond to, and pre-empting is a
+   different game from the one this is. The ceiling is now 1.34, derived rather than chosen: a
+   ranged body starts at 0.648, the guarantee is 0.87, and 0.87/0.648 is 1.343.
+
+   DENSITY is capped too, and for a different reason - not fairness but playability. Uncapped it is
+   246 bodies by floor 40 and 1869 by floor 50. Past the point where the room stops being playable
+   the ladder leans on health, which costs the player attention rather than the machine its frame
+   budget.
+
+   The rate ceiling is the one number here that is not taste. It is chosen so a gunner's worst
    case stays inside a human reaction time at a density a floor that deep can physically hold in
    the room.
 
@@ -750,9 +760,10 @@ function depthBodies(rolled){
    which reads as the game cheating and is worse than any amount of difficulty.
 
    Until it is live the honest thing is a named zero with its rules attached, rather than a comment
-   somewhere hoping to be read later. */
+   somewhere hoping to be read later. Read ADAPT.value directly - there is deliberately no
+   `adaptive()` wrapper, because a one-line accessor nothing calls is a second name for the same
+   value and the day the two disagree nobody will know which one a dial was read from. */
 const ADAPT={ value:0, min:-0.25, max:0.25 };
-const adaptive=()=>ADAPT.value;
 
 // The armour multiplier. Per-hit, so it scales every pellet and every pierce pass rather than
 // subtracting a flat chunk - a subtraction would quietly reward the Beam for spraying, which is
