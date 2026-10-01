@@ -6640,10 +6640,19 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const check=(str,dist)=>{
       for(let i=0;i<WEAPONS.length;i++){
         const w=WEAPONS[i];
-        // exactly the game's own terms: cooldown divided by tempo, damage plus strength, times pellets,
-        // times the same falloff the projectile applies to itself
-        const want=(TICK_HZ/(w.cooldown/TEMPO.rate))*((w.dmg+str)*w.count)*devFalloff(w,dist);
-        ok(Math.abs(devDps(w,str,dist)-want)<0.01,'the bench says '+WEAPONS[i].name+' does '+
+        /* EXACTLY THE GAME'S OWN TERMS, WHICH ARE `count*dmg + strength`.
+
+           This asserted `(dmg+strength)*count` - strength once per PELLET - which is precisely the
+           mistake the panel was making and which this test was written to catch. The two agreed
+           perfectly, so the test passed against a bench that told the player the Scatter dealt 55.2
+           where the game deals 34.2: the panel and its own test were wrong in the same way.
+
+           fireWeapon does `w.dmg*w.count + Stats.value('strength')` and shares it across the pellets.
+           The note above that line is long and the reason is not in doubt: a flat +3 must be +3 on a
+           shotgun and +3 on the Bolt, or a "+1 Strength" sigil is worth eight times as much to one
+           weapon as to another. */
+        const want=(TICK_HZ/(w.cooldown/TEMPO.rate))*(w.dmg*w.count+str)*devFalloff(w,dist);
+        ok(Math.abs(devDps(w,str,dist)-want)<0.01,'the bench says '+w.name+' does '+
            devDps(w,str,dist).toFixed(2)+' dps at '+dist+'px with '+str+' Strength, but the terms '+
            'the game fires with give '+want.toFixed(2));
       }

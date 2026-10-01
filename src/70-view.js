@@ -776,7 +776,20 @@ function drawHUD(){
   // beside two dimmed armour slots that is easy to read as an empty plate. The pulse is the same one
   // the boss warning uses, and it only exists on the heart that still has blood in it - not on the
   // empties, which would make the whole plate look live.
-  if(player.hp===1){
+  /* "ONE HEART LEFT" MEANS ONE HEART ON THE PLATE, which is not the same as hp equal to one.
+
+     This asked `player.hp===1`, an exact comparison, and almost nothing in the game ever produces an
+     exact 1. Damage is fractional on purpose - SHOT_DMG 1.8, LUNGER_PAY 0.96, BOSS_SHELL_DMG 1.44 -
+     so the health walks past 1 without landing on it: from 8, four shooter shots reach 0.8 and the
+     fifth kills, four boss shells reach 1.24, and the pulse never fires at all. A warning that exists
+     to catch you at the moment you are about to die, and does not, is worse than no warning: it is a
+     promise the screen made and did not keep.
+
+     The rule is now the one the heart plate itself draws by. `fmtHearts` rounds to the nearest half
+     heart, because that is what a half-slot heart IS, and a player reading the plate sees 1 heart
+     while their health is anywhere near it. So the halo asks the same question the plate answers
+     rather than a different and stricter one. */
+  if(Math.round((player.hp/2)*2)/2<=1&&player.hp>0){
     const pulse=0.5+0.5*Math.sin(frameCount*0.16/SPEEDUP);
     ctx.save();
     ctx.globalAlpha=0.35+0.55*pulse;
@@ -1461,25 +1474,51 @@ function drawDevMenu(){
     ctx.font='bold 13px monospace';ctx.fillStyle=w.color;
     ctx.fillText(w.name,tx,y+20);
     ctx.font='10px monospace';ctx.fillStyle=INK_SOFT;
-    // cone in degrees, because "0.16 rad" is a number nobody can feel, and 18 degrees against 6 is
-    // the difference between a gun you can aim and one you cannot
-    const deg=(w.spread*(w.spreadFromPrecision?preciseSpread(w.spread):w.spread)*2*180/Math.PI).toFixed(1);
+    /* THE CONE, IN DEGREES, ONCE.
+
+       This read `spread*spread` - it multiplied the spread by itself and then squared the result, by
+       the look of it - so the Arcane Beam's 0.16 rad printed as 0.1 degrees instead of 18.3, and
+       three of the four guns printed 0.0. The column existed to answer "can I aim this", and it
+       answered "they are all the same, and all zero". It is now the full opening angle in degrees,
+       which is what the label says and what a player can feel the difference between. */
+    const spreadRad=w.spreadFromPrecision?preciseSpread(w.spread):w.spread;
+    const deg=(spreadRad*2*180/Math.PI).toFixed(1);
     ctx.fillText('cone '+deg+'deg  ·  floor '+(w.fMin*100).toFixed(0)+'%  ·  '+
       (w.count>1?(w.count+' pellets'):'single hit')+(w.pierce?'  ·  pierces '+w.pierce:''),tx,y+35);
+    /* STRENGTH IS ADDED ONCE PER SHOT, so this is base + str and not base + str*count.
+
+       The game does `count*dmg + strength` and shares it across the pellets (40-combat.js, with a long
+       note on why: a flat +4 is +57% on the Bolt and +476% on the Beam, so a per-pellet bonus would
+       have made the shotgun eight times stronger per sigil than everything else). The panel added the
+       Strength once per PELLET, so the Scatter showed 55.2 where the game deals 34.2 - the bench told
+       the player the gun they already own is 60% stronger than it is, on the screen whose entire job
+       is helping them choose. */
     const base=w.dmg*w.count;
     ctx.fillStyle=str>0?'#d8a23c':INK_SOFT;
-    ctx.fillText(str>0?('base '+showNum(base)+'  →  with +'+str+' Strength  '+showNum(base+str*w.count))
+    ctx.fillText(str>0?('base '+showNum(base)+'  →  with +'+str+' Strength  '+showNum(base+str))
                  :('base '+showNum(base)+' a pull, single target'),tx,y+48);
 
     const dps100=devDps(w,str,100), dps250=devDps(w,str,250);
     const pulls=TICK_HZ/(w.cooldown/TEMPO.rate);
-    const per=(w.dmg+str)*w.count;
+    const per=w.dmg*w.count+str;
     ctx.textAlign='center';ctx.font='11px monospace';
     ctx.fillStyle=INK;ctx.fillText(showNum(per),G.px+150,y+28);
     ctx.fillText(pulls.toFixed(1),G.px+238,y+28);
     ctx.fillStyle=dps250>=bestDps-0.01?'#5ee27a':INK;ctx.fillText(dps100.toFixed(1),G.px+310,y+28);
     ctx.fillStyle=dps250>=bestDps-0.01?'#5ee27a':INK;ctx.fillText(dps250.toFixed(1),G.px+372,y+28);
-    ctx.fillText(showNum(18*TOUGH/dps250)+'s',G.px+446,y+28);
+    /* TIME TO KILL A LUNGER, AGAINST THE LUNGER THE GAME ACTUALLY HAS.
+
+       This divided by `18*TOUGH` - the lunger's health before it was reduced - and by nothing else, so
+       it ignored ARMOUR entirely. Both halves were wrong in the same direction, and the bench said a
+       gun kills a tanky armoured body faster than it does.
+
+       Both are now read from the table rather than written down, so a body buff or a health change
+       cannot leave the panel quoting a number the game is not using. ARMOUR is applied because every
+       shot pays it; it is also the reason the figure is a FLOOR rather than a promise, since a shotgun
+       at range is not landing every pellet - which the panel says nowhere, and should. */
+    const lunger=ENEMY.lunger;
+    const ttkSecs=dps250>0?lunger.hp/(dps250*lunger.armour):0;
+    ctx.fillText(ttkSecs>0?showNum(ttkSecs)+'s':'-',G.px+446,y+28);
     // REL is a bar, not a number: "is this one stronger" is a comparison and a bar answers it at a
     // glance, where four numbers in a column have to be read against each other one at a time
     const bw=54, bx=R-bw, by=y+22;
@@ -1518,7 +1557,9 @@ function drawDevMenu(){
    projectile itself uses. */
 function devDps(w,str,dist){
   const pulls=TICK_HZ/(w.cooldown/TEMPO.rate);
-  return pulls*(w.dmg+str)*w.count*devFalloff(w,dist);
+  /* `count*dmg + strength`, matching fireWeapon. This was `(dmg+strength)*count`, which is the
+     per-pellet reading the game explicitly does not use. */
+  return pulls*(w.dmg*w.count+str)*devFalloff(w,dist);
 }
 /* THE CARD'S SHAPE, decided by its contents rather than by a number someone wrote down.
 
