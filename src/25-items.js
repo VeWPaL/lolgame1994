@@ -341,8 +341,18 @@ HOOKS.pull_pickups=function(){
   }
   return n>0;                     // an empty room spends nothing
 };
-/* A named hook that is deliberately not implemented. It exists so that a definition using it
-   VALIDATES - which is the seam that lets companions and the rest of the roster be written down
-   before the behaviour behind them exists, and so a mod can reference it and get an honest "nothing
-   happens yet" rather than a crash. */
-HOOKS.spawn_companion=function(){ run.companionPending=(run.companionPending||0)+1; return true; };
+/* A named hook that is deliberately not implemented, and it now says so by REFUSING.
+
+   It exists so that a definition using it VALIDATES - which is the seam that lets companions and the
+   rest of the roster be written down before the behaviour behind them exists, and so a mod can
+   reference it and get an honest "nothing happens yet" rather than a crash. That is still what it does.
+
+   What it also did was REPORT SUCCESS while writing a flag nothing reads, so Lantern Friend spent
+   its single charge on no companion and the press looked broken. Since `use` now spends a charge
+   only when a hook reports that it did something, returning false here is the whole fix: the press
+   declines, keeps the charge, and says why. The moment a companion exists this returns true, and
+   nothing else has to change.
+
+   `companionPending` is deleted rather than left accumulating, because a flag with no reader is the
+   kind of thing that gets read three months later by someone who assumes it means what it says. */
+HOOKS.spawn_companion=function(){ return false; };

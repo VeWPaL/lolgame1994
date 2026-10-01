@@ -108,6 +108,10 @@ function syncRoomBounds(){
    camera's presence - which makes the addition provable rather than hopeful. Only a room LARGER than
    the screen moves the view at all. */
 const cam={x:0,y:0,w:0,h:0};
+/* Declared once. It was declared TWICE in this file with identical bodies - one here and one below
+   `cameraTarget` - and function declarations hoist, so the second silently overwrote the first. That
+   is harmless until the moment somebody edits one of them, which is the whole hazard: two copies of
+   a camera transform, one of which stops being the camera. */
 function updateCamera(){
   const t=cameraTarget();
   cam.x=t.x; cam.y=t.y; cam.w=W; cam.h=H;
@@ -166,11 +170,6 @@ function cameraTarget(){
   const x=(b.r-b.l)<=W?(b.l+b.r-W)/2:Math.max(b.l,Math.min(b.r-W,player.x-W/2));
   const y=(b.b-b.t)<=H?(b.t+b.b-H)/2:Math.max(b.t,Math.min(b.b-H,player.y-H/2));
   return {x,y};
-}
-function updateCamera(){
-  const t=cameraTarget();
-  cam.x=t.x; cam.y=t.y; cam.w=W; cam.h=H;
-  return cam;
 }
 const OPP={N:'S',S:'N',E:'W',W:'E'};
 const ROOM_BG={start:'#1c2230',normal:'#191b22',item:'#2a2410',boss:'#2a1414'};

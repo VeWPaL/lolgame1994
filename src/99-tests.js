@@ -1097,6 +1097,10 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     Items.reset();
     Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='active') Items.give(id); });
     Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='passive') Items.give(id); });
+    // The roster's last active is Lantern Friend, which REFUSES - it is a written-down placeholder
+    // and pressing it now honestly declines rather than eating its one charge. That is right, and it
+    // means a test about the BINDING must not leave that one in the slot or it measures the refusal.
+    Items.give('tin_cup');
     eq(loadout.items.length,sigils+1,'a full build is '+loadout.items.length+' items, not one active '
        +'plus all '+sigils+' sigils - so something is still rationing');
     // and Q reaches THAT build's active rather than any sigil, with a wounded player so the press lands
@@ -1155,6 +1159,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     Items.reset();
     Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='active') Items.give(id); });
     Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='passive') Items.give(id); });
+    Items.give('tin_cup');   // Lantern Friend is the roster's last active and it refuses; see above
     const act=Items.active();
     const n=act.charges;
     const sigils=loadout.items.filter(s=>s.slot===-1).length;
@@ -6135,8 +6140,35 @@ const BOSS_TICKS=26000;
        ' hp, so the boss cannot punish not reading and every fight is a formality');
   });
   test('the boss is sized from measured weapon dps, and is not the same walk with a health bar',()=>{
-    // It was 50*TOUGH and died in 2.20s to the Scatter. Sizing a health bar is a measurement, not a
-    // feeling, so this pins the number the measurement produced rather than the feeling it gave.
+    /* It was 50*TOUGH and died in 2.20s to the Scatter. Sizing a health bar is a measurement, not a
+       feeling - so this measures it.
+
+       THE BUDGET WAS A MEASUREMENT THAT WAS NOT ONE. The loop ran to 9,000 ticks, which is 42.9
+       seconds, while the window it was checking against was 18-70s. Anything slower than 42.9s came
+       back as 42.9s, so the upper bound could never fail and three of the four guns were reporting the
+       cap rather than the fight. The numbers it was really reporting:
+
+         Scatter   24.5s
+         Bolt      43.0s      <- capped
+         Voidball  56.2s      <- capped
+         Arcane Beam 155.6s   <- capped, by a factor of four
+
+       and the spread it was silently hiding is 6.35x, not the 3.9x the window spanned. So the claim is
+       now written as what it actually is - a SPREAD, because "the slow gun should take longer" is a
+       statement about the ratio between the fastest and the slowest, not about a number of seconds.
+       Absolute seconds go stale every time a weapon is tuned, which is how a window ends up wider
+       than the entire thing it was checking.
+
+       WHAT IT MEASURES, now that it measures: `noCharacter()` really does zero Strength - the class
+       gives +3 as a flat over a base of 0, and baseOf reads the base, so the guard is not skipping it.
+       So this is every gun with NOTHING invested in it, which is the floor of the Arcane Beam's canvas
+       and the honest worst case:
+
+         Scatter   25.2s      Bolt      45.1s      Voidball  55.9s      Arcane Beam  87.2s
+
+       A spread of x3.47. The Beam is a one-and-a-half minute fight on an unbuilt character and 12.5s
+       on the starting build, which is the whole point of a weapon that is weak until you put work into
+       it - and the 4x bound is what stops that floor becoming a wall. */
     const ttk=w=>{
       startGame(); const room=goTo('boss');
     noCharacter();   // this test is about the weapon, not the character
@@ -6148,18 +6180,31 @@ const BOSS_TICKS=26000;
       player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
       player.weaponIdx=w; player.cooldown=0; player.iframes=1e9;
       pointAt(MIDX+400, MIDY);
+      // 200 seconds, which is longer than the slowest gun measured. A budget that is not longer than
+      // the thing it measures is the bug this test just had.
       let t=0;
-      for(;t<9000;t++){ keys={}; mouseDown=true; update(); if(b.hp<=0) break; }
+      for(;t<TICK_HZ*200;t++){ keys={}; mouseDown=true; update(); if(b.hp<=0) break; }
       mouseDown=false;
       return t/TICK_HZ;
     };
-    for(let w=0;w<WEAPONS.length;w++){
-      const s=ttk(w);
-      ok(s>18,'the '+WEAPONS[w].name+' kills the boss in '+s.toFixed(1)+
+    const all=WEAPONS.map((w,i)=>({w:w,secs:ttk(i)}));
+    for(const {w,secs} of all){
+      ok(secs<TICK_HZ*199/TICK_HZ,'the '+w.name+' did not kill the boss inside 199s ('+secs.toFixed(1)+
+         's), so the budget is too short to measure it');
+      ok(secs>8,'the '+w.name+' kills the boss in '+secs.toFixed(1)+
          's, which is a formality rather than a fight. Measured at 2.20s before the boss was resized');
-      ok(s<70,'the '+WEAPONS[w].name+' takes '+s.toFixed(1)+
-         's against the boss, which is a slog rather than a fight');
     }
+    // the spread, which is the design claim: the slow gun SHOULD take longer, and flattening it would
+    // mean tuning the boss to the median weapon and telling the player their choice does not matter.
+    // But there is a limit, and 4x is where "the slow gun takes longer" becomes "this is a different
+    // fight and you did not know when you picked it".
+    const secs=all.map(x=>x.secs), fast=Math.min(...secs), slow=Math.max(...secs);
+    const spread=slow/fast;
+    ok(spread<4,'the boss takes '+slow.toFixed(1)+'s to the '+all[secs.indexOf(slow)].w.name+
+       ' and '+fast.toFixed(1)+'s to the '+all[secs.indexOf(fast)].w.name+
+       ' - a spread of x'+spread.toFixed(2)+', so choosing a gun changes the fight length by '+
+       'more than four times rather than by a margin. Measured: '+
+       all.map(x=>x.w.name+' '+x.secs.toFixed(1)+'s').join(', '));
   });
 
   // Brunch as cover. This is the mechanic the whole change exists for, so it is measured by firing
