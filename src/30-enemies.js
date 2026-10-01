@@ -413,7 +413,7 @@ function enterRoom(nx,ny,fromDir){
   entryDir=fromDir;
   const r=rooms[key(nx,ny)];
   r.visited=true;
-  projectiles.length=0;
+  clearTransient();
   // by the time it is first walked into, and a reward room must not turn out to have furniture in it
   if(!r.spawned){
     r.spawned=true;

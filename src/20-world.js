@@ -5,10 +5,49 @@
    input, no platform calls. Contains the global state block, which in C# becomes a GameState class
    rather than nine module-level variables.
    ============================================================================================== */
-let rooms, cur, player, projectiles, mouse, mouseDown, altMouseDown, keys, state, records;
+let rooms, cur, player, mouse, mouseDown, altMouseDown, keys, state, records;
+/* `projectiles` is initialised HERE, with the FX arrays below, rather than being left undefined until
+   the first run starts it. It used to be declared in the list above and assigned by the first line of
+   startGame - which meant `clearTransient` could be asked to empty a variable that did not exist yet,
+   because the line it replaced was the one doing the creating. A transient that is created by its own
+   reset is a transient that a second reset cannot safely touch. */
+let projectiles=[];
 let allRooms=[], bossFront={};
 let showPerf=false, showSpawn=false, lastT=0, perfSamples=[], trans=null, readyT=0, fadeT=0, fadeTicks=1, entryDir='N';
 let roomFade=0, frameCount=0, dashFX=[], burstFX=[], hookFields=[], bossUnlocked=false, itemUnlocked=false;
+
+/* EVERYTHING THAT BELONGS TO THE ROOM YOU ARE LEAVING, in one list.
+
+   These four arrays are the room's transient state: what is in flight, what is glowing, what is lying
+   on the ground. They are emptied together and always together, and the reason they are emptied at
+   all is not obvious from the name.
+
+   WORLD COORDINATES ARE PER-ROOM. Every room's bounds start at the same origin, so (400,355) is the
+   middle of the room you are in AND the middle of the room you just left. A hook field that outlives
+   its room does not drift off harmlessly into the void beside the next one - it lands in the middle of
+   that one, on top of whatever is standing there.
+
+   Which was not only ugly. `tickFields` runs against the CURRENT room's bodies, so a leaked field
+   charged and stunned a body the player had never met, and being charged is what grants hook
+   RESISTANCE - this file's own note on the resistance table says that getting the count wrong there
+   quietly nerfed the weapon. Measured: a leaked field charged a fresh body at tick 126, so every room
+   entered within about two seconds of laying a hook began with its first enemy already carrying one.
+
+   One list rather than three call sites each remembering four names. `enterRoom` used to clear
+   projectiles and nothing else, which is precisely how three of the four outlived a room change while
+   the two run-level resets remembered all four.
+
+   The wand's muzzle flash is here too, and it is the one player-owned thing on this list. It is a
+   weapon VFX drawn at the wand tip, so a shot fired in the last doorway flashed in the next room. */
+function clearTransient(){
+  projectiles.length=0;
+  dashFX.length=0;
+  burstFX.length=0;
+  hookFields.length=0;
+  // the same reasoning as applyVitals: player is a module-scope let, so it is undefined before the
+  // first startGame and touching it here would throw rather than read undefined
+  if(player) player.muzzleTimer=0;
+}
 let unlockDoor=null, unlockT=0, bossWarnT=0, secretFound=false, bossWarned=false;
 // Which slice of the circle the next lunger to spawn takes. Walked by the golden angle so that no two
 // bodies ever land on the same slot however many have spawned, and not reset per room - a room's

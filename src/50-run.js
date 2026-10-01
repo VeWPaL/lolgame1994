@@ -84,7 +84,7 @@ function startGame(){
   syncRoomBounds();
   player={x:MIDX,y:MIDY,r:13,speed:0.935*PLAYER_MOVE,vx:0,vy:0,kvx:0,kvy:0,lagX:MIDX,lagY:MIDY,hp:8,maxHp:8,armor:0,weaponIdx:0,cooldown:0,cooldownMax:WEAPONS[0].cooldown/TEMPO.rate,altCooldown:0,altCooldownMax:ALT_WEAPON.cooldown/TEMPO.rate,altMode:'blast',iframes:0,hasSilver:false,hasGold:false,
     blinkCharges:2,blinkRegen:0,blinkRestore:null,blinkGrace:0,graceSpent:false,anim:0,muzzleTimer:0,shootSlow:0,slowMult:1,dirX:0,dirY:0,swerve:0,boost:0,boostX:0,boostY:0,momentum:0,trendVx:0,trendVy:0,beliefVx:0,beliefVy:0};
-  projectiles=[]; dashFX=[]; burstFX=[]; hookFields=[]; bossUnlocked=false; itemUnlocked=false; trans=null; readyT=0;
+  clearTransient(); bossUnlocked=false; itemUnlocked=false; trans=null; readyT=0;
   unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
   entryDir='N';
   roomFade=1; fadeTicks=sec(0.4); fadeT=fadeTicks;
@@ -162,7 +162,7 @@ function descend(){
   // the body carries down whole. Not the position, not the projectiles, not the room - the build.
   player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
   player.vx=0; player.vy=0; player.kvx=0; player.kvy=0;
-  projectiles=[]; dashFX=[]; burstFX=[]; hookFields=[];
+  clearTransient();
   bossUnlocked=false; itemUnlocked=false; trans=null; respawnT=0;
   unlockDoor=null; unlockT=0; bossWarnT=0; bossWarned=false; secretFound=false;
   // The blink comes back full, because arriving at a new floor with no escape is a punishment for

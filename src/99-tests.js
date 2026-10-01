@@ -1081,6 +1081,73 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     }
   });
 
+  /* NOTHING VISIBLE OR LIVE SURVIVES A DOORWAY.
+
+   The room's transient state is four arrays plus the wand's muzzle flash, and `clearTransient` is the
+   one list that holds all of them. `enterRoom` used to clear projectiles and nothing else, so the
+   other three outlived the transition - and because every room's bounds start at the same origin, an
+   effect left behind does not drift into the void beside the next room. It lands in the middle of it.
+
+   That made the hook field a gameplay bug rather than a smear of leftover art: `tickFields` runs
+   against the current room's bodies, so a leaked field charged and stunned an enemy the player had
+   never met, and being charged is what grants hook RESISTANCE. The assertion below is about that
+   charge, because the leftovers are only interesting if something consumes them. */
+  test('a doorway clears every lingering effect, and a hook laid in the last room cannot reach this one',()=>{
+    startGame();
+    const hook=hookFields, burst=burstFX, dash=dashFX;
+    const a=currentRoom();
+    // something of every kind, from every owner: a player hook field, a player blast ring, the
+    // player's own blink trail, and the enemy trail and charge puff an enemy leaves behind
+    hookFields.push({x:MIDX,y:MIDY,r:HOOK_WEAPON.aoeRadius,life:HOOK_FIELD_TIME,max:HOOK_FIELD_TIME,id:++hookFieldId});
+    explode(a,MIDX-140,MIDY,ALT_WEAPON);
+    player.blinkCharges=2;
+    doBlink();
+    a.enemies.length=0;
+    const e=spawnEnemy(false,a,MIDX+180,MIDY,'lunger');
+    a.enemies.push(e);
+    for(let i=0;i<6;i++){ e.lungeChargeFx=1; e.lungeTrail=0; keys={}; update(); }
+    player.muzzleTimer=99;
+    ok(hookFields.length>0&&burstFX.length>0&&dashFX.length>0,
+       'the fixture did not produce all three effects, so the clearing below proves nothing: hook '+
+       hookFields.length+' burst '+burstFX.length+' dash '+dashFX.length);
+
+    // walk through a real door
+    const dirs=['N','S','E','W'];
+    let to=null,dir=null;
+    for(const d of dirs){
+      const n=d==='N'?[a.x,a.y-1]:d==='S'?[a.x,a.y+1]:d==='W'?[a.x-1,a.y]:[a.x+1,a.y];
+      if(a.doors[d]&&rooms[n[0]+','+n[1]]){ to=rooms[n[0]+','+n[1]]; dir=d; break; }
+    }
+    if(!to){   // a start room with no open door: take any neighbour, the clearing is not about doors
+      to=Object.values(rooms).find(r=>r!==a&&r.type==='normal')||Object.values(rooms)[0];
+      dir='E';
+    }
+    enterRoom(to.x,to.y,dir);
+    eq(hookFields.length,0,'a hook field laid in the previous room survived the doorway');
+    eq(burstFX.length,0,'a blast ring survived the doorway');
+    eq(dashFX.length,0,'a dash or trail - the player\'s blink or an enemy\'s lunge - survived the doorway');
+    eq(player.muzzleTimer,0,'the wand flashed in a room the shot was not fired in');
+    eq(projectiles.length,0,'a projectile survived the doorway');
+
+    /* And the consequence, which is the part that was never cosmetic: a body that walks through where
+       the old field sat must not be charged by it. The field is gone, so this cannot happen - but the
+       assertion is on the body's state rather than on the array, because a field that survived but
+       happened to be out of range would pass an array check and still be a live bug next room. */
+    const r=currentRoom();
+    r.enemies.length=0;
+    const g=spawnEnemy(false,r,MIDX+260,MIDY,'lunger');
+    g.noticeTimer=0; g.aggroTimer=0;
+    r.enemies.push(g);
+    player.x=MIDX-260; player.y=MIDY; player.hp=99; player.maxHp=99; player.iframes=1e9;
+    for(let i=0;i<400;i++){ keys={}; update(); }
+    eq(g.hookStacks||0,0,'a body in this room was charged by a hook cast in the previous one, so it '+
+       'starts the fight already carrying hook resistance');
+    // and the arrays really are the same objects, not re-bound copies that the tick still holds
+    eq(hookFields,hook,'clearTransient rebound hookFields instead of emptying it');
+    eq(burstFX,burst,'clearTransient rebound burstFX instead of emptying it');
+    eq(dashFX,dash,'clearTransient rebound dashFX instead of emptying it');
+  });
+
   test('luck measurably shifts what the dungeon offers, and it is a weight rather than a bonus',()=>{
     /* Measured, not asserted in prose, and the direction is the claim: luck multiplies the RARE end.
        Adding the same amount to every weight would change nothing at all, which is the mistake a
