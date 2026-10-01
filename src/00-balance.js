@@ -543,16 +543,29 @@ const WEAPONS=[
 
       Note the Brunch needs exactly ONE pellet (2.7 hp, no armour), so this does nothing to them -
       a shotgun killing a chip body should be free, and the pack numbers still hold. */
-   /* The effective range is a CIRCLE of 175px radius - half a room - and inside it the gun does FULL
-      damage, because the whole identity of a buckshot gun is that it is not falling off while you
-      are still close enough to use it. fNear is that radius, so the falloff curve starts exactly
-      where the circle ends and not 95px inside it, which is what it used to do: at fNear 80 the gun
-      was already down to 76% damage by 175px, so there was no range at which it was simply good.
+   /* The effective range is a CIRCLE of 233px radius - a THIRD of a 700px room - and inside it the
+      gun does FULL damage. A room is 700x450 (measured, every room, five seeds), so a third is 233
+      and a half is 350; falloffMult is already radial (it measures hypot from the shot origin), so
+      fNear IS that radius and no new machinery was needed.
 
-      fFar 400 is where the falloff reaches its floor, which is beyond the far wall of a 700px room from
-      the far side - so a shot always hits the floor before it leaves, and never mid-curve at a wall.
-      The floor is unchanged at 0.45. */
-   fNear:175, fFar:400, fMin:0.45,
+      It was 175 before, which was measured against a room half this size and so was really only a
+      quarter of one. Measured consequence of the old band: the Scatter one-shot EVERY normal body
+      out to 350px - half a room - and the gunner, shooter and Brunch all the way to the far wall,
+      because even at the 0.45 floor the volley was worth more than their health. A shotgun that
+      clears a room from the far corner has no range, and no room in which another gun is the right
+      choice.
+
+      fFar 350 is where the curve reaches its floor, and 350 is half a room on purpose: past the
+      middle of a room the Scatter is a bad idea, which is the half where the Bolt and the Voidball
+      earn their place. fMin 0.30 is the floor the user tested for, chosen so a shooter or a gunner
+      takes TWO volleys past the third of the room rather than one.
+
+        233px and in  one shot, every body including a 20.25 hp lunger
+        350px and out shooter 2   gunner 2   lunger 3   Brunch still 1
+
+      The Brunch needing one pellet at any range is deliberate and unchanged: they are 2.70 hp with
+      no armour and a shotgun should not have to work for them. */
+   fNear:233, fFar:350, fMin:0.30,
    muzzleJitter:5,pelletAngle:0.008,pelletSpeedVar:0.25},
 
 /* THE ARCANE BEAM RAISED 0.84 -> 1.55, and the reasoning is worth keeping because two earlier

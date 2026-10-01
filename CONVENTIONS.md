@@ -596,7 +596,7 @@ redistribution of where the damage lands, not a buff. The old `spread*(count-1)`
 deleted rather than adjusted: they measured an angle that no longer decides anything and would have
 kept passing while describing a weapon that is not in the game.
 
-### The falloff was retuned afterwards, to 175px
+### The falloff band, and why 175 was a quarter of a room
 
 The pattern above is a **column** 8px wide, and the damage band it sits in was `fNear 80, fFar 300`.
 Those two facts contradicted each other. A gun that holds a column this tight for its whole length
@@ -605,22 +605,44 @@ at which the Scatter was simply good. Inside a buckshot gun's range is exactly w
 trading damage.
 
 `fNear` **is** the radius of the effective range, because `falloffMult` is already radial (it measures
-`hypot` from the shot origin), so no new machinery was needed:
+`hypot` from the shot origin), so no new machinery was needed.
 
-| | before | after |
-|---|---|---|
-| `fNear` | 80 | **175** — half a room |
-| `fFar` | 300 | **400** |
-| `fMin` | 0.45 | 0.45 (unchanged) |
-| damage at 175px | 15.86 | **20.80** (full) |
-| damage at 350px | 9.36 | 11.90 |
+**A room is 700 × 450.** Measured over five seeds, every room in every type is exactly 700 wide —
+there is no variance to average. So a third is **233**, a half is **350**, and the band is stated as
+fractions of the room in the test rather than as pixel counts, so it cannot rot if the room changes.
 
-`fFar` is where the curve reaches its floor, and it has to clear half a room (350px) or the gun is
-still decaying when it arrives and the floor never applies inside a room at all.
+| | original | the 175px pass | now |
+|---|---|---|---|
+| `fNear` | 80 | 175 | **233** — a third of a room |
+| `fFar` | 300 | 400 | **350** — half a room |
+| `fMin` | 0.45 | 0.45 | **0.30** |
 
-Note the room is **1680px wide**, so half a room is 840px, not the 350px an earlier note assumed. A
-350px shot sits comfortably inside it — 175px is *well under* half a room, and is the radius rather
-than the span.
+The 175px band was wrong in a way that only showed up when the room was measured rather than
+assumed: 175 is a **quarter** of a 700px room, not the half the comment beside it claimed. The gun
+one-shot every normal body out to 350px — half a room — and the gunner, shooter and Brunch all the way
+to the far wall, because even at the 0.45 floor a volley was worth more than their health. **A shotgun
+that clears a room from the far corner has no range, and no room in which another gun is right.**
+
+`fFar` 350 is the floor landing at half a room, on purpose: past the middle of a room the Scatter is
+the wrong tool, and that half is where the Bolt and the Voidball earn their place.
+
+Measured, 8 real volleys, player backed into a corner (584px of usable range):
+
+| body | 180px | 233px | 300px | 350px | 450px | 550px |
+|---|---|---|---|---|---|---|
+| lunger 20.25 | 1 | **1** | 2 | 2 | 3 | 4 |
+| gunner 10.80 | 1 | **1** | 1 | 2 | 4 | 5 |
+| shooter 7.56 | 1 | **1** | 1 | 2 | 2 | 3 |
+| brunch 2.70 | 1 | **1** | 1 | 1 | 2 | 2 |
+
+One volley to a third of the room; two volleys at half a room against everything but the Brunch; and it
+keeps degrading past that. The Brunch stays one pellet at close range, which is deliberate and
+unchanged — they are 2.70 hp with no armour and a shotgun should not have to work for them.
+
+**A 350px shot cannot be placed from the middle of the room.** From `MIDX` 400 the furthest legal
+target is 274px away, because spawns are clamped inside `SPAWN_MARGIN` 76. Any fixture that measures
+range has to back the player into a corner to reach the far half, or it silently measures 328px and
+reports the wrong answer. That one cost a wrong table here.
 
 ### The damage had to rise to 3.9, and 3.9 is the whole trick
 
@@ -652,7 +674,7 @@ was run specifically to find a cone angle and the answer was that **there is not
 
 Sweeping `pelletAngle` against pellets landed on a lunger, 12 trials each:
 
-| `pelletAngle` | cone | landed @175px | landed @350px |
+| `pelletAngle` | cone | landed @233px | landed @350px |
 |---|---|---|---|
 | 0.008 (was) | 0.92° | 8.00 | 5.50 |
 | 0.03 | 3.44° | 8.00 | 5.40 |
@@ -684,14 +706,13 @@ total 15.21 = about 5.39 pellets worth
 by the falloff band, and `pelletAngle` is free to stay a small column — which is what makes it read as
 shot rather than as a wave. Widening it would only blur the pattern without changing what it hits.
 
-Kill boundary, all 8 pellets landing, falloff × armour against 20.25hp:
+Kill boundary under the current band (`fNear 233, fFar 350, fMin 0.30`), all 8 pellets landing:
 
-| range | mult | 8-pellet total | kills |
+| range | mult | 8-pellet total on a lunger | kills |
 |---|---|---|---|
-| 175 | 1.000 | 22.57 | **yes** |
-| 225 | 0.878 | 19.81 | no |
-| 350 | 0.572 | 12.92 | no |
-| 400 | 0.450 | 10.16 | no |
+| 233 | 1.000 | 22.57 | **yes** |
+| 300 | 0.599 | 13.52 | no |
+| 350 | 0.300 | 6.77 | no |
 
 ---
 

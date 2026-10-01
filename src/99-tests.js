@@ -3759,7 +3759,13 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   test('every gun loses damage with range but stays worth using',()=>{
     startGame();
     for(const wp of WEAPONS){
-      ok(wp.fNear>0&&wp.fFar>wp.fNear&&wp.fMin>=0.4&&wp.fMin<1,wp.name+' has no usable falloff band');
+      /* fMin was 0.4..1 and is now 0.3..1. The floor is what a gun is worth at the far end of a room, and
+       the Scatter's is deliberately low: past half a room it takes two volleys to kill a shooter or
+       a gunner, which is the point of the retune. A 0.4 floor gave a shotgun one-shots across the
+       whole room, which is the thing being fixed. The floor still has to be a real number rather
+       than 0 (a gun that does nothing at range is a dead gun) and below 1 (a gun that does not
+       fall off has no range at all). */
+      ok(wp.fNear>0&&wp.fFar>wp.fNear&&wp.fMin>=0.3&&wp.fMin<1,wp.name+' has no usable falloff band');
       const mult=d=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
       const ttk=d=>ENEMY.lunger.hp/(wp.dmg*mult(d)*wp.count)*(wp.cooldown/TICK_HZ);
       const ratio=ttk(wp.fFar)/ttk(wp.fNear);
@@ -3778,34 +3784,57 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
 
      So each value gets an assertion that states WHY it is that value, in a form that fails if the
      number moves. */
-  test('the Scatter is at full damage anywhere inside its effective circle, and falls off past it',()=>{
+  test('the Scatter is at full damage to a third of a room, and a bad idea past half of one',()=>{
     const sc=WEAPONS.find(w=>w.name==='Scatter');
     ok(sc,'the Scatter is missing from the roster');
-    /* The effective range is a CIRCLE of 175px radius - half a room - and the falloff curve has to
-       start where that circle ends. `falloffMult` is already radial (it measures hypot from the
-       shot origin), so fNear IS the radius and there is nothing else to configure.
+    /* A room is 700x450. Measured over five seeds, every room in every type is exactly 700 wide -
+       there is no variance to average, so "a third of the room" is 233 and not an approximation.
 
-       What this forbids is the bug it replaced: with fNear 80 the gun was already down to 76% of
-       its damage by 175px, which means there was no distance at which it was simply good. Inside a
-       buckshot gun's range is exactly where it must not be trading damage. */
-    eq(sc.fNear,175,'the Scatter starts losing damage inside its own effective circle');
+       That is the whole design: the gun one-shots everything inside a third of the room, and past
+       half of one it is the wrong tool. The half of a room where it stops working is the half where
+       the Bolt and the Voidball are the right answer, and a shotgun that clears a room from the far
+       corner takes that choice away.
+
+       This is asserted as a FRACTION of the room rather than as a pixel count, so it cannot rot if
+       the room is ever resized - which is what happened once already, when the band was 175 and the
+       reasoning above it said "half a room" for a room that is 700 wide. 175 is a QUARTER of this
+       room. The number was right for the assumption written next to it and wrong for the game. */
+    const roomW=700;
+    eq(Math.round(sc.fNear),Math.round(roomW/3),'the Scatter effective radius is not a third of a '+
+      roomW+'px room ('+sc.fNear+'px)');
+    eq(sc.fFar,Math.round(roomW/2),'the Scatter floor does not land at half a room, so it is still '+
+      'falling off where the room ends ('+sc.fFar+'px)');
     /* The DESCENDING form, which is what falloffMult actually computes: 1 at the muzzle down to
        fMin at fFar. The older table tests above use the ascending fMin+(1-fMin)*(...) form for the
        same curve, and both are correct - but writing the wrong one here produced 1.4278 at the
        muzzle instead of 1, which is the tell that a test has stopped describing the thing it
        claims to check. */
     const mult=d=>1-(1-sc.fMin)*Math.min(1,Math.max(0,d-sc.fNear)/Math.max(1,sc.fFar-sc.fNear));
-    for(const d of [0,40,80,120,160,175]) eq(+mult(d).toFixed(4),1,
+    for(const d of [0,40,80,120,160,200,233]) eq(+mult(d).toFixed(4),1,
       'the Scatter is not at full damage at '+d+'px, inside its '+sc.fNear+'px range');
-    ok(mult(175.001)<1,'the falloff does not begin at the edge of the range');
+    ok(mult(sc.fNear+0.001)<1,'the falloff does not begin at the edge of the range');
     // and it must still be a real falloff, not a cliff to nothing at the wall
     eq(+mult(sc.fFar).toFixed(4),sc.fMin,'the Scatter does not reach its floor by fFar');
-    ok(sc.fMin>=0.4,'the Scatter loses too much at long range to be worth carrying');
-    /* fFar is where the curve reaches the floor, and it has to be past the far wall of a room so a
-       shot is never caught mid-curve against plaster. Half a room is 350px, so the floor has to
-       land beyond that or the gun is still decaying when it arrives. */
-    ok(sc.fFar>=(ROOM_RIGHT-ROOM_LEFT)/2,'the Scatter is still falling off at half a room, so its '+
-      'floor never applies inside a room ('+sc.fFar+' vs '+((ROOM_RIGHT-ROOM_LEFT)/2)+')');
+    /* THE PART THAT DECIDES WHETHER THE GUN IS FAIR. Two or three volleys against a shooter and a
+       gunner past the third of a room is the requirement, and it is the only assertion here that
+       describes the weapon's job - the curve above can be perfectly shaped and still not be fair.
+
+       Written against ARMOUR rather than raw damage, which is the mistake this file already made
+       once: 0.66 is applied before the volley is counted, so the numbers below are what lands. */
+    const per=(sc.dmg*sc.count+Stats.value('strength'))/sc.count;
+    const volleys=(e,d)=>Math.ceil(e.hp/(sc.count*per*e.armour*mult(d)));
+    for(const d of [350,450,600]){
+      for(const key of ['shooter','gunner']){
+        const v=volleys(ENEMY[key],d);
+        ok(v>=2&&v<=3,'the Scatter takes '+v+' volleys to kill a '+key+' at '+d+
+          'px, which is outside the 2-3 that makes it fair at range');
+      }
+    }
+    /* And the Brunch stays a single pellet at any range. They are 2.70hp with no armour, and a
+       shotgun that needs two grains for a chip body is not a shotgun with a range problem, it is a
+       shotgun with an arithmetic problem. */
+    for(const d of [0,233,350,600]) ok(volleys(ENEMY.brunch,d)===1,
+      'a Brunch at '+d+'px takes '+volleys(ENEMY.brunch,d)+' pellets, which is not what a shotgun is for');
   });
   test('a lunger is the tankiest normal body, and inside one Scatter shot',()=>{
     /* 15*TOUGH, down from 18*TOUGH. Two reasons, and the second is the load-bearing one.
