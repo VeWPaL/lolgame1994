@@ -54,8 +54,15 @@ const Items=(function(){
     const d=Content.get('item',id), out=[];
     if(d.use!=='passive'&&d.use!=='active') out.push('use must be passive or active, got "'+d.use+'"');
     if(d.use==='active'&&!(d.charges>0)) out.push('an active item needs charges, or it can never be used');
-    if(d.slot!=='sigil'&&!(Number.isInteger(d.slot)&&d.slot>=0))
-      out.push('slot must be a non-negative whole number or "sigil", got "'+d.slot+'"');
+    /* There is exactly ONE active slot, so an active does not declare one. It used to: four actives
+       carried slot 0, 1, 1 and 2, which made the number a second name for "a key", made two of the
+       four collide on key 1, and left the roster's own blurbs disagreeing with it - Lantern Friend
+       was slot 2 and said "Hold 2". A number that three places have to agree about, and did not, is
+       the thing to delete rather than the thing to fix. */
+    if(d.use==='active'&&d.slot!==undefined)
+      out.push('there is one active slot and it is not chosen per item, so drop the slot field');
+    if(d.use==='passive'&&d.slot!=='sigil')
+      out.push('a passive is a sigil; slot "'+d.slot+'" means it wants to be pressed and it cannot be');
     /* A PASSIVE with hooks is a definition that validates and does nothing, which is the one failure
        mode this file exists to refuse. Hooks run when an item is USED, and a passive is never used,
        so its hooks would never fire - the item would appear on the sheet, take a space in the build,
@@ -65,7 +72,7 @@ const Items=(function(){
     if(d.use==='passive'&&d.fx&&d.fx.hooks&&Object.keys(d.fx.hooks).length)
       out.push('a passive cannot have hooks: they run on use, and a passive is never used. Make it '
         +'active with charges, or wait for a trigger system.');
-    if(d.slot==='sigil'&&d.use==='active') out.push('an active item needs a slot to be pressed from');
+    if(d.slot==='sigil'&&d.use==='active') out.push('an active item is pressed from the one active slot, not a sigil');
     if(d.rarity&&!(d.rarity in RARITY)) out.push('rarity "'+d.rarity+'" is not one of '+Object.keys(RARITY).join('/'));
     if(d.unlocks&&!Array.isArray(d.unlocks)) out.push('unlocks must be a list of content ids');
     if(d.fx) for(const h in (d.fx.hooks||{})){
@@ -139,7 +146,16 @@ const Items=(function(){
     // difference between the cheap stat and the deliberate one, and the floor never offers a duplicate
     // anyway because the pool excludes what the player holds.
     if(already) return {taken:false,dropped:null};
-    const slot=d.slot==='sigil'?-1:d.slot;
+    /* ONE active, and it is the one the player presses. So an active does not displace a SPECIFIC key
+       - there is only the one - it replaces whatever is in the active slot, which is to say it
+       replaces the active you were carrying. Passives are sigils at -1 and never collide with it, so
+       this cannot cost you a sigil.
+
+       Nine sigils is where build diversity comes from and there is no cap on those. One active is a
+       different constraint and it is a good one: it makes the thing you press a DECISION rather than a
+       fourth number to stack, and it means picking up a second active is a real swap rather than a
+       silent overwrite. The floor drops the displaced one where the new one was standing. */
+    const slot=d.use==='active'?ACTIVE_SLOT:-1;
     let dropped=null;
     if(slot>=0){
       const prev=loadout.items.find(s=>s.slot===slot);
@@ -224,11 +240,37 @@ const Items=(function(){
     return pool(n||1,rollRarity(Stats.value('luck')),exclude)[0]||null;
   }
 
-  /* Which of the player's active items answers a given key. Separate from `use` so a keypress can
-     find its target without the caller knowing anything about slots. */
-  function activeInSlot(slot){
-    return loadout.items.find(s=>s.slot===slot&&s.charges!==null)||null;
-  }
+  /* THE ACTIVE SLOT, and the only two questions anyone asks about it.
+
+   It took a `slot` field per item for most of this project's life, and three places had to agree
+   about it: the definitions, the build, and the blurb a player reads. They did not agree - two actives
+   collided on key 1, and Lantern Friend was written as slot 2 and described as "Hold 2". With one slot
+   there is nothing to agree about, so the field is gone and this is the single answer.
+
+   Zero rather than one because it is a key in `loadout.items` and the sigils are -1. */
+const ACTIVE_SLOT=0;
+
+/* The active the player is carrying, or null. One function rather than a caller that knows the slot
+   number, because the whole point of collapsing to one slot is that nothing outside this file should
+   have to care what the number is. */
+function active(){
+  return loadout.items.find(s=>s.slot===ACTIVE_SLOT&&s.charges!=null)||null;
+}
+
+/* Pressing Q. The key handler calls this and nothing else, so "which item does Q press" is answered
+   here and the handler never learns what an active slot is.
+
+   Returns false when there is nothing to press, which is different from returning a reason - the
+   handler does not open anything on a miss, because a key that opens a dialog every time you press it
+   with empty hands is worse than a key that does nothing. */
+function useActive(){
+  const a=active();
+  if(!a) return false;
+  // `use` returns null when it did something and a REASON string when it did not, so the comparison
+  // is against null rather than for truthiness. `!!a && use(a.id)` looks equivalent and is not: it
+  // hands back the null that means SUCCESS, which is falsy, so a working keypress reported failure.
+  return use(a.id)===null;
+}
 
   function reset(){
     loadout.items.length=0;
@@ -236,9 +278,9 @@ const Items=(function(){
     Stats.reset();
   }
 
-  return {define:define,validate:validate,give:give,remove:remove,use:use,rebuild:rebuild,
-          equipped:equipped,rollRarity:rollRarity,rollItem:rollItem,pool:pool,
-          activeInSlot:activeInSlot,reset:reset,RARITY:RARITY};
+  return {define:define,validate:validate,give:give,remove:remove,use:use,useActive:useActive,
+          rebuild:rebuild,equipped:equipped,rollRarity:rollRarity,rollItem:rollItem,pool:pool,
+          active:active,reset:reset,ACTIVE_SLOT:ACTIVE_SLOT,RARITY:RARITY};
 })();
 
 /* ------------------------------------------------------------------ the hooks -------------- */

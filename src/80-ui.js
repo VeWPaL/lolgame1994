@@ -733,6 +733,13 @@ window.addEventListener('keydown',e=>{
      It is asked before the state overlay keys as well, so F2 leaves the lab even while something is
      open over it. */
   if(Lab.key(k,first)) return;
+  /* Q presses the active item. Asked HERE, in the input layer, and routed through Items.useActive so
+     nothing outside 25-items.js knows what an active slot is or what number it is - there is one, and
+     it is that file's business. Q is not a movement key and never was, so it needed no UI_KEYS entry
+     and no preventDefault; it also deliberately does nothing at all when the slot is empty, because a
+     key that opens something every time you press it with empty hands is worse than a key that is
+     simply not there yet. */
+  if(k==='q'&&first){ Items.useActive(); return; }
   if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','shift'].includes(k)) e.preventDefault();
   keys[k]=true;
   if(k==='f'&&first) showPerf=!showPerf;

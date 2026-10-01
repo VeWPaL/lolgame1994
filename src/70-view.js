@@ -457,6 +457,51 @@ function drawSpawnPlan(){
   });
 }
 
+/* THE ACTIVE PLATE. Not a weapon plate with different contents, because it is answering a different
+   question: the weapon plates show a cooldown filling, and this one shows how many presses are LEFT,
+   which for a stackable consumable is the number that decides whether to spend it now. So the count
+   is drawn large in the corner rather than as a filling bar, and an item that never runs out shows a
+   mark instead of a number, because "x0" would be a lie about an item that is always available.
+
+   The empty state keeps the dotted outline `drawSlot` uses for a reserved plate, for the reason in
+   that function: a frame you can see is a slot, and a gap is a mistake. The Q is drawn on the plate
+   rather than only in the controls sheet, because this is the one key that acts on the thing in this
+   frame and a player should not have to remember which frame it was. */
+function drawActivePlate(x,y,w,held){
+  const h=50;
+  ctx.drawImage(woodPlate(w,h),x,y);
+  drawInset(x+6,y+6,w-12,h-12,'#1a1210');
+  if(!held){
+    ctx.save();
+    ctx.globalAlpha=0.34; ctx.strokeStyle='#6b5a44'; ctx.lineWidth=1;
+    ctx.setLineDash([3,4]);
+    const q=w/2-9;
+    ctx.strokeRect(x+w/2-q,y+h/2-q,q*2,q*2);
+    ctx.restore();
+    return;
+  }
+  const def=Content.get('item',held.id);
+  drawItemIcon(held.id,x+w/2,y+h/2-3,30);
+  // the count, bottom-right, in the item's own colour so it reads as belonging to it
+  if(held.charges!=null){
+    ctx.textAlign='right'; ctx.textBaseline='alphabetic';
+    ctx.font='bold 13px monospace';
+    if(held.charges===Infinity){
+      ctx.fillStyle='#5fa8a0';
+      ctx.fillText('x',x+w-9,y+h-9);
+    }else{
+      ctx.fillStyle=held.charges>0?(def.color||'#e8dcc0'):'#8a3a3a';
+      ctx.fillText('x'+held.charges,x+w-9,y+h-9);
+    }
+  }
+  // the key, bottom-left, dim once there is nothing to press
+  ctx.textAlign='left';
+  ctx.font='bold 13px monospace';
+  ctx.fillStyle=held.charges>0?'#e8dcc0':'#6b5a44';
+  ctx.fillText('Q',x+9,y+h-9);
+  ctx.textAlign='center';
+}
+
 function drawSlot(x,y,w,idx,side,color,ready){
   const h=50;
   ctx.drawImage(woodPlate(w,h),x,y);
@@ -842,24 +887,30 @@ function drawHUD(){
   }   // end of the map, which the lab skips
 
   // The weapon row is three plates on one line: left hand, middle, right hand, touching, and glued
-  // to the bottom of the map. The middle one is a placeholder and is meant to stay that way - it is
-  // where a consumable goes, and a consumable wants to be a different shape from a weapon, so the
-  // gap is reserved rather than filled. It is drawn as a real empty frame with the same wood and the
-  // same border as its neighbours, because an undrawn gap between two plates reads as a mistake and
-  // a drawn one reads as a slot. The map is exactly three slots wide to within a pixel, so the row
-  // cannot be off-centre.
+  // to the bottom of the map. The middle one is the ACTIVE SLOT - the item Q presses - and it was a
+  // drawn empty frame for most of this file's life on the grounds that a consumable wants to be a
+  // different shape from a weapon. The shape argument was right and the conclusion was wrong: an
+  // empty plate between two weapons reads as a hole in the HUD, and the plate was already reserved,
+  // so leaving it empty only made the reservation visible.
+  //
+  // It is drawn with the same wood, border and inset as its neighbours because an undrawn gap between
+  // two plates reads as a mistake and a drawn one reads as a slot. The map is exactly three slots wide
+  // to within a pixel, so the row cannot be off-centre.
   const slotY=my0+pw+GAP, slotH=50, slotGap=2;
   const slotW=Math.floor((pw-slotGap*2)/3);
   const midX=mx0+slotW+slotGap, midW=pw-slotW*2-slotGap*2;
   const wp=WEAPONS[player.weaponIdx], alt=activeAlt();
+  const held=Items.active();
   drawSlot(mx0,slotY,slotW,player.weaponIdx,'left',wp.color,1-player.cooldown/(player.cooldownMax||wp.cooldown));
-  drawSlot(midX+Math.round((midW-slotW)/2),slotY,slotW,'empty','none',0);
+  drawActivePlate(midX+Math.round((midW-slotW)/2),slotY,slotW,held);
   drawSlot(mx0+pw-slotW,slotY,slotW,player.altMode==='hook'?'hook':'alt','right',alt.color,1-player.altCooldown/(player.altCooldownMax||alt.cooldown));
   // labels centred under their own plate, on one baseline
   const labelY=slotY+slotH+14;
   ctx.font='12px monospace';
   ctx.textAlign='center';
   ctx.fillStyle='#e8dcc0';ctx.fillText(wp.name,mx0+slotW/2,labelY);
+  ctx.fillStyle=held?(Content.get('item',held.id).color||'#e8dcc0'):'#6b5a44';
+  ctx.fillText(held?held.name:'nothing',mx0+pw/2,labelY);
   ctx.fillStyle=alt.color;ctx.fillText(player.altMode==='hook'?'Hook':'Blast',mx0+pw-slotW/2,labelY);
 
 

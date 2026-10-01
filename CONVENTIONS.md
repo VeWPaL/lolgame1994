@@ -867,7 +867,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **175 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **176 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
   `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
   figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.

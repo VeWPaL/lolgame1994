@@ -1015,69 +1015,75 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(Items.equipped('bone_whistle'),'a reusable item wore out');
   });
 
-  /* NO ITEM LIMIT. The claim is that a build carries as much as the roster allows, and that an active
-     displaces whatever was on its key rather than being refused - the same deal a weapon gets.
+  /* ONE ACTIVE, NINE SIGILS, NO CAP ON EITHER MEASURED SEPARATELY.
 
-     What it does NOT claim is that all thirteen fit at once, and the difference matters. Two actives
-     declare key 1 (Bone Whistle and Hunter's Mark), so they are alternatives by the roster's own
-     numbering, and the largest build is nine sigils plus one active per DISTINCT key. That is measured
-     here from the table rather than asserted as a number, so that giving Hunter's Mark its own key -
-     which is the obvious fix if the two are not meant to be alternatives - makes this test get
-     STRONGER rather than needing editing, and so that a fourth collision cannot be added by accident. */
-  test('no item limit: a build carries the whole roster, and an active displaces the key it shares',()=>{
+     The two limits in this system are opposites and it is worth saying which is which. Sigils are
+     uncapped, because nine of them compounding is where the number of possible builds comes from - a
+     cap there would be a statement that some combinations are less worth having. There is exactly ONE
+     active, because a key you press is a decision rather than a fourth number to stack, and because
+     four actives spread over three declared keys used to collide: Bone Whistle and Hunter's Mark both
+     claimed key 1, so the largest build was 12 of 13 and nobody could tell whether that was a rule.
+
+     The per-item `slot` field is gone, which is what actually settles it. Three places used to have to
+     agree about a number - the definition, the build, and the blurb a player reads - and they did not:
+     Lantern Friend was written as slot 2 and described as "Hold 2". With one slot there is nothing to
+     agree about.
+
+     What is asserted here is the SHAPE, measured from the roster rather than as a count, so that adding
+     a fourth active or a tenth sigil makes this test stronger instead of needing editing. */
+  test('nine sigils with no cap, exactly one active, and a second active displaces the first',()=>{
     startGame(); Items.reset();
-    eq(Items.SLOTS,undefined,'a slot CAPACITY still exists, so everything below measures the wrong thing');
+    eq(Items.ACTIVE_SLOT,0,'the active slot moved, and the bench plate draws a hard-coded position');
     const ids=Content.all('item');
     const actives=ids.filter(id=>Content.get('item',id).use==='active');
-    const sigils=ids.length-actives.length;
-    const keys={};
-    actives.forEach(id=>{ keys[Content.get('item',id).slot]=1; });
-    const distinctKeys=Object.keys(keys).length;
-    // 1. the largest build the roster actually allows, with nothing refused for want of room
-    ids.forEach(id=>Items.give(id));
-    eq(loadout.items.length,sigils+distinctKeys,'a build holds '+loadout.items.length+' items where the '+
-       'roster allows '+sigils+' sigils plus one active per distinct key ('+distinctKeys+') = '+
-       (sigils+distinctKeys));
-    // and the only losses are actives displaced by a shared key - never a refusal for lack of space
-    const lost=ids.filter(id=>!Items.equipped(id));
-    const allCollide=lost.every(id=>Content.get('item',id).use==='active'&&
-      actives.filter(x=>Content.get('item',x).slot===Content.get('item',id).slot).length>1);
-    ok(allCollide,'these items are missing and are NOT explained by a shared key, so something refused them: '+
-       lost.join(', '));
-    // 2. sigils are keys -1 and actives are their declared key, and the two never collide
-    eq(loadout.items.filter(s=>s.slot===-1).length,sigils,
-       'the sigils are not all marked as sigils, so the sheet will print a slot number on a passive');
-    // 3. the swap. Two actives share key 1, which is exactly the case that has to displace rather than fail.
-    const col=actives.filter(x=>Content.get('item',x).slot===1);
-    const before=loadout.items.length;
-    const got=Items.give(col[0]);
-    const got2=Items.give(col[1]);
-    eq(got2.taken,true,'taking an active whose key is occupied was refused rather than allowed to displace');
-    ok(got2.dropped===col[0],'the displaced item was not reported, so the floor cannot drop it ('+got2.dropped+')');
-    ok(!Items.equipped(col[0]),'the displaced item is still in the build as well as the new one');
-    eq(loadout.items.length,before,'the build changed size during a swap, so one of the two leaked');
-    ok(Items.equipped(col[1]),'the item that displaced something did not end up in the build');
-    // 4. a swap moves the KEY, not the position. Removing the item on key 1 must not slide everything
-    //    after it down a key - that renumbering existed to compact a capped set and now scrambles
-    //    declared keys, so an item would answer to a key it was never written for.
+    const sigilIds=ids.filter(id=>Content.get('item',id).use==='passive');
+    const sigils=sigilIds.length;
+    ok(actives.length>=3,'the roster has '+actives.length+' actives, so "one active" is not being tested');
+    // 1. every sigil, no refusals. This is the half that is unlimited, and it is the half that matters
+    //    for build space, so it gets checked first and on its own.
+    sigilIds.forEach(id=>Items.give(id));
+    const refused=sigilIds.filter(id=>!Items.equipped(id));
+    eq(refused.length,0,'sigils were refused, so there IS a cap on them: '+refused.join(', '));
+    eq(loadout.items.length,sigils,'a build of sigils is the wrong size');
+    eq(loadout.items.filter(s=>s.slot!==-1).length,0,'a sigil was given a real slot, so it could be pressed');
+    // 2. actives: one at a time. Each one displaces the last, so after offering the whole active set
+    //    exactly one survives and exactly the right one is reported as displaced each time.
+    let last=null;
+    actives.forEach(id=>{
+      const g=Items.give(id);
+      ok(g.taken,'an active was refused outright, so actives still have a capacity limit');
+      last=id;
+    });
+    eq(loadout.items.length,sigils+1,'a build holds '+(loadout.items.length-sigils)+
+       ' actives, so there is more than one active slot');
+    eq(Items.active()&&Items.active().id,last,'the active that survived is not the last one offered, so '+
+       'the slot is not holding the most recent pickup');
+    // 3. and the displaced one is REPORTED, which is what lets the floor drop it. If this is null the
+    //    swap happens silently and a weapon is lost.
     Items.reset();
-    actives.forEach(id=>Items.give(id).taken);
-    const key0=loadout.items.find(s=>s.slot>=0).slot;
-    const held0=loadout.items.find(s=>s.slot===key0).id;
-    ok(Items.remove(held0),'the control remove failed');
-    const stillThere=Items.equipped(activeWithKeyGreaterThan(key0));
-    ok(stillThere,'removing the item on key '+key0+' moved an item that was on a LATER key down to '+
-       key0+', so keys are being renumbered by position');
-    // 5. the one refusal that is left, and it is not a capacity limit
+    const one=Items.give(actives[0]);
+    const two=Items.give(actives[1]);
+    ok(one.dropped===null,'the first active reported displacing something, so something was already there');
+    eq(two.dropped,actives[0],'the second active did not report the first as displaced');
+    ok(!Items.equipped(actives[0])&&Items.equipped(actives[1]),'both actives ended up held');
+    // 4. Q presses it, and pressing with an empty slot is a no-op rather than an error
+    Items.reset();
+    ok(!Items.useActive(),'pressing with no active reported a use, so something answered with empty hands');
+    Items.give('tin_cup');
+    const charges=Items.equipped('tin_cup').charges;
+    ok(Items.useActive(),'Q did nothing with an active in the slot');
+    eq(Items.equipped('tin_cup').charges,charges-1,'Q did not spend a charge');
+    // 5. the one refusal left, and it is not a capacity limit
     Items.reset();
     ok(Items.give('heavy_hands').taken,'the control give failed');
     ok(!Items.give('heavy_hands').taken,'a passive was taken twice, so it applies twice');
     eq(Stats.value('strength'),Stats.baseOf('strength')+1,
        'one Heavy Hands is worth 1 Strength and a second was refused, so a duplicate doubled a passive');
-    ok(Items.give('iron_ribs').taken,'a passive was refused once actives are involved, so sigils are being rationed');
-    function activeWithKeyGreaterThan(k){
-      return actives.filter(id=>Content.get('item',id).slot>k).sort(
-        (x,y)=>Content.get('item',y).slot-Content.get('item',x).slot)[0];
+    // 6. and the roster may not reintroduce a per-item slot, which is how the collision came back
+    for(const id of ids){
+      const d=Content.get('item',id);
+      if(d.use==='active') ok(d.slot===undefined,'an active item declares slot "'+d.slot+
+         '", and with one active slot that is a second name for a number nothing reads');
     }
   });
 
@@ -1092,6 +1098,44 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
    against the current room's bodies, so a leaked field charged and stunned an enemy the player had
    never met, and being charged is what grants hook RESISTANCE. The assertion below is about that
    charge, because the leftovers are only interesting if something consumes them. */
+  /* THE BINDING ITSELF, dispatched as a real key rather than called.
+
+   Every other test of Q calls Items.useActive(), which proves the function works and says nothing at
+   all about whether anything presses it - and "nothing presses it" is precisely the state this whole
+   system sat in for its entire life: four actives, a working use(), and no key anywhere in the game.
+   So the assertion is on a keydown event going through the real handler.
+
+   It also pins the one behaviour that is easy to get wrong by accident: Q with an empty slot must be a
+   no-op rather than an error, an overlay stealing it, or a dialog opening. A key that fires every time
+   you press it with empty hands is worse than a key that is not there yet. */
+  test('Q presses the active item, through the real key handler',()=>{
+    startGame(); Items.reset();
+    const held=Items.active();
+    ok(!held,'a fresh run is already carrying an active');
+    press('q');
+    ok(!Items.active(),'pressing Q with an empty slot put something in it');
+    Items.give('tin_cup');
+    const before=Items.equipped('tin_cup').charges;
+    ok(before>0,'the fixture gave a Tin Cup with no charges, so there is nothing to spend');
+    press('q');
+    const after=Items.equipped('tin_cup')&&Items.equipped('tin_cup').charges;
+    eq(after,before-1,'pressing Q did not spend a charge of the active item');
+    // and it is the ACTIVE that answers, not a sigil: nine sigils and one key. Asserted by watching the
+    // sigils rather than the active, because the active may legitimately VANISH - Lantern Friend carries
+    // one charge, so a correct press spends it and removes the item.
+    Items.reset();
+    Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='active') Items.give(id); });
+    Content.all('item').forEach(id=>{ if(Content.get('item',id).use==='passive') Items.give(id); });
+    const act=Items.active();
+    const n=act.charges;
+    const sigils=loadout.items.filter(s=>s.slot===-1).length;
+    press('q');
+    const now=Items.equipped(act.id);
+    ok(now===null||now.charges<n,'with nine sigils held, Q did not spend the active item ('+act.id+')');
+    eq(loadout.items.filter(s=>s.slot===-1).length,sigils,'Q spent a sigil instead of pressing the active - '+
+       'so the key is reaching the wrong slot');
+  });
+
   test('a doorway clears every lingering effect, and a hook laid in the last room cannot reach this one',()=>{
     startGame();
     const hook=hookFields, burst=burstFX, dash=dashFX;

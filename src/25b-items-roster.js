@@ -26,16 +26,16 @@ Items.define('weighted_rod',{
 });
 
 Items.define('tin_cup',{
-  name:'Tin Cup', use:'active', charges:3, slot:0, rarity:'common', tags:['survival'],
+  name:'Tin Cup', use:'active', charges:3, rarity:'common', tags:['survival'],
   glyph:'TC', color:'#c9d3e0',
-  blurb:'Hold 1. Drink: two hearts back. Three in it, so it is a resource you spend on a bad room rather than a spare.',
+  blurb:'Q. Drink: two hearts back. Three in it, so it is a resource you spend on a bad room rather than a spare.',
   fx:{hooks:{heal_self:2}}
 });
 
 Items.define('bone_whistle',{
-  name:'Bone Whistle', use:'active', charges:Infinity, slot:1, rarity:'uncommon', tags:['utility'],
+  name:'Bone Whistle', use:'active', charges:Infinity, rarity:'uncommon', tags:['utility'],
   glyph:'BW', color:'#d8cfae',
-  blurb:'Hold 2. Calls every loose pickup in the room to you. Never runs out, so it is about where you use it.',
+  blurb:'Q. Calls every loose pickup in the room to you. Never runs out, so it is about where you use it.',
   fx:{hooks:{pull_pickups:1}}
 });
 
@@ -77,9 +77,9 @@ Items.define('weighted_grip',{
 });
 
 Items.define('hunters_mark',{
-  name:"Hunter's Mark", use:'active', charges:2, slot:1, rarity:'rare', tags:['utility','fortune'],
+  name:"Hunter's Mark", use:'active', charges:2, rarity:'rare', tags:['utility','fortune'],
   glyph:'HM', color:'#c79bff',
-  blurb:'Hold 2. Wakes the room and shows what is on the floor. Also +1 Luck, permanently.',
+  blurb:'Q. Wakes the room and shows what is on the floor. Also +1 Luck, permanently.',
   fx:{stats:{luck:1},hooks:{reveal_room:1}}
 });
 
@@ -108,8 +108,8 @@ Items.define('brass_compass',{
    definition is legal, appears in the pool, and will do the honest empty thing until the behaviour
    lands. That is the seam working as intended rather than a placeholder pretending otherwise. */
 Items.define('lantern_friend',{
-  name:'Lantern Friend', use:'active', charges:1, slot:2, rarity:'rare', tags:['companion'],
+  name:'Lantern Friend', use:'active', charges:1, rarity:'rare', tags:['companion'],
   glyph:'LF', color:'#f0c86a',
-  blurb:'Hold 2. Sets a lantern down. It is not a creature yet.',
+  blurb:'Q. Sets a lantern down. It is not a creature yet.',
   fx:{hooks:{spawn_companion:1}}
 });
