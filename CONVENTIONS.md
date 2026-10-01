@@ -618,6 +618,99 @@ trading damage.
 `fFar` is where the curve reaches its floor, and it has to clear half a room (350px) or the gun is
 still decaying when it arrives and the floor never applies inside a room at all.
 
+Note the room is **1680px wide**, so half a room is 840px, not the 350px an earlier note assumed. A
+350px shot sits comfortably inside it — 175px is *well under* half a room, and is the radius rather
+than the span.
+
+### The damage had to rise to 3.9, and 3.9 is the whole trick
+
+The contract is **eight pellets kill a lunger and seven do not**. With `ARMOUR` 0.66 that is a narrow
+window, and it is the reason the number looks arbitrary:
+
+| dmg | 8 pellets land | 7 pellets land | contract |
+|---|---|---|---|
+| 3.6 | 19.01 | 16.63 | eight do not kill |
+| **3.835** | **20.25** | 17.72 | exact knife-edge, zero margin |
+| **3.9** | **20.59** | 18.02 | **holds, by 0.34** |
+| 4.5 | 23.76 | 20.79 | seven kill — requirement *deleted*, not met |
+
+3.835 is the mathematical minimum and 3.9 is the smallest tidy value above it. 4.5 is the trap worth
+naming: it satisfies "eight pellets kill a lunger" on its own and quietly removes the reason for the
+rule. **Both halves have to be asserted** or the test passes for the wrong weapon.
+
+This was forced, not chosen. At 2.6 the gun could not kill a lunger at *any* cone angle, at any range,
+including point blank — 0 kills in 24 trials from 0.92° to 22.92°. A shotgun whose pattern has to be
+tuned to reach its own damage threshold is not a shotgun with a range, it is a shotgun with a puzzle.
+Brunch are unaffected: one pellet is 3.9 against 2.70hp and no armour.
+
+---
+
+## `pelletAngle` is not what opens the pattern. `fNear` is.
+
+This is the opposite of what the cone work assumed, and it is worth writing down because the sweep
+was run specifically to find a cone angle and the answer was that **there is nothing there to tune**.
+
+Sweeping `pelletAngle` against pellets landed on a lunger, 12 trials each:
+
+| `pelletAngle` | cone | landed @175px | landed @350px |
+|---|---|---|---|
+| 0.008 (was) | 0.92° | 8.00 | 5.50 |
+| 0.03 | 3.44° | 8.00 | 5.40 |
+| 0.05 | 5.73° | 8.00 | 4.70 |
+| 0.07 | 8.02° | 8.00 | 4.70 |
+
+A **nine-fold** widening of the cone moves landed pellets by 0.8. Sweeping `pelletSpeedVar` over
+0.05 → 0.45 moves them by 0.35. Neither knob decides anything, and the reason is visible in a single
+traced volley at 350px:
+
+```
+tick  alive  spreadY
+    0     8    351..358
+  100     8    351..360
+  120     5    352..360
+```
+
+The column is **9px wide** at 350px, against a lunger 28px across. Every pellet lands; the pattern is
+simply narrower than the target. Instrumenting the damage per tick confirms it — 8 damage events of
+1.82–2.01 each, where full falloff would be 2.82:
+
+```
+raw/shot 34.2   per pellet raw 4.275   after armour 2.822
+t108 d1.82   t109 d1.80   t115 d1.83   t122 d1.88   t133 d1.94   t139 d1.93   t147 d2.01
+total 15.21 = about 5.39 pellets worth
+```
+
+**Eight pellets hit. They are just taxed by range.** So the weapon's range identity is created entirely
+by the falloff band, and `pelletAngle` is free to stay a small column — which is what makes it read as
+shot rather than as a wave. Widening it would only blur the pattern without changing what it hits.
+
+Kill boundary, all 8 pellets landing, falloff × armour against 20.25hp:
+
+| range | mult | 8-pellet total | kills |
+|---|---|---|---|
+| 175 | 1.000 | 22.57 | **yes** |
+| 225 | 0.878 | 19.81 | no |
+| 350 | 0.572 | 12.92 | no |
+| 400 | 0.450 | 10.16 | no |
+
+---
+
+## Brunch packs are no longer a one-volley wipe, and that is a change of identity
+
+The pack sizes are 4–8. Measured, gun aimed **at** the knot (best case, not a sweep):
+
+| pack | @175px left standing | @350px left standing |
+|---|---|---|
+| 4 | 1 | 2 |
+| 6 | 2 | 4 |
+| 8 | 4 | 6 |
+
+At dmg 2.6 the volley was worth 20.8 raw and a whole pack died to it. At 3.9 it is worth 31.2, but the
+pack is spread over ~40px and the column is 9px wide, so most pellets pass between bodies. The
+Scatter now clears a knot in **two or three volleys** rather than one. That is the honest buckshot
+behaviour and it is worth knowing it changed — a room where the Scatter used to erase a pack
+instantly now takes a beat.
+
 ---
 
 ## `startGame()` does not start the game

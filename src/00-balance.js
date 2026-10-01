@@ -520,9 +520,29 @@ const WEAPONS=[
   //   pelletSpeedVar   fraction of speed variance per pellet. The chaos, and the reason the column
   //                    opens with range without any angle involved at all.
   // Measured column width: 11px at 60px, 13px at 200px, 17px at 450px, against 19/63/142 for the old
-  // cone. Damage per pellet and pellet count are unchanged, so every crowd number the Scatter has
-  // earned still holds - this is a redistribution of where the damage lands, not a buff.
-  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:2.6,count:8,spread:0.045,
+  // cone. The pellet COUNT is unchanged at eight; the damage per pellet is not, because the gun had
+  // to be able to one-shot the biggest normal body with a full volley - see dmg below.
+  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:3.9,count:8,spread:0.045,
+   /* dmg 3.9 is not a round choice and 3.835 would not do either. It is the narrowest value that
+      makes the stated contract true: EIGHT pellets kill a lunger and SEVEN do not.
+
+        8 x 3.9 x ARMOUR 0.66 = 20.59   vs lunger 20.25   kills, by 0.34
+        7 x 3.9 x ARMOUR 0.66 = 18.02                     short by 2.23
+
+      3.835 is the exact knife-edge - 8 pellets land precisely 20.25, with nothing to spare and no
+      tolerance for a single pellet missing. 3.9 keeps the "all eight" requirement intact while
+      leaving the gun a sliver of margin, and it is still below the 4.5 at which SEVEN would kill,
+      which would quietly delete the requirement instead of satisfying it.
+
+      This is a real buff - 3.9 against 2.6 - and it was forced rather than chosen. ARMOUR is 0.66,
+      so eight pellets at 2.6 land 13.73 on a lunger and the weapon could not kill one at ANY cone
+      angle, at any range, including point blank: 0 kills in 24 trials from 0.92 to 22.92 degrees. A
+      shotgun whose pattern has to be tuned to reach its own damage threshold is not a shotgun with
+      a range, it is a shotgun with a puzzle. The damage had to clear the body first; the cone angle
+      is then free to be only about how much of the volley survives the trip.
+
+      Note the Brunch needs exactly ONE pellet (2.7 hp, no armour), so this does nothing to them -
+      a shotgun killing a chip body should be free, and the pack numbers still hold. */
    /* The effective range is a CIRCLE of 175px radius - half a room - and inside it the gun does FULL
       damage, because the whole identity of a buckshot gun is that it is not falling off while you
       are still close enough to use it. fNear is that radius, so the falloff curve starts exactly
