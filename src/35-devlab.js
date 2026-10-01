@@ -470,19 +470,27 @@ const Lab=(function(){
      room size and origin. The same argument as the floor, which was already cached for exactly this
      reason before the lab existed. */
   const MINOR=120, MAJOR=480, gridCache=new Map();
-  /* The grid is a MEASURING AID, so it is faint, and it used not to be. It is drawn at
-     rgba(150,160,180,0.055) for minor lines over a floor that is already a seamless speckle - and
-     over a 1680x760 room that is 14 verticals and 7 horizontals, which reads as a tiled floor rather
-     than as a floor with a ruler on it. A dungeon room is 700x450 and has NO grid at all, which is
-     exactly why the dungeon floor looks like ground and the lab floor looked like squares: the lab
-     was carrying a visual element the game does not have, over the element the game does have.
+  /* The grid is gone entirely, and the reason it existed is worth keeping.
 
-     So the minor lines are gone entirely and only the majors remain, at a quarter of the old
-     strength. What is left is 3 verticals and 2 horizontals in a room this size: enough to judge
-     distance and camera travel by, not enough to tile the floor. The centre cross stays because it
-     is one mark, not a lattice. */
+     It was a measuring aid: 14 verticals at 120px over a 1680px room, for judging camera travel and
+     distance. Over a floor that is otherwise a seamless speckle, a 120px lattice does not read as a
+     ruler on the ground - it reads as TILES, and the complaint was exactly that: white lines dividing
+     defined square shapes, where a dungeon floor is seamless.
+
+     Dropping the minors was not enough. The majors are 480px apart, so a 960px viewport shows 2
+     verticals and 1 horizontal - and a partial lattice does not read as a ruler either, it reads as
+     the corner of a very large square. There is no alpha at which a line lattice stops being one.
+
+     And the decisive point is comparative: **a dungeon room has no grid at all.** The lab was
+     carrying a visual element the game does not have, drawn over the element the game does have. The
+     camera movement it was meant to help judge is perfectly legible without it - the room is bigger
+     than the screen, so the walls themselves are the ruler.
+
+     Both alphas are zero rather than the code being deleted, so the grid is one number away from
+     coming back if a future view genuinely wants it. The centre cross stays: it is one mark, not a
+     lattice. */
   const GRID_MINOR_ALPHA=0;      // was 0.055 - a 120px lattice over a 1680px room is a tiled floor
-  const GRID_MAJOR_ALPHA=0.055;  // was 0.13
+  const GRID_MAJOR_ALPHA=0;      // was 0.13, then 0.055 - see the note; a dungeon room has none
   function gridAlphaFor(step){ return step===MINOR?GRID_MINOR_ALPHA:GRID_MAJOR_ALPHA; }
   /* The two brazier offsets and the flame's half-size, published so the suite can check the flame
      against the bowl without re-deriving numbers that only mean something together.
@@ -558,13 +566,28 @@ const Lab=(function(){
      sat outside the frame at every camera position and the lab rendered with no light in it at all.
      A count of "eight braziers placed" says nothing about how many are visible. */
   const BRAZIER_R=168, BRAZIER_FRAMES=5, brazierCache=new Map();
-  /* WHERE THE FLAME GOES, derived rather than guessed. BRAZIER_BOWL_Y is the bowl's centre inside the
-     brazier sprite (baked at o-21 in brazierSprite); FLAME_BASE_Y is the flame's base inside the
-     flame sprite (baked at o+25 in flameFrame); FLAME_R is the half-size of the flame sprite. The
-     flame is drawn so its base lands exactly on the bowl's centre - which is the only relationship
-     between the two numbers that means anything visually, and which the previous pair of constants
-     did not have. */
-  const BRAZIER_BOWL_Y=21, FLAME_BASE_Y=25, FLAME_R=36;
+  /* WHERE THE FLAME GOES, and the sign convention that makes it mean something.
+
+     Both sprites are baked centred on their own middle and drawn by their TOP-LEFT corner, so a
+     feature at sprite-row F in a sprite of half-size R appears on screen at `spot - R + F`. Everything
+     here follows from that one sentence.
+
+     The bowl is baked at row `o - BRAZIER_BOWL_Y`, i.e. BRAZIER_BOWL_Y rows ABOVE the sprite's middle,
+     so on screen it is at `spot - R + (R - BRAZIER_BOWL_Y)` = `spot - BRAZIER_BOWL_Y`. The R cancels.
+     The flame's base is baked at row FLAME_BASE_Y inside its own sprite, so drawn at top T it lands at
+     `T + FLAME_BASE_Y`. Setting those equal: **T = spot - BRAZIER_BOWL_Y - FLAME_BASE_Y**.
+
+     The first attempt at this wrote `spot - BRAZIER_R - BRAZIER_BOWL_Y - FLAME_BASE_Y`, treating
+     BRAZIER_BOWL_Y as a distance BELOW the sprite's middle rather than above it, and subtracting the
+     sprite radius a second time on top of that. It put the flame 168px ABOVE the bowl - and the
+     screenshot showed it floating over the stand. The original two constants were off by TWO pixels;
+     the "fix" was off by 168. A screenshot is what caught it, and the arithmetic that claimed to have
+     derived it was what made it worse.
+
+     So the derivation is written out here, in full, in the file, where the next person can check it. */
+  const BRAZIER_BOWL_Y=21,   // the bowl is this many rows ABOVE the brazier sprite's middle
+        FLAME_BASE_Y=25,     // the flame's base is this many rows BELOW the flame sprite's top
+        FLAME_R=36;          // half-size of the flame sprite, for centring it on the brazier
   function brazierSprite(){
     let c=brazierCache.get('body');
     if(c) return c;
@@ -595,11 +618,13 @@ const Lab=(function(){
     const g=c.getContext('2d');
     g.globalCompositeOperation='lighter';
     g.fillStyle='rgba(255,120,40,0.6)';
-    g.beginPath(); g.moveTo(o,o+25);
-    g.quadraticCurveTo(o+10,o+25-fh*0.6,o,o+25-fh); g.quadraticCurveTo(o-10,o+25-fh*0.6,o,o+25); g.fill();
+    g.beginPath(); g.moveTo(o,o+FLAME_BASE_Y);
+    g.quadraticCurveTo(o+10,o+FLAME_BASE_Y-fh*0.6,o,o+FLAME_BASE_Y-fh);
+    g.quadraticCurveTo(o-10,o+FLAME_BASE_Y-fh*0.6,o,o+FLAME_BASE_Y); g.fill();
     g.fillStyle='rgba(255,220,150,0.85)';
-    g.beginPath(); g.moveTo(o,o+25);
-    g.quadraticCurveTo(o+5,o+25-fh*0.4,o,o+25-fh*0.6); g.quadraticCurveTo(o-5,o+25-fh*0.4,o,o+25); g.fill();
+    g.beginPath(); g.moveTo(o,o+FLAME_BASE_Y);
+    g.quadraticCurveTo(o+5,o+FLAME_BASE_Y-fh*0.4,o,o+FLAME_BASE_Y-fh*0.6);
+    g.quadraticCurveTo(o-5,o+FLAME_BASE_Y-fh*0.4,o,o+FLAME_BASE_Y); g.fill();
     brazierCache.set(key,c);
     return c;
   }
@@ -636,7 +661,7 @@ const Lab=(function(){
          two numbers were typed next to each other, so moving the bowl in the brazier sprite moves the
          flame with it. BRAZIER_BOWL_Y is where the bowl sits inside the brazier sprite, and
          FLAME_BASE_Y where the flame's base sits inside the flame sprite. */
-      ctx.drawImage(flame, x-FLAME_R, y-BRAZIER_R-BRAZIER_BOWL_Y-FLAME_BASE_Y);
+      ctx.drawImage(flame, x-FLAME_R, y-FLAME_BASE_Y-BRAZIER_BOWL_Y);
       ctx.restore();
     }
   }

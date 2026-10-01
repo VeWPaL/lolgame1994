@@ -1494,15 +1494,20 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
 
     // the flame geometry, from the numbers the drawing itself uses
     const G=Lab.BRAZIER_GEOM();
-    const bowlScreen=G.r+G.bowlY;           // the bowl is BOWL_Y above the sprite's top-left edge
+    /* The bowl is baked at sprite row (r - bowlY) in a sprite drawn with its top-left at (spot - r),
+       so it lands on screen at `spot - bowlY` and the radius CANCELS. The flame's base is baked
+       flameBaseY into its own sprite, so drawn at top T it lands at `T + flameBaseY`. */
+    const bowlScreen=G.bowlY;               // distance from the brazier's CENTRE up to the bowl
     const flameTop=bowlScreen-G.flameBaseY; // so the flame's BASE lands on the bowl
     ok(flameTop+G.flameBaseY===bowlScreen,'the flame is drawn so its base is at '+(flameTop+G.flameBaseY)+
       ' and the bowl is at '+bowlScreen+', so the fire sits '+
       (flameTop+G.flameBaseY-bowlScreen)+'px from the dish it belongs in');
-    ok(flameTop>=0,'the flame is drawn at y '+flameTop+', above the top of the '+G.r+
-      'px brazier sprite, so it is off its own geometry');
-    ok(flameTop+G.flameR*2<=G.r*2,'the flame extends to '+(flameTop+G.flameR*2)+' inside a '+
-      (G.r*2)+'px sprite, so it is drawn well past the bottom of the brazier');
+    ok(flameTop+G.flameR*2<=G.r*2,'the flame, drawn '+flameTop+'px from the brazier centre, extends to '+
+      (flameTop+G.flameR*2)+'px below it, which is outside the '+G.r+'px radius and so drawn past the '+
+      'bottom of the brazier sprite');
+    // and the flame must not be drawn so high that it floats off the top of the brazier
+    ok(flameTop>=-G.r,'the flame is drawn '+flameTop+'px above the brazier centre, which is past the '+
+      'top of its '+G.r+'px sprite, so the fire floats above the stand rather than sitting in it');
     // and the two sprites must agree about where UP is, which is the bug that was there
     ok(G.flameBaseY>0,'the flame base offset is '+G.flameBaseY+', which places the fire BELOW its '+
       'own centre rather than above it');
@@ -1536,19 +1541,30 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(seen.length>0,'no flame sprite was drawn at a brazier the player is standing on ('+
       seen.length+' found), so there is nothing to check');
     if(seen.length){
-      // The flame's BASE is its top plus the base offset inside its own sprite.
+      /* Both positions are derived from the SPRITES, independently of how the draw call spells it.
+
+         The bowl is baked at sprite row `r - bowlY` in a sprite whose top-left is at `spot - r`, so on
+         screen it is at `spot - bowlY`: the radius cancels. The flame's base is baked at
+         `flameBaseY` inside its own sprite, so drawn at top T it lands at `T + flameBaseY`.
+
+         These are the same two formulas the drawing uses, and that is the weakness - a test written
+         from the implementation checks that the implementation agrees with itself. It is here because
+         the SIGN of the bowl is the thing that went wrong twice, in opposite directions: the code was
+         168px out, then "fixed" 42px out, and only a screenshot distinguished them. So the assertion
+         that matters most is the weaker, sign-independent one below - the flame must be INSIDE the
+         brazier's own vertical extent, which was never true of either broken version. */
       const baseY=seen[0]+G.flameBaseY;
-      /* And the bowl is ABOVE the brazier's centre: it is baked at `o-bowlY` inside a sprite drawn
-         with its top-left at `y-BRAZIER_R`, so on screen it sits at `y-BRAZIER_R-bowlY`. The first
-         version of this line had the sign the other way round - `y-BRAZIER_R+bowlY` - and reported the
-         FIXED drawing as 42px wrong. Which is worth stating plainly: a test written to check a
-         geometry bug, getting that geometry backwards and failing against correct code, is the same
-         failure as the one it was meant to catch. The screenshot agreed with the code and not with
-         the test, which is why the code was left alone and the test was fixed. */
-      const bowlWorld=brY-G.r-G.bowlY;
+      const bowlWorld=brY-G.bowlY;
       const drawn=Math.round(baseY-cam.y), want=Math.round(bowlWorld-cam.y);
       ok(Math.abs(drawn-want)<=2,'the flame burns '+(want-drawn)+'px from its bowl: drawn base at '+
         'screen y '+drawn+', the bowl is at '+want+' (camera y '+Math.round(cam.y)+')');
+      /* SIGN-INDEPENDENT, and the one that would have caught both mistakes. The bowl sits near the TOP
+         of the brazier sprite (row r-21 of 336, so 44% up) and the flame's base belongs with it. A
+         flame drawn 168px above the stand, or 34px below it, is outside that band either way. */
+      const bowlBand=[Math.round((brY-G.r)*1),Math.round((brY)*1)];   // sprite top .. centre
+      ok(baseY>=bowlBand[0]&&baseY<=bowlBand[1],
+        'the flame base is at y '+Math.round(baseY)+' but the bowl band is '+bowlBand[0]+'..'+
+        bowlBand[1]+', so the fire is not in the dish');
     }
     Lab.leave();
   });

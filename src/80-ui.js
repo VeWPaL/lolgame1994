@@ -290,7 +290,26 @@ function uiHoldsInput(){ return !!uiOverlay()||devOpen; }
    on pause, and then the suppressor ate the resume. Three tests failed and then left the sheet open,
    which broke the five after them. An overlay that traps its own dismiss key does not fail one test,
    it poisons the rest of the run. */
-const UI_KEYS=['escape','h','b','s','p','r','f1','f2','f3','f4','f5','1','2','3','4'];
+/* 'tab' is here for the same reason 'f1' and 'h' are: the sheet owns it, so the suppressor must let
+   it through or TAB does nothing while the sheet is up - which is the one moment it is most wanted.
+   Without this the suppressor eats TAB the instant the sheet opens, and the key that opens a sheet is
+   the one key that cannot close it. 'f6' is here for the same reason as the other lab keys. */
+const UI_KEYS=['escape','h','b','s','p','r','tab','f1','f2','f3','f4','f5','f6','1','2','3','4'];
+/* Lowercases before comparing, and that is a fix rather than a style choice. Every key in UI_KEYS is
+   lowercase and the handler lowercases its own key immediately afterwards, so this one comparison was
+   the only place in the input path that saw the raw `e.key` - which is "Tab", "Escape", "ArrowUp",
+   every shifted letter and every F-key with its real capital. So the suppressor decided that NONE of
+   the overlay's own keys were allowed, and while a sheet was up it ate all of them.
+
+     TAB was the visible symptom because it is the only key here with no other route to its panel: the
+     sheet could be opened by pausing and the suppressor still blocked TAB from closing it, so the one
+     key that opens a sheet is the one key that cannot close it. Escape worked because the suppressor
+     runs on a separate listener that checks `e.key==='Escape'` directly.
+
+     The rule from here on: anything that compares against UI_KEYS lowercases first, and a test that
+     dispatches a synthetic event uses the real `e.key` value ("Tab"), not the lowercase one, because a
+     synthetic lowercase "tab" is not a key the browser can send and it would hide this class of bug
+     rather than reveal it. */
 function uiAllows(k){ return UI_KEYS.indexOf(String(k).toLowerCase())>=0; }
 // Anything aimed at the overlay is consumed on the way down, before the game sees it.
 /* ---- the character sheet -----------------------------------------------------------------------
@@ -413,6 +432,21 @@ function closeCharSheet(){
   if(s) s.classList.remove('on');
   uiSheetOpen=false;
   uiReleaseFocus();
+}
+/* TAB, as a toggle, and it answers the TOP overlay rather than only ever opening its own.
+
+     A naive `if(uiSheetOpen) close else open` is wrong whenever another sheet is on top: with the
+     controls panel open, the first TAB closes a sheet that was never visible and leaves the controls
+     panel up, which reads as TAB doing nothing at all. So the sheet only closes when it is the thing
+     actually on screen; otherwise it opens. Escape still closes from anywhere, because Escape means
+     "go back" and TAB means "show me this".
+
+     It works in the lab as well as a run, which is the point: the sheet is where a build is read, and
+     the lab is where builds are made. */
+function toggleSheet(){
+  const s=document.getElementById('charSheet');
+  if(s&&s.classList.contains('on')){ closeCharSheet(); return; }
+  openCharSheet();
 }
 window.addEventListener('keydown',e=>{
   if(seedTyping(e)) return;
@@ -740,7 +774,20 @@ window.addEventListener('keydown',e=>{
      key that opens something every time you press it with empty hands is worse than a key that is
      simply not there yet. */
   if(k==='q'&&first){ Items.useActive(); return; }
-  if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','shift'].includes(k)) e.preventDefault();
+  /* TAB IS THE CHARACTER SHEET, and TAB was NOT BOUND AT ALL.
+
+     Pressing it ran the browser's default - move focus to the next focusable element - which is the
+     bug-list button. So the sheet had no key, and the one thing TAB reliably did was focus the change
+     history. `preventDefault` did not include 'tab' either, because nothing had ever claimed it.
+
+     It is bound here, and the preventDefault is unconditional for it: a key the game claims must
+     never fall through to focus movement, because focus landing on a button is precisely what made it
+     look like the game was highlighting the wrong thing.
+
+     F1 is the weapon bench and is untouched - they are different panels, which is the whole reason
+     TAB needed a key of its own rather than sharing F1's. */
+    if(k==='tab'&&first){ e.preventDefault(); toggleSheet(); return; }
+    if(['arrowup','arrowdown','arrowleft','arrowright','w','a','s','d',' ','shift','tab'].includes(k)) e.preventDefault();
   keys[k]=true;
   if(k==='f'&&first) showPerf=!showPerf;
   if(k==='g'&&first) showSpawn=!showSpawn;
@@ -757,7 +804,19 @@ window.addEventListener('keydown',e=>{
   if(!first) return;
   if((k==='escape'||k==='p')&&state==='playing'){setPaused(!paused);return;}
   if(k==='r'&&(paused||state==='gameover'||state==='win')){startGame();return;}
-  if((k==='shift'||k===' ')&&state==='playing'&&!paused&&!trans&&readyT<=0&&player.blinkCharges>0) doBlink();
+  /* BLINK, AND WHY IT CHECKES FOR A RUN RATHER THAN FOR A STATE.
+
+     This asked for `state==='playing'`, which is true of a run and false of the lab - so blink did
+     nothing in the lab. The lab is a room the player is standing in, moving through, dodging in, and
+     a blink that will not fire there is not a lab feature missing, it is a lab that cannot be used to
+     test the thing the lab exists to test. Every other input that moves the player already asks
+     `state==='dev' || state==='playing'`, and this one line was the odd one out.
+
+     Deliberately NOT `state!=='start'`: on the title screen and after a win there is no run to blink
+     out of, and `!trans` and `readyT<=0` already refuse it during a room transition or before the
+     player exists. The two states that have a player in a room are the two that can blink. */
+  const inRoom=state==='playing'||state==='dev';
+  if((k==='shift'||k===' ')&&inRoom&&!paused&&!trans&&readyT<=0&&player.blinkCharges>0) doBlink();
 });
 window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 window.addEventListener('blur',autoPause);
