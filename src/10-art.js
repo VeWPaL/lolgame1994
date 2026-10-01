@@ -113,7 +113,7 @@ const BRUNCH_WALK=0.62*PLAYER_MOVE, BRUNCH_RUN=1.35;
    So: stated everywhere, uniform everywhere except the one body the rule is about. `99-tests.js`
    asserts both halves - that no row is silent, and that the ones above the line agree. */
 const ENEMY={
- lunger:{mass:1,r:14,art:2,bar:26,hp:18*TOUGH,walk:LUNGER_WALK*PLAYER_MOVE,run:LUNGER_RUN*PLAYER_MOVE,armour:ARMOUR},
+ lunger:{mass:1,r:14,art:2,bar:26,hp:15*TOUGH,walk:LUNGER_WALK*PLAYER_MOVE,run:LUNGER_RUN*PLAYER_MOVE,armour:ARMOUR},
  brunch:{mass:0.5,r:8,art:1,bar:11,hp:2*TOUGH,walk:BRUNCH_WALK,run:BRUNCH_RUN,armour:1},
   shooter:{mass:0.8,r:14,art:2,bar:26,hp:5.6*TOUGH,base:0.45*LUNGER_PAY,sense:600,range:520,close:150,far:250,cdMin:sec(0.5),cdVar:sec(0.4),dmg:SHOT_DMG,pspd:2.2,pr:5,pcol:'#ff4d4d',armour:ARMOUR},
   gunner:{mass:2.4,r:22,art:3,bar:32,hp:8*TOUGH,base:0.3*LUNGER_PAY,sense:700,range:600,close:120,far:200,cdMin:sec(0.8),cdVar:sec(0.6),dmg:SHOT_DMG*2,pspd:2.05,pr:7,pcol:'#ffb03a',armour:ARMOUR},

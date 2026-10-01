@@ -522,7 +522,17 @@ const WEAPONS=[
   // Measured column width: 11px at 60px, 13px at 200px, 17px at 450px, against 19/63/142 for the old
   // cone. Damage per pellet and pellet count are unchanged, so every crowd number the Scatter has
   // earned still holds - this is a redistribution of where the damage lands, not a buff.
-  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:2.6,count:8,spread:0.045,fNear:80,fFar:300,fMin:0.45,
+  {name:'Scatter',color:'#e8502a',cooldown:sec(1.1),speed:2.4,dmg:2.6,count:8,spread:0.045,
+   /* The effective range is a CIRCLE of 175px radius - half a room - and inside it the gun does FULL
+      damage, because the whole identity of a buckshot gun is that it is not falling off while you
+      are still close enough to use it. fNear is that radius, so the falloff curve starts exactly
+      where the circle ends and not 95px inside it, which is what it used to do: at fNear 80 the gun
+      was already down to 76% damage by 175px, so there was no range at which it was simply good.
+
+      fFar 400 is where the falloff reaches its floor, which is beyond the far wall of a 700px room from
+      the far side - so a shot always hits the floor before it leaves, and never mid-curve at a wall.
+      The floor is unchanged at 0.45. */
+   fNear:175, fFar:400, fMin:0.45,
    muzzleJitter:5,pelletAngle:0.008,pelletSpeedVar:0.25},
 
 /* THE ARCANE BEAM RAISED 0.84 -> 1.55, and the reasoning is worth keeping because two earlier

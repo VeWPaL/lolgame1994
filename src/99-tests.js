@@ -3769,6 +3769,78 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     }
     eq(ALT_WEAPON.fNear,undefined,'the blast must not have falloff');
   });
+  /* The two tests below pin SPECIFIC VALUES, where the one above only pins the shape of the curve.
+     That distinction was found by mutation rather than assumed: feeding the old Scatter band
+     (fNear 80, fFar 300) and the old lunger HP (24.30) through the shape test's own arithmetic
+     passes all three of its assertions identically, because a band that starts at 80 and one that
+     starts at 175 are both "a usable falloff band". A suite made only of shape tests therefore
+     cannot tell a deliberate retune from no retune at all, and both of these changes went in green.
+
+     So each value gets an assertion that states WHY it is that value, in a form that fails if the
+     number moves. */
+  test('the Scatter is at full damage anywhere inside its effective circle, and falls off past it',()=>{
+    const sc=WEAPONS.find(w=>w.name==='Scatter');
+    ok(sc,'the Scatter is missing from the roster');
+    /* The effective range is a CIRCLE of 175px radius - half a room - and the falloff curve has to
+       start where that circle ends. `falloffMult` is already radial (it measures hypot from the
+       shot origin), so fNear IS the radius and there is nothing else to configure.
+
+       What this forbids is the bug it replaced: with fNear 80 the gun was already down to 76% of
+       its damage by 175px, which means there was no distance at which it was simply good. Inside a
+       buckshot gun's range is exactly where it must not be trading damage. */
+    eq(sc.fNear,175,'the Scatter starts losing damage inside its own effective circle');
+    /* The DESCENDING form, which is what falloffMult actually computes: 1 at the muzzle down to
+       fMin at fFar. The older table tests above use the ascending fMin+(1-fMin)*(...) form for the
+       same curve, and both are correct - but writing the wrong one here produced 1.4278 at the
+       muzzle instead of 1, which is the tell that a test has stopped describing the thing it
+       claims to check. */
+    const mult=d=>1-(1-sc.fMin)*Math.min(1,Math.max(0,d-sc.fNear)/Math.max(1,sc.fFar-sc.fNear));
+    for(const d of [0,40,80,120,160,175]) eq(+mult(d).toFixed(4),1,
+      'the Scatter is not at full damage at '+d+'px, inside its '+sc.fNear+'px range');
+    ok(mult(175.001)<1,'the falloff does not begin at the edge of the range');
+    // and it must still be a real falloff, not a cliff to nothing at the wall
+    eq(+mult(sc.fFar).toFixed(4),sc.fMin,'the Scatter does not reach its floor by fFar');
+    ok(sc.fMin>=0.4,'the Scatter loses too much at long range to be worth carrying');
+    /* fFar is where the curve reaches the floor, and it has to be past the far wall of a room so a
+       shot is never caught mid-curve against plaster. Half a room is 350px, so the floor has to
+       land beyond that or the gun is still decaying when it arrives. */
+    ok(sc.fFar>=(ROOM_RIGHT-ROOM_LEFT)/2,'the Scatter is still falling off at half a room, so its '+
+      'floor never applies inside a room ('+sc.fFar+' vs '+((ROOM_RIGHT-ROOM_LEFT)/2)+')');
+  });
+  test('a lunger is the tankiest normal body, and inside one Scatter shot',()=>{
+    /* 15*TOUGH, down from 18*TOUGH. Two reasons, and the second is the load-bearing one.
+
+       First, it closed a gap the roster did not want: at 24.30 the lunger took longer to kill than
+       anything else in the game by a wide margin, which made it the one body that punished every
+       gun equally instead of playing to what each one is good at.
+
+       Second - and this is what forced the number - at 24.30 NO cone angle could be measured
+       against it, because 8 pellets at 2.6 could not kill it at any range, including point blank.
+       The weapon's defining property is its range, and a target it can never one-shot makes that
+       untestable. Below 20.8 raw (8 x 2.6) the question becomes real: where does the shot stop
+       landing all of them.
+
+       The armour is why the margin is thin. ARMOUR is 0.66, so 8 pellets of 2.6 land 13.73 on a
+       lunger and not 20.8 - which is why this is asserted as "one shot's worth of damage" rather
+       than "one shot kills", and why the number cannot drift much without the gun's identity
+       quietly changing underneath it. */
+    const lung=ENEMY.lunger;
+    eq(+(lung.hp/TOUGH).toFixed(4),15,'the lunger health factor moved');
+    ok(lung.hp>ENEMY.gunner.hp&&lung.hp>ENEMY.shooter.hp&&lung.hp>ENEMY.brunch.hp,
+      'the lunger is no longer the tankiest normal body');
+    ok(lung.hp<ENEMY.boss.hp,'the lunger is now tankier than the boss');
+    const sc=WEAPONS.find(w=>w.name==='Scatter');
+    const oneShotRaw=sc.dmg*sc.count;
+    ok(lung.hp<oneShotRaw,'a lunger at '+lung.hp.toFixed(2)+' cannot be killed by one Scatter shot '+
+      '('+oneShotRaw+' raw), so the weapon has no measurable range at all');
+    /* and it has to stay clear of the BOLT, or the two guns stop being distinguishable. The Bolt
+       lands dmg*armour a shot, so a lunger under roughly three of those is a gun the Bolt can
+       actually finish; much past that and every gun converges on "several shots". */
+    const bolt=WEAPONS.find(w=>w.name==='Bolt');
+    const boltShots=lung.hp/(bolt.dmg*lung.armour);
+    ok(boltShots>2&&boltShots<6,'a lunger takes '+boltShots.toFixed(1)+
+      ' Bolt shots, which is outside the 3-5 band the roster is built on');
+  });
   test('weapons actually do less damage to a far target',()=>{
     startGame(); const r=goTo('normal');
     noCharacter();   // this test is about the weapon, not the character

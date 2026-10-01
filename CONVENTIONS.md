@@ -591,10 +591,129 @@ it was at the muzzle, forever. It amplifies nothing and only slows the shot down
 a cosmetic that speed spread already provides for free (0.6px/tick of difference, 50px apart by
 200px out). The measurement is in the code so it does not get tried again.
 
-**Damage is unchanged**: 8 × 2.60 = 20.80, exactly as before. A redistribution of where the damage
-lands, not a buff. The old `spread*(count-1)` cone assertions were deleted rather than adjusted —
-they measured an angle that no longer decides anything and would have kept passing while describing
-a weapon that is not in the game.
+**Damage at the muzzle is unchanged**: 8 × 2.60 = 20.80, exactly as before — the pattern work was a
+redistribution of where the damage lands, not a buff. The old `spread*(count-1)` cone assertions were
+deleted rather than adjusted: they measured an angle that no longer decides anything and would have
+kept passing while describing a weapon that is not in the game.
+
+### The falloff was retuned afterwards, to 175px
+
+The pattern above is a **column** 8px wide, and the damage band it sits in was `fNear 80, fFar 300`.
+Those two facts contradicted each other. A gun that holds a column this tight for its whole length
+was being charged for accuracy at 80px — already down to **76%** by 175px — so there was no distance
+at which the Scatter was simply good. Inside a buckshot gun's range is exactly where it must not be
+trading damage.
+
+`fNear` **is** the radius of the effective range, because `falloffMult` is already radial (it measures
+`hypot` from the shot origin), so no new machinery was needed:
+
+| | before | after |
+|---|---|---|
+| `fNear` | 80 | **175** — half a room |
+| `fFar` | 300 | **400** |
+| `fMin` | 0.45 | 0.45 (unchanged) |
+| damage at 175px | 15.86 | **20.80** (full) |
+| damage at 350px | 9.36 | 11.90 |
+
+`fFar` is where the curve reaches its floor, and it has to clear half a room (350px) or the gun is
+still decaying when it arrives and the floor never applies inside a room at all.
+
+---
+
+## `startGame()` does not start the game
+
+Three separate measurements in one session returned **zero damage at every range**, and the obvious
+reading — that friendly projectiles do not collide — was wrong. `startGame()` leaves `state` on the
+title; `update()` then runs the title branch and simulates nothing. A fixture needs the room as well:
+
+```js
+startGame();
+var n=Object.values(rooms).filter(q=>q.type==='normal')[0];
+enterRoom(n.x,n.y,'W'); readyT=0; fadeT=0; roomFade=0;   // <- this is the part that matters
+```
+
+The tell is that a projectile placed **by hand** directly on a body does damage, while the same
+projectile fired through `fireWeapon` does not. Collision cannot be the suspect if the hand-placed
+one lands.
+
+Two more things in the same family, all of which produced confident wrong numbers:
+
+- **`mouse` is screen space.** `mouse.x=e.x` is wrong; the suite's own helper is
+  `pointAt(x,y)`, which writes `x-cam.x`. `mouseWorld()` converts back with `screenToWorld`.
+- **`Stats.reset()` does not clear `value`.** It zeroes `flat` and `earned` and then re-applies the
+  class, so `Stats.value('strength')` still reads the **class base** — 3 for the Wyrd. Strength is not
+  leftover loot and cannot be zeroed from a fixture; a Wyrd always carries +3, and a test that
+  forgets this measures a build that does not exist.
+- **Deleting pellets to count shots destroys the measurement.** Counting live pellets and clearing
+  them mid-flight prevents the hit you are trying to count. Count shots from `player.cooldown`
+  going *up*, and let the pellets land.
+
+**Discrete shot counts absorb HP changes.** A 16.6% HP cut left the Bolt's time-to-kill at exactly
+0.0%, and that was not a broken fixture: 24.30/6.60 = 3.68 → 4 shots and 20.25/6.60 = 3.07 → 4 shots.
+Both round up. "An HP cut changed nothing" is a real outcome, not always evidence of a bad harness.
+
+---
+
+## The lunger was 24.30 HP and is now 20.25, because a test could not be written
+
+`hp:18*TOUGH` → `hp:15*TOUGH`, with no other body touched. `TOUGH` scales every body, so moving it
+was not an option — the lunger's own factor is the only thing that changes.
+
+The reason is worth more than the number. The task was to find the cone angle at which the Scatter
+stops reliably killing a lunger at half a room. **That measurement was impossible**, and the reason
+is a real property of the weapon rather than a broken fixture:
+
+- 8 pellets × 2.6 = **20.80** raw, so a lunger under 20.8 raw could in principle be one-shot.
+- `ARMOUR` is **0.66**, so 8 pellets actually land **13.73**. A lunger needs **~30.7 raw** to die in
+  one — `dmg` 3.835 per pellet — which is not a value anyone would ship.
+- So the Scatter **cannot** one-shot a lunger at *any* angle, including point blank. Kill rate was
+  **0/24 at every angle from 0.92° to 22.92°**. The threshold the task asked for could not exist.
+
+A target the weapon can never one-shot makes the weapon's defining property untestable. That, and not
+"the gun feels too strong", is what moved the number. Armour is why the margin is thin, and why the
+new test asserts "inside one Scatter shot" rather than "one shot kills" — a claim that would break
+on the next buff to either number.
+
+TTK across the roster, live, at 150px, Wyrd base +3 and `ARMOUR` applied. Shots to kill:
+
+| body | hp | Bolt | Scatter | Arcane Beam | Voidball |
+|---|---|---|---|---|---|
+| lunger | **20.25** | 4 | 2 | 11 | 5 |
+| gunner | 10.80 | 2 | 1 | 8 | 3 |
+| shooter | 7.56 | 3 | 1 | 6 | 2 |
+| brunch | 2.70 | 1 | 1 | 4 | 1 |
+
+Two things fall out. The Scatter already one-shots **three of the four** normal bodies — the gunner
+crosses 1.0 first as the falloff bites past 175px, which is what makes *it* the right target for the
+cone sweep rather than the lunger. And the lunger cut moves the Beam 12→11 and the Voidball 6→5 while
+leaving the Bolt and Scatter untouched, because discrete shot counts absorb a 16.6% HP cut.
+
+### A shape test cannot see a value change
+
+Both edits went in with the suite **195/195 green**, which is exactly the problem. The existing test
+
+```js
+ok(ratio>1.6, ...); ok(ttk(250)<7, ...); ok(ttk(wp.fFar)<11, ...);
+```
+
+is a **shape** test. Feeding it the old band (`fNear 80, fFar 300`, hp 24.30) and the new one
+(`fNear 175, fFar 400`, hp 20.25) gives the same ratio 2.222, and both pass all three assertions —
+because a band starting at 80 and one starting at 175 are both "a usable falloff band". A suite of
+only shape tests cannot distinguish a deliberate retune from no retune at all.
+
+So each value now has an assertion that states **why** it is that value. Mutation-checked, each
+revert caught by exactly the intended line:
+
+| mutation | caught by |
+|---|---|
+| Scatter `fNear` 175 → 80 | `the Scatter starts losing damage inside its own effective circle` |
+| lunger 20.25 → 24.30 | `the lunger health factor moved: expected 15, got 18` |
+| Scatter `dmg` 2.6 → 2.0 | `a lunger at 20.25 cannot be killed by one Scatter shot (16 raw)` |
+
+**Write the descending form of the falloff.** `falloffMult` computes `1-(1-fMin)*min(1,t)`. The older
+table tests use the ascending `fMin+(1-fMin)*max(0,1-...)` form for the same curve and both are
+correct — but writing the wrong one produced `1.4278` at the muzzle instead of `1`, which is the tell
+that a test has stopped describing the thing it claims to check.
 
 ---
 
@@ -1115,7 +1234,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **195 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **197 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
   `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
   figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.
