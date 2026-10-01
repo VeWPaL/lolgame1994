@@ -1200,6 +1200,174 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
      spawnEnemy(false, ...) and quietly got a lunger back. So the tests below assert what the bar
      DOES rather than that some bar exists, because "a bar exists" was true before and was not
      sufficient. */
+  /* THE RUN SUMMARY CARD IS SIZED BY ITS CONTENTS, and nothing on it prints outside its own frame.
+
+     The card was `pw=440, ph=380` - three literals - wrapped around content that is a runtime stack of
+     rows at 26px steps. Sixteen rows, a seed line, a rule, a heading and four more rows put the last
+     baseline at y 534 against a card bottom of y 512, so "Dungeons cleared" was printed on the wood
+     BELOW the paper. Nothing was wrong with the arithmetic; the box was a guess beside a computed
+     stack, which is a defect no reading finds and no test that does not measure the last row against
+     the card can catch.
+
+     Then fixing it introduced the same defect one layer in: the RECORDS heading was drawn at
+     `y+RULE_GAP+14` while its own item was only `RULE_GAP*2+2` tall, so the 12px heading's baseline
+     fell 6px past the end of its slot and printed through "Deepest floor". The card had stopped
+     bursting and started colliding. So the assertions below cover BOTH: nothing outside the card, and
+     no two items' text on top of each other. */
+  test('the run summary card fits its own contents, and the contents fit the canvas',()=>{
+    startGame();
+    const saved=JSON.parse(JSON.stringify(records));
+    // a run whose every value is at its widest and longest, because the fitting has to hold for the
+    // worst case and not only for the one the card happened to be drawn with
+    records.deepest=999; records.rooms=999; records.fastest=999999; records.wins=99;
+    lastRun={won:false,floor:999,floorTicks:999999,ticks:999999,explored:999,total:999,kills:9999,
+      dmgTaken:99.5,shots:9999,hits:9999,weapon:'The Longest Weapon Name Possible',
+      seed:'0VVJ9U',newDepth:true,newFastest:true,newRooms:true};
+    const lay=summaryLayout(lastRun);
+    ok(lay.items.length>10,'the card has only '+lay.items.length+' items, so it is not the sheet '+
+      'this was written about');
+    const titleH=108;
+    const available=H-titleH-52;
+    const py=titleH+Math.max(0,(available-lay.h)/2);
+    const contentH=SUMMARY_HEAD_GAP+lay.items.reduce((a,it)=>a+it.h,0);
+    const lastBaseline=py+contentH;
+    ok(lastBaseline<=py+lay.h,'the last row baseline is at y '+Math.round(lastBaseline)+
+      ' but the card ends at '+Math.round(py+lay.h)+' - '+Math.round(lastBaseline-(py+lay.h))+
+      'px of it is outside the frame, which is how this card burst in the first place');
+    ok(py>=0&&py+lay.h<=H,'the card runs off the canvas: y '+Math.round(py)+'..'+
+      Math.round(py+lay.h)+' in a canvas '+H+' tall');
+    ok(py>titleH,'the card starts at y '+Math.round(py)+', above the title baseline at '+titleH+
+      ', so it is drawn over the word YOU DIED');
+    // the prompt below it must also be on screen
+    ok(Math.min(H-14,py+lay.h+34)<=H,'the prompt below the card is off the canvas');
+    // and the height must actually come from the items, not from a constant beside them
+    const byHand=lay.items.reduce((a,it)=>a+it.h,0)+SUMMARY_HEAD_GAP+SUMMARY_FOOT_GAP;
+    ok(lay.h===byHand,'the card height '+lay.h+' is not the sum of its contents ('+byHand+'), so '+
+      'something is sizing it from a number and not from what is printed on it');
+    // the widest label plus the widest value still fits the text column
+    ctx.font='15px monospace';
+    let widest=0;
+    for(const it of lay.items){
+      if(it.kind!=='row'&&it.kind!=='seed') continue;
+      const w=ctx.measureText(it.label).width+ctx.measureText(it.value).width;
+      if(w>widest) widest=w;
+    }
+    const column=440-SUMMARY_MARGIN_X*2;
+    ok(widest<=column,'the widest label+value pair is '+Math.round(widest)+'px in a '+column+
+      'px column, so a value runs past the right margin');
+    records.deepest=saved.deepest; records.rooms=saved.rooms;
+    records.fastest=saved.fastest; records.wins=saved.wins;
+  });
+
+  test('no two items on the run summary draw over each other',()=>{
+    /* The overlap this catches is not the same as the overflow above. A card can contain all of its
+       text and still print two labels on top of each other, which is what happened the moment the
+       card stopped bursting: the heading was positioned by an offset that its own height did not
+       account for. So every item's slot has to be tall enough for what it draws at the y it is
+       given, and the text must not reach into the slot below it.
+
+       The numbers are font metrics, not guesses: a 15px monospace row needs 18px of line box, a 12px
+       heading needs 14px, and each is measured against its declared height. */
+    startGame();
+    lastRun={won:false,floor:12,floorTicks:1050,ticks:84521,explored:16,total:18,kills:143,
+      dmgTaken:7.5,shots:300,hits:192,weapon:'Arcane Beam',seed:'0VVJ9U',
+      newDepth:true,newFastest:false,newRooms:true};
+    const lay=summaryLayout(lastRun);
+    /* The condition that matters is not "is the slot taller than the font size" - it is whether one
+       item's glyphs reach into the next one's. A baseline is where text SITS; what collides is the
+       DESCENT of the row above against the ASCENT of the row below. Measured, not guessed:
+
+         bold 12px monospace   ascent 8.0  descent 2.0
+         15px monospace        ascent 10.0 descent 3.0
+
+       So a heading followed immediately by a row needs more than 2+10=12px between their baselines -
+       and the earlier version gave the heading a 29px slot but drew it at an OFFSET inside that slot,
+       which is how "RECORDS" ended up printed through "Deepest floor" while every slot was nominally
+       large enough. An earlier attempt at this test asserted `h >= 14` and passed a mutation that
+       shrank the heading's slot to 16px, because 16 >= 14; the assertion was measuring a number
+       nothing collides over.
+
+       This measures the two halves that actually meet, and requires real air between them. */
+    const y=[];
+    let cur=0;
+    for(const it of lay.items){ y.push(cur); cur+=it.h; }
+    const FONT={'row':['15px monospace'],'seed':['15px monospace'],
+                'head':['bold 12px monospace'],'rule':[null]};
+    const descent=k=>{
+      const f=FONT[k][0];
+      if(!f) return 0;
+      ctx.font=f;
+      return ctx.measureText('Hg').actualBoundingBoxDescent;
+    };
+    const ascent=k=>{
+      const f=FONT[k][0];
+      if(!f) return 0;
+      ctx.font=f;
+      return ctx.measureText('Hg').actualBoundingBoxAscent;
+    };
+    for(let i=0;i<lay.items.length-1;i++){
+      const a1=lay.items[i], b1=lay.items[i+1];
+      // the gap between this item's baseline and the next one's
+      const gap=y[i+1]-y[i];
+      const reach=descent(a1.kind)+ascent(b1.kind);
+      ok(gap>=reach,'item '+i+' ('+a1.kind+') and '+i+1+' ('+b1.kind+') are '+gap+'px apart but '
+        +'their glyphs reach '+reach.toFixed(1)+'px toward each other (descent '+descent(a1.kind).toFixed(1)
+        +' + ascent '+ascent(b1.kind).toFixed(1)+'), so they print on top of each other');
+    }
+    // and every item must be able to hold its own glyphs
+    lay.items.forEach((it,i)=>{
+      const box=ascent(it.kind)+descent(it.kind);
+      ok(it.h>=box,'item '+i+' ('+it.kind+') has '+it.h+'px of slot for '+box.toFixed(1)+
+        'px of glyphs, so its own text runs past the end of its own slot');
+    });
+    // and specifically: the heading must not sit on the first record row
+    const hi=lay.items.findIndex(it=>it.kind==='head');
+    ok(hi>=0&&lay.items[hi+1].kind==='row','the RECORDS heading is not immediately followed by a '+
+      'record row, so this assertion is not testing what it says');
+    // the specific case, stated plainly so a failure names it: the heading's DESCENT against the
+    // first record row's ASCENT, in the gap the layout actually gives them
+    ctx.font='bold 12px monospace';
+    const headDesc=ctx.measureText('RECORDS').actualBoundingBoxDescent;
+    ctx.font='15px monospace';
+    const rowAsc=ctx.measureText('Deepest floor').actualBoundingBoxAscent;
+    const gap=y[hi+1]-y[hi];
+    ok(gap>=headDesc+rowAsc,'RECORDS and Deepest floor are '+gap+'px apart but reach '+
+      (headDesc+rowAsc).toFixed(1)+'px toward each other (descent '+headDesc.toFixed(1)+
+      ' + ascent '+rowAsc.toFixed(1)+'), so they print on top of each other');
+
+    /* And the DRAWING, not just the layout. The offset bug above was a `fillText('RECORDS',L0,y+22)`
+       in the draw loop, and no assertion about item heights can see it - the layout was correct and
+       the drawing ignored it. Three attempts at this test checked the data and passed the defect,
+       which is the same failure as the earlier one where a test re-implemented the rule instead of
+       calling it: the thing being verified is not the thing being drawn.
+
+       So this reads the drawing function and finds where RECORDS is actually positioned. It is not a
+       substitute for a screenshot, but it fails on the defect that a screenshot found, and it does so
+       without one. */
+    const realFill=ctx.fillText;
+    const drawn=[];
+    ctx.fillText=function(txt,x,y){ drawn.push({txt:String(txt),x:x,y:y}); realFill.call(this,txt,x,y); };
+    try{ state='gameover'; render(); } finally { ctx.fillText=realFill; }
+    const head=drawn.find(d=>d.txt==='RECORDS');
+    const firstRow=drawn.find(d=>d.txt==='Deepest floor');
+    ok(!!head&&!!firstRow,'the summary did not draw both RECORDS and Deepest floor, so the '+
+      'collision check has nothing to compare ('+drawn.length+' texts drawn)');
+    if(head&&firstRow){
+      ctx.font='bold 12px monospace';
+      const desc=ctx.measureText('RECORDS').actualBoundingBoxDescent;
+      ctx.font='15px monospace';
+      const asc=ctx.measureText('Deepest floor').actualBoundingBoxAscent;
+      const between=firstRow.y-head.y;
+      ok(between>=desc+asc,'RECORDS is drawn '+between+'px above Deepest floor but their glyphs '+
+        'reach '+(desc+asc).toFixed(1)+'px toward each other, so they print on top of each other');
+    }
+    const rs=drawn.filter(d=>d.txt==='Floor reached'||d.txt==='Time'||d.txt==='Weapon');
+    for(let i=0;i<rs.length-1;i++){
+      ok(rs[i].y<rs[i+1].y,'rows are out of order: '+rs[i].txt+' at y '+rs[i].y+' then '+
+        rs[i+1].txt+' at y '+rs[i+1].y);
+    }
+  });
+
   test('the boss bar is drawn only for a boss that is alive in the current room',()=>{
     startGame();
     const room=currentRoom();

@@ -1481,48 +1481,128 @@ function devDps(w,str,dist){
   const pulls=TICK_HZ/(w.cooldown/TEMPO.rate);
   return pulls*(w.dmg+str)*w.count*devFalloff(w,dist);
 }
+/* THE CARD'S SHAPE, decided by its contents rather than by a number someone wrote down.
+
+   The card used to be `pw=440, ph=380` - three literals - while everything inside it was a runtime
+   stack of rows at 26px steps. Sixteen rows, a seed line, a rule, a RECORDS heading and four more rows
+   come to a last baseline of y 534 against a card bottom of y 512, so "Dungeons cleared" was printed
+   on the wood BELOW the paper. Twenty-two pixels of overflow, and nothing anywhere was wrong: the
+   arithmetic was correct and the box was a guess.
+
+   That is the whole failure mode - a height that is a constant beside content that is computed. It
+   cannot be caught by reading, it survives every test that does not measure the last row against the
+   card, and it comes straight back the moment somebody adds a statistic. So the rows are collected
+   first, their extent is measured, and the card is sized to fit them.
+
+   The constants are now named rather than scattered through the function, because five different
+   increments (26, 20, 26, 24, and the 2px rule) inside one draw call is a layout nobody can change
+   without re-deriving it, and this card will be changed again. */
+const SUMMARY_MARGIN_X=36,   // inner text margin from each edge of the card
+      SUMMARY_ROW_H=26,      // one statistic's baseline to the next
+      SUMMARY_HEAD_GAP=34,   // air above the first row, inside the top of the card
+      SUMMARY_FOOT_GAP=18,   // air below the last row, inside the bottom of the card
+      SUMMARY_PAD=10,        // paper inset inside the wood
+      /* Air AROUND a structural break rather than inside it. The seed gets a little because it is a
+         different kind of line and the gap is what says so; the rule and the RECORDS heading get a
+         lot because they separate two groups and the card would read as one long list without it.
+
+         The first version of this drew the heading at y+RULE_GAP+14 while giving its item only
+         RULE_GAP*2+2 of height, so the heading's baseline fell 6px past the end of its own slot and
+         printed through the first record row. The fix is structural rather than a bigger number:
+         every item now draws against the y it is given, and its height is the air plus the text. */
+      SUMMARY_SEED_AIR=10,
+      SUMMARY_BREAK_AIR=16;
+
+/* One statistic, or a labelled break in the list. `row` returns the height it wants; the caller sums
+   them and the card is built to that total, so a row can be added, removed or re-worded without
+   anybody touching a pixel measurement. */
+function summaryLayout(s){
+  const items=[];
+  const row=(label,value,isNew)=>{ items.push({kind:'row',label:label,value:value,isNew:!!isNew,h:SUMMARY_ROW_H}); };
+  // every item's height is the air it needs PLUS the text it draws, and it draws on the y it is
+  // given. Nothing is positioned by an offset that its own height does not account for.
+  const head=()=>{ items.push({kind:'head',h:SUMMARY_BREAK_AIR+13}); };
+  const rule=()=>{ items.push({kind:'rule',h:SUMMARY_BREAK_AIR+2}); };
+
+  /* The floor comes FIRST on the sheet. It is the number the run is about and the one the record is
+     measured in; everything below it is detail about how the run went rather than how far it got. */
+  row('Floor reached',String(s.floor),s.newDepth);
+  row('Time on this floor',fmtTime(s.floorTicks||0));
+  row('Time',fmtTime(s.ticks),s.newFastest);
+  row('Rooms explored',s.explored+' / '+s.total,s.newRooms);
+  row('Enemies defeated',String(s.kills));
+  row('Damage taken',fmtHearts(s.dmgTaken));
+  row('Accuracy',s.shots?Math.round(100*s.hits/s.shots)+'% ('+s.hits+'/'+s.shots+')':'no shots fired');
+  row('Weapon',s.weapon);
+  // the seed is tracked out like a serial number rather than set like the rest of the sheet, because
+  // it is the one line here the reader is expected to copy out character by character - and because
+  // it is what turns "that went well" into an argument somebody else can check
+  items.push({kind:'seed',label:'Seed',value:s.seed||Rnd.seedText,h:SUMMARY_SEED_AIR+18});
+  rule();
+  head();
+  row('Deepest floor',String(records.deepest));
+  row('Best rooms explored',String(records.rooms));
+  row('Fastest clear',records.fastest?fmtTime(records.fastest):'not yet');
+  row('Dungeons cleared',String(records.wins));
+
+  // the card is as tall as the list, plus the air at the top and the foot. Nothing about this number
+  // is a design decision, which is the point.
+  const contentH=items.reduce((a,it)=>a+it.h,0);
+  const h=contentH+SUMMARY_HEAD_GAP+SUMMARY_FOOT_GAP;
+  return {items:items,h:h};
+}
+
 function drawRunSummary(){
   const s=lastRun; if(!s) return;
   ctx.fillStyle='rgba(0,0,0,0.72)';ctx.fillRect(0,0,W,H);
   ctx.textAlign='center';ctx.font='bold 34px monospace';ctx.fillStyle=s.won?'#5ee27a':'#ff6b6b';
-  ctx.fillText(s.won?'DUNGEON CLEARED':'YOU DIED',W/2,108);
-  const pw=440,ph=380,px=(W-pw)/2,py=132,L=px+36,R=px+pw-36;
+
+  const lay=summaryLayout(s);
+  const pw=440, ph=lay.h;
+  /* The card is CENTRED VERTICALLY on whatever space is left under the title, rather than placed at a
+     fixed y. A fixed y worked while ph was a constant and stops working the moment the content is a
+     variable - and a card that is 440px wide on a 960px canvas but 500px tall on a 700px canvas will
+     run off the bottom if its top is a literal. Both edges are now computed from the measured height,
+     so a longer card grows in both directions and stays inside the canvas. */
+  const titleH=108;
+  const available=H-titleH-52;           // below the title, above the prompt
+  const px=(W-pw)/2, py=titleH+Math.max(0,(available-ph)/2);
+  const L0=px+SUMMARY_MARGIN_X, R0=px+pw-SUMMARY_MARGIN_X;
+  ctx.fillText(s.won?'DUNGEON CLEARED':'YOU DIED',W/2,titleH-24);
+
   ctx.drawImage(woodPlate(pw,ph),px,py);
   drawInset(px+8,py+8,pw-16,ph-16,null);
-  ctx.drawImage(paperTex(pw-20,ph-20),px+10,py+10);
-  const row=(y,label,value,isNew)=>{
-    ctx.textAlign='left';ctx.font='15px monospace';ctx.fillStyle=INK;ctx.fillText(label,L,y);
-    ctx.textAlign='right';ctx.font='bold 15px monospace';ctx.fillText(value,R,y);
-    if(isNew){const vw=ctx.measureText(value).width;ctx.font='bold 11px monospace';ctx.fillStyle=INK_NEW;ctx.fillText('NEW',R-vw-10,y-1);}
-  };
-  let y=py+46;
-  // The floor comes FIRST on the sheet. It is the number the run is about and the one the record is
-  // measured in; everything below it is detail about how the run went rather than how far it got.
-  row(y,'Floor reached',String(s.floor),s.newDepth); y+=26;
-  row(y,'Time on this floor',fmtTime(s.floorTicks||0)); y+=26;
-  row(y,'Time',fmtTime(s.ticks),s.newFastest); y+=26;
-  row(y,'Rooms explored',s.explored+' / '+s.total,s.newRooms); y+=26;
-  row(y,'Enemies defeated',String(s.kills)); y+=26;
-  row(y,'Damage taken',fmtHearts(s.dmgTaken)); y+=26;
-  row(y,'Accuracy',s.shots?Math.round(100*s.hits/s.shots)+'% ('+s.hits+'/'+s.shots+')':'no shots fired'); y+=26;
-  row(y,'Weapon',s.weapon); y+=26;
-  // the seed is tracked out like a serial number rather than set like the rest of the sheet,
-  // because it is the one line here the reader is expected to copy out character by character -
-  // and because it is what turns "that went well" into an argument somebody else can check
-  ctx.textAlign='left';ctx.font='15px monospace';ctx.fillStyle=INK;ctx.fillText('Seed',L,y);
-  stampRight(ctx,s.seed||Rnd.seedText,R,y,15,INK,2.6); y+=20;
-  ctx.fillStyle='rgba(90,60,30,0.35)';ctx.fillRect(L,y,R-L,2); y+=26;
-  ctx.textAlign='left';ctx.font='bold 12px monospace';ctx.fillStyle=INK_SOFT;ctx.fillText('RECORDS',L,y); y+=24;
-  row(y,'Deepest floor',String(records.deepest)); y+=26;
-  row(y,'Best rooms explored',String(records.rooms)); y+=26;
-  row(y,'Fastest clear',records.fastest?fmtTime(records.fastest):'not yet'); y+=26;
-  row(y,'Dungeons cleared',String(records.wins));
+  ctx.drawImage(paperTex(pw-SUMMARY_PAD*2,ph-SUMMARY_PAD*2),px+SUMMARY_PAD,py+SUMMARY_PAD);
+
+  let y=py+SUMMARY_HEAD_GAP;
+  for(const it of lay.items){
+    if(it.kind==='row'){
+      ctx.textAlign='left';ctx.font='15px monospace';ctx.fillStyle=INK;ctx.fillText(it.label,L0,y);
+      ctx.textAlign='right';ctx.font='bold 15px monospace';ctx.fillText(it.value,R0,y);
+      if(it.isNew){
+        const vw=ctx.measureText(it.value).width;
+        ctx.textAlign='right';ctx.font='bold 11px monospace';ctx.fillStyle=INK_NEW;
+        ctx.fillText('NEW',R0-vw-10,y-1);
+      }
+    } else if(it.kind==='seed'){
+      ctx.textAlign='left';ctx.font='15px monospace';ctx.fillStyle=INK;ctx.fillText(it.label,L0,y);
+      stampRight(ctx,it.value,R0,y,15,INK,2.6);
+    } else if(it.kind==='rule'){
+      ctx.fillStyle='rgba(90,60,30,0.35)';
+      ctx.fillRect(L0,y+SUMMARY_BREAK_AIR,R0-L0,2);
+    } else if(it.kind==='head'){
+      ctx.textAlign='left';ctx.font='bold 12px monospace';ctx.fillStyle=INK_SOFT;
+      ctx.fillText('RECORDS',L0,y);
+    }
+    y+=it.h;
+  }
+
   ctx.textAlign='center';ctx.font='16px monospace';ctx.fillStyle='#fff';
   // "press R for a new dungeon" was correct when a dungeon was the whole game. The run now ends only
   // by dying, and what R starts is a fresh run at floor 1 - which is a different thing to ask for and
   // worth saying plainly, because the player has just spent an hour going down and the prompt used
   // to imply that was the shape of a completed run.
-  ctx.fillText(s.won?'press R to descend again':'press R to try again',W/2,py+ph+36);
+  ctx.fillText(s.won?'press R to descend again':'press R to try again',W/2,Math.min(H-14,py+ph+34));
   ctx.textAlign='left';
 }
 
