@@ -806,6 +806,45 @@ from a prefix and re-measured each step, which is monotonic by construction.
 > text until the collision could not happen — and the shortening was invisible to every check that
 > asked only whether anything overlapped.
 
+## The Warden's bar, and the third fixture trap
+
+`drawBossBar` in `70-view.js`, drawn from `drawHUD` only while a live boss is in the current room.
+
+**The bar was never missing.** An earlier commit reported that `bossBar`/`bossHealth`/`drawBossBar` had
+no hits in `src/` and that the player "cannot see it move." The grep was right and the conclusion was
+wrong: the boss **did** have a bar — a 56px sliver, twice a body's, riding the body as it walks. The
+measurement that "proved" its absence called `spawnEnemy(false, …)`, which returns a **lunger**. A grep
+for a function that does not exist and a body that does not exist look identical from outside.
+
+Three fixtures in this project now return something usable-looking instead of what was asked for,
+and each is documented where it is used:
+
+| call | what it gives you | what you wanted |
+|---|---|---|
+| `spawnEnemy(false, …)` | a lunger | the boss — the flag is the **first** argument |
+| `spawnEnemy(true, …)` returns; you must `room.enemies.push` it | a body in nowhere | a body in the room |
+| a body with `noticeTimer>0` | `continue` — skipped entirely | a body the tick loop acts on |
+
+What the bar had to add, none of which "a bar exists" would have tested for: it **shows what is left**
+rather than whether the last shot landed; it **marks both phase thresholds**, so crossing 66% and 33%
+is visible instead of merely having happened; it is **fixed** while everything else in the fight moves;
+and the Warden has a **name** at all — it had none, and was `THE WARDEN` in a dozen comments.
+
+**Two traps in the layout, and neither is visible in the source.** The first put it at
+`ROOM_TOP-46` = y 84, which is exactly `MARGIN_Y + HP_H + ROW_H` — the momentum row. The test for it
+asserted "above the room," which was true of the broken version and false of the fixed one, so the
+correct fix would have failed it. It now asserts the collision: where the plates **end** versus where
+the bar **starts**. Second, the rectangle was baked from `ROOM_W`/`ROOM_TOP` at load time, so in the
+Lab — 1680×760 against a floor's 700×450 — it drew a floor-sized bar in a Lab-sized room. A constant
+that describes a room is wrong the moment there is more than one room, and the Lab exists to prove
+those are not the same thing. It is `bossBarRect()`, worked out per draw.
+
+> The notch and the fill's edge are both `Math.round(w*f)` on the same `w`, and that is the whole
+> claim: **at exactly the threshold health, the fill's edge IS the notch's pixel.** Comparing them as
+> fractions — `round(w*th)/w` against `th` — comes out 0.0006 apart, which reads as a mismatch and is
+> not one. Dividing a rounded pixel back out and comparing it to a raw fraction manufactures a
+> disagreement that does not exist on screen.
+
 ## The lab — a game state that is not a game
 
 `src/35-devlab.js`. **F2** in, **F2** out, **F3** freeze/release the row, **F4** arm the dropper,
@@ -921,7 +960,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **178 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **184 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
   `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
   figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.

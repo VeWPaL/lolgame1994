@@ -187,20 +187,23 @@ Working, tested, and honestly measured:
 
 What is **missing at the core**, ranked by how much it costs the player's experience:
 
-### 1. There is no boss health bar. At all.
+### 1. ~~There is no boss health bar.~~ DONE, and the claim was wrong.
 
-I grepped every module: `bossBar`, `bossHealth`, `drawBossBar` — **nothing exists**. The boss has
-463 HP and the player has no way to see it move.
+**Superseded.** I originally wrote that `bossBar`/`bossHealth`/`drawBossBar` had no hits in `src/`
+and that the player "cannot see it move." The grep was accurate; the conclusion was not. The boss
+**did** have a health bar — a 56px sliver, twice a regular body's, riding the body as it walks. I
+measured its absence by calling `spawnEnemy(false, …)`, which returns a *lunger*, and a grep for a
+function that does not exist looks identical to a body that does not exist.
 
-This is the single worst gap in the project and it is not a nice-to-have. The brief is *"engaging but
-fair"* and *"a player who reads the tells takes very little damage"* — a player cannot read a health
-bar that is not drawn, and with two phase thresholds at fractions of max HP, **the phases are
-invisible**. The player cannot know the fight has changed. Every other readability decision in this
-game (the 200px tuning, the projection-ordered collision, the charge tells) was made on the principle
-that the player gets to read the fight, and the most important thing in the fight is unreadable.
+What was actually missing, and is now built (`85d3ae0`): the bar could not be *read*. It showed no
+phase markers — so crossing 66% and 33%, which changes the move bag from 3 moves to 4 to 7 and adds
+the wall in phase 2, was invisible. It moved with the boss, so there was nothing fixed to watch. And
+the Warden had no name field at all. It is now full-width, fixed at the top of the room, with both
+thresholds notched on it at the same constants the tick loop uses.
 
-It is also self-contained: one draw function, no gameplay change, no new content. **This is next, and
-it is not close.**
+**The lesson is recorded because it is the third time:** `spawnEnemy` takes the boss flag *first*, and
+a fixture that returns something usable-looking instead of what you asked for is this project's
+recurring debugging cost. There are now three of them, each documented where it is used.
 
 ### 2. There is no area concept. Every floor is the same floor.
 
@@ -236,16 +239,20 @@ not choose.
 
 ## Recommended order, and the reasoning
 
-**Now — the boss health bar.** Highest value per line of any item on this list. It is a readability
-fix on the game's most important fight, it needs no new content, and it can be built to the standard
-already set by every other tell in the game: the bar shows current HP, marks the two phase thresholds
-so the fight visibly changes, and uses the same irregular-chunk language as the rest of the HUD. I
-would also want it drawn in the Lab so it can be read without a run.
+**Done — the boss health bar** (`85d3ae0`). Full-width, fixed at the top of the room, both phase
+thresholds notched on it from the same constants the tick loop reads, name and phase colour. Five
+tests, mutation-checked. It is not yet drawn in the Lab, which is the one loose end: the Lab is how
+every other tell gets checked without playing a run, and this one deserves the same treatment.
 
-**Then — settle the area structure, with you.** Before code. The phrase "4 × 3 + 2" is ambiguous in two
-directions at once, and area identity touches floor generation, enemy mix, art palette, music, and the
-difficulty ladder's shape. Guessing it unattended risks landing something coherent that is not what you
-pictured — and unlike a bar or a recoil, it is expensive to unpick.
+**Next, and it needs you — the area structure.** Before code. The phrase "4 × 3 + 2" is ambiguous in
+two directions at once, and area identity touches floor generation, enemy mix, art palette, music, and
+the difficulty ladder's shape. Guessing it unattended risks landing something coherent that is not what
+you pictured — and unlike a bar or a recoil, it is expensive to unpick.
+
+**Or, if you would rather I keep going without you — the boss bar in the Lab**, then the C# port in
+dependency order: world generation, then combat, then items, then the tick loop, each with parity tests
+against the JavaScript. That is what the existing 88 C# checks do for the seven modules already ported,
+and the order is forced: nothing visual ships until the tick loop and view exist.
 
 **Then — close the port gap in dependency order.** World generation, then combat, then items, then the
 tick loop, each with parity tests against the JavaScript, which is exactly what the existing 88 C#

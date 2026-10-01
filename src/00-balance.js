@@ -440,21 +440,19 @@ const BOSS_VOLLEY_N=3,        // shells per volley. Three is a pattern with a sh
          lines up with the play area instead of floating in the middle of the screen, and it is 10px
          tall where a body's is 4 - this is the one health bar the player is meant to watch rather than
          glance at, and it is the only one that shows what is LEFT rather than what just happened. */
-      BOSS_BAR_W=ROOM_W-40, BOSS_BAR_H=10,
-      /* The bar's y, and getting it wrong was the first thing this got wrong. It was ROOM_TOP-46 =
-         y 84, which is exactly where the momentum row sits - the HUD plates are MARGIN_Y 14 +
-         HP_H 40 + ROW_H 30 = 84, and the screenshot showed the bar drawn straight across the
-         momentum bar and the depth counter. Placing a boss bar needs the screen measured, not the
-         room: the plates own the top-LEFT to y 90 with their frame, the wall band is y 114..130, and
-         the strip under the room is 20px. That leaves no free band at all at the top.
+      BOSS_BAR_H=10,
+      /* The bar's INSETS, as fractions of nothing - the bar's actual rectangle is worked out from
+         the room AT DRAW TIME by bossBarRect, and only these offsets are constants.
 
-         So it goes INSIDE the room, on its top edge, which is where a boss bar goes in every game
-         that has one, and the reason it can is that this is the one piece of furniture allowed to
-         overlap the play area: it is 10px of a 450px room, it is opaque and it is drawn over the
-         floor, and a body standing behind it is a body the player is already dodging. ROOM_TOP+6
-         rather than ROOM_TOP+2 so the wall's inner bevel stays visible and the bar reads as sitting
-         ON the floor rather than fused to the masonry. */
-      BOSS_BAR_Y=ROOM_TOP+6;
+         That indirection exists because the first version baked the rectangle out of ROOM_W and
+         ROOM_TOP at load time, and the Lab resizes the room to 1680x760 - so a bar sized 660px wide
+         for a 700px room was being drawn 660px wide inside a 1680px one, positioned by a ROOM_TOP
+         captured before the Lab changed it. A constant that describes a room is wrong the moment
+         there is more than one room, and the Lab is the second room.
+
+         20px inset each side and ROOM_TOP+6 rather than a fixed y: the bar then belongs to whatever
+         room it is drawn in, which is the only version of this that is correct in both. */
+      BOSS_BAR_INSET_X=20, BOSS_BAR_INSET_Y=6,
       BOSS_RECOVER=sec(1.1),   // dead time after every move. The gap the player spends reading the next
       BOSS_CD_MIN=sec(3.2), BOSS_CD_VAR=sec(1.0),   // seconds BETWEEN moves. The single most
                                 // important number on the boss, and the one that was wrong first.

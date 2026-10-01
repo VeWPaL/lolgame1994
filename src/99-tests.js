@@ -1213,9 +1213,10 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
       'returns an ordinary body, which is how this test was written against a lie the first time');
     render();
     // and the bar's numbers are derived from the body rather than assumed
-    ok(BOSS_BAR_W>0&&BOSS_BAR_H>0,'the bar has no size: '+BOSS_BAR_W+'x'+BOSS_BAR_H);
-    ok(ROOM_LEFT+20+BOSS_BAR_W<=ROOM_RIGHT,'the bar runs past the right wall: '+
-      (ROOM_LEFT+20+BOSS_BAR_W)+' against a wall at '+ROOM_RIGHT);
+    const rect=bossBarRect();
+    ok(rect.w>0&&rect.h>0,'the bar has no size: '+rect.w+'x'+rect.h);
+    ok(rect.x+rect.w<=ROOM_RIGHT,'the bar runs past the right wall: '+(rect.x+rect.w)+
+      ' against a wall at '+ROOM_RIGHT);
     /* The bar must not land on the HUD plates. This is asserted as the real geometry - the bottom of
        the stacked plates, frame included, against the top of the bar - rather than as "inside the
        room", which was the first assertion here and was true for the FIRST version and wrong for the
@@ -1223,16 +1224,43 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
        momentum row. It passed a test that only asked whether it was above the room, and the
        screenshot showed it drawn across the momentum bar and the depth counter.
 
-       So the assertion is the collision itself: where the plates end, versus where the bar starts. */
+       So the assertion is the collision itself: where the plates END, versus where the bar STARTS. */
     const platesBottom=HUD_MARGIN_Y+HUD_HP_H+HUD_ROW_H+HUD_FRAME;
-    ok(BOSS_BAR_Y>=platesBottom,'the bar starts at y '+BOSS_BAR_Y+' and the HUD plates end at y '+
+    ok(rect.y>=platesBottom,'the bar starts at y '+rect.y+' and the HUD plates end at y '+
       platesBottom+' (MARGIN_Y '+HUD_MARGIN_Y+' + HP_H '+HUD_HP_H+' + ROW_H '+HUD_ROW_H+
       ' + FRAME '+HUD_FRAME+'), so the boss bar is drawn across the player HUD');
-    ok(BOSS_BAR_Y>ROOM_TOP-16,'the bar is inside the masonry band above the room rather than on the '+
-      'floor: y '+BOSS_BAR_Y+' against a wall band ending at '+ROOM_TOP);
+    ok(rect.y>ROOM_TOP-16,'the bar is inside the masonry band above the room rather than on the '+
+      'floor: y '+rect.y+' against a wall band ending at '+ROOM_TOP);
     // and the labels go below it, so they cannot climb back into the wall
-    ok(BOSS_BAR_Y+BOSS_BAR_H+12<ROOM_BOTTOM+20,'the bar and its labels end at y '+
-      (BOSS_BAR_Y+BOSS_BAR_H+12)+', which is off the canvas');
+    ok(rect.y+rect.h+12<ROOM_BOTTOM,'the bar and its labels end at y '+(rect.y+rect.h+12)+
+      ', past the bottom of the room at '+ROOM_BOTTOM);
+  });
+
+  test('the bar belongs to the room it is drawn in, not the room the module loaded in',()=>{
+    /* The Lab is 1680x760 and the floors are 700x450. The first version read ROOM_W and ROOM_TOP
+       into constants at load time, so in the Lab it drew a bar sized for a 700px room inside a
+       1680px one. Nothing about that looks broken in a screenshot at a glance - a bar that is a bit
+       too small is not an obviously wrong bar - which is why it is asserted here as a RELATIONSHIP:
+       the bar must be a fixed fraction of the room it is in, whatever that room is. */
+    startGame();
+    const floorW=ROOM_RIGHT-ROOM_LEFT;
+    const floorRect=bossBarRect();
+    ok(floorRect.w===floorW-BOSS_BAR_INSET_X*2,'on a floor the bar is '+floorRect.w+'px in a '+
+      floorW+'px room, expected '+(floorW-BOSS_BAR_INSET_X*2));
+    Lab.enter();
+    const labW=ROOM_RIGHT-ROOM_LEFT;
+    const labRect=bossBarRect();
+    ok(labW!==floorW,'the Lab room is the same size as a floor ('+labW+'px), so this test cannot '+
+      'tell whether the bar follows the room or was baked at load time');
+    ok(labRect.w===labW-BOSS_BAR_INSET_X*2,'in the Lab the bar is '+labRect.w+'px in a '+labW+
+      'px room, expected '+(labW-BOSS_BAR_INSET_X*2)+' - it was sized for a floor');
+    ok(labRect.w>floorRect.w,'the Lab bar is not wider than the floor bar ('+labRect.w+' vs '+
+      floorRect.w+'), so it did not follow the room');
+    ok(labRect.x===ROOM_LEFT+BOSS_BAR_INSET_X,'the Lab bar starts at x '+labRect.x+', which is not '+
+      'inset '+BOSS_BAR_INSET_X+' from the room left edge at '+ROOM_LEFT);
+    // and the Lab is where this gets checked by eye, which is the point of the Lab
+    ok(currentRoom().enemies.some(e=>e.type==='boss'),'the Lab has no Warden on its row, so the bar '+
+      'cannot be looked at in the place it exists to be looked at');
   });
 
   test('the bar marks the two phase thresholds exactly where the fight changes',()=>{
@@ -1248,10 +1276,11 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     const b=spawnEnemy(true,room,MIDX,MIDY-60);
     room.enemies.push(b);
     for(const [th,name] of [[BOSS_PHASE_1,'BOSS_PHASE_1'],[BOSS_PHASE_2,'BOSS_PHASE_2']]){
-      const notch=Math.round(BOSS_BAR_W*th);
+      const w=bossBarRect().w;
+      const notch=Math.round(w*th);
       // at exactly the threshold health, the fill's edge must BE the notch
       b.hp=b.maxHp*th;
-      const edge=Math.round(BOSS_BAR_W*(b.hp/b.maxHp));
+      const edge=Math.round(w*(b.hp/b.maxHp));
       ok(edge===notch,name+' is '+th+': the fill edge is at '+edge+'px and the notch is at '+
         notch+'px, so the fill crosses the mark '+(edge===notch?'together':(edge-notch)+'px away')+
         ' from the moment the fight actually changes');

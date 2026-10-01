@@ -606,6 +606,18 @@ const HUD_MARGIN_X=15, HUD_MARGIN_Y=14, HUD_FRAME=6, HUD_GAP=1;
 const HUD_HP_H=40, HUD_ROW_H=30, HUD_KEY_W=62, HUD_KEY_H=34, HUD_BLINK_W=150, HUD_DEPTH_W=104;
 const HUD_MOMENTUM_W=208;
 
+/* WHERE THE BAR GOES, worked out from the room being drawn right now.
+
+   A function rather than a constant, because there is more than one room: the Lab is 1680x760 and the
+   floors are 700x450. The first version baked the rectangle out of ROOM_W and ROOM_TOP at load time,
+   so a bar sized 660px wide for a 700px room was being drawn 660px wide inside a 1680px one, at a y
+   captured before the Lab changed the room. A constant that describes a room is wrong the moment
+   there is more than one room, and the Lab exists precisely to prove those are not the same thing. */
+function bossBarRect(){
+  return {x:ROOM_LEFT+BOSS_BAR_INSET_X, y:ROOM_TOP+BOSS_BAR_INSET_Y,
+          w:ROOM_RIGHT-ROOM_LEFT-BOSS_BAR_INSET_X*2, h:BOSS_BAR_H};
+}
+
 /* THE WARDEN'S HEALTH, as the one piece of the fight that is fixed to the screen.
 
    The boss already had a health bar - a 56px sliver, twice a regular body's, floating above a body
@@ -637,7 +649,7 @@ const HUD_MOMENTUM_W=208;
    a notch inside the bar disappears as the fill passes over it, and these need to stay visible after
    they have been crossed - at that point they are the record of how far the fight has already come. */
 function drawBossBar(e){
-  const x=ROOM_LEFT+20, w=BOSS_BAR_W, y=BOSS_BAR_Y, h=BOSS_BAR_H;
+  const rect=bossBarRect(), x=rect.x, w=rect.w, y=rect.y, h=rect.h;
   const frac=Math.max(0,Math.min(1,e.hp/e.maxHp));
   // the frame: a dark recess with a bevelled top edge, the same language as the HUD plates
   ctx.fillStyle='#14110c';
@@ -653,18 +665,16 @@ function drawBossBar(e){
     ctx.fillStyle='rgba(190,255,200,0.30)';
     ctx.fillRect(x,y,fw,1);
   }
-  /* The phase notches, drawn proud of the bar so crossing one does not erase it. These are at the
-     same two fractions the tick loop uses - BOSS_PHASE_1 and BOSS_PHASE_2, READ from here rather
-     than retyped - so the mark on the screen cannot drift from the threshold in the fight.
+  /* The phase notches, drawn proud of the bar so crossing one does not erase it. These read
+     BOSS_PHASE_1 and BOSS_PHASE_2 rather than retyping the numbers, so the mark on the screen cannot
+     drift from the threshold in the fight, and they are placed with the SAME expression that places
+     the fill's edge: both are Math.round(w*f) on the same w.
 
-     The notch is placed with the same expression that places the fill's edge, Math.round(w*frac), and
-     that is deliberate rather than incidental. Comparing the two as fractions looks like a mismatch
-     and is not one: the notch lands at 0.6606 of the bar and the fill's edge lands at 0.6606 of the
-     bar, because both are the rounded product of the same width. Dividing a rounded pixel back out by
-     the width to compare it against a raw fraction manufactures a disagreement of 0.4px that does not
-     exist on screen - the correct statement is that the fill's edge IS the notch's pixel when the
-     health fraction is the threshold, and the suite asserts exactly that. */
-  const fillEdge=Math.round(w*frac);
+     That is not a cosmetic detail. Comparing the two as fractions - round(w*th)/w against th - comes
+     out 0.0006 apart, which reads as a mismatch and is not one, because both were rounded from the
+     same width. Dividing a rounded pixel back out and comparing it to a raw fraction manufactures a
+     disagreement that does not exist on screen. The claim that is actually true, and that the suite
+     asserts, is that at exactly the threshold health the fill's edge IS the notch's pixel. */
   for(const th of [BOSS_PHASE_1,BOSS_PHASE_2]){
     const nx=x+Math.round(w*th);
     ctx.fillStyle='#e8dcc0';
