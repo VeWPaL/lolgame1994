@@ -1383,12 +1383,10 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       const clash=got.filter(id=>held.indexOf(id)>=0);
       ok(clash.length===0,'the room offered '+clash.join(',')+' which the player already holds, and a '
         +'passive cannot be taken twice - so one of those two pickups would silently do nothing');
-      // and the rarity travels with the pickup, because the floor draws a rarity bar from it. A pickup
-      // whose rarity is missing does not look wrong - it looks like a common, which is the one answer
-      // a player would never challenge during a playtest.
-      const bare=goTo('item').pickups.filter(p=>p.kind==='item'&&!(p.rarity in Items.RARITY));
-      eq(bare.length,0,'these pickups carry a rarity the game does not know: '+
-        bare.map(p=>p.id+'='+p.rarity).join(', '));
+      // the pool's rarity must be one the game knows, because the character sheet groups by it and an
+      // unknown key silently sorts nowhere rather than throwing
+      const odd=got.filter(id=>!(Content.get('item',id).rarity in Items.RARITY));
+      eq(odd.length,0,'these items carry a rarity the game does not know: '+odd.join(', '));
     }
   });
   test('an item pickup joins the build and its numbers actually land',()=>{

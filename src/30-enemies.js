@@ -449,10 +449,7 @@ function enterRoom(nx,ny,fromDir){
       const held=Content.all('item').filter(id=>Items.equipped(id));
       let ids=Items.pool(2,Items.rollRarity(Stats.value('luck')),held);
       if(ids.length<2) ids=ids.concat(Items.pool(2-ids.length,null,held));
-      ids.forEach((id,i)=>{
-        const d=Content.get('item',id);
-        r.pickups.push({x:MIDX+(i?-85:85),y:MIDY,r:16,kind:'item',id,rarity:d.rarity});
-      });
+      ids.forEach((id,i)=>r.pickups.push({x:MIDX+(i?-85:85),y:MIDY,r:16,kind:'item',id}));
     }
   }
   if(fromDir==='N'){player.x=MIDX;player.y=ROOM_TOP+34;}

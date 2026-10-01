@@ -542,11 +542,6 @@ function itemIcon(id,px){
   c.getContext('2d').drawImage(src,0,0);
   return c;
 }
-/* RARITY, as a colour a player can read across a room. Weights live in 25-items; this is the half
-   that reaches the screen, and it is a second thing named for the same four words on purpose - the
-   alternative was a legend nobody consults mid-run. Ordered dim to bright, because rarity IS an
-   ordering and a set of four arbitrary hues would throw that away. */
-const RARITY_COLOUR={common:'#6f7480',uncommon:'#5fa8a0',rare:'#8f7ad8',legendary:'#e0a63a'};
 /* THE SAME TILE ON THE FLOOR, which is not the same thing as the same function.
 
    `itemIcon` allocates a fresh canvas and copies into it on every call, which is right for the sheet
@@ -559,28 +554,16 @@ const RARITY_COLOUR={common:'#6f7480',uncommon:'#5fa8a0',rare:'#8f7ad8',legendar
    laid out on a shelf, and the player can tell two apart from across the room without a label - which
    matters in a playtest, where the first question about any item is "which one was that".
 
-   Baked at 34 for the same reason the weapon icons are: at 26 the items read as smaller and flatter
-   than the weapons standing beside them, and the loot room then looks like a weapon room with some
-   clutter in it. Same bake size as a slot icon, so one size serves both places.
-
-   The bar underneath is RARITY, and it is the one piece of new art here. During an item playtest
-   rarity is the axis being judged, and reading it off a name means opening something - so it is on
-   the floor instead. It sits under the tile rather than in it, because the tile's own colour is the
-   item's identity and overwriting it would make a legendary Weighted Rod and a common one the same
-   shape of object. */
-function drawItemIcon(id,cx,cy,px,rarity){
-  const px2=px||34;
+   Kept plain, and this is a decision that was reversed once. A rarity bar went under the tile and the
+   tiles were baked at 34 to match the weight of the weapons beside them; both were argued for on the
+   grounds that rarity is the axis being judged and that a smaller tile reads as clutter. Having both
+   on screen at once settled it the other way - the plain squares are cleaner, and they read as a set
+   rather than as thirteen badges competing for attention. Rarity is on the character sheet, which is
+   where the player goes when they actually want to know. */
+function drawItemIcon(id,cx,cy,px){
   const def=(typeof Content!=='undefined'&&Content.has('item',id))?Content.get('item',id):null;
-  const c=bakeItemIcon(id,px2,def&&def.color,def&&def.glyph);
-  const x=Math.round(cx-c.width/2), y=Math.round(cy-c.height/2);
-  ctx.drawImage(c,x,y);
-  if(rarity&&RARITY_COLOUR[rarity]){
-    const w=c.width, h=Math.max(3,Math.round(px2*0.11));
-    ctx.fillStyle=RARITY_COLOUR[rarity];
-    ctx.fillRect(x,y+c.width+2,w,h);
-    ctx.fillStyle='rgba(0,0,0,0.45)';
-    ctx.fillRect(x,y+c.width+2+h,w,2);
-  }
+  const c=bakeItemIcon(id,px||26,def&&def.color,def&&def.glyph);
+  ctx.drawImage(c,Math.round(cx-c.width/2),Math.round(cy-c.height/2));
 }
 function dropLoot(x,y){
   const roll=Rnd.run();
