@@ -1039,10 +1039,16 @@ function update(){
     else if(pk.kind==='goldkey') player.hasGold=true;
     else if(pk.kind==='hook'){ player.altMode='hook'; run.hook=true; }
     else if(pk.kind==='blast'){ player.altMode='blast'; run.hook=false; }
-    // An item the build cannot take stays on the floor. Same rule as a heart at full health: the
-    // alternative is a pickup that vanishes and takes nothing with it, which reads as a broken item
-    // rather than a full one - and a passive that is already held is the case that actually happens.
-    else if(pk.kind==='item'){ if(!Items.give(pk.id)) continue; }
+    /* An item goes in the slot it declares, and whatever was on that key is left where the new one was
+       standing - the same swap a weapon gets, and for the same reason: a limit on what a build may
+       carry is a statement about which combinations are worth having, and this game wants all of them.
+       `hold` is what stops the swap running away: the displaced item is dropped on the tile the player
+       is standing on, so without it the next tick would hand it straight back. */
+    else if(pk.kind==='item'){
+      const got=Items.give(pk.id);
+      if(!got.taken) continue;              // only a duplicate passive, and the pool never offers one
+      if(got.dropped) r.pickups.push({x:pk.x,y:pk.y,r:16,kind:'item',id:got.dropped,hold:true});
+    }
     r.pickups.splice(i,1);
   }
 

@@ -32,7 +32,6 @@
    before the behaviour does. */
 const Items=(function(){
 
-  const SLOTS=3;
   /* Rarity weights, and what one point of Luck does to them. Luck multiplies the RARE end rather
      than adding to it, because adding to every weight changes nothing and multiplying the bottom
      two does: a player with luck wants the same dungeon to have contained something better in it. */
@@ -55,7 +54,8 @@ const Items=(function(){
     const d=Content.get('item',id), out=[];
     if(d.use!=='passive'&&d.use!=='active') out.push('use must be passive or active, got "'+d.use+'"');
     if(d.use==='active'&&!(d.charges>0)) out.push('an active item needs charges, or it can never be used');
-    if(d.slot!=='sigil'&&!(d.slot>=0&&d.slot<SLOTS)) out.push('slot must be a number 0..'+(SLOTS-1)+' or "sigil", got "'+d.slot+'"');
+    if(d.slot!=='sigil'&&!(Number.isInteger(d.slot)&&d.slot>=0))
+      out.push('slot must be a non-negative whole number or "sigil", got "'+d.slot+'"');
     /* A PASSIVE with hooks is a definition that validates and does nothing, which is the one failure
        mode this file exists to refuse. Hooks run when an item is USED, and a passive is never used,
        so its hooks would never fire - the item would appear on the sheet, take a space in the build,
@@ -106,38 +106,63 @@ const Items=(function(){
 
   function equipped(id){ return loadout.items.find(s=>s.id===id)||null; }
 
-  /* Returns false when the build cannot take it, so the pickup stays on the floor rather than
-     vanishing into a full inventory. A heart does the same thing when you are already full. */
+  /* NO CAPACITY, and that is the design rather than the absence of one.
+
+     A build used to hold three active items and refuse a fourth, on the reasoning that a limit keeps
+     a run's identity narrow. That is backwards for this game: the number of possible builds IS the
+     content, and a cap is a statement that some combinations are less worth having. Nine sigils plus
+     four actives is thirteen items and every one of them is reachable, so the space is as wide as the
+     roster allows rather than as narrow as an inventory screen does.
+
+     So there is no limit, and there is no `freeSlot`. An active does not go in "a free slot" - it goes
+     in ITS slot, which is the key it answers to, and if something is already on that key then that
+     thing is what gets displaced. Same deal a weapon gets: you take the new one and the old one is
+     left where you found the new one.
+
+     Which is why `give` reports what it displaced rather than just whether it succeeded. The floor
+     needs the displaced id to drop it, and a `give` that returned a bare boolean would force the
+     caller to go and look up what is on that key - a second reader of the same fact, in the one place
+     where the two would drift. */
   function give(id){
     const d=Content.get('item',id);
     const already=equipped(id);
-    // a second copy of an item you already hold goes into the SAME slot as more charges, which is
-    // what makes a consumable stack and a passive simply not be duplicated
+    // A second copy of something with charges goes into the SAME slot as more charges, which is what
+    // makes a consumable stack and a passive simply not be duplicated.
     if(already&&already.charges!=null&&already.charges!==Infinity){
       already.charges+=d.charges!=null?d.charges:1;
       rebuild();
-      return true;
+      return {taken:true,dropped:null};
     }
-    if(already) return false;                       // a passive is not taken twice
-    const slot=d.slot==='sigil'?-1:freeSlot();
-    if(d.slot!=='sigil'&&slot<0) return false;      // every slot is full
+    // A passive is not taken twice, and this is the ONE refusal left in the whole system. It is not a
+    // capacity limit and it is not an oversight: two Heavy Hands is just Weighted Rod with extra steps,
+    // and the roster already has an item that IS two Heavy Hands. Stacking passives would blur the
+    // difference between the cheap stat and the deliberate one, and the floor never offers a duplicate
+    // anyway because the pool excludes what the player holds.
+    if(already) return {taken:false,dropped:null};
+    const slot=d.slot==='sigil'?-1:d.slot;
+    let dropped=null;
+    if(slot>=0){
+      const prev=loadout.items.find(s=>s.slot===slot);
+      if(prev) dropped=prev.id;
+    }
+    if(dropped) loadout.items.splice(loadout.items.indexOf(equipped(dropped)),1);
     loadout.items.push({id,name:d.name,charges:d.charges!=null?d.charges:null,slot});
     rebuild();
-    return true;
+    return {taken:true,dropped:dropped};
   }
 
-  function freeSlot(){
-    const used=loadout.items.map(s=>s.slot).filter(x=>x>=0);
-    for(let i=0;i<SLOTS;i++) if(used.indexOf(i)<0) return i;
-    return -1;
-  }
+  /* Losing an item is a rebuild, so it cannot leave a residue. The charges go with it.
 
-  /* Losing an item is a rebuild, so it cannot leave a residue. The charges go with it. */
+     The slot renumbering that used to live here is gone, and it had to go. It existed to compact a
+     capped set - slots were handed out as "lowest free index", so closing a gap meant renumbering the
+     rest. Now a slot is a DECLARED key rather than an allocation, so renumbering on removal does not
+     compact anything: drop a Bone Whistle on key 1 and a Hunter's Mark on key 2 would slide down to
+     key 1 and answer to a key it was never written for. That bug was live before this change too -
+     it just could not fire, because removal had no caller outside the tests. */
   function remove(id){
     const i=loadout.items.findIndex(s=>s.id===id);
     if(i<0) return false;
     loadout.items.splice(i,1);
-    loadout.items.forEach((s,k)=>{ if(s.slot>=0) s.slot=k; });
     rebuild();
     return true;
   }
@@ -213,7 +238,7 @@ const Items=(function(){
 
   return {define:define,validate:validate,give:give,remove:remove,use:use,rebuild:rebuild,
           equipped:equipped,rollRarity:rollRarity,rollItem:rollItem,pool:pool,
-          activeInSlot:activeInSlot,reset:reset,SLOTS:SLOTS,RARITY:RARITY};
+          activeInSlot:activeInSlot,reset:reset,RARITY:RARITY};
 })();
 
 /* ------------------------------------------------------------------ the hooks -------------- */

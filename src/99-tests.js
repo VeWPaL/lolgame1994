@@ -1015,21 +1015,70 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(Items.equipped('bone_whistle'),'a reusable item wore out');
   });
 
-  test('three slots, and a full build refuses rather than quietly dropping the fourth thing',()=>{
+  /* NO ITEM LIMIT. The claim is that a build carries as much as the roster allows, and that an active
+     displaces whatever was on its key rather than being refused - the same deal a weapon gets.
+
+     What it does NOT claim is that all thirteen fit at once, and the difference matters. Two actives
+     declare key 1 (Bone Whistle and Hunter's Mark), so they are alternatives by the roster's own
+     numbering, and the largest build is nine sigils plus one active per DISTINCT key. That is measured
+     here from the table rather than asserted as a number, so that giving Hunter's Mark its own key -
+     which is the obvious fix if the two are not meant to be alternatives - makes this test get
+     STRONGER rather than needing editing, and so that a fourth collision cannot be added by accident. */
+  test('no item limit: a build carries the whole roster, and an active displaces the key it shares',()=>{
     startGame(); Items.reset();
-    eq(Items.SLOTS,3,'the slot count changed and the refusal test below no longer means anything');
-    for(const id of ['tin_cup','bone_whistle','hunters_mark']) ok(Items.give(id),'could not take '+id);
-    ok(!Items.give('lantern_friend'),'a fourth active went into a build with three slots');
-    eq(loadout.items.length,3,'the refused item was carried anyway, so a full build silently ate it');
-    // a passive is a sigil and needs no slot, which is the difference between carrying and holding
-    ok(Items.give('iron_ribs'),'a passive was refused because the slots were full - sigils are the point of them');
-    eq(Items.equipped('iron_ribs').slot,-1,'a sigil was given a slot number, so the sheet will print one');
-    // and a passive is never taken twice
-    ok(!Items.give('iron_ribs'),'a passive was taken a second time, so it applies twice');
-    eq(Stats.value('vigor'),Stats.baseOf('vigor')+2,
-       'one Iron Ribs is worth 2 Vigor and a second was refused, so a duplicate doubled a passive. '+
-       'The expectation is the character baseline plus the item, because Vigor IS the health pool now.');
+    eq(Items.SLOTS,undefined,'a slot CAPACITY still exists, so everything below measures the wrong thing');
+    const ids=Content.all('item');
+    const actives=ids.filter(id=>Content.get('item',id).use==='active');
+    const sigils=ids.length-actives.length;
+    const keys={};
+    actives.forEach(id=>{ keys[Content.get('item',id).slot]=1; });
+    const distinctKeys=Object.keys(keys).length;
+    // 1. the largest build the roster actually allows, with nothing refused for want of room
+    ids.forEach(id=>Items.give(id));
+    eq(loadout.items.length,sigils+distinctKeys,'a build holds '+loadout.items.length+' items where the '+
+       'roster allows '+sigils+' sigils plus one active per distinct key ('+distinctKeys+') = '+
+       (sigils+distinctKeys));
+    // and the only losses are actives displaced by a shared key - never a refusal for lack of space
+    const lost=ids.filter(id=>!Items.equipped(id));
+    const allCollide=lost.every(id=>Content.get('item',id).use==='active'&&
+      actives.filter(x=>Content.get('item',x).slot===Content.get('item',id).slot).length>1);
+    ok(allCollide,'these items are missing and are NOT explained by a shared key, so something refused them: '+
+       lost.join(', '));
+    // 2. sigils are keys -1 and actives are their declared key, and the two never collide
+    eq(loadout.items.filter(s=>s.slot===-1).length,sigils,
+       'the sigils are not all marked as sigils, so the sheet will print a slot number on a passive');
+    // 3. the swap. Two actives share key 1, which is exactly the case that has to displace rather than fail.
+    const col=actives.filter(x=>Content.get('item',x).slot===1);
+    const before=loadout.items.length;
+    const got=Items.give(col[0]);
+    const got2=Items.give(col[1]);
+    eq(got2.taken,true,'taking an active whose key is occupied was refused rather than allowed to displace');
+    ok(got2.dropped===col[0],'the displaced item was not reported, so the floor cannot drop it ('+got2.dropped+')');
+    ok(!Items.equipped(col[0]),'the displaced item is still in the build as well as the new one');
+    eq(loadout.items.length,before,'the build changed size during a swap, so one of the two leaked');
+    ok(Items.equipped(col[1]),'the item that displaced something did not end up in the build');
+    // 4. a swap moves the KEY, not the position. Removing the item on key 1 must not slide everything
+    //    after it down a key - that renumbering existed to compact a capped set and now scrambles
+    //    declared keys, so an item would answer to a key it was never written for.
     Items.reset();
+    actives.forEach(id=>Items.give(id).taken);
+    const key0=loadout.items.find(s=>s.slot>=0).slot;
+    const held0=loadout.items.find(s=>s.slot===key0).id;
+    ok(Items.remove(held0),'the control remove failed');
+    const stillThere=Items.equipped(activeWithKeyGreaterThan(key0));
+    ok(stillThere,'removing the item on key '+key0+' moved an item that was on a LATER key down to '+
+       key0+', so keys are being renumbered by position');
+    // 5. the one refusal that is left, and it is not a capacity limit
+    Items.reset();
+    ok(Items.give('heavy_hands').taken,'the control give failed');
+    ok(!Items.give('heavy_hands').taken,'a passive was taken twice, so it applies twice');
+    eq(Stats.value('strength'),Stats.baseOf('strength')+1,
+       'one Heavy Hands is worth 1 Strength and a second was refused, so a duplicate doubled a passive');
+    ok(Items.give('iron_ribs').taken,'a passive was refused once actives are involved, so sigils are being rationed');
+    function activeWithKeyGreaterThan(k){
+      return actives.filter(id=>Content.get('item',id).slot>k).sort(
+        (x,y)=>Content.get('item',y).slot-Content.get('item',x).slot)[0];
+    }
   });
 
   test('luck measurably shifts what the dungeon offers, and it is a weight rather than a bonus',()=>{
@@ -1411,7 +1460,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // the tile vanishes on contact and nothing happens, so a playtester concludes the item is broken.
     startGame();
     Items.reset();
-    ok(Items.give('heavy_hands'),'the control give failed, so this test is not testing anything');
+    ok(Items.give('heavy_hands').taken,'the control give failed, so this test is not testing anything');
     const r=goTo('item');
     r.pickups.length=0; r.enemies.length=0;
     r.pickups.push({x:MIDX,y:MIDY,r:16,kind:'item',id:'heavy_hands'});
