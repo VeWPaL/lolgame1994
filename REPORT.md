@@ -1,0 +1,278 @@
+# Report and development plan
+
+Written during an unattended session. Two parts: what was done and found, then what to build next
+and why. Every claim here was measured; where something is an estimate it says so.
+
+---
+
+# Part 1 — what happened this session
+
+## 1. The camera and world frame, ported to C#
+
+`csharp/Depths.Core/Frame.cs`: `RoomBounds`, `RoomFrame`, `Camera`, `Frame.CameraTarget`,
+`Frame.Update`, `Frame.RoomBoundsAt`. Nine C# tests.
+
+The port is deliberately **not** shaped like the JavaScript. `00-balance.js` keeps `cameraTarget` as
+one function reading a module-scope player, a module-scope bounds accessor and a module-scope
+viewport — three hidden inputs. In C# those are parameters, so the clamp is directly testable, and
+the shorthand is a `RoomFrame` struct with one `Sync` method rather than four static fields, which
+makes "one writer" structural instead of a comment.
+
+The test that earns its keep is **the oversized clamp**. That branch was wrong in JavaScript for as
+long as the camera existed: `Math.min(b.l, …)` with the player's offset inside, which pinned the
+view to the room's left edge whenever the player was right of centre, so it never moved at all. It
+passed everything because every room in the game fits on screen and that line had never executed
+once. The C# tests deliberately use a 1400-wide room.
+
+## 2. The boss time-to-kill test was not measuring anything
+
+The loop ran to 9,000 ticks — 42.9 seconds — and the window it checked was 18–70s. Anything slower
+came back as 42.9s, so the upper bound could never fail and three of four guns were reporting the
+loop cap as a measurement.
+
+| gun | measured | note |
+|---|---|---|
+| Scatter | 25.2s | real |
+| Bolt | 45.1s | **capped** |
+| Voidball | 55.9s | **capped** |
+| Arcane Beam | 87.2s | **capped by 2x** |
+
+It is now a 200-second budget and asserts a **spread (×4) rather than absolute seconds**, because
+"the slow gun should take longer" is a claim about the ratio between fastest and slowest, not about a
+number that goes stale every time a weapon is tuned. Measured spread ×3.47.
+
+That number is worth keeping on its own: `noCharacter()` does zero Strength (the class gives +3 flat
+over a base of 0), so the test is every gun with *nothing* invested in it — the floor of the Arcane
+Beam's canvas. **87.2s on an unbuilt character, 12.5s on the starting build.**
+
+## 3. Lantern Friend ate its one charge for nothing
+
+It wrote `run.companionPending`, which nothing ever read, and reported success — so pressing Q cost
+the only charge in the item and produced no companion. It now **returns false**, so `use()` declines,
+the charge is kept, and the reason is surfaced. The flag is **deleted** rather than left accumulating,
+because a flag with no reader is the sort of thing someone reads in three months and assumes it means
+what it says.
+
+Two of my own tests broke on this, correctly: they built the whole roster, which leaves Lantern Friend
+as the active, and were measuring the refusal while calling it the binding. Both now place a working
+active explicitly.
+
+## 4. A duplicate function declaration
+
+`updateCamera` was declared **twice** in `00-balance.js` with identical bodies. Function declarations
+hoist, so the second silently overwrote the first — harmless until somebody edits one of them, which
+is the entire hazard. Removed, with a note.
+
+## 5. Stale numbers in comments and conventions
+
+- `10-art.js` and `CONVENTIONS.md` both still said the boss was `520*TOUGH = 702 HP` and quoted a
+  28-second fight. It is now `343*TOUGH = 463.05` and the measured figures are 22.2s Scatter,
+  29.1s Voidball, 29.9s Bolt, 12.5s Arcane Beam.
+- `CONVENTIONS.md` also said **"No armour, deliberately"** for a boss that is now armoured at 0.66.
+- `CONVENTIONS.md` claimed **79** C# checks when the suite runs **88**.
+
+## 6. The bench row — three fixes, two of them wrong in a way the suite could not see
+
+The row under the minimap is three plates: weapon, active item (Q), alt. Each carried a text label
+centred under it. `Arcane Beam` is 73px in a 62px plate; eleven of thirteen item names are wider than
+their plate, `Lantern Friend` by thirty pixels. They overlapped.
+
+**Fix 1 — a budget per label, derived from its neighbours.** The arithmetic is correct: three labels
+62px apart do not collide when `w2 <= 124 - max(w1,w3)`. I wrote it, tested it, took a screenshot:
+
+```
+ARCAN...   UNTER'S ...   BLAST
+```
+
+No overlap. Also no information. **It fixed a collision by shortening the text until a collision was
+impossible, which is the one thing a collision is not.**
+
+**Fix 2 — all three names as one line of text.** The right *shape*, still wrong: the row is **147px**
+and the three names at 12px come to **210px** worst case. It passed 177/177 — because its test asserted
+against a **hardcoded row width of 190**. It was checking a geometry the game does not have, and
+passing comfortably. A test that cannot read the number it is about has to guess it, and a guess
+larger than the truth fails nothing. This is the same shape as the camera lesson: the property that
+let the test pass is what let it be wrong.
+
+**Fix 3 — the item name alone, across the whole row. This ships.** The two weapons keep their icons
+and cooldown sweeps, the footer already reads `LMB cast / RMB blast / SHIFT blink` every frame, and
+the sheet (F1) lists both weapon names in full. The item name is the one that is new, unbounded in
+length, and absent from the sheet until you go looking — so it is the one that gets the space. Every
+name in the roster now fits **whole at 12px**; the longest has 47px spare.
+
+### An infinite loop, found by a mutation that froze instead of failing
+
+Removing the shrink loop made the test run **stop responding** rather than report a failure. The cause
+was the truncation line:
+
+```js
+texts[1] = texts[1].slice(0,-1) + '...'   // never gets shorter
+```
+
+A hang is a worse defect than a stub, and no name in the roster reaches that branch, so it would have
+shipped silently and the next item name added would have found it. It is built from a prefix and
+re-measured every step now — monotonic by construction.
+
+### Two things the suite now enforces instead of trusting
+
+- **The row width is published (`BENCH_ROW_W`) and read by the test.** Hardcoding it is how fix 2
+  passed.
+- **The overflow branch is exercised by a name that overflows.** Every real name fits, so shrink and
+  truncation never execute — and a mutation that deleted the shrink still passed 178/178 for exactly
+  that reason. There is now a deliberately-too-long name and a just-over-the-line name that must shrink
+  rather than be cut.
+
+### The three bugs that were mine
+
+- I mutated a call site and only **described** the mutation, then read the pass as evidence the test
+  was sensitive. The first "mutation passed" result in this session was a test never run against
+  anything.
+- I checked for **overlap** (`gap < 0`) rather than the 6px of clear space the row promises. Setting
+  the gap to zero passed, because touching is not overlapping — three words jammed together read as one
+  word, which is the same defect more quietly.
+- I wrote a test that **re-implemented** the budget formula beside the drawing code instead of calling
+  it. It looked like coverage and caught nothing.
+
+All three share one rule: **a check passes if it agrees with whatever it was written against.** Every
+one was found by breaking the code on purpose and watching what failed.
+
+## 7. Sweeps and performance — mostly negative, which is worth reporting
+
+**Clean:** array mutation during iteration, raw `Math.random` in shipped code, division by a possibly-zero
+expression (`msp>0.05`, `||1`, `d<0.001` all guard), duplicate declarations, dead functions, TODO/HACK.
+
+**One false alarm, correctly diagnosed.** A `` appeared in my own console output. The bytes were
+`C2 B7` — a correctly encoded middle dot — and the files contain zero U+FFFD. Same code-page trap as
+earlier in the project, checked at byte level rather than assumed.
+
+**Performance: no work warranted.** Measured, not assumed:
+
+| bodies | ms/tick | % of the 4.76ms budget |
+|---|---|---|
+| 5 | 0.004 | 0.1% |
+| 20 | 0.033 | 0.7% |
+| 50 | 0.119 | 2.5% |
+| 100 | 0.416 | 8.7% |
+
+The friendly-projectile collision walks every enemy per projectile — **O(P×N)** — while the separation
+pass already uses a uniform grid. That is a real inefficiency, but `DEPTH_BODY_CAP=28` means the game
+never reaches counts where it matters, and at 100 bodies it still costs 8.7% of budget. **Refactoring
+the collision path blind would have been optimising something that is not slow.** Recorded as a
+documented opportunity instead.
+
+**State at end of session:** JS 178/178 · C# 88/88 · `verify.ps1` exits 0 · LF-only, no BOM, no U+FFFD.
+Commits: `5f64c85`, `01342ed`.
+
+---
+
+# Part 2 — development plan
+
+## Where the game actually stands
+
+Working, tested, and honestly measured:
+
+- **4 guns** — Bolt (7 dmg, single), Scatter (8 pellets × 2.6), Arcane Beam (0.5 dmg, very fast),
+  Voidball (3.4, pierce 3). Plus 2 alts — Hook and Blast.
+- **5 body types** — Brunch, Lunger, Shooter, Gunner, Boss.
+- **13 items**, 9 passive sigils (uncapped, stackable), 4 active; exactly one active slot, bound to Q.
+- **Exponential, unbounded difficulty ladder** — `1 + growth·(e^(rate·steps) − 1)`, rate capped 1.34,
+  body count capped 28. Unbroken across floors.
+- **Keycard intelligence**, every door opened at INT *n* stays open even if INT drops.
+- **Speed + Momentum** as two currencies on one capped budget.
+- Build-dependent enemy traits (done).
+- **Lab** (`35-devlab.js`), **seed system**, run summary, character sheet, buy list.
+- ~15,300 lines of JavaScript, 1,360 lines of C# across 7 ported modules.
+
+## The honest gap analysis
+
+What is **missing at the core**, ranked by how much it costs the player's experience:
+
+### 1. There is no boss health bar. At all.
+
+I grepped every module: `bossBar`, `bossHealth`, `drawBossBar` — **nothing exists**. The boss has
+463 HP and the player has no way to see it move.
+
+This is the single worst gap in the project and it is not a nice-to-have. The brief is *"engaging but
+fair"* and *"a player who reads the tells takes very little damage"* — a player cannot read a health
+bar that is not drawn, and with two phase thresholds at fractions of max HP, **the phases are
+invisible**. The player cannot know the fight has changed. Every other readability decision in this
+game (the 200px tuning, the projection-ordered collision, the charge tells) was made on the principle
+that the player gets to read the fight, and the most important thing in the fight is unreadable.
+
+It is also self-contained: one draw function, no gameplay change, no new content. **This is next, and
+it is not close.**
+
+### 2. There is no area concept. Every floor is the same floor.
+
+I grepped for `area`, `AREA`, `actNumber`, `bossFloor`, `eliteFloor` — **no hits anywhere in `src/`**.
+`depthFloor()` returns `run.floor` and everything else derives from it. `generateDungeon()` takes no
+arguments and produces the same shape every time.
+
+So "4 areas × 3 floors, randomised order, per-floor boss, mini-boss at 13" is not partially built — it
+is **not started**, and the ambiguity in that phrase needs your answer rather than my guess. What it
+costs right now: floor 30 plays like floor 5 with bigger numbers. A roguelite sold for hundreds of
+hours cannot have one texture repeated indefinitely.
+
+### 3. The C# port is 1,360 lines against 15,300. Roughly 9%.
+
+Ported: RNG, balance constants, bodies, body, hit, intercept, frame. Not ported: world generation,
+combat, items, enemies/AI, tick loop, view, UI, run flow, art.
+
+This matters more than its size suggests, because **the port is the only path to a shipped `.exe`**, and
+the JS and C# are already drifting — the armour rule, the per-shot strength fix, and the beam retune
+all exist in one language only.
+
+### 4. Feel work that wants a playtester, not more code.
+
+Scatter recoil, hook rework, Brunch-arc AI. All three want hands on the thing. The Arcane Beam work
+this session is the counter-example — it only landed because it was measured at 200px with 25 trials
+and a human chose between two options with numbers attached.
+
+### 5. Blocked on a visual decision.
+
+HUD reshape (two columns, top band) and character stat sheet redesign. The standing instruction is to
+ask before a HUD decision rather than be confidently wrong. A stale HUD is better than one you did
+not choose.
+
+## Recommended order, and the reasoning
+
+**Now — the boss health bar.** Highest value per line of any item on this list. It is a readability
+fix on the game's most important fight, it needs no new content, and it can be built to the standard
+already set by every other tell in the game: the bar shows current HP, marks the two phase thresholds
+so the fight visibly changes, and uses the same irregular-chunk language as the rest of the HUD. I
+would also want it drawn in the Lab so it can be read without a run.
+
+**Then — settle the area structure, with you.** Before code. The phrase "4 × 3 + 2" is ambiguous in two
+directions at once, and area identity touches floor generation, enemy mix, art palette, music, and the
+difficulty ladder's shape. Guessing it unattended risks landing something coherent that is not what you
+pictured — and unlike a bar or a recoil, it is expensive to unpick.
+
+**Then — close the port gap in dependency order.** World generation, then combat, then items, then the
+tick loop, each with parity tests against the JavaScript, which is exactly what the existing 88 C#
+checks do for the seven modules already ported. The order is forced: nothing visual ships until the
+tick loop and view exist.
+
+**Then — feel work, together.** Recoil, hook, Brunch arc, in one playtest session with the numbers on
+screen.
+
+**Then — HUD and sheet, together, once you have seen the boss bar in motion.** Redesigning a HUD
+before the thing it frames exists is how you end up redesigning it twice.
+
+## What I did not do, and why
+
+- **Did not build the area structure.** Scope and taste, both yours to decide.
+- **Did not redesign the HUD or sheet.** Your instruction says ask first; you were away.
+- **Did not refactor the O(P×N) projectile loop.** Measured as 8.7% of budget at a body count the game
+  forbids. Optimising something that is not slow is how real slowdowns get introduced.
+- **Did not add a second active item slot.** One active, bound to Q, is the design.
+- **Did not touch the adaptive `Pressure` modifier.** Still `ADAPT`, value 0, still a placeholder —
+  your call, and it stays a placeholder until you make it.
+
+## One thing I would flag hardest
+
+**The Arcane Beam's unbuilt floor is 87.2 seconds.** That is a minute and a half of shooting at a boss
+with nothing invested in it. It is deliberate — the weapon's base damage is 0.5 precisely so Strength
+sigils are worth 3.5× more to it than to any other gun — but it is the kind of number that should be
+*chosen* rather than discovered by a test that had been silently capped for two sessions. If the first
+real run to floor 10 with a fresh Beam feels like a wall, that is this number, and the fix is a
+starting Strength floor rather than a nerf.

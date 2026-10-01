@@ -31,3 +31,7 @@ obj/
 .vs/
 .idea/
 !verify.ps1
+
+# Session reports. The whitelist is by exception, so a new doc needs naming here or it is invisible
+# to git - which is exactly what happened to REPORT.md, written and then silently not committed.
+!REPORT.md
