@@ -40,8 +40,9 @@ namespace Depths.Tests
             Assert.That(brunch.Hp, Is.EqualTo(2.7).Within(1e-9));
             Assert.That(brunch.Walk, Is.EqualTo(0.744).Within(1e-9));
             Assert.That(brunch.Run, Is.EqualTo(1.35).Within(1e-9));
-            Assert.That(brunch.Armour, Is.EqualTo(0).Within(1e-9),
-                "a Brunch is given armour it is not supposed to have, so it stops being a chip body");
+            Assert.That(brunch.Armour, Is.EqualTo(1.0).Within(1e-9),
+                "the Brunch is the one body below the size line, so it takes full damage; armouring "
+                + "the chip body broke the alt blast's promise that one budget deletes a small group");
 
             var shooter = Bodies.Of(BodyKind.Shooter);
             Assert.That(shooter.Hp, Is.EqualTo(7.56).Within(1e-9));
@@ -56,6 +57,7 @@ namespace Depths.Tests
             Assert.That(shooter.PShotSpeed, Is.EqualTo(2.2));
             Assert.That(shooter.PShotRadius, Is.EqualTo(5));
             Assert.That(shooter.Walk, Is.Null, "a shooter with a walk speed stops being a shooter");
+            Assert.That(shooter.Armour, Is.EqualTo(0.66).Within(1e-9));
 
             var gunner = Bodies.Of(BodyKind.Gunner);
             Assert.That(gunner.Mass, Is.EqualTo(2.4));
@@ -69,15 +71,61 @@ namespace Depths.Tests
             Assert.That(gunner.CdVar, Is.EqualTo(126));   // sec(0.6)
             Assert.That(gunner.Dmg, Is.EqualTo(3.6));     // SHOT_DMG*2
             Assert.That(gunner.PShotRadius, Is.EqualTo(7));
+            Assert.That(gunner.Armour, Is.EqualTo(0.66).Within(1e-9));
 
             var boss = Bodies.Of(BodyKind.Boss);
             Assert.That(boss.Mass, Is.EqualTo(4.0));
             Assert.That(boss.Radius, Is.EqualTo(28));
             Assert.That(boss.Bar, Is.EqualTo(40));
-            Assert.That(boss.Hp, Is.EqualTo(702).Within(1e-9));   // 520*TOUGH
+            Assert.That(boss.Hp, Is.EqualTo(463.05).Within(1e-9));   // 343*TOUGH
             Assert.That(boss.Walk, Is.EqualTo(0.504).Within(1e-9));
             Assert.That(boss.Run, Is.EqualTo(0.864).Within(1e-9));
             Assert.That(boss.Base, Is.EqualTo(0.576).Within(1e-9));
+            Assert.That(boss.Armour, Is.EqualTo(0.66).Within(1e-9));
+        }
+
+        /// <summary>
+        /// One armour rule for every body, asserted on the TABLE rather than on the values the
+        /// per-body test above already reads.
+        ///
+        /// <para>
+        /// The per-body assertions would all still pass if a new row were added tomorrow without an
+        /// armour field, because nothing in them walks the table. That is precisely how the Warden
+        /// ended up on a different rule from everything else in the JavaScript while this port sat
+        /// here asserting it was the correct one: <c>BodyRow.Armour</c> is a plain double, so the
+        /// omission read 0.0 here and 1.0 there, and neither side had a check that would have said so.
+        /// </para>
+        ///
+        /// <para>
+        /// The rule is about SIZE and not about any one body: every row at least as wide as a lunger
+        /// is armoured, and the Brunch - half a lunger's radius, an eighth of its health - is the one
+        /// body that is not. The line is read off the table rather than written as a list of names,
+        /// so a new body lands on the correct side of it automatically and a renamed one cannot
+        /// quietly escape.
+        /// </para>
+        /// <para>
+        /// The expectation is the constant, not a literal. A second place holding a copy of 0.66 is
+        /// what let the two ports drift in the first place, and a copy is exactly what this test
+        /// would be protecting if it read 0.66 directly.
+        /// </para>
+        /// </summary>
+        [Test]
+        public void EveryRowDeclaresTheSameArmour()
+        {
+            Assert.That(Bodies.Rows.Length, Is.EqualTo(5), "the body table lost or gained a row");
+
+            var line = Bodies.Of(BodyKind.Lunger).Radius;
+            var wrong = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < Bodies.Rows.Length; i++)
+            {
+                double want = Bodies.Rows[i].Radius >= line ? Bodies.Armour : 1.0;
+                if (Math.Abs(Bodies.Rows[i].Armour - want) > 1e-12)
+                    wrong.Add($"row {i} (r{Bodies.Rows[i].Radius}) = {Bodies.Rows[i].Armour}, wanted {want}");
+            }
+
+            Assert.That(wrong, Is.Empty,
+                "a body is either unarmoured (1) or armoured (0.66), decided by size, so the same "
+                + "shot must not land differently on two bodies of the same radius: " + string.Join(", ", wrong));
         }
 
         // ------------------------------------------------- the spawner

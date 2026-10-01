@@ -387,7 +387,7 @@ function tickFields(room){
       const power=e.hookPower;
       e.stun=Math.max(e.stun,3*power);
       if(d>1){ e.x+=dx/d*HOOK_SUCK*power; e.y+=dy/d*HOOK_SUCK*power; }
-      e.hp-=HOOK_DPS*power/TICK_HZ*(e.armour||1);   // HOOK_DPS is per second; this runs every tick
+      e.hp-=HOOK_DPS*power/TICK_HZ*e.armour;   // HOOK_DPS is per second; this runs every tick
       // the flash is scaled with the rest of it, so a body that is fighting the hook visibly is
       // fighting it. Otherwise the only sign is that it stopped working, which reads as a bug.
       e.hitFlash=Math.max(e.hitFlash,power);

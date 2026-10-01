@@ -88,10 +88,34 @@ const BRUNCH_WALK=0.62*PLAYER_MOVE, BRUNCH_RUN=1.35;
 
    The Brunch deliberately have no armour, so a pack still dies to a hose and the gun you happen to
    be holding is never simply the wrong one. */
+/* THE ENEMY TABLE. Every row states its own `armour`, explicitly, and that is a rule rather than a
+   detail. It used to be `c.armour||1` at spawn, which meant a row that forgot the field silently
+   became a body that takes FULL damage while every other body is multiplied by 0.66 - a 1.52x
+   difference nobody had chosen and nobody could see. The Warden was one of the forgetters, and the
+   comment beside it said the omission was deliberate, which is the worst state a tuning table can be
+   in: a rule that is easy to get wrong, plus a note saying that getting it wrong is intended.
+
+   THE RULE, which is about SIZE and not about any one body:
+
+     every body at least as big as a lunger is armoured - lunger, shooter, gunner, and the boss.
+
+   A shooter is exactly as wide as a lunger, so treating it as chip because it happens to be ranged
+   would have been arbitrary. The boss is the largest body in the game and was taking 1.52x more
+   damage per hit than anything else, which on an unbounded health ladder is a gap that grows with
+   depth rather than staying a property of the body.
+
+   The Brunch is the one exemption, and it is the ORIGINAL design rather than a carve-out made to
+   keep a test green. It is half a lunger's radius and an eighth of its health, ARMOUR's own comment
+   says it is a stat about "a big body", and the alt blast's pool is sized on the promise that one
+   budget deletes a lone heavy OR wipes a small Brunch group outright. Armouring the chip body broke
+   that promise, measurably: a blast into three Brunch left all three standing.
+
+   So: stated everywhere, uniform everywhere except the one body the rule is about. `99-tests.js`
+   asserts both halves - that no row is silent, and that the ones above the line agree. */
 const ENEMY={
  lunger:{mass:1,r:14,art:2,bar:26,hp:18*TOUGH,walk:LUNGER_WALK*PLAYER_MOVE,run:LUNGER_RUN*PLAYER_MOVE,armour:ARMOUR},
- brunch:{mass:0.5,r:8,art:1,bar:11,hp:2*TOUGH,walk:BRUNCH_WALK,run:BRUNCH_RUN},
-  shooter:{mass:0.8,r:14,art:2,bar:26,hp:5.6*TOUGH,base:0.45*LUNGER_PAY,sense:600,range:520,close:150,far:250,cdMin:sec(0.5),cdVar:sec(0.4),dmg:SHOT_DMG,pspd:2.2,pr:5,pcol:'#ff4d4d'},
+ brunch:{mass:0.5,r:8,art:1,bar:11,hp:2*TOUGH,walk:BRUNCH_WALK,run:BRUNCH_RUN,armour:1},
+  shooter:{mass:0.8,r:14,art:2,bar:26,hp:5.6*TOUGH,base:0.45*LUNGER_PAY,sense:600,range:520,close:150,far:250,cdMin:sec(0.5),cdVar:sec(0.4),dmg:SHOT_DMG,pspd:2.2,pr:5,pcol:'#ff4d4d',armour:ARMOUR},
   gunner:{mass:2.4,r:22,art:3,bar:32,hp:8*TOUGH,base:0.3*LUNGER_PAY,sense:700,range:600,close:120,far:200,cdMin:sec(0.8),cdVar:sec(0.6),dmg:SHOT_DMG*2,pspd:2.05,pr:7,pcol:'#ffb03a',armour:ARMOUR},
   /* THE BOSS HP IS SIZED FROM MEASURED WEAPON DPS, which is the only way to size a health bar.
 
@@ -108,8 +132,54 @@ const ENEMY={
 
      NO ARMOUR, deliberately. Armour would flatten the read: a player watching a health bar fall in
      irregular chunks cannot tell how much of a volley landed, and the whole design is that a player
-     who reads the tells takes very little damage. */
- boss:{mass:4,r:28,art:4,bar:40,hp:520*TOUGH,base:0.6*LUNGER_PAY,walk:0.42*PLAYER_MOVE,run:0.72*PLAYER_MOVE},
+     who reads the tells takes very little damage.
+
+     THAT ARGUMENT WAS RIGHT AND IT WAS STILL NOT WORTH THE PRICE, which is the part this row did not
+     say when it was written. Armour does flatten the read - a bar that falls in regular chunks is
+     easier to follow than one that falls in irregular ones. But it was being paid for with a body
+     that ignored the single damage rule every other body obeys, and the bill came due three ways:
+
+       - every hit on the boss landed 1/0.66 = 1.52x harder than the same hit anywhere else, so its
+         effective health was 19x a lunger's for the same shot count rather than the 29x the numbers
+         said;
+       - the ladder multiplies health without limit, so the gap was a difference that GREW with depth,
+         which is the opposite of what a per-body stat is for - it walked the Warden out of scale with
+         the floor it was standing on;
+       - and the C# port had already taken the OTHER answer, giving the Warden 0.66 while JavaScript
+         gave it 1.0. Two ports, two rules, neither one marking the other wrong.
+
+     Every row in this table now declares its armour, and the boss is one of them.
+
+     Which raises the obvious question: if the boss now takes 0.66, does the fight get 1.52x longer?
+     It does, and the first draft of this comment claimed otherwise. "Make the rule consistent" and
+     "leave the balance alone" are separate asks, and pretending the first implies the second is how
+     a fix becomes a surprise. Worse, the ladder multiplies boss HP without limit, so it compounds: at
+     floor 13, where depthTough is 2.50, the Bolt fight would have gone from 111s to 168s.
+
+     So HP absorbs the factor. 520*TOUGH becomes 343*TOUGH = 463.05, which at 0.66 is 701.6 damage
+     units - the effective pool the boss had a moment ago (702.0), arrived at by obeying the same rule
+     as everything else. That is not a fudge to keep a number still; it is exactly how lunger, gunner
+     and shooter already differ from one another. All four are armoured. They have different HP.
+
+     Measured, starting build, one body, firing for real:
+
+       range      Bolt    Scatter   Arcane Beam   Voidball
+       150px     30.2s      12.5s         10.4s      29.4s
+       200px     31.4s      16.2s         10.2s      29.0s
+       300px     41.5s      16.5s         13.3s      32.4s
+       400px     40.4s      22.2s         19.7s      35.8s
+
+     and one consequence worth stating plainly, because it was the actual defect: the boss's effective
+     health is now 19.0x a lunger's, which is the ratio its HP has always implied on paper. Before
+     this change it was 28.9x in the fight, because the number in the table and the number the game
+     used were different numbers.
+
+     The paragraph above this one still quotes 22.9 / 27.6 / 39.6 / 54.4s. Those are stale against
+     BOTH states - they do not describe the fight as it ran before this change either - and they are
+     left only because the sentence introducing them explains what they were for. The measured table
+     above is the one to believe. A health bar sized by a figure nobody can reproduce is not a
+     measurement, and the honest version of this comment is the one admitting that. */
+ boss:{mass:4,r:28,art:4,bar:40,hp:343*TOUGH,base:0.6*LUNGER_PAY,walk:0.42*PLAYER_MOVE,run:0.72*PLAYER_MOVE,armour:ARMOUR},
 };
 // A Brunch pack arrives as one knot. big packs are much rarer than small ones, so a room that rolls
 // an eight has genuinely gone wrong, and a room that rolls a four is a nuisance rather than a wall

@@ -5680,23 +5680,35 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   // open rather than merely announce, and - the one that matters - that reading its tells is worth
   // something. A boss whose two fights, fought well and fought badly, come out the same is a boss
   // with a health bar on it.
+  /* The budget a boss fight gets here, sized from the fight rather than guessed. The Warden is 702 HP
+   at ARMOUR 0.66 and this test uses no character, so the Bolt lands 7 x 0.66 = 4.62 a shot every 133
+   ticks: phase 2 at half health is tick ~10,100 and a kill is tick ~20,200. 26,000 leaves room for
+   both and for a volley the boss spends not shooting at the player.
+
+   It was 9,000, which is why the test failed when the boss was made armoured: 9,000 ticks lands
+   ~311 damage, just under the 351 that crosses the phase threshold. The budget was the thing that was
+   wrong, not the phase rule - a boss that takes 1.52x longer to kill is the intended consequence of
+   it obeying the same damage rule as everything else, and a test that cannot survive the intended
+   consequence of a change is asserting the accident. Named so the loop and the failure message
+   cannot drift apart. */
+const BOSS_TICKS=26000;
   test('the boss is a fight: it acts, it phases, and reading its tells is the difference',()=>{
     const perp=e=>{
       const dx=player.x-e.x, dy=player.y-e.y, d=Math.hypot(dx,dy)||1;
       return {x:-dy/d,y:dx/d};
     };
-    const fight=reads=>{
+    const fight=(reads,unkillable)=>{
       startGame(); const room=goTo('boss');
     noCharacter();   // this test is about the weapon, not the character
       room.enemies.length=0; room.spawnPlan=null; room.pickups.length=0; projectiles.length=0;
       readyT=0; fadeT=0; roomFade=0;
       player.x=MIDX-250; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
-      player.hp=8; player.maxHp=8; player.iframes=0; player.blinkCharges=2;
+      player.hp=unkillable?1e6:8; player.maxHp=8; player.iframes=0; player.blinkCharges=2;
       player.weaponIdx=0; player.cooldown=0;
       const b=spawnEnemy(true,room,MIDX+250,MIDY); room.enemies.push(b);
       b.noticeTimer=0; b.aggroTimer=1e9;
       const moves={}, phases={}, walls=[]; let prev=1, hits=0, t=0;
-      for(;t<9000;t++){
+      for(;t<BOSS_TICKS;t++){
         pointAt(b.x, b.y);
         const tell=b.castT>0||(b.move==='sweep'&&b.moveT>0);
         if(reads&&tell){
@@ -5716,21 +5728,30 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         if(b.move!=='idle') moves[b.move]=(moves[b.move]||0)+1;
         if(b.move==='wall') walls.push(room.enemies.filter(e=>e.type==='brunch').length);
         if(b.phase!==prev){ phases[b.phase]=t; prev=b.phase; }
-        if(b.hp<=0||player.hp<=0) break;
+        if(b.hp<=0) break;
+        if(player.hp<=0&&!unkillable) break;
       }
       return {t:t,moves:moves,phases:phases,walls:walls,hits:hits,
               won:b.hp<=0,lost:player.hp<=0,hp:player.hp};
     };
-    const good=fight(true), bad=fight(false);
+    const good=fight(true,false), bad=fight(false,false), ph=fight(true,true);
     // 1. it acts. A boss that never enters a move is a large lunger, which is what it was.
     const kinds=Object.keys(good.moves);
     ok(kinds.length>=2,'the boss used '+(kinds.length?kinds.join(','):'NO MOVES')+
-       ' across 9000 ticks. One move is a pattern; none is a body with a health bar');
+       ' across '+BOSS_TICKS+' ticks. One move is a pattern; none is a body with a health bar');
     ok(good.moves.volley>0,'the boss never fired a volley');
     ok(good.moves.sweep>0,'the boss never swept');
-    // 2. it phases, and the phases fire on the way DOWN not at the start
-    ok(good.phases[2]>0,'the boss never reached phase 2');
-    ok(good.phases[2]>good.t*0.15,'phase 2 came at tick '+good.phases[2]+' of '+good.t+
+    // 2. it phases, and the phases fire on the way DOWN not at the start.
+    //    Measured on its OWN run, against an unkillable player, and that is a correction rather than a
+    //    convenience. The phase threshold is half the boss's health, so reaching it is a question about
+    //    how long the Warden survives - and making it obey the armour rule made it survive 1.52x longer,
+    //    which means an 8-hp player now dies before the threshold is reached. Asserting the phase off
+    //    the survivability run made this a survival test wearing a phase test's clothes: it would have
+    //    passed with the phase rule deleted as long as the player lived long enough, and failed with
+    //    the rule intact as long as they did not. The damage comparison below still uses the 8-hp runs,
+    //    because "reading the tells is the difference" is a claim about what a player survives.
+    ok(ph.phases[2]>0,'the boss never reached phase 2 in '+ph.t+' ticks of an unkillable fight');
+    ok(ph.phases[2]>ph.t*0.15,'phase 2 came at tick '+ph.phases[2]+' of '+ph.t+
        ', so the fight had barely started - the threshold is a fraction of health and it is being '+
        'crossed at the very top rather than by fighting');
     // 3. phase 2 is what opens the wall. Asserted by CALLING it rather than by waiting for the boss
@@ -6254,6 +6275,71 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   /* BUILD-READS. The rules of the trait system, as tests, because the whole thing rests on one
      sentence that no assertion in the codebase would otherwise protect: a trait may change WHERE a
      fight happens and may never change HOW HARD it is. */
+
+  /* ONE ARMOUR RULE FOR EVERY BODY. This exists because the boss quietly opted out of it.
+
+     `spawnEnemy` read `c.armour||1`, so a row of the ENEMY table that simply did not mention armour
+     got 1.0 - full damage - while the two rows that did mention it got 0.66. The boss was one of the
+     silent three, and the comment beside it said the omission was deliberate. That is the worst
+     combination a tuning table can have: a rule that is easy to get wrong, plus a note telling you
+     that getting it wrong is intended.
+
+     The cost was measurable, not theoretical. Every hit on the boss landed 1/0.66 = 1.52x harder
+     than the same hit anywhere else, so its effective health was 19x a lunger's for the same shot
+     count rather than the 29x its HP implied - and because the ladder multiplies health without
+     limit, that gap GREW with depth instead of staying a property of the body. Meanwhile the C# port
+     had already taken the other answer, so the two ports disagreed about the Warden and neither one
+     was marked wrong.
+
+     Two things are asserted here, because they are separately true and separately breakable:
+
+       EVERY ROW DECLARES ARMOUR - so an enemy added to the table without one is a test failure
+       rather than a silently unarmoured body that is 1.52x easier to kill and much harder to
+       balance, which is the failure mode that actually happened.
+
+       EVERY BODY ABOVE THE SIZE LINE TAKES THE SAME ARMOUR - the real claim. A per-body stat is
+       fine. A per-body stat inherited by default rather than chosen is the bug. The line is
+       SIZE, not a list of names, so a new body lands on the right side of it automatically and a
+       renamed one cannot quietly escape it.
+
+     The expectation is ARMOUR itself and not a copied literal, because a second place holding a copy
+     of 0.66 is exactly what let the two ports drift apart in the first place. If ARMOUR is ever meant
+     to vary by body, rewrite this deliberately - do not just delete it. */
+  test('every body obeys one armour rule, and the table declares it',()=>{
+    const missing=[];
+    for(const k of Object.keys(ENEMY)){
+      if(ENEMY[k].armour===undefined) missing.push(k);
+    }
+    ok(missing.length===0,'these bodies never declare armour, so the default decides for them instead of '
+      +'the table: '+missing.join(', '));
+
+    // THE RULE: armour is a stat about a big body, so it is the SIZE that decides, not the name.
+    // Brunch is the single body below the line - half a lunger's radius - and is the original
+    // exemption rather than a carve-out: armouring it broke the alt blast's promise that one budget
+    // deletes a small Brunch group outright, and a blast into three of them left all three standing.
+    const LINE=ENEMY.lunger.r, wrong=[], below=[];
+    for(const k of Object.keys(ENEMY)){
+      const row=ENEMY[k];
+      if(row.r>=LINE){
+        if(row.armour!==ARMOUR) wrong.push(k+'(r'+row.r+')='+row.armour);
+      } else if(row.armour!==1){
+        below.push(k+'(r'+row.r+')='+row.armour);
+      }
+    }
+    ok(wrong.length===0,'every body at least as big as a lunger (r'+LINE+') takes the same damage per '
+      +'hit, so a gun does not do more to a gunner than to a shooter of the same radius: '+wrong.join(', '));
+    ok(below.length===0,'a body smaller than a lunger is chip and takes full damage: '+below.join(', '));
+    // and the rule is reached at SPAWN, not merely present in the table - a table that is right and a
+    // reader that ignores it is the same bug wearing a different hat
+    startGame();
+    const room=currentRoom(), bad=[];
+    for(const k of Object.keys(ENEMY)){
+      const want=ENEMY[k].r>=LINE?ARMOUR:1;
+      const e=ENEMY[k].mass>=4&&k==='boss'?spawnEnemy(true,room,MIDX,MIDY):spawnEnemy(false,room,MIDX,MIDY,k);
+      if(Math.abs(e.armour-want)>1e-12) bad.push(k+'='+e.armour+' (table says '+want+')');
+    }
+    ok(bad.length===0,'the table says one thing and spawnEnemy produced another: '+bad.join(', '));
+  });
 
   test('a trait changes where a fight happens and never how hard it is',()=>{
     // Sixty identical shooters per held gun. Every combat number must come out byte-identical across

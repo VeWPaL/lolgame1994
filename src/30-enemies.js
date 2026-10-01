@@ -125,7 +125,7 @@ function spawnEnemy(boss,room,x,y,type){
   const base={x:x===undefined?rx():x,y:y===undefined?ry():y,hitFlash:0,idleDir:[0,0],idleTimer:(Rnd.jitter()*WANDER_TICKS)|0,
     noticeTimer:(Rnd.jitter()*16*SPEEDUP)|0,anim:0,kvx:0,kvy:0,stun:0,slowT:0,alerted:false,dodgeCd:0,pursuit:0};
   const c=ENEMY[boss?'boss':type==='shooter'||type==='gunner'?type:type==='brunch'?'brunch':'lunger'];
-  const e=Object.assign(base,{type:boss?'boss':type||'lunger',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp*depthTough(),maxHp:c.hp*depthTough(),armour:c.armour||1});
+  const e=Object.assign(base,{type:boss?'boss':type||'lunger',mass:c.mass,r:c.r,art:c.art,bar:c.bar,hp:c.hp*depthTough(),maxHp:c.hp*depthTough(),armour:c.armour===undefined?ARMOUR:c.armour});
   if(c.base!==undefined) e.speed=c.base*PRESSURE.rate*depthRate();
   if(boss){e.aggroTimer=9999;bossInit(e);return e;}
   // lungers and Brunch are the same shape of body: they walk at you and hit you on contact. only

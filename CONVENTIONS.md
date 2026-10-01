@@ -867,13 +867,15 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **170 checks**, every test seeded to an identical world. All must pass at
-  every commit. The change history (`FIXES`, in `80-ui.js`) is **104** entries and is itself checked:
+- `src/99-tests.js` - **171 checks**, every test seeded to an identical world. All must pass at
+  every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
+  `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
+  figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.
   every pinned fix must have a test carrying its name, and an entry with no matching result is
   reported **UNVERIFIED** in amber rather than scored as a pass. The panel prints both numbers and
   names each, because they are genuinely different — the table is bugs found and pinned, the suite
   is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` - **78 checks**, parity-verified against the JavaScript.
+- `csharp/Depths.Core` + `Depths.Tests` - **79 checks**, parity-verified against the JavaScript.
   Still no world state; see the section on the port boundary above.
 
 ### The port's own drift, and the test that was defending it
@@ -930,7 +932,7 @@ teaches; the other three exist to make a room's answer depend on which of them i
 
 `csharp/Depths.Core` has `Balance` (all the tuning, plus the depth ladder), `Hit` (the player hit
 test), `Intercept` (lunge and gun solutions), `Mulberry32` and `Rng` (the three streams, the floor
-seed, the base36 codec). `csharp/Depths.Tests` has **78 checks**, all parity-verified against numbers
+seed, the base36 codec). `csharp/Depths.Tests` has **79 checks**, all parity-verified against numbers
 read out of the running JavaScript.
 
 **There is no world in the port yet.** No player, no body, no projectile, no room, no tick. Everything

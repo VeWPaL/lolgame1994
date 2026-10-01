@@ -28,6 +28,24 @@ namespace Depths
         public const double Tough = 1.35;      // the global HP multiplier
         public const double ShotDmg = 1.8;     // a chip off a lunger rather than half a heart
         public const double Armour = 0.66;     // per-hit multiplier, so it scales every pellet
+
+        /// <summary>
+        /// Every row in <see cref="Rows"/> sets <c>Armour</c> explicitly, and that is a rule rather
+        /// than a coincidence. <c>BodyRow.Armour</c> is a plain <c>double</c>, so a row that simply
+        /// forgot it reads 0.0 - and this port used to disagree with the JavaScript on exactly that
+        /// point, in OPPOSITE directions: C# forgot to a body that absorbs everything, JavaScript
+        /// forgot to a body that takes full damage while every other body is multiplied by 0.66. The
+        /// Warden was the casualty in JS, where the omission was deliberate and commented as such, so
+        /// both ports were wrong and neither one marked the other wrong.
+        ///
+        /// <para>
+        /// The fix is not a cleverer default - a default would only move the failure to whichever
+        /// value someone happened to pick. It is that every row names its armour, so a row that
+        /// forgets is a test failure. <c>BodyParityTests</c> asserts it, and asserts the rule it has
+        /// to obey: every body at least as wide as a lunger is armoured, and the Brunch - half a
+        /// lunger's radius - is the single body that is not.
+        /// </para>
+        /// </summary>
         public const double BrunchWalk = 0.62 * Balance.PlayerMove;
         public const double BrunchRun = 1.35;
 
@@ -50,7 +68,7 @@ namespace Depths
                       Run  = Balance.LungerRun * Balance.PlayerMove },
 
             // brunch: the pressure. Small, fast, and it arrives as a pack rather than as a threat
-            new BodyRow { Mass = 0.5, Radius = 8, Art = 1, Bar = 11, Hp = 2 * Tough,
+            new BodyRow { Mass = 0.5, Radius = 8, Art = 1, Bar = 11, Hp = 2 * Tough, Armour = 1,
                       Walk = BrunchWalk, Run = BrunchRun },
 
             // shooter: the committed shell. Walks while it charges, which is what makes it a body
@@ -58,7 +76,7 @@ namespace Depths
             new BodyRow { Mass = 0.8, Radius = 14, Art = 2, Bar = 26, Hp = 5.6 * Tough,
                       Base = 0.45 * Balance.LungerPay, Sense = 600, Range = 520, Close = 150, Far = 250,
                       CdMin = Balance.Sec(0.5), CdVar = Balance.Sec(0.4), Dmg = ShotDmg,
-                      PShotSpeed = 2.2, PShotRadius = 5 },
+                      PShotSpeed = 2.2, PShotRadius = 5, Armour = Armour },
 
             // gunner: the heavy shot. Roots itself to charge, so its accuracy is what it is
             new BodyRow { Mass = 2.4, Radius = 22, Art = 3, Bar = 32, Hp = 8 * Tough, Armour = Armour,
@@ -67,8 +85,10 @@ namespace Depths
                       PShotSpeed = 2.05, PShotRadius = 7 },
 
             // boss: the Warden. HP is sized from measured weapon DPS, which is the only way to size
-            // a health bar
-            new BodyRow { Mass = 4, Radius = 28, Art = 4, Bar = 40, Hp = 520 * Tough, Armour = Armour,
+            // a health bar. 343*TOUGH rather than 520*TOUGH because the boss now obeys ARMOUR like
+            // every other body, and holding the effective pool fixed across that change is what keeps
+            // it a repair to the rule rather than a 1.52x pacing change to every boss fight in the game
+            new BodyRow { Mass = 4, Radius = 28, Art = 4, Bar = 40, Hp = 343 * Tough, Armour = Armour,
                       Base = 0.6 * Balance.LungerPay,
                       Walk = 0.42 * Balance.PlayerMove, Run = 0.72 * Balance.PlayerMove },
         };
