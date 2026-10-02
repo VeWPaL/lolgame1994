@@ -1509,9 +1509,10 @@ having is the one that says what happens when the content outgrows the code.
   the other, so they drift apart when either is edited — read both, trust neither alone. The panel
   prints both and names each, because they are genuinely different: the table is bugs found and
   pinned, the suite is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` - **127 checks**, parity-verified against the JavaScript.
-  The generator (`Dungeon`) and the spawn planner (`WavePlanner`) are ported; there is still no player,
-  no projectile and no `update()`. See the section on the port boundary below.
+- `csharp/Depths.Core` + `Depths.Tests` - **147 checks**, parity-verified against the JavaScript.
+  The generator (`Dungeon`), the spawn planner (`WavePlanner`), and the run holder + tick skeleton
+  (`RunState`, `TickOrder`) are ported; the ~870-line `update()` body is still stubs. See the section
+  on the port boundary below.
 
 ### The port's own drift, and the test that was defending it
 
@@ -1571,12 +1572,13 @@ teaches; the other three exist to make a room's answer depend on which of them i
 test), `Intercept` (lunge and gun solutions), `Bodies`/`Body` (the body table, the spawner and the
 build-dependent traits), `Frame` (`RoomBounds` and the frame timing), `Mulberry32` and `Rng` (the
 three streams, the floor seed, the base36 codec), `World` (`Dir`, `RoomKind`, `Room`, `Map` and the
-`Dungeon` generator) and `SpawnPlan` (`SpawnSlot`, `PlannedBody`, `WavePlan` and the `WavePlanner`).
-`csharp/Depths.Tests` has **127 checks**, all parity-verified against numbers read out of the running
+`Dungeon` generator) and `SpawnPlan` (`SpawnSlot`, `PlannedBody`, `WavePlan` and the `WavePlanner`),
+plus `RunState` (run-scoped holder) and `Tick` (`TickOrder` skeleton).
+`csharp/Depths.Tests` has **147 checks**, all parity-verified against numbers read out of the running
 JavaScript.
 
-**There is still no player, no projectile and no `update()`.** The generator and the spawn planner are
-in, which was deliberate — see the port order below.
+**The `update()` body is still stubs.** The gates, counters, tick order, and RNG discipline are in,
+which was deliberate — see the port order below.
 
 #### `char + double` is arithmetic in C#, and it looked like a 103px bug
 

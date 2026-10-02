@@ -134,6 +134,37 @@ namespace Depths
         public const double PressureRate = 1.5;
 
         /// <summary>
+        /// THE MOMENTUM DIALS, straight from src/00-balance.js:1020-1024. Momentum is charged on
+        /// movement under pressure: below the floor it decays rather than holds, which is the whole
+        /// difference between a meter that reads a fight and a meter that reads a held key.
+        /// </summary>
+        public const double MomentumGain = 0.0056;
+        public const double MomentumStallDecay = 0.006;
+        public const double MomentumMoveFloor = 0.3;
+
+        /// <summary>
+        /// How much a crowded room shortens a body's cadence, src/00-balance.js:1160
+        /// (PRESSURE_CLOSURE's twin). A body at full pressure answers 0.4 of a cooldown sooner.
+        /// </summary>
+        public const double PressureCadence = 0.4;
+
+        /// <summary>
+        /// The Warden's pacing dials, from src/00-balance.js:430-476. BOSS_CD_MIN/VAR are the gap
+        /// between moves - sec(3.2) and sec(1.0) in the original - and the recover is the dead time
+        /// after every move, which is the gap the player spends reading the next tell.
+        /// </summary>
+        public static int BossCdMin => Sec(3.2);
+        public static int BossCdVar => Sec(1.0);
+        public static int BossRecover => Sec(1.1);
+        public const double BossPhase1 = 0.66, BossPhase2 = 0.33;   // fractions of max HP
+
+        /// <summary>The fade out of a room transition, src/00-balance.js:251 (FADE_OUT).</summary>
+        public static int FadeOut => Sec(0.35);
+
+        /// <summary>The ready window after entering a room, src/00-balance.js:251 (READY).</summary>
+        public static int Ready => Sec(0.75);
+
+        /// <summary>
         /// DY slides the hit circle down onto the actual mass of the character - the chest and waist,
         /// which is rows 11-15 of the sprite, and the band a shot is aimed at.
         ///
