@@ -920,6 +920,41 @@ table tests use the ascending `fMin+(1-fMin)*max(0,1-...)` form for the same cur
 correct — but writing the wrong one produced `1.4278` at the muzzle instead of `1`, which is the tell
 that a test has stopped describing the thing it claims to check.
 
+### A test I wrote passed against a mutation it should have caught
+
+The seed-replay check fingerprints a played fight: where every body ended up, its flank angle, and its
+pack id. Its first version had only the first two, because those are what the bug report named. I
+added `packId` on the reasoning that "both cursors should be in the fingerprint" — and then nearly
+left it there as a comment-level improvement.
+
+The mutation check says whether it was load-bearing:
+
+| | `PACK_CURSOR` leaked | caught? |
+|---|---|---|
+| fingerprint without `packId` | yes | **no — 200/200 green** |
+| fingerprint with `packId` | yes | yes, by the intended assertion |
+
+So the original fingerprint was blind to half the bug. It would have been satisfied by a
+`resetRunCursors` that reset the flank walk and silently left the pack-id counter running, which is
+exactly the half-revert a well-meaning "let me tidy this up" commit produces. It caught the mutation
+I thought about and not the one it actually had to catch.
+
+The general form, which is the third time this has happened here (see the boss-phase tally and the
+Brunch pack generator): **a test written about one symptom covers one symptom.** Two cursors were the
+cause; one of them was the story. Enumerate the *cause* — here, "every module counter a run owns" —
+and assert each one, then confirm by mutating each one separately. Four mutations, each expected to
+fail on a different assertion:
+
+| mutation | fails on |
+|---|---|
+| `PACK_CURSOR` not reset | replay fingerprint |
+| `FLANK_CURSOR` not reset | replay fingerprint |
+| `descend()` also resets | pack ids unique within a run |
+| fuzz back to bare `startGame()` | `worlds.size > 120` — reports "got only 1 distinct dungeons" |
+
+The fourth is the useful one, because it is the only one that catches a fixture quietly ceasing to be
+a test. All four are asserted to fail; none of them is a claim about what the code looks like.
+
 ---
 
 ## Parked, with the measurements that produced it
