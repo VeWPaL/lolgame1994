@@ -46,20 +46,38 @@ function doorRect(d,wt){
    from a literal 420. The vignette is the other half of it: at 420px it was most of the way across
    a 450px-tall room, and on a 1000px-tall room it would be a small bright disc in the middle of a
    large dark floor - the room would read as unlit beyond the disc rather than as a room. Scaling it
-   off the diagonal keeps the proportion, which is what was actually being chosen by hand. */
+   off the diagonal keeps the proportion, which is what was actually being chosen by hand.
+
+   THE AREA IS IN THE KEY TOO, and it is the same mistake one level out. A cache keyed by type and
+   size alone is a cache that believes there is one dungeon, and descending a floor hands back the
+   previous floor's baked canvas - which is the exact class of bug the size key exists to prevent,
+   and it would have been invisible in every screenshot of a single floor. Three keys or nothing:
+   what the room is, how big it is, and where in the climb it is. */
 function drawFloor(type){
-  const w=roomW(), h=roomH();
-  const key=type+':'+w+'x'+h;
+  const w=roomW(), h=roomH(), pal=areaPalette();
+  const key=type+':'+w+'x'+h+':'+pal.id;
   let c=floorCache[key];
   if(!c){
     c=floorCache[key]=document.createElement('canvas');
     c.width=w; c.height=h;
     const g=c.getContext('2d'), cx=c.width/2, cy=c.height/2;
-    g.fillStyle=g.createPattern(caveCanvas,'repeat');
+    /* TWO TINTS, IN THIS ORDER, and the order is the design.
+
+       The room TYPE's tint goes on first at 0.34 and the area's wash on top at its own strength,
+       because they answer different questions. Type says what the room is FOR - the item room
+       glows, the boss room is red, and that read has to survive into every area or a themed floor
+       silently deletes the one thing the floor colour was telling the player. The wash says where
+       you are. Mixing them into one pre-baked colour would have made the second one win. */
+    g.fillStyle=g.createPattern(caveTile(pal.id),'repeat');
     g.fillRect(0,0,c.width,c.height);
     g.globalAlpha=0.34;
     g.fillStyle=ROOM_BG[type]||'#191b22';
     g.fillRect(0,0,c.width,c.height);
+    if(pal.wash>0){
+      g.globalAlpha=pal.wash;
+      g.fillStyle=pal.floorTint;
+      g.fillRect(0,0,c.width,c.height);
+    }
     g.globalAlpha=1;
     // 420 was the radius on a 450-tall room, so this recovers the same shape at any size
     const rad=Math.max(160,Math.sqrt(w*w+h*h)*0.47);
@@ -70,6 +88,30 @@ function drawFloor(type){
     g.fillRect(0,0,c.width,c.height);
   }
   ctx.drawImage(c,roomL(),roomT());
+}
+/* THE WALL, as four bands of one masonry pattern anchored to the room's own corner.
+
+   It was four `fillRect`s of a flat colour, which is fine for exactly one area and reads as a frame
+   around the game rather than as stone the room is built out of. Four palettes over a flat
+   rectangle would have made that four times as obvious, so the courses come with the theming.
+
+   ANCHORED, not tiled from the screen origin. A pattern fill starts at (0,0) of the current
+   transform, and the room draw is inside the camera translate, so an unanchored pattern would slide
+   the masonry when the camera moved and the wall would visibly crawl. Translating to the room's own
+   corner first makes the pattern world-fixed: the same argument the lab's survey grid is anchored
+   on, and for the same reason - a texture that is not where it was drawn is not a texture.
+
+   One pattern object per draw, built from a tile baked once per area. */
+function drawWall(pal,wt){
+  ctx.save();
+  ctx.translate(ROOM_LEFT-wt,ROOM_TOP-wt);
+  ctx.fillStyle=ctx.createPattern(wallTile(pal.id),'repeat');
+  const iw=ROOM_RIGHT-ROOM_LEFT+wt*2, ih=ROOM_BOTTOM-ROOM_TOP+wt*2;
+  ctx.fillRect(0,0,iw,wt);                    // north
+  ctx.fillRect(0,ih-wt,iw,wt);               // south
+  ctx.fillRect(0,wt,wt,ih-wt*2);             // west
+  ctx.fillRect(iw-wt,wt,wt,ih-wt*2);         // east
+  ctx.restore();
 }
 function drawWand(px,py,a,color,extra){
   const side=Math.cos(a)>=0?1:-1, hx=px+side*11, hy=py+5;
@@ -162,12 +204,18 @@ function drawRoom(){
   Lab.draw();
 
   const wt=16;
-  ctx.fillStyle='#2b2f3a';
-  ctx.fillRect(ROOM_LEFT-wt,ROOM_TOP-wt,ROOM_RIGHT-ROOM_LEFT+wt*2,wt);
-  ctx.fillRect(ROOM_LEFT-wt,ROOM_BOTTOM,ROOM_RIGHT-ROOM_LEFT+wt*2,wt);
-  ctx.fillRect(ROOM_LEFT-wt,ROOM_TOP-wt,wt,ROOM_BOTTOM-ROOM_TOP+wt*2);
-  ctx.fillRect(ROOM_RIGHT,ROOM_TOP-wt,wt,ROOM_BOTTOM-ROOM_TOP+wt*2);
-  const bg=ROOM_BG[r.type];
+  drawWall(areaPalette(),wt);
+  /* THE DOORWAY IS FILLED WITH THE COMPOSITED ROOM TINT, not the bare type tint, because it is a
+     hole through the wall and what shows through it has to be the room it opens into. Filling it
+     with ROOM_BG[type] alone meant the gap was the one patch of floor that ignored the area - a
+     rectangle of Area1 stone punched through a Kiln Works wall on floor 6, which is exactly the
+     kind of thing that reads as a rendering fault rather than as a door.
+
+     roomTone() is the same function the floor composite is built from, so the gap cannot drift from
+     the floor it sits in. It is deliberately still OPAQUE rather than a copy of the floor sprite:
+     the doorway is meant to read as a darker way through, and pasting the whole floor into it would
+     give the player a second, identical view of the room they are standing in. */
+  const bg=roomTone(r.type,areaPalette().id);
   const dcolFor=d=>!doorOpen(r)?'#c93b3b':leadsToBoss(r,d)&&!bossUnlocked?'#ffd23d':leadsToItem(r,d)&&!itemUnlocked?'#d8dee9':'#5ee27a';
   for(const d of ['N','S','W','E']){
     if(!r.doors[d]) continue;
@@ -1139,9 +1187,20 @@ function drawHUD(){
   const dCx=hx+FRAME+Math.floor((dW-FRAME*2)*0.34), dCy=dy+ROW_H/2;
   // a struck numeral: the depth is a mark cut into the plate, not a label printed on it
   ctx.font='700 17px "Courier New",monospace';
+  /* THE NUMERAL IS STRUCK IN THE AREA'S INK, and this is the whole of the HUD's palette.
+
+     The plate is wood and the wood is wood in every area - a themed HUD would mean re-baking every
+     plate in every area, which is the one thing that would cost per-frame work for a signal the
+     floor already gives for free. So the accent is ink on the existing wood: the numeral is the only
+     thing on the plate that changes hue with the area, and it is the one element a player looks at
+     to answer "how deep am I", which is the question the accent is answering.
+
+     Lit above floor 1 and dim on floor 1 exactly as before - that rule is about the CLIMB rather
+     than about the place, and it should not start meaning something else because the place now has
+     a colour. */
   ctx.fillStyle='#0d0a08';
   ctx.fillText(String(dFloor),dCx+1,dCy+1);
-  ctx.fillStyle=dFloor>1?'#e8b06a':'#c8a878';
+  ctx.fillStyle=dFloor>1?areaPalette().accent:areaPalette().accentDim;
   ctx.fillText(String(dFloor),dCx,dCy);
   // the tally: one notch per floor, up to eight, then a count of the rest. A depth of forty should
   // look further than a depth of three without needing forty-one pixels of plate.
@@ -1150,7 +1209,7 @@ function drawHUD(){
   for(let i=0;i<Math.min(8,dFloor);i++) ctx.fillRect(tX+i*3,tY,2,12);
   if(dFloor>8){
     ctx.font='9px "Courier New",monospace';
-    ctx.fillStyle='#c8a878';
+    ctx.fillStyle=areaPalette().accentDim;
     ctx.fillText('+'+(dFloor-8),tX+8*3+3,tY+7);
   }
   ctx.restore();
@@ -1181,9 +1240,20 @@ function drawHUD(){
   ctx.drawImage(woodPlate(pw,pw),mx0,my0);
   drawInset(mx0+8,my0+8,pw-16,pw-16,null);
   ctx.drawImage(paperTex(pw-20,pw-20),mx0+10,my0+10);
-  // knock the paper back so the map reads as a lit board in a dark room: the white door frames and
-  // the room glyphs end up the brightest things on it instead of white-on-cream
-  ctx.fillStyle='rgba(9,11,17,0.52)';ctx.fillRect(mx0+10,my0+10,pw-20,pw-20);
+  /* Knock the paper back so the map reads as a lit board in a dark room: the white door frames and
+     the room glyphs end up the brightest things on it instead of white-on-cream.
+
+     The wash carries the AREA'S hue at the SAME alpha as the neutral it replaces, and that is the
+     only thing about it that changed. The alpha is load-bearing - it is what keeps an unvisited room
+     legible as a light shell rather than as a hole in the board - so a themed wash that also changed
+     the alpha would have re-tuned the map's readability as a side effect of colouring it.
+
+     IT IS ITS OWN FIELD rather than the floor's tint, and that is measured rather than tidied. The
+     floor tint is the hue of the STONE under the player; the map wash is a near-black ink laid over
+     cream paper. Using one for the other put rgb(37,33,28) where rgb(9,11,17) used to be - a map
+     three shades lighter in every channel, which eats into the contrast between an unvisited shell
+     and the board behind it. So `mapWash` is the ink, and Area1's is the literal that was there. */
+  ctx.fillStyle=withAlpha(areaPalette().mapWash,0.52);ctx.fillRect(mx0+10,my0+10,pw-20,pw-20);
   // rooms next to somewhere you have been are shown as unlit shells: enough shape to plan a route
   // with, not enough to skip the room. only rooms an actual door leads to count, otherwise the map
   // shows a room that is merely touching you on the grid and there is no way in. built from the
@@ -1411,7 +1481,48 @@ function drawDescent(){
   ctx.save();
   ctx.textAlign='center';
   ctx.globalAlpha=Math.max(0,Math.min(1,a));
-  ctx.fillStyle='#e8b06a';
+  /* THE SCRIM, and it is here because of the one thing the fade above cannot do.
+
+     roomFade dims the WHOLE frame uniformly, so it dims these four lines exactly as much as it dims
+     the room - it cannot make one more legible than the other. Meanwhile the player is placed at the
+     room's centre, and every room on a floor is centred on the canvas, so in EVERY descent the
+     player is standing on the middle line of this banner, with the wand flash beside it. A uniform
+     fade leaves that collision precisely where it was, only darker: the screenshot of floor 5 shows
+     "floor 4 -> 5" with the player's hat sitting on the 4.
+
+     So the beat carries its own ground - a band that is flat behind the type and falls off above and
+     below it, which lifts the four lines off whatever they are printed over without drawing a
+     visible box on the screen. FULL WIDTH rather than fitted to the text, because the levers line
+     is the widest of the four and a band that tracked the widest line would still leave the narrower
+     ones floating on the room at the ends. Cheap: it exists for the length of one descent and is a
+     gradient built per draw while descendT is live, which is a fraction of a second. */
+  const scrimTop=H/2-74, scrimBot=H/2+50;
+  const scrim=ctx.createLinearGradient(0,scrimTop,0,scrimBot);
+  scrim.addColorStop(0,'rgba(5,4,3,0)');
+  scrim.addColorStop(0.22,'rgba(5,4,3,0.90)');
+  scrim.addColorStop(0.74,'rgba(5,4,3,0.90)');
+  scrim.addColorStop(1,'rgba(5,4,3,0)');
+  ctx.fillStyle=scrim;
+  ctx.fillRect(0,scrimTop,W,scrimBot-scrimTop);
+  /* THE FLOOR NUMBER IS STRUCK IN THE AREA'S ACCENT, like the depth numeral, so the beat and the
+     plate agree about where you are. It was its own literal (`#e8b06a`), which was Area1's accent
+     written out in a second place - the exact arrangement that lets two things that mean the same
+     number drift apart, and which would have meant four accents in one file after the next area
+     was added.
+
+     NOT the area's NAME, and the reason is worth recording rather than leaving as a gap. Announcing
+     the area properly means comparing the area you left with the area you arrived in - "did this
+     descent cross a boundary" - and the only function that maps a floor to an area is core's
+     `areaForFloor()`, which takes no argument and reads `run.floor`. Deriving the boundary here
+     would mean writing the 4/8/12 thresholds out a second time in the presentation layer, and two
+     copies of a ladder boundary is a bug waiting: change one and the banner names the wrong area.
+     Temporary-swapping `run.floor` to ask the question is worse - a draw function mutating
+     simulation state is the one-way data flow this project rules out outright.
+
+     So the beat says the floor and the palette says the area, which is the whole of the identity
+     the spec asks for (enemy mix plus palette). Naming the area at a boundary is a one-line change
+     to core and is written up as a request rather than worked around. */
+  ctx.fillStyle=areaPalette().accent;
   ctx.font='bold 44px monospace';
   ctx.fillText('FLOOR '+f,W/2,H/2-34);
   ctx.fillStyle='#8a7a62';
@@ -1427,8 +1538,10 @@ function drawDescent(){
   ctx.font='13px monospace';
   ctx.fillText('bodies '+t1.toFixed(1)+'x tougher  ·  they answer '+r1.toFixed(1)+
     'x faster  ·  rooms fuller',W/2,H/2+22);
-  // a ruled line under it, struck like the depth plate, so the beat belongs to the same object
-  ctx.strokeStyle='rgba(232,176,106,0.45)';
+  // a ruled line under it, struck like the depth plate, so the beat belongs to the same object.
+  // withAlpha rather than a literal, so the rule under the number cannot be a different hue from
+  // the number once there are four areas - and so Area1 still composites to the exact same string.
+  ctx.strokeStyle=withAlpha(areaPalette().accent,0.45);
   ctx.lineWidth=1;
   ctx.beginPath();
   ctx.moveTo(W/2-150,H/2+36); ctx.lineTo(W/2+150,H/2+36);

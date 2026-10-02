@@ -8,23 +8,236 @@
    this module ports nearly mechanically. That is the strongest argument for keeping the art
    procedural, and the reason a 15GB asset pipeline never has to exist.
    ============================================================================================== */
-/* ---------- cave floor texture ---------- */
-const caveCanvas=document.createElement('canvas');
-caveCanvas.width=128;caveCanvas.height=128;
-(function(){
-  const c=caveCanvas.getContext('2d');
-  c.fillStyle='#25211c';c.fillRect(0,0,128,128);
+/* ---------- colour, as arithmetic rather than as a string each time ----------
+   Three helpers and one reason: the area palette below is a table of hues, and the places that
+   consume it need a WASH (the same hue at a fraction of its strength) and a BLEND (this hue mixed
+   into that one). Both were being done by writing the resultant hex out by hand, which is how a
+   palette stops being a palette and becomes sixteen unrelated literals that drift apart the first
+   time one of them is nudged.
+
+   Hex only, because everything in the existing vocabulary is written as hex. A three-digit form is
+   expanded rather than rejected, so a hand-typed '#abc' is a legal argument and not a silent
+   black. */
+function hexRgb(h){
+  let s=String(h).replace('#','').trim();
+  if(s.length===3) s=s[0]+s[0]+s[1]+s[1]+s[2]+s[2];
+  const n=parseInt(s,16);
+  if(!Number.isFinite(n)) throw new Error('not a colour: "'+h+'"');
+  return [(n>>16)&255,(n>>8)&255,n&255];
+}
+const rgbHex=(r,g,b)=>'#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
+/* MIX. `t` is how much of B lands in the result, so mixHex(a,b,0) is a and mixHex(a,b,1) is b. Both
+   ends are exact: the test pins them, because a helper whose endpoints are approximate cannot be
+   used to keep Area1 identical to what it was. */
+function mixHex(a,b,t){
+  const A=hexRgb(a),B=hexRgb(b);
+  return rgbHex(A[0]+(B[0]-A[0])*t,A[1]+(B[1]-A[1])*t,A[2]+(B[2]-A[2])*t);
+}
+/* ALPHA, as rgba. Used where the code wants a translucent version of a palette hue rather than a
+   new colour, so the two cannot stop agreeing - the descent banner's rule under the floor numeral
+   used to be its own literal and Area1 still has to produce the same one. */
+function withAlpha(h,a){ const c=hexRgb(h); return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')'; }
+
+/* ---------- AREA PALETTE, and the one function that reads it ----------
+   `areaForFloor()` is core (00-balance) and decides WHICH area; this decides what that area looks
+   like. The split is the point: identity is carried by the enemy mix and by the palette, and
+   neither of them touches the depth ladder. A themed block is not a harder version of the climb,
+   it is the same climb somewhere else.
+
+   THE FIELDS, and each one earns its place by being read somewhere a player will look:
+
+     stone      the wall. The single largest colour on screen after the floor, and the one the eye
+                reads as "where am I" before it reads anything else.
+     stoneLit   the lit edge of each course, so the wall is masonry and not a rectangle.
+     mortar     the joint between courses. Without it a wall has no scale and reads as a border.
+     floor      the base the cave speckle sits on. Close-up texture, not the room's colour.
+     floorLight the pale speckle. One per area, because a fleck of the wrong hue is what makes a
+                recoloured floor look like a filter over the old one.
+     floorTint  the hue the room is WASHED in, over the room-type tint. See wash.
+     wash       how strongly. 0 for Area1, deliberately: see THE ONE MEASURED CLAIM below.
+     accent     UI ink struck into wood - the depth numeral, the descent banner, the area line on
+                the character sheet.
+     accentDim  the same ink unlit, for the numeral on floor 1 and the "+N" tally.
+     mapWash    the near-black ink laid over the minimap's paper. Deliberately NOT `floorTint`: that
+                is the hue of the stone under the player, and putting it on the board made the map
+                three shades lighter in every channel, which eats the contrast an unvisited room
+                needs to stay a light shell rather than a hole in the board.
+
+   THE ONE MEASURED CLAIM: **Area1 is the build that existed before areas did.** Every number
+   measured in this project's history - every TTK, every reaction window, every screenshot anyone
+   looked at - was measured on floors 1-4 with this palette. So Area1's stone is the `#2b2f3a` the
+   wall was already, its floor is the `#25211c` the cave was already, its accent is the `#e8b06a`
+   the depth numeral was already, and its wash is ZERO, which is what makes the floor composite
+   byte-identical rather than approximately right. A theming pass that quietly re-tinted the first
+   four floors would invalidate all of it while looking like a feature. */
+const AREA_PAL={
+  Area1:{ id:'Area1',
+    stone:'#2b2f3a', stoneLit:'#454c5c', mortar:'#1d2028',
+    floor:'#25211c', floorLight:'255,240,210', floorTint:'#25211c', wash:0,
+    accent:'#e8b06a', accentDim:'#c8a878', mapWash:'#090b11' },
+  /* THE FOUR AREAS AS HUES, and the temperatures are the design rather than a by-product.
+
+     TWO COOL AND TWO WARM, deliberately and 2:2 rather than a gradient from cold to hot. A palette
+     that ramps monotonically - slate, then olive, then amber, then red - reads as a slider the
+     player is being dragged along, and makes each floor look like a slightly worse version of the
+     next. Alternating means every descent is a CHANGE, and the two warm areas then have to be told
+     apart from each other rather than from the cold ones:
+
+       Area1  blue-grey  b(58) > g(47) > r(43)     cold slate. The shipped look, untouched.
+       Area3  green      g(56) > b(51) > r(31)     cold, and unmistakably not Area1: green, and
+                                                        a channel Area1 never leads on.
+       Area2  amber      r(61) > g(42) > b(32)     warm, and orange - r/g is 1.45, which is brick.
+       Final  oxblood    r(51) > g(22) > b(29)     warm, and red - r/g is 2.32. It is the same
+                                                        temperature as Area2 and half the green, so
+                                                        the two warm areas are distinguishable on
+                                                        a channel rather than on brightness.
+
+     Every pair is at least 28 apart in summed RGB on the wall and 44 on the floor wash, and those
+     are the floors of the test rather than the numbers I would have liked: the wall is the largest
+     thing on screen and 28 is already visible on it. */
+  Area2:{ id:'Area2',
+    stone:'#3d2a20', stoneLit:'#63432e', mortar:'#261811',
+    floor:'#30231a', floorLight:'255,224,168', floorTint:'#5a3a12', wash:0.22,
+    accent:'#e08a4a', accentDim:'#b87545', mapWash:'#100a07' },
+  Area3:{ id:'Area3',
+    stone:'#16382e', stoneLit:'#3c5b52', mortar:'#14241f',
+    floor:'#1b2a25', floorLight:'190,240,214', floorTint:'#1e3c34', wash:0.20,
+    accent:'#7fd4b0', accentDim:'#63a68c', mapWash:'#070f10' },
+  Final:{ id:'Final',
+    stone:'#2e0f1c', stoneLit:'#5e2c34', mortar:'#210e13',
+    floor:'#26161a', floorLight:'255,196,208', floorTint:'#3e0d20', wash:0.26,
+    accent:'#ff9a8a', accentDim:'#c97668', mapWash:'#140609' },
+};
+/* LOUD on a missing area, for the same reason Content.get is loud: an unknown id here would
+   otherwise return undefined and the first thing anybody would see is a room painted in the colour
+   of null. The message names the id and lists what exists, because the mistake is always a typo in
+   a new area or a rename somebody did in one place. */
+function paletteForArea(area){
+  const p=AREA_PAL[area];
+  if(!p) throw new Error('paletteForArea: no palette called "'+area+'" (have: '+Object.keys(AREA_PAL).join(', ')+')');
+  return p;
+}
+/* The palette of the floor being played. Every drawing site reads this rather than reaching for the
+   table, so there is exactly one place that turns "which floor am I on" into "what does it look
+   like". Pure: it reads the floor and a table, spends no RNG, and changes nothing - which is what
+   makes it safe to call from a draw path without disturbing a seeded run. */
+function areaPalette(){ return paletteForArea(areaForFloor()); }
+
+/* THE COMPOSITED FLOOR TINT, and the single place the two tints are mixed.
+
+   It is a function rather than a pre-mixed colour because the floor and the DOORWAY both need it and
+   they are drawn in different places: one inside the baked floor sprite, one as an opaque rect over
+   the wall gap. Two copies of this expression is the doorRect bug in a different costume - two
+   rectangles that agreed perfectly right up until the first room that was not 700x450, except the
+   thing that disagreed here would be a room that is not on floor 1.
+
+   ROOM TYPE FIRST, WASH SECOND, because that is the order the two are composited in on the floor, and
+   a mix that reversed its arguments would be a subtly different colour in the doorway than in the
+   room it opens into - a difference no screenshot of a single room would show.
+
+   The endpoints are exact and the suite pins both: mixHex(a,b,0)===a and mixHex(a,b,1)===b. A helper
+   whose endpoints drift is not usable for the job it has here, which is keeping Area1 identical to
+   the build every earlier measurement was taken against - "0.52 of the way" has to be 0.52 of the
+   way, not near enough. */
+function areaFloorTint(type,area){
+  const p=paletteForArea(area);
+  return mixHex(ROOM_BG[type]||ROOM_BG.normal,p.floorTint,p.wash);
+}
+
+/* ---------- cave floor texture, ONE PER AREA ----------
+   It was a single module-level canvas baked at load, so there was exactly one floor in the game and
+   re-baking it per area is what gives an area a floor at all.
+
+   Baked LAZILY rather than all four at load, for a reason that is about not disturbing things: the
+   old bake ran during module load, immediately BEFORE the wood grain baked itself further down this
+   file. Moving four tiles to load time would push four tiles' worth of art draws in front of the
+   grain and change the wood in every HUD plate in the game. Lazy keeps the art stream in exactly
+   the order the shipped build drew it - the grain is baked from the same first values it always
+   was - and a floor is baked once per area per session either way.
+
+   The counts (220 flecks, 36 soft blotches) are unchanged, so texture DENSITY is identical across
+   areas and only the hue differs. A theming pass that also changed how busy the floor is would be
+   two changes, and the second one would hide the first. */
+const caveCache=new Map();
+function caveTile(area){
+  let c=caveCache.get(area);
+  if(c) return c;
+  const p=paletteForArea(area);
+  c=document.createElement('canvas');
+  c.width=128;c.height=128;
+  const g=c.getContext('2d');
+  g.fillStyle=p.floor;g.fillRect(0,0,128,128);
   for(let i=0;i<220;i++){
     const x=Rnd.art()*128,y=Rnd.art()*128,r=1+Rnd.art()*3;
-    c.fillStyle='rgba('+(Rnd.art()<0.5?'0,0,0,':'255,240,210,')+(0.04+Rnd.art()*0.08)+')';
-    c.beginPath();c.arc(x,y,r,0,7);c.fill();
+    g.fillStyle='rgba('+(Rnd.art()<0.5?'0,0,0,':p.floorLight+',')+(0.04+Rnd.art()*0.08)+')';
+    g.beginPath();g.arc(x,y,r,0,7);g.fill();
   }
   for(let i=0;i<36;i++){
     const x=Rnd.art()*128,y=Rnd.art()*128,r=3+Rnd.art()*7;
-    c.fillStyle='rgba(0,0,0,0.10)';
-    c.beginPath();c.arc(x,y,r,0,7);c.fill();
+    g.fillStyle='rgba(0,0,0,0.10)';
+    g.beginPath();g.arc(x,y,r,0,7);g.fill();
   }
-})();
+  caveCache.set(area,c);
+  return c;
+}
+
+/* ---------- the wall, as coursed masonry ----------
+   The wall used to be four `fillRect`s of one flat colour, which is the largest single-colour region
+   on screen and reads as a frame around the game rather than as stone. Four area palettes over a
+   flat rectangle would have made that four times as obvious, so the courses are here for the same
+   reason the floor speckle is: a wall needs texture to have scale.
+
+   TWO 16px COURSES PER TILE, and 16 is `wt`, the wall thickness drawRoom uses - so a tile is
+   exactly as tall as one band of wall and the joints land on whole bands rather than being cut in
+   half by the fill. The second course's joints are offset by half a block, which is the one piece
+   of masonry knowledge that matters: a wall whose joints line up into continuous verticals reads
+   as tile, and this project has already spent a day deleting a 120px floor lattice for exactly
+   that reason.
+
+   The tone variation is per-block and low, because the wall is behind the fight. It has to be
+   legible as masonry at a glance and invisible as texture while you are aiming at something. */
+const WALL_TILE_W=64, WALL_TILE_H=32, WALL_COURSE=16;
+const wallCache=new Map();
+function wallTile(area){
+  let c=wallCache.get(area);
+  if(c) return c;
+  const p=paletteForArea(area);
+  c=mk(WALL_TILE_W,WALL_TILE_H);
+  const g=c.getContext('2d');
+  g.fillStyle=p.stone;g.fillRect(0,0,WALL_TILE_W,WALL_TILE_H);
+  for(let row=0;row<WALL_TILE_H/WALL_COURSE;row++){
+    const y=row*WALL_COURSE, off=row%2?WALL_TILE_W/4:0;
+    // the mortar course, then each block's own tone, then the lit top edge of the course above it
+    g.fillStyle=p.mortar;g.fillRect(0,y+WALL_COURSE-1,WALL_TILE_W,1);
+    for(let bx=-1;bx<2;bx++){
+      const x=bx*WALL_TILE_W/2+off;
+      g.fillStyle='rgba('+(Rnd.art()<0.5?'0,0,0,':'255,246,224,')+(0.03+Rnd.art()*0.05)+')';
+      g.fillRect(x+1,y,WALL_TILE_W/2-2,WALL_COURSE-1);
+    }
+    g.fillStyle=withAlpha(p.stoneLit,0.5);g.fillRect(0,y,WALL_TILE_W,1);
+  }
+  wallCache.set(area,c);
+  return c;
+}
+
+/* THE COLOUR OF THE AIR IN A ROOM, in one place.
+
+   Two things are layered on a floor: the room TYPE's tint (start / normal / item / boss, which
+   says what the room is FOR) and the area's wash (which says where you are). Keeping them as two
+   operations rather than one pre-mixed colour is what stops a themed area from erasing the room
+   type - an item room has to go gold in every area, or the glow that tells you a room is an upgrade
+   stops meaning anything.
+
+   And the doorway has to show the same answer as the floor behind it, which is why this is one
+   function rather than the flat type tint written out at the call site: the gap in the wall is
+   filled opaquely, so it has to be the composited colour or every doorway reads as a differently
+   coloured rectangle punched through a room.
+
+   A one-line alias rather than a second name for the same thing at the call site, because the test
+   reads `roomTone` and the drawing should not be able to answer a different function than the one
+   that was asserted. Two names for one expression is fine; two EXPRESSIONS is what has bitten this
+   project four times. */
+function roomTone(type,area){ return areaFloorTint(type,area); }
 
 /* ---------- pixel-art ---------- */
 function mirror(h){return h+h.split('').reverse().join('');}

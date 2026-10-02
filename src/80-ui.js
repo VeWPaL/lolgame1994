@@ -229,6 +229,34 @@ const FIXES={
     'the screen, where a player goes specifically to read the Warden\'s phase. The bar does not move and '+
     'the legend does not move up (it is screen space over a world-space shelf); the legend gives up the '+
     '6px, and its chips are positioned from the lane rather than from a y that was correct at 26px'],
+  'each area has a palette, and a floor is painted in the one it is on':['presentation',
+    'an area was identity by enemy mix alone, and mix is not something a player can see before the room '+
+    'has emptied itself. The palette is the other half: a floor of stone and a wall of coursed masonry '+
+    'per area, read from the moment the room fades in. Area1 is byte-for-byte the build that existed '+
+    'before areas did, because every number and every screenshot measured in this project was measured '+
+    'on floors 1-4 - so a theming pass that quietly re-tinted the first four floors would have invalidated '+
+    'all of it while looking like a feature. Its wash is ZERO for exactly that reason, not because it '+
+    'was forgotten'],
+  'the area is the same colour in the floor, the wall, the doorway and the HUD, and only there':['presentation',
+    'the theming was applied one surface at a time, which is how a floor goes green while the doorway '+
+    'beside it stays Area1 grey - a rectangle of the wrong stone punched through a themed wall, which '+
+    'reads as a rendering fault rather than as a door. One palette is read by all four surfaces, and the '+
+    'assertion is that they agree, not that each one is themed'],
+  'the wall is coursed masonry and not a flat rectangle':['presentation',
+    'the wall was four fillRects of one colour, which is the largest single-colour region on screen. Four '+
+    'palettes over a flat rectangle would have made that four times as obvious rather than fixing it. The '+
+    'second course is offset by half a block, because a wall whose joints line up into continuous '+
+    'verticals reads as tile - the same failure the lab\'s 120px floor lattice was deleted for'],
+  'the floor cache is keyed by the area, so descending a floor repaints the room':['presentation',
+    'the floor sprite was cached by room type and size, on the reasoning that there was one dungeon. '+
+    'Descending handed back the previous floor\'s baked canvas, so the first room on a new floor carried '+
+    'the old area\'s stone. This is the same class of bug as omitting the room SIZE from that key, and it '+
+    'would have been invisible in any screenshot of a single floor'],
+  'an area has a name and a flavour, and the character sheet says which one you are in':['HUD and interface',
+    'the areas were colour with no words, and a filter is not a place. The names live in the content '+
+    'registry addressed by the same string areaForFloor() returns, so the words, the colours and the '+
+    'enemy mix are three answers to one question asked through one spelling of it - and a fifth area '+
+    'is one entry rather than a code change'],
   'the top band owns the top of the screen, and nothing else is drawn in it':['HUD and interface',
     'the band is a full-width rail and the plate block moved down under it. The interesting part is what '+
     'it cost: the block is three rows (101px) and ROOM_TOP is 130, so the band can be at most 15px before '+
@@ -386,10 +414,37 @@ function statFraction(s){
   return Math.max(0,Math.min(1,s.value/statSpan(s)));
 }
 
+/* THE AREA LINE, which is the one thing on this sheet the player did not bring with them.
+
+   It answers a coarser question than every other row here - not what you are carrying, but where you
+   are - and it is the first line because it is the context the other nine are read in. A floor
+   number alone does not say "which block of the climb am I in", and the areas differ by their enemy
+   mix and their palette, both of which are things a player can feel long before they can name them.
+
+   THE COLOURS COME FROM THE PALETTE, and the rule under the name is struck in the area's accent so
+   the sheet is wearing the same ink as the room behind it. Not a second table of UI colours: a hue
+   written out here would be a hue that could stop matching the palette, which is the failure this
+   project has already paid for three times in a different form.
+
+   IT IS RENDERED, NOT CONDITIONALLY SKIPPED, and it is safe to call before a run exists: the title
+   screen opens this sheet too, where areaForFloor() reports Area1 rather than throwing, because
+   depthFloor() falls back to 1 when there is no run. The one thing that must not happen is a blank
+   gap where the line should be - an element that exists and is empty reads as a layout fault. */
+function renderAreaLine(){
+  const host=document.getElementById('charArea');
+  if(!host) return;
+  const area=areaForFloor(), pal=areaPalette();
+  const def=Content.has('area',area)?Content.get('area',area):null;
+  const rule=host.querySelector('i'), name=host.querySelector('span'), flav=host.querySelector('em');
+  if(rule) rule.style.background=pal.accent;
+  if(name) name.textContent=(def&&def.name)||area;
+  if(flav) flav.textContent=(def&&def.flavour)||'';
+}
 function renderCharSheet(){
   const host=document.getElementById('charStats');
   if(!host) return;
   host.textContent='';
+  renderAreaLine();
   for(const s of Stats.sheet()){
     /* MOMENTUM IS NOT ON THIS SHEET, and it used to be.
 

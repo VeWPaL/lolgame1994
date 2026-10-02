@@ -28,6 +28,31 @@
    and every data-only item keeps working. A mod can name anything in here. */
 const HOOKS={};
 
+/* THE FOUR THEMED BLOCKS OF THE CLIMB, as content.
+
+   The palette in 10-art decides what an area looks like and `areaForFloor()` in core decides which
+   area a floor is in; what is missing between them is the NAME, and a place with a colour and no
+   name is a filter rather than a place. These four ids are exactly the four strings areaForFloor()
+   returns, which is the point - the words, the colours and the enemy mix are three answers to one
+   question, asked through one spelling of it.
+
+   FLAVOUR IS A LINE, NOT A PARAGRAPH, because this is read on a pause screen. It says what the
+   place IS - what makes it worth walking into rather than what happened there - and it is deliberately
+   short enough that it cannot push the stat rows off a 560px card.
+
+   Nothing here changes difficulty. An area's identity is its enemy mix plus its palette, and this
+   file only supplies the third thing that makes those legible. */
+const AREAS={
+  Area1:{name:'THE SHALLOWS',
+    flavour:'Cold stone, standing water, and seams cut badly by hand.'},
+  Area2:{name:'THE KILN WORKS',
+    flavour:'Warm brick, and a draught from something still burning.'},
+  Area3:{name:'THE FLOODED GALLERIES',
+    flavour:'Green light under the water, and a room being watched.'},
+  Final:{name:"THE WARDEN'S DEEP",
+    flavour:'Iron and red stone, and a door built from the inside.'},
+};
+
 const Content=(function(){
   /* A definition is copied on the way IN, not shared. A mod that hands us an object and keeps a
      reference can change the game's behaviour by mutating a dictionary it thinks it owns, and the
@@ -65,6 +90,18 @@ const Content=(function(){
   kind('enemy',ENEMY,['r','hp','mass']);
   kind('weapon',WEAPONS,['name','dmg']);
   kind('item',{},['name']);
+  /* AREAS, and the reason they are a kind rather than two constants near the palette.
+
+     An area is identity, and identity is exactly what this registry is for: a name and a line about
+     the place, addressed by the same string `areaForFloor()` already returns, so there is no second
+     vocabulary for "which area am I in". Adding a fifth area becomes one entry here and one row in
+     the palette in 10-art - no code, which is the entire promise the registry makes.
+
+     Required fields are `name` and `flavour`, so an entry that ships without them fails
+     validate() rather than printing "undefined" on the character sheet. The four shipped ids are
+     the four `areaForFloor()` can return; a mod may add more, and the palette is what decides what
+     a missing palette does (it throws loudly, by name - see paletteForArea). */
+  kind('area',AREAS,['name','flavour']);
 
   function all(name){
     const k=kinds[name];

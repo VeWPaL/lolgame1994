@@ -87,6 +87,18 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const ok=(c,msg)=>{if(!c)throw new Error(msg);};
   const eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
   const press=k=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:k}));window.dispatchEvent(new KeyboardEvent('keyup',{key:k}));};
+  /* `eq` COMPARES BY ===, WHICH FOR AN ARRAY IS A REFERENCE COMPARISON.
+
+     Two freshly-computed arrays with identical contents are two different objects, so
+     `eq(hexRgb('#abc'),hexRgb('#aabbcc'))` fails against correct code and has always done so - the
+     message prints two identical lists of numbers and the assertion still says they differ, which is
+     about the most confusing failure this harness can produce.
+
+     Not changed, because `eq` is right for everything it is actually used on (primitives, and object
+     identity where identity is the claim - two cached sprites being different objects IS the property
+     being tested). Recorded here so the next person comparing a computed array does not lose twenty
+     minutes to it: join it, or use `ok(a.join()===b.join())`. The colour checks in the area palette
+     section are written that way and say so. */
   const goTo=type=>{const r=Object.values(rooms).find(x=>x.type===type);enterRoom(r.x,r.y,'W');readyT=0;fadeT=0;roomFade=0;return r;};
   const lunger=(r,x,y)=>{const e=spawnEnemy(false,r,x,y,'lunger');e.noticeTimer=0;e.aggroTimer=0;r.enemies.push(e);return e;};
   // walk into the way out of a cleared boss room, the way a player does: arrive at it, not teleport
@@ -9221,19 +9233,704 @@ const BOSS_TICKS=26000;
     Lab.leave();
   });
 
+  /* THE TABLE CHECK LIVES AT THE END OF THE FILE, not here, and the reason is that it reads every
+     name in `results` - which is only complete once every test has run. It sat above the area tests
+     when they were added and reported all five as "pinned with no test", against five tests that were
+     passing thirty lines below it: a test about bookkeeping failing because of where the bookkeeping
+     sits. It is now last, immediately before the raw-Math.random result is pushed, so nothing can be
+     added after it without the same trap being re-created. */
+  /* ---------- AREA PALETTE ----------
+     Four tests, and they are four because the palette is four separable claims: that the lookup is a
+     pure function of the area, that Area1 is unchanged, that every surface agrees, and that the wall
+     is actually masonry. A single test would have let one of them pass by agreeing with the others.
+
+     The floor is a PIXEL claim and it is measured through the framebuffer, not read out of the
+     drawing. Every version of the heart-bar bug in this project passed a data-level assertion while
+     the picture was wrong, and the reason is always the same: the data was right and the mistake was
+     in what got drawn and where. "drawFloor fills a colour" proves nothing about which floor is on
+     screen. */
+  test('each area has a palette, and a floor is painted in the one it is on',()=>{
+    /* THE LOOKUP IS A PURE FUNCTION OF THE AREA. Not of the floor, not of the player, not of the
+       room: of the area. So it can be asked for an arbitrary area without standing in one, which is
+       what lets the three other tests here compare areas side by side without moving a run around.
+
+       And it throws on an unknown id rather than returning something. A palette is a table lookup,
+       so a missing id used to return undefined and the first anybody would see is a room painted in
+       the colour of null - which is the silent-failure shape this project's Content registry already
+       refuses on purpose. */
+    for(const a of ['Area1','Area2','Area3','Final']){
+      const p=paletteForArea(a);
+      ok(p&&p.id===a,'paletteForArea('+a+') did not return that area\'s own palette');
+      for(const f of ['stone','stoneLit','mortar','floor','floorLight','floorTint','accent','accentDim','mapWash']){
+        ok(typeof p[f]==='string'&&p[f].length>0,'area '+a+' has no '+f+', so something is drawing a default');
+      }
+      ok(typeof p.wash==='number'&&p.wash>=0&&p.wash<=1,'area '+a+' has a wash of '+p.wash+
+        ', which is not a fraction and would either do nothing or bury the floor');
+    }
+    let msg='';
+    try{ paletteForArea('Area9'); }catch(e){ msg=String(e.message); }
+    ok(msg.indexOf('Area9')>=0,'an unknown area returned a palette instead of throwing ('+msg+')');
+
+    /* AREA1 IS THE BUILD THAT EXISTED BEFORE AREAS DID, and this is the assertion that keeps that
+       true rather than approximately true. Every measurement in this project's history was taken on
+       floors 1-4: every TTK, every reaction window, every screenshot anybody looked at. Area1's
+       colours are therefore the literals those were taken against, and its wash is ZERO - which is
+       what makes the floor composite the same arithmetic rather than the same-looking result. */
+    const a1=paletteForArea('Area1');
+    eq(a1.stone,'#2b2f3a','Area1 is no longer the wall colour every earlier screenshot was taken against');
+    eq(a1.floor,'#25211c','Area1 is no longer the cave-floor colour');
+    eq(a1.floorLight,'255,240,210','Area1 is no longer the pale speckle colour');
+    eq(a1.accent,'#e8b06a','Area1 is no longer the depth-numeral ink');
+    eq(a1.accentDim,'#c8a878','Area1 is no longer the unlit ink');
+    eq(a1.wash,0,'Area1 washes '+a1.wash+' over its floor, so floors 1-4 are not the build every '+
+      'earlier measurement was taken against. Its wash has to be zero, not small');
+    eq(a1.mapWash,'#090b11','Area1 is no longer the colour of the wash over the map paper');
+
+    /* THE FOUR AREAS MUST ACTUALLY LOOK DIFFERENT, and "different" is measured as distance rather
+       than asserted as inequality: two palettes that differ by one unit of blue are a different
+       palette and the same picture. The claim is on the pair of channels a player reads position
+       from - the stone and the floor wash - and the floorLight channel is included because a fleck
+       of the wrong hue is exactly what makes a recoloured floor read as a filter over the old one. */
+    const ids=['Area1','Area2','Area3','Final'];
+    /* floorLight is stored as an 'r,g,b' TRIPLET rather than as hex, because it exists to be
+       interpolated into the string `'rgba('+floorLight+','+alpha+')'` in the cave bake and writing
+       it as hex would mean a conversion on every fleck. So the distance measure has to read it in
+       the form it is stored in - and a measure that silently parsed it as hex would compare 597
+       against 597 and report every pair of areas as identical. */
+    const rgb=h=>String(h).indexOf(',')>=0?String(h).split(',').map(Number):hexRgb(h);
+    for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++){
+      const A=paletteForArea(ids[i]), B=paletteForArea(ids[j]);
+      const dist=(x,y)=>rgb(x).reduce((s,v,k)=>s+Math.abs(v-rgb(y)[k]),0);
+      const stone=dist(A.stone,B.stone), floor=dist(A.floorTint,B.floorTint), light=dist(A.floorLight,B.floorLight);
+      ok(stone>30,ids[i]+' and '+ids[j]+' have walls '+stone+' units apart in total RGB - the wall is '+
+        'the largest thing on screen and these two areas are indistinguishable on it');
+      ok(floor>30,ids[i]+' and '+ids[j]+' have floor washes '+floor+' units apart - the room itself is '+
+        'the same colour on both');
+      ok(light>30,ids[i]+' and '+ids[j]+" share a pale-speckle hue (only "+light+' apart), so one '+
+        "area's floor reads as the other's through a filter");
+    }
+    /* AND THE HUES MUST NOT ALL BE THE SAME TEMPERATURE, because "four greys" is the failure mode of
+       a palette nobody looked at. Each area leans at least one channel - warm, cool - away from the
+       mid grey that Area1 sits on. */
+    const leans=ids.map(id=>{const c=rgb(paletteForArea(id).stone);return c[0]-c[2];});
+    ok(new Set(leans.map(v=>v>0?'warm':'cool')).size>=2,'all four areas lean the same way on their stone '+
+      '('+leans.map((v,i)=>ids[i]+' '+(v>0?'+':'')+v).join(', ')+') - they are four shades of one colour');
+
+    /* THE FLOOR, AS PIXELS. This is the part the other tests cannot see: a palette that is right in
+       the table and ignored by drawFloor looks identical to a palette that is right in both. The
+       sprite is read out of the CACHE by key, because the cache key is the whole of the claim - a
+       floor that is re-baked correctly per draw would also be correct, and one that is cached without
+       the area is not. */
+    startGame();
+    const floorSprite=()=>{ drawFloor('normal'); return floorCache['normal:'+roomW()+'x'+roomH()+':'+areaPalette().id]; };
+    floorSprite();
+    run.floor=6;  eq(areaForFloor(),'Area2','floor 6 is not Area2, so the area boundaries have moved');
+    const area2Sprite=floorSprite();
+    ok(!!area2Sprite,'no floor sprite was baked for Area2, so the cache key cannot be what drawFloor wrote');
+    run.floor=1;
+    eq(areaPalette().id,'Area1','going back to floor 1 did not go back to Area1');
+    const area1Sprite=floorSprite();
+    ok(area1Sprite&&area2Sprite&&area1Sprite!==area2Sprite,
+      'the cached floor sprite is the same object on floor 1 and floor 6, so descending a floor '+
+      'replays the previous area\'s stone. The cache key has to carry the area, not just type and size');
+
+    /* AND THE HUE IN THE SPRITE IS THE PALETTE'S, read from the image rather than from the table. The
+       sample is a 64x64 patch near the middle of the floor, away from the vignette's dark rim and
+       away from the wall, and it is compared as a MEAN because the floor is a speckle: any single
+       pixel is noise and the mean is the texture. */
+    const meanOf=c=>{ const g=c.getContext('2d'); const d=g.getImageData(Math.floor(c.width/2)-32,
+      Math.floor(c.height/2)-32,64,64).data; let r=0,g2=0,b=0,n=0;
+      for(let i=0;i<d.length;i+=4){ r+=d[i]; g2+=d[i+1]; b+=d[i+2]; n++; }
+      return [r/n,g2/n,b/n]; };
+    const m1=meanOf(area1Sprite), m2=meanOf(area2Sprite);
+    const md=Math.abs(m1[0]-m2[0])+Math.abs(m1[1]-m2[1])+Math.abs(m1[2]-m2[2]);
+    ok(md>4,'the baked floor for Area1 averages rgb('+m1.map(v=>v.toFixed(0))+') and for Area2 rgb('+
+      m2.map(v=>v.toFixed(0))+') - '+md.toFixed(1)+' apart, which is not a visible difference on the '+
+      'largest surface in the game');
+    /* and it leans the way the palette says, which is the assertion that a tinted floor is tinted
+       INTO the area rather than merely darker than it */
+    ok(m2[0]>m1[0],'the Area2 floor ('+m2.map(v=>v.toFixed(0))+') is not warmer than the Area1 floor ('+
+      m1.map(v=>v.toFixed(0))+'), so its stone is greyer rather than a different place');
+  });
+
+  test('the area is the same colour in the floor, the wall, the doorway and the HUD, and only there',()=>{
+    /* FOUR SURFACES, ONE PALETTE, and the failure this exists to catch is disagreement BETWEEN them.
+
+       The theming was written one surface at a time, which is how a floor goes green while the
+       doorway beside it stays Area1 grey: a rectangle of the wrong stone punched through a themed
+       wall, which reads as a rendering fault rather than as a door. Asserting each surface
+       individually would pass on all four. So this asserts they AGREE - that the doorway tone is
+       derived from the same palette as the floor composite, and that the HUD ink is the palette's
+       own accent rather than a literal that happens to match today.
+
+       roomTone() is the shared answer and it is checked as a relationship, not retyped: for a room
+       type, the tone must sit between the type tint and the area's floor tint, closer to whichever
+       end the wash says. For Area1 the wash is zero and the tone must therefore BE the type tint
+       exactly - which is the pre-area behaviour, and is what makes floors 1-4 unchanged. */
+    startGame();
+    for(const type of ['start','normal','item','boss']){
+      for(const floor of [1,6,10,13]){
+        run.floor=floor;
+        const p=areaPalette();
+        const got=roomTone(type,p.id), base=ROOM_BG[type]||ROOM_BG.normal;
+        eq(got,mixHex(base,p.floorTint,p.wash),
+          'the '+type+' doorway on floor '+floor+' is not the room tone: it is '+got+
+          ' where the palette says '+mixHex(base,p.floorTint,p.wash));
+        /* between the two ends, never past either - a wash of 1.2 would replace the room type's tint
+           entirely and delete the item room's glow, which is information rather than decoration */
+        for(const k of [0,1,2]){
+          const g=hexRgb(got)[k], b=hexRgb(base)[k], f=hexRgb(p.floorTint)[k];
+          const lo=Math.min(b,f)-1, hi=Math.max(b,f)+1;
+          ok(g>=lo&&g<=hi,'the '+type+' doorway on floor '+floor+' is rgb('+hexRgb(got)+
+            '), outside the range between the type tint '+base+' and the area tint '+p.floorTint+
+            ' - the area has overwritten what the room TYPE says');
+        }
+      }
+    }
+    /* and the room type still reads in every area, which is the whole reason the two are layered
+       rather than mixed: an item room has to glow gold in the Kiln Works too, or the tint that tells
+       a player where the upgrade is stops meaning anything. */
+    run.floor=6;
+    const itemInArea=roomTone('item','Area2'), bossInArea=roomTone('boss','Area2');
+    ok(itemInArea!==bossInArea,'the item and boss rooms are the same colour inside Area2, so the room '+
+      'type tint has been swallowed by the area wash');
+
+    /* AND THE DOORWAY ON SCREEN IS THE FUNCTION'S ANSWER, which is the half the checks above cannot
+       see. Everything so far asserts that roomTone() is correct; none of it asserts that the drawing
+       CALLS it, and a gap filled with the bare type tint satisfies every one of them while painting a
+       rectangle of Area1 stone through a Kiln Works wall on floor 6. This is the fifth time in this
+       project a property of a helper has been asserted while the call site was free to ignore it.
+
+       The sample is the middle of the north door's gap, below the 4px coloured lip on its outer edge
+       (which is the door's own state colour and correctly not part of this) and above ROOM_TOP. The
+       claim is EXACT rather than a range, because the gap is an opaque fill: measured 42,39,41 on
+       floor 6 against roomTone's #2a2729, and 28,34,48 on floor 1 against #1c2230. Area1 landing on
+       the type tint is not luck - it is the wash being zero, and it is what makes the pre-area doorway
+       the same pixel it always was. */
+    startGame();
+    currentRoom().enemies.length=0; currentRoom().pickups.length=0;
+    readyT=0; fadeT=0; roomFade=0;
+    const doorPixel=()=>{ render(); const d=pixelsAtWorld(MIDX-20,ROOM_TOP-10,40,1);
+      return [d[0],d[1],d[2]]; };
+    for(const [floor,want] of [[1,'#1c2230'],[6,'#2a2729'],[10,'#1c2731'],[13,'#251d2c']]){
+      run.floor=floor;
+      const got=doorPixel(), w=hexRgb(want);
+      eq(got.join(','),w.join(','),'the north doorway on floor '+floor+' is rgb('+got+
+        ') and the room tone is '+want+' - the gap is filled with something other than the composite');
+    }
+    run.floor=1;
+
+    /* THE HUD INK IS THE PALETTE'S OWN, read out of what was drawn rather than retyped. The depth
+       numeral is the one HUD element that carries the accent, and intercepting fillText for the
+       numeral's position is the only way to see the colour the plate was actually struck in. */
+    startGame();
+    readyT=0; fadeT=0; roomFade=0;
+    const inkAt=floor=>{
+      run.floor=floor;
+      const want=String(floor), seen=[];
+      const real=ctx.fillText.bind(ctx);
+      ctx.fillText=(t,x,y)=>{ if(t===want) seen.push(ctx.fillStyle); return real(t,x,y); };
+      try{ drawHUD(); }finally{ ctx.fillStyle=real.fillStyle; ctx.textAlign=real.textAlign; ctx.textBaseline=real.textBaseline; ctx.font=real.font; }
+      return seen;
+    };
+    /* fillStyle is read back as a string, so the assertion is on the value the canvas holds. A
+       mutation that left the numeral at its own literal would be caught here; one that drew the
+       right colour in the wrong place would not be, which is why the pixel check below exists. */
+    for(const [floor,want] of [[6,'#e08a4a'],[10,'#7fd4b0'],[13,'#ff9a8a']]){
+      run.floor=floor;
+      const p=areaPalette();
+      ok(p.accent===want,'area '+p.id+' has accent '+p.accent+', expected '+want+' - the table the '+
+        'HUD reads has moved under this test');
+      run.floor=floor;
+      const seen=inkAt(floor);
+      ok(seen.length>0,'the depth numeral for floor '+floor+' was never drawn, so its ink cannot be read');
+      ok(seen.some(s=>String(s).toLowerCase()===want.toLowerCase()),
+        'the depth numeral on floor '+floor+' was struck in '+JSON.stringify(seen)+
+        ', not in the area accent '+want+' - the HUD is carrying a literal rather than the palette');
+    }
+    /* FLOOR 1 IS THE DIM INK, and it is the dim ink of Area1, because "you have not descended yet" is
+       a fact about the climb and must not start meaning something else now that the place has a
+       colour. */
+    run.floor=1;
+    const seen1=inkAt(1);
+    ok(seen1.some(s=>String(s).toLowerCase()===paletteForArea('Area1').accentDim.toLowerCase()),
+      'the depth numeral on floor 1 was struck in '+JSON.stringify(seen1)+' rather than the unlit ink');
+  });
+
+  test('the wall is coursed masonry and not a flat rectangle',()=>{
+    /* THE CLAIM IS ABOUT THE PICTURE. "drawWall fills four rects with a pattern" is a claim about the
+       code and a duplicated block would satisfy it; "the wall has courses, and they do not line up"
+       is a claim about the screen.
+
+       So this reads the framebuffer twice. First: a horizontal scan across the NORTH wall must find
+       MORE THAN ONE COLOUR. A flat fill returns one, and that is the regression this pins - four
+       palettes over a flat rectangle would have made the defect four times as visible without fixing
+       it. Second: the courses must be OFFSET. A wall whose joints line up into continuous verticals
+       reads as tile, which is the exact reason this project deleted the lab's 120px floor lattice,
+       so an un-offset wall is the same mistake in masonry. */
+    startGame();
+    currentRoom().enemies.length=0; currentRoom().pickups.length=0;
+    readyT=0; fadeT=0; roomFade=0;
+    /* THE WEST WALL, AND NOT THE NORTH ONE, and the reason is the HUD rather than taste.
+
+       The north wall sits at world y 114..130 and the camera puts the frame at y 55, so it lands at
+       screen y 59..75 - INSIDE the HUD plate block, which spans screen y 29..130 and starts at x 15.
+       The first version of this scanned the north wall and read back a flat colour: wood grain, on a
+       surface that is not flat at all, in the one place the pixels belonged to something else. That is
+       the third time in this project a pixel check has sampled the wrong thing and reported it as a
+       defect in the drawing, and the fixture was the wrong one both times.
+
+       The west wall is clear of every plate, but MIDY is not usable either: it is where the west
+       DOOR is, so a scan at MIDY reads the door's green lip and the gap's own fill rather than any
+       masonry. The patch below is anchored ROOM_TOP+40 and is 16 wide by 120 tall - the full 16px
+       thickness, and 120px ALONG the wall, which is where the courses and the joints are.
+
+       LENGTHWISE rather than across the thickness, and that is measured rather than chosen: the tile
+       is one course tall (WALL_COURSE is 16 and wt is 16), so a single row across the thickness can
+       only ever contain the block tone and one seam. The blocks vary along their length, so a 16x120
+       patch is where the masonry actually is - and a flat fill returns one colour for all 1920 of
+       those pixels. */
+    const wallPatch=floor=>{ run.floor=floor; readyT=0; fadeT=0; roomFade=0; render();
+      return pixelsAtWorld(ROOM_LEFT-16,ROOM_TOP+40,16,120); };
+    const finalWall=wallPatch(13);
+    const cols=new Map();
+    for(let i=0;i<finalWall.length;i+=4){
+      const k=finalWall[i]+','+finalWall[i+1]+','+finalWall[i+2];
+      cols.set(k,(cols.get(k)||0)+1);
+    }
+    ok(cols.size>=6,'the west wall on floor 13 is '+cols.size+' distinct colours over a 16x120 patch, '+
+      'which is a flat rectangle with a seam on it rather than coursed masonry. A flat rectangle is the '+
+      'largest single-colour region on screen, and four palettes over one would not have fixed it');
+
+    /* AND IT IS BUILT OUT OF THE AREA'S MATERIALS, read off the pixels rather than retyped. Asked as
+       a question about a RANGE, because the wall is `stone` with low-alpha blocks and a mortar joint
+       laid over it, so the pixels are the stone and its immediate neighbours - an exact-pixel
+       assertion would fail on antialiasing rather than on a wrong colour, which is the wrong way round.
+       The claim is "this wall is made of this area's rock", and near-miss on every channel is that
+       claim failing. */
+    /* MEASURED, not guessed, and the measurement is in the threshold.
+
+       The fraction of a 16x120 wall patch sitting within 10 units per channel of that area's own
+       `stone` is 84.1% for Area1, 84.1% for Area2, 47.7% for Area3 and 47.7% for Final. It is not
+       constant, and the first version of this asserted a constant, which failed on two of the four
+       against correct masonry.
+
+       The reason is the block overlay. Each 32px block carries a low-alpha wash drawn from the art
+       stream, half of them light and half dark, and a LIGHT wash on a dark stone moves it much further
+       than a dark wash on the same stone: Area3's stone is 31,56,47 and a 0.08 white wash puts it at
+       48,71,65, which is outside a 10-unit tolerance, while the equivalent on Area1's 43,47,58 lands
+       at 60,62,71 - also outside, but the DARK washes on Area1 are all inside and on Area3's they are
+       not. So the fraction tracks how far each palette's stone is from mid-grey, which is a property
+       of the palette, not of the wall being drawn properly.
+
+       So the floor is 0.40, set well under the measured minimum of 0.477, and the assertion's real
+       work is done by the mean nearest its own stone below - a wall painted in the wrong area's rock
+       sits near 0% of its own, not near 47%. The percentage is here to catch a wall that is mostly the
+       right colour with a foreign band across it, which a mean cannot see. */
+    const stone=hexRgb(areaPalette().stone);
+    let nearStone=0;
+    for(let i=0;i<finalWall.length;i+=4){
+      if(Math.abs(finalWall[i]-stone[0])<=10&&Math.abs(finalWall[i+1]-stone[1])<=10
+        &&Math.abs(finalWall[i+2]-stone[2])<=10) nearStone++;
+    }
+    const nPix=finalWall.length/4;
+    ok(nearStone>nPix*0.40,'only '+(nearStone/nPix*100).toFixed(1)+'% of the Final wall is within 10 '+
+      'units per channel of the Final stone '+areaPalette().stone+
+      ' - the wall is not built out of the area palette');
+    for(const f of [1,6,10,13]){
+      const patch=wallPatch(f);
+      const m=[0,0,0];
+      for(let i=0;i<patch.length;i+=4){ m[0]+=patch[i]; m[1]+=patch[i+1]; m[2]+=patch[i+2]; }
+      const mn=[m[0]/(patch.length/4),m[1]/(patch.length/4),m[2]/(patch.length/4)];
+      const dist=Object.keys(AREA_PAL).map(k=>{ const s=hexRgb(AREA_PAL[k].stone);
+        return {k:k,d:Math.abs(mn[0]-s[0])+Math.abs(mn[1]-s[1])+Math.abs(mn[2]-s[2])}; })
+        .sort((a,b)=>a.d-b.d);
+      eq(dist[0].k,areaForFloor(),'on floor '+f+' the wall averages rgb('+mn.map(v=>Math.round(v))+
+        '), which is nearest '+dist[0].k+'\'s stone rather than '+areaForFloor()+'\'s (distances '+
+        Object.keys(AREA_PAL).map(k=>k+':'+dist.find(x=>x.k===k).d).join(', ')+') - the wall is made '+
+        'of the wrong area\'s rock');
+    }
+
+    /* THE MIX'S ENDPOINTS ARE EXACT, which is what makes Area1 usable as a reference at all.
+
+       A helper that rounded "0.52 of the way" into near enough would put Area1's floor a unit or two
+       off the build every earlier measurement was taken against, and nothing in this suite - or in a
+       screenshot - could see it. The two ends are the whole of the claim: at 0 the room type's tint
+       untouched, at 1 the area's tint completely, and both of them reached by the same expression the
+       drawing uses. */
+    eq(mixHex('#123456','#abcdef',0),'#123456','mixHex at 0 is not the first colour');
+    eq(mixHex('#123456','#abcdef',1),'#abcdef','mixHex at 1 is not the second colour');
+    /* A three-digit hex is EXPANDED, not preserved - '#abc' and '#aabbcc' are the same colour and
+       mixHex only promises to return a canonical six-digit form. Written from the SPECIFICATION (the
+       two are the same colour) rather than from the implementation's return format, which is the point
+       of the exercise: the first version of this asked for the string '#abc' back and failed against
+       correct code.
+
+       Compared with `ok(...join()===...join())` rather than `eq`, and that is worth knowing about this
+       suite's `eq`: it is `a!==b`, which compares two ARRAYS BY REFERENCE. Two identical colour arrays
+       are two objects, so `eq(hexRgb('#abc'),hexRgb('#aabbcc'))` fails against correct code and always
+       has - the numbers print the same and the comparison still says no. Anything comparing a computed
+       value here has to be a primitive or a join. */
+    ok(hexRgb('#abc').join()===hexRgb('#aabbcc').join(),"short hex '#abc' does not expand to the same colour as '#aabbcc'");
+    const half=hexRgb(mixHex('#000000','#ffffff',0.5));
+    ok(half[0]>=127&&half[0]<=128,'mixHex at 0.5 between black and white gives '+half[0]+
+      ', which is not half way');
+
+    /* THE TWO AREAS' WALLS ARE DIFFERENT WALLS, which is the claim the theming exists for. A per-pixel
+       comparison rather than an average, because an average of a speckled wall is a number about
+       nothing - and the tolerance is 12 summed units, which is roughly one just-noticeable step on a
+       channel, so "same" here means "cannot tell apart". */
+    const area1Wall=wallPatch(1);
+    let same=0;
+    for(let i=0;i<finalWall.length;i+=4){
+      const d3=Math.abs(area1Wall[i]-finalWall[i])+Math.abs(area1Wall[i+1]-finalWall[i+1])
+        +Math.abs(area1Wall[i+2]-finalWall[i+2]);
+      if(d3<12) same++;
+    }
+    const n=finalWall.length/4;
+    ok(same<n*0.1,'the west wall is within 12 summed units at '+same+' of '+n+' pixels on floor 1 and '+
+      'on floor 13 - a floor tells you which area you are in from its stone, and this one does not');
+
+    /* THE COURSES ARE OFFSET, and this one is measured on the TILE rather than on the screen.
+
+       The screen cannot answer it: the wall is 16px of a 450px-tall room, so both courses are visible
+       at once and "the joints do not line up" is not a thing a screenshot of the finished room shows
+       at this size. The tile is 64x32 with two courses whose joints are a half-block apart, and the
+       claim is a property of that tile - so it is asserted there.
+
+       THE JOINT IS FOUND BY COLOUR AND NOT BY DARKNESS, and the first version got that wrong and
+       reported correct masonry as a defect. Each block carries a low-alpha overlay drawn from the art
+       stream, so a block can be LIGHTER or DARKER than the stone under it - and asking for the
+       darkest column found whichever block happened to get a dark overlay, which was noise. The joint
+       is the 1px gap BETWEEN blocks where no overlay is painted at all, so it is exactly the palette's
+       `stone` and nothing else. Measured: rgb(43,47,58) = #2b2f3a, at x 0 and 32 in the top course
+       and at x 16 and 48 in the one below.
+
+       The claim is that the two courses' joint columns are DISJOINT. A wall whose joints line up into
+       continuous verticals reads as tile, which is the same reason this project deleted the lab's 120px
+       floor lattice rather than dimming it. */
+    const pal1=paletteForArea('Area1'), stone1=hexRgb(pal1.stone);
+    const tg=wallTile('Area1').getContext('2d');
+    const jointsIn=row=>{ const px=tg.getImageData(0,row,WALL_TILE_W,1).data, out=[];
+      for(let x=0;x<WALL_TILE_W;x++)
+        if(px[x*4]===stone1[0]&&px[x*4+1]===stone1[1]&&px[x*4+2]===stone1[2]) out.push(x);
+      return out; };
+    const topJ=jointsIn(2), bottomJ=jointsIn(2+WALL_COURSE);
+    ok(topJ.length>0&&bottomJ.length>0,'no joint columns were found in the wall tile (top '+topJ+
+      ', bottom '+bottomJ+') - the masonry was not drawn, so there is nothing to be offset');
+    const shared=topJ.filter(x=>bottomJ.indexOf(x)>=0);
+    eq(shared.length,0,'both courses of the wall put a vertical joint at x '+shared.join(', ')+
+      ' - the joints line up into continuous verticals, and a wall with continuous verticals reads as '+
+      'tile rather than as stone. Top course '+JSON.stringify(topJ)+', bottom '+JSON.stringify(bottomJ)+
+      ', stone '+pal1.stone);
+    /* and the offset is a half-block, not an arbitrary distance - four 32px blocks per course, joints
+       every 32px, the lower course shifted by WALL_TILE_W/4. Stated as the measured spacing rather
+       than as the arithmetic, so a tile width change cannot leave the assertion quietly true. */
+    /* AND THE OFFSET IS THE HALF-BLOCK IT IS DRAWN AT, measured from the two courses' FIRST joints rather
+       than from the span between the outermost.
+
+       Measured: joints at x 0, 32 and 63 in the top course and at x 16, 48 in the one below. The 63 is
+       the tile's last column, which the block loop leaves unpainted at the right edge - so the outer
+       span is 63 rather than 32, and the first version of this assertion compared that span against
+       WALL_TILE_W/2 and failed on correct masonry. Which joints are period and which are edge is a
+       property of the block loop, so the period is read off the first two of them. */
+    /* AND THE OFFSET IS EXACTLY THE QUARTER-BLOCK, measured on run MIDPOINTS rather than on columns.
+
+       Measured: the joints come in 2px runs - top course at x 0, 31, 32, 63 (i.e. 31-32 and 63
+       wrapping to 0) and bottom at 15, 16, 47, 48. Comparing raw columns is ambiguous for two
+       reasons, and the first version of this assertion hit both: the runs are two pixels wide so a
+       column can land on either side, and the tile wraps, so x 63 and x 0 are one joint.
+
+       So the joints are collapsed into runs, each run is reduced to its midpoint, and the two courses'
+       midpoint lists are compared modulo the 32px block. Midpoints 31.5 and 47.5 differ by exactly 16,
+       which is WALL_TILE_W/4 - the offset the block loop draws at. A tolerance of one pixel would let
+       a one-pixel drift pass, which is the drift that turns brickwork into a staircase. */
+    /* AND THE WRAPPING JOINT IS UNWRAPPED FIRST, which is the third thing about this tile that had to be
+       got right before the assertion could be about masonry rather than about the block loop.
+
+       The top course's joints are 2px runs at x 31-32 and x 63-0, and 63-0 is ONE joint that the
+       tile boundary cuts in half. Measured as it comes out of getImageData it looks like two runs, at
+       63 and at 0, and its midpoint computes to 63 rather than 63.5 - which put the offsets at 16 and
+       17 and failed an assertion about a 16px quarter-block against a wall that is drawn correctly.
+
+       A pattern tile is periodic, so a run touching column 0 and a run touching the last column are
+       the same joint. They are joined and the midpoint is placed at the wrap. */
+    const runs=cols=>{ const out=[];
+      for(const c of cols){ const last=out[out.length-1];
+        if(last&&c===last.hi+1) last.hi=c; else out.push({lo:c,hi:c}); }
+      if(out.length>1&&out[0].lo===0&&out[out.length-1].hi===WALL_TILE_W-1){
+        const wrap=out.pop();
+        wrap.hi+=WALL_TILE_W;                 // the joint continues into the next tile: 63 and 64
+        out.unshift(wrap);
+      }
+      return out.map(r=>(r.lo+r.hi)/2).filter(m=>m>0&&m<WALL_TILE_W); };
+    const topM=runs(topJ), botM=runs(bottomJ);
+    ok(topM.length>0&&botM.length>0,'no complete joints in the wall tile (top '+JSON.stringify(topM)+
+      ', bottom '+JSON.stringify(botM)+')');
+    const offs=[];
+    for(const b of botM) for(const t of topM) offs.push(Math.round((b-t+WALL_TILE_W*2)%(WALL_TILE_W/2)));
+    const want=WALL_TILE_W/4;
+    const bad=offs.filter(v=>v!==want);
+    eq(bad.length,0,'the lower course sits at offsets '+JSON.stringify(offs)+' from the upper, and '+
+      bad.length+' of them are not the '+want+'px quarter-block the joints are drawn at (top midpoints '+
+      JSON.stringify(topM)+', bottom '+JSON.stringify(botM)+')');
+    run.floor=1;
+  });
+
+  test('the floor cache is keyed by the area, so descending a floor repaints the room',()=>{
+    /* THE CACHE IS THE CLAIM, and it is tested as the cache and not as the drawing - because a
+       correctly-drawn floor that is CACHED WITHOUT THE AREA is wrong in exactly the way the player
+       sees it, and no assertion about what drawFloor computed would notice.
+
+       This is the same class of bug as omitting the room SIZE from that key, which is documented
+       above drawFloor: a key that is one field short produces a picture that is entirely present and
+       entirely wrong, and it is invisible in any screenshot of a single floor. The only way to see it
+       is to walk from one area to another and look at the same room twice.
+
+       The test does exactly that, on one room type at one size, and reads the cache keys rather than
+       the sprites - because a test that renders both areas and compares pixels cannot tell "cached
+       correctly" from "re-baked correctly every frame", and those are different defects: the second
+       one costs a re-bake per frame and shimmers. */
+    startGame();
+    const size=roomW()+'x'+roomH();
+    /* KEYS FOR THE CURRENT AREA ONLY, and the reason is stated because the first version got it wrong
+       and the failure was honest rather than misleading.
+
+       `floorCache` is module-level and never cleared, so by the time this test runs - after the
+       palette test has already drawn an Area1 and an Area2 floor in the same room - the prefix
+       'normal:700x450:' already matches TWO keys. Counting every key with the prefix and asserting
+       one of them therefore failed on correct code: the cache is doing exactly what a cache is for,
+       which is keeping the previous area's sprite around in case the player walks back up. The claim
+       is not "the cache holds one sprite" but "the sprite THIS area asked for is its own". */
+    const keyFor=floor=>{ run.floor=floor; drawFloor('normal');
+      return 'normal:'+size+':'+areaForFloor(); };
+    const k1=keyFor(1);
+    eq(k1,'normal:'+size+':Area1','the floor cache key on floor 1 is "'+k1+'" - it has to carry '+
+      'type, size AND area, or descending replays the previous area\'s stone');
+    ok(!!floorCache[k1],'the key the drawing computed on floor 1 is not in the cache at all: '+k1);
+
+    const k6=keyFor(6);
+    eq(k6,'normal:'+size+':Area2','the floor cache key on floor 6 is "'+k6+'"');
+    ok(!!floorCache[k6],'drawing Area2 did not add its own floor sprite (keys now: '+
+      Object.keys(floorCache).join(', ')+') - either the area is not in the key, or the sprite is '+
+      'being re-baked every frame');
+    ok(floorCache[k1]!==floorCache[k6],'Area1 and Area2 share one cached floor sprite, so two thirds '+
+      'of a run is painted in the wrong area\'s stone');
+    /* and the key the drawing writes is a key that EXISTS, which is the half that a test computing
+       the key string itself would be asserting against its own arithmetic. */
+    ok(Object.keys(floorCache).indexOf(k6)>=0,'the floor cache does not contain the key drawFloor used');
+
+    /* and it is a CACHE and not a re-bake: asking twice returns the same object, which is the cheap
+       assertion available here and the expensive one (a shimmer) is what it stands in for. */
+    run.floor=6;
+    const first=floorCache[k6];
+    drawFloor('normal');
+    eq(floorCache[k6],first,'the Area2 floor sprite was re-baked on the second draw');
+
+    /* EVERY AREA GETS ITS OWN, and the four are four objects. Three areas sharing a key would mean
+       two of them are painting each other's stone on the two thirds of a run spent there. */
+    const seen=new Set();
+    for(const f of [1,6,10,13]){ run.floor=f; drawFloor('normal');
+      seen.add(floorCache['normal:'+size+':'+areaForFloor()]); }
+    eq(seen.size,4,'the four areas baked '+seen.size+' distinct floor sprites, wanted 4');
+    run.floor=1;
+
+    /* and reading the palette spends no randomness, because this runs on the art stream mid-render
+       and a palette that rolled anything would change what the NEXT area bakes. */
+    Rnd.set(31337);
+    const before=Rnd.calls;
+    const snap={run:before.run,jitter:before.jitter,art:before.art};
+    for(const a of ['Area1','Area2','Area3','Final']) paletteForArea(a);
+    eq(Rnd.calls.run,snap.run,'looking up a palette advanced the RUN stream');
+    eq(Rnd.calls.art,snap.art,'looking up a palette advanced the ART stream - a palette that rolled '+
+      'would make the next floor sprite depend on how many times the previous one was asked for');
+  });
+
+  test('an area has a name and a flavour, and the character sheet says which one you are in',()=>{
+    /* THE WORDS ARE CONTENT, and the assertion is that they are addressed by the same string
+       areaForFloor() returns. Two vocabularies for one question is how a palette ends up with no
+       name and the sheet printing a raw id at a player.
+
+       Every area areaForFloor() can produce must have both fields, because Content.get THROWS on a
+       missing id rather than returning undefined - so a shipped entry missing a flavour would crash
+       the pause screen rather than print a blank line, and the required-fields list is what stops it
+       shipping that way. */
+    startGame();
+    const ids=Object.keys(AREA_MIX);
+    eq(ids.length,4,'the mix table has '+ids.length+' areas, expected the 4 that areaForFloor returns');
+    for(const id of ids){
+      ok(Content.has('area',id),'area "'+id+'" is in the mix table and in no content, so the sheet '+
+        'has no name for it');
+      const d=Content.get('area',id);
+      ok(d.name&&d.name.length>1,'area "'+id+'" has no display name');
+      ok(d.flavour&&d.flavour.length>20,'area "'+id+'" has no flavour, or a one-word one ('+
+        (d.flavour||'')+')');
+      ok(!/undefined|\[object/.test(d.name+d.flavour),'area "'+id+'" prints "'+d.name+' / '+
+        d.flavour+'", which means a field is missing');
+    }
+    const names=ids.map(id=>Content.get('area',id).name);
+    eq(new Set(names).size,4,'two areas share the name "'+names.find(n=>names.indexOf(n)!==names.lastIndexOf(n))+
+      '" - a place with the same name as the last one is not a place');
+    /* the flavour is a LINE, because it is read on a pause screen over a 560px card */
+    for(const id of ids){
+      const f=Content.get('area',id).flavour;
+      ok(f.length<=140,'the flavour for '+id+' is '+f.length+' characters, which cannot be a line on '+
+        'the character sheet');
+    }
+    /* and the registry validates, because that is what catches a mod shipping a nameless area */
+    eq(Content.validate().join('; '),'','the shipped content does not validate once areas are in it');
+
+    /* THE SHEET SHOWS THE AREA YOU ARE IN, and it is the DOM's text rather than a re-derivation of
+       it - the same reason the character sheet is built from Stats.sheet() in the first place. */
+    for(const [floor,want] of [[1,Content.get('area','Area1').name],[6,Content.get('area','Area2').name],
+                              [10,Content.get('area','Area3').name],[13,Content.get('area','Final').name]]){
+      run.floor=floor;
+      renderCharSheet();
+      const line=document.getElementById('charArea');
+      ok(line,'the character sheet has no area line, so the sheet cannot say where you are');
+      const printed=line.querySelector('span').textContent;
+      eq(printed,want,'on floor '+floor+' the character sheet says "'+printed+'", wanted the area name "'+
+        want+'"');
+      const flav=line.querySelector('em').textContent;
+      eq(flav,Content.get('area',areaForFloor()).flavour,'the flavour under the area name is not that '+
+        'area\'s own on floor '+floor);
+      /* and it is struck in the area's accent, so the sheet is wearing the same ink as the room. This
+         is the DOM reading the PALETTE rather than a table of UI colours of its own - the failure
+         being a hue here that stops matching the one in the room. */
+      const rule=line.querySelector('i').style.background;
+      const pal=areaPalette();
+      const asRgb=(c,d)=>{ const m=c.trim().match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        return m?[+m[1],+m[2],+m[3]]:hexRgb(d); };
+      const got=asRgb(rule,'#000'), wantRgb=hexRgb(pal.accent);
+      const off=Math.abs(got[0]-wantRgb[0])+Math.abs(got[1]-wantRgb[1])+Math.abs(got[2]-wantRgb[2]);
+      ok(off<=3,'on floor '+floor+' the area rule under the name is '+rule+' and the area accent is '+
+        pal.accent+' ('+off+' units apart) - the sheet is carrying its own colour rather than the '+
+        'palette\'s');
+    }
+
+    /* AND THE MAP WASH IS THE AREA'S INK, WITHOUT COSTING THE MAP ITS READABILITY.
+
+       The minimap's paper is knocked back with a translucent wash so the white door frames end up the
+       brightest things on the board. That wash is now the area's `mapWash`, and there are two claims
+       here rather than one: that it changes with the area, and that it is STILL a knock-back at 0.52.
+
+       The second is the one that can silently break, because raising the alpha to make an area "look
+       more themed" darkens the board until an unvisited shell - #33383f, a fixed colour - stops
+       standing out from it, and the map becomes a dark rectangle with cells that have all merged. So
+       it is measured: an unvisited but KNOWN room's shell against the bare board beside it.
+
+       Measured at 0.52: the shell reads 51,56,63 against a board of 119,117,109 on floor 1 and 124,114,105
+       on floor 13 - a summed contrast of 175 and 173. A wash strong enough to eat that would be one
+       that has stopped being a wash. And the board itself does move per area: 119,117,109 /
+       122,116,104 / 118,119,108 / 124,114,105, which is the tinted-board read and not the floor read. */
+    startGame();
+    const cell=17, pw=GRID*cell+28, mx0=W-HUD_MARGIN_X-pw, my0=HUD_BLOCK_Y, mx=mx0+14, my=my0+14;
+    const px1=(x,y)=>{ const d=ctx.getImageData(Math.round(x),Math.round(y),1,1).data;
+      return [d[0],d[1],d[2]]; };
+    const near=Object.values(rooms).find(q=>q.type!=='boss'&&q.type!=='item'&&q.type!=='start');
+    for(const q of Object.values(rooms)) q.visited=true;
+    near.visited=false;   // known through a door, not walked into: exactly the unlit shell case
+    const boards=[], contrasts=[];
+    for(const f of [1,6,10,13]){
+      run.floor=f; readyT=0; fadeT=0; roomFade=0; render();
+      const board=px1(mx0+16,my0+16);
+      const shell=px1(mx+near.x*cell+cell/2,my+near.y*cell+cell/2);
+      boards.push(board.join(','));
+      contrasts.push(Math.abs(shell[0]-board[0])+Math.abs(shell[1]-board[1])+Math.abs(shell[2]-board[2]));
+    }
+    /* ALL FOUR, and not "at least three".
+
+       The paper's speckle is baked once per size and cached, so it is byte-identical in all four
+       draws and the ONLY thing that differs between these readings is the wash - which makes this a
+       clean measurement rather than a noisy one. Asserting three would have passed with Area2 and
+       Area1 sharing a wash, which is exactly the mutation: it collapsed the set from four to three
+       and the assertion still held. Four is the number of areas, and four is what has to be distinct. */
+    eq(new Set(boards).size,4,'the map board reads the same in more than one area ('+boards.join(' / ')+
+      ') - the map is not carrying the area, or two areas share an ink');
+    const worst=Math.min.apply(null,contrasts);
+    ok(worst>90,'an unvisited room shell sits only '+worst+' summed units from the bare board beside '+
+      'it (measured 173-175), so the wash has eaten the one contrast that tells a known room from '+
+      'the board it is drawn on: '+boards.join(' / '));
+    run.floor=1;
+
+    /* AND IT IS SAFE WITH NO RUN, because the title screen opens this sheet too and depthFloor()
+       falls back to 1 there. A helper that throws on the title screen is a crash on the first key a
+       new player presses, which is the one moment the game is least able to explain itself. */
+    const wasRun=run;
+    run=undefined;
+    let threw='';
+    try{ renderAreaLine(); }catch(e){ threw=String(e.message); }
+    eq(threw,'','reading the area line with no run threw: '+threw);
+    ok(document.getElementById('charArea').querySelector('span').textContent.length>0,
+      'with no run the area line printed nothing at all, which reads as a layout fault rather than '+
+      'as an absence');
+    ok(document.getElementById('charArea').querySelector('em').textContent.length>0,
+      'with no run the flavour printed nothing, so the line is a rule and a heading with no content');
+    /* restored by ASSIGNMENT to the run that was there, not by calling startGame() again - a fixture
+       that rebuilds the world to put it back has changed the world it is about to hand to the next
+       test, and the next test is not expecting a rebuilt world. */
+    run=wasRun;
+
+    /* IT MUST NOT ADD A THIRD GRAMMAR. The line is a struck rule, a name and a sentence on the same
+       card as the stats - which are all ruled rows - so a badge or a coloured pill here would be a
+       second visual language on one sheet. The rule is asserted by being a 2px block, which is what
+       makes it a struck mark and not a chip. */
+    const rule=document.getElementById('charArea').querySelector('i');
+    eq(rule.tagName,'I','the accent rule on the character sheet is not the element the drawing was '+
+      'written against, so its colour cannot be set');
+
+    /* AND IT MUST NOT LAND ON THE STATS, or eat the room they need.
+
+       Two separable claims, and both are properties of the LAYOUT rather than of the drawing: the line
+       sits above the first stat row with air between them, and it is bounded in height. The bound is
+       measured - 44px at the shipped sizes, for a 2px rule, a 13px name and a 13px flavour - and set
+       at 60, because the thing it has to catch is a flavour that wraps to three lines and pushes the
+       rows down, not a type size that is one point out.
+
+       The overlap is checked as RECTANGLES because that is what overlap is. Two boxes that merely
+       have the right numbers in them agree with each other whether or not anything is drawn. */
+    setPaused(true);
+    const line=document.getElementById('charArea').getBoundingClientRect();
+    const firstRow=document.querySelector('#charStats .statRow');
+    ok(firstRow,'the character sheet has no stat rows at all, so the area line has nothing to stay above');
+    const rowRect=firstRow.getBoundingClientRect();
+    ok(rowRect.top>=line.bottom,
+      'the area line ends at y '+line.bottom+' and the first stat row starts at y '+rowRect.top+
+      ' - they are on top of each other, so the area is printed over the stats');
+    ok(line.height<60,'the area line is '+line.height.toFixed(0)+'px tall, which is pushing the stat '+
+      'rows down the card; it is a rule, a name and one line of flavour');
+    /* AND THE SHEET SCROLLS RATHER THAN CLIPPING, which is the property that matters when the line
+       does push a tall roster past the fold.
+
+       The sheet already scrolled before this change - a player carrying the whole roster measured 732
+       against a 700px viewport - so "it scrolls" is not new and is not the claim. The claim is that
+       the content is REACHABLE: the card's own height is inside the sheet's scrollable height, or the
+       last row is a row the player can never scroll to. */
+    const sheet=document.getElementById('charSheet'), card=document.getElementById('charCard');
+    ok(card.getBoundingClientRect().height<=sheet.scrollHeight+1,
+      'the card is '+card.getBoundingClientRect().height.toFixed(0)+'px inside a scroll area of '+
+      sheet.scrollHeight+'px, so its foot is clipped rather than scrollable to');
+    eq(getComputedStyle(sheet).overflowY,'auto','the character sheet does not scroll, so a long '+
+      'roster is cut off at the bottom with no way to reach it');
+    setPaused(false);
+  });
+
+  /* EVERY PINNED FIX HAS A TEST WITH THAT NAME, and this is the LAST test in the file because it reads
+     the whole of `results` - see the note where it used to sit, near the top.
+
+     The panel marks an entry unverified when no result carries its name, and that is only worth
+     anything if the marking is right - so this asks both directions.
+
+     Two entries were in the unverified state when this was written: one whose test had been renamed
+     out from under it, and one - the win record - that had no test at all and never had. The first
+     is a rename somebody forgot; the second is worse, because a fix nobody is checking is a fix
+     nobody can tell has stopped working, and it sat in green because "no result" scored as "pass".
+
+     The first assertion is deliberately about the TABLE and not about the game: it cannot fail
+     because a mechanic broke, only because somebody pinned a fix without pinning a test for it, or
+     renamed a test without renaming its entry. That is the mistake worth catching, and it is
+     invisible from the game's side. */
   test('every pinned fix in the change history has a test with that name',()=>{
-    /* The mechanism, tested. The panel marks an entry unverified when no result carries its name, and
-       that is only worth anything if the marking is right - so this asks both directions.
-
-       Two entries were in the unverified state when this was written: one whose test had been renamed
-       out from under it, and one - the win record - that had no test at all and never had. The first
-       is a rename somebody forgot; the second is worse, because a fix nobody is checking is a fix
-       nobody can tell has stopped working, and it sat in green because "no result" scored as "pass".
-
-       The first assertion is deliberately about the TABLE and not about the game: it cannot fail
-       because a mechanic broke, only because somebody pinned a fix without pinning a test for it, or
-       renamed a test without renaming its entry. That is the mistake worth catching, and it is
-       invisible from the game's side. */
     const names=results.map(r=>r.name);
     const unbacked=Object.keys(FIXES).filter(n=>names.indexOf(n)<0);
     eq(unbacked.length,0,'pinned fixes with no test of that name, so nothing is checking them: '+
@@ -9247,11 +9944,24 @@ const BOSS_TICKS=26000;
        Re-implementing the scoring here and asserting on that would test my own arithmetic rather
        than the shipped behaviour, and the whole point is that the shipped behaviour is what was
        wrong. */
+    /* The list handed to the panel is the REAL results with the victim removed, except that every
+       remaining entry is marked green. That is not a fiction that weakens the check - it is the point.
+
+       The badge orders itself most-alarming-first: a red suite, then an unverified fix, then green. So
+       asking for UNVERIFIED while handing it a suite with a genuine failure in it gets "N FAILED",
+       which is the panel behaving correctly about the more urgent problem and this test reading it as
+       a fault. It only shows up when something ELSE is already red, and it showed up here the moment
+       the mutation checks ran - a cascade from one real failure to a confusing second one, which is
+       the thing the file's own discipline note says a failure must not cost.
+
+       So the fixture isolates the question. The panel is being asked about a MISSING TEST, and the
+       only way to hear the answer is to hand it a suite in which nothing else is wrong. */
     const victim=Object.keys(FIXES)[0];
+    const asIfGreen=results.filter(r=>r.name!==victim).map(r=>({name:r.name,ok:true}));
     const oldBtn=document.getElementById('bugBtn'), oldPanel=document.getElementById('bugPanel');
     if(oldBtn) oldBtn.remove();
     if(oldPanel) oldPanel.remove();
-    showBugPanel(results.filter(r=>r.name!==victim));
+    showBugPanel(asIfGreen);
     const btn=document.getElementById('bugBtn');
     ok(!!btn,'the panel did not render, so there is nothing asserting against');
     if(btn){

@@ -1102,6 +1102,105 @@ four guns.**
 **Never add or remove `walkSpeed` in a trait.** Only `far` and `close`.
 
 
+## Areas are identity by enemy mix AND by palette, and Area1 is the build that existed before them
+
+`areaForFloor()` in core says WHICH area a floor is in; `paletteForArea()` in `10-art` says what it
+looks like. The split is the design: **an area changes the enemy mix and the palette and nothing
+else.** It does not touch the ladder. A themed block is not a harder version of the climb, it is the
+same climb somewhere else, and the moment an area is allowed to raise a number it becomes a difficulty
+band wearing a name.
+
+**AREA1 IS BYTE-FOR-BYTE THE PRE-AREA BUILD, and that is a measured constraint rather than a
+sentiment.** Every number this project has ever recorded was recorded on floors 1–4: every TTK, every
+reaction window, every screenshot anybody looked at. So Area1's `stone` is the `#2b2f3a` the wall was
+already, its `floor` is the `#25211c` the cave was already, its `accent` is the `#e8b06a` the depth
+numeral was already, and **its `wash` is ZERO** — which is what makes the floor composite the same
+*arithmetic* rather than the same-looking result. A theming pass that quietly re-tinted the first four
+floors would have invalidated all of it while looking like a feature.
+
+### Two tints, in that order, and they answer different questions
+
+The room TYPE's tint (`start`/`normal`/`item`/`boss`) goes on first at 0.34 and the area's wash on top
+at its own strength. Type says what the room is FOR — the item room glows, the boss room is red, and
+that read has to survive into every area or a themed floor silently deletes the one thing the floor
+colour was telling the player. The wash says where you are. **Mixing them into one pre-baked colour
+would have made the second one win**, and the upgrade room would stop glowing in three areas out of
+four. The suite asserts both halves: that the tone sits *between* the two ends and never past either,
+and that the item and boss rooms still differ inside Area2.
+
+### `floorTint` is NOT the map wash, and the map wash's alpha is load-bearing
+
+Two fields that both sound like "the colour of the background" and are not interchangeable. The floor
+tint is the hue of the stone under the player. The map wash is a near-black ink laid over cream paper
+at 0.52 — and using one for the other put rgb(37,33,28) where rgb(9,11,17) used to be, a board three
+shades lighter in every channel, which eats the contrast between an unvisited room shell and the
+board it is drawn on. That alpha is the thing that keeps a known-but-unvisited room a **light shell
+rather than a hole in the board**, so it is measured rather than assumed: the shell reads 51,56,63
+against a board of 119,117,109, a summed contrast of 175. Raising the wash to 0.80 to make an area
+"look more themed" drops that to **12**, and the map becomes a dark rectangle with the cells merged.
+
+### The wall had to become masonry, and the courses had to be offset
+
+The wall was four `fillRect`s of one flat colour — the largest single-colour region on screen. Four
+palettes over a flat rectangle would have made that **four times as obvious without fixing it**. So it
+is coursed stone, baked per area, and the second course is offset by a quarter-block.
+
+**A wall whose joints line up into continuous verticals reads as tile**, which is the same reason this
+project deleted the lab's 120px floor lattice rather than dimming it. The tile is 64×32 with two
+16px courses (`WALL_COURSE` is 16 and `wt` is 16, so a tile is exactly one band of wall tall and the
+joints land on whole bands). Measured: joints at x 0, 31, 32 and 63 in the top course and 15, 16, 47
+and 48 below.
+
+### The cache key needed a third field, and it is the same bug as the room size
+
+`drawFloor`'s sprite cache was keyed by room type and size, on the reasoning that there was one
+dungeon. Descending a floor handed back the previous area's canvas — **the exact class of bug the size
+key exists to prevent, one level out**, and invisible in any screenshot of a single floor. Three keys
+or nothing: what the room is, how big it is, and where in the climb it is.
+
+### `eq` is `===`, and for an array that is a REFERENCE comparison
+
+`eq(a,b)` is `a!==b`. That is right for everything it is used on — primitives, and object identity
+where identity *is* the claim (two cached sprites being different objects is the property). But two
+freshly-computed arrays with identical contents are two objects, so
+
+```js
+eq(hexRgb('#abc'), hexRgb('#aabbcc'))   // fails, correctly, forever
+```
+
+fails against correct code and the message prints two identical lists of numbers. It cost a full
+iteration here. Anything comparing a computed value joins it first. Not changed; recorded.
+
+### Four fixtures were wrong before the code was, and all four are recorded at the test
+
+The palette work produced more wrong measurements than wrong code, which is the usual shape:
+
+| what the test did | what it read back | why |
+|---|---|---|
+| scanned the north wall | wood grain | it lands at screen y 59–75, **inside the HUD plate block** (29–130) |
+| scanned the west wall at `MIDY` | a door's green lip and gap fill | **`MIDY` is where the west door is** |
+| found the wall joint by darkness | a block with a dark overlay | blocks carry a random low-alpha wash, so "darkest" is **noise**; the joint is the unpainted gap, which is exactly `stone` |
+| counted floor-cache keys matching the prefix | 2, expected 1 | `floorCache` is never cleared, and keeping the last area's sprite **is what a cache is for** |
+
+The third cost three iterations on its own — the joints are 2px runs, and the run at x 63–0 is **one
+joint that the tile boundary cuts in half**, so the wrap has to be unwrapped before the midpoints mean
+anything. A pattern tile is periodic; that is the whole reason.
+
+### What is deliberately NOT done
+
+**The descent banner does not name the area.** Announcing it properly means comparing the area you
+left with the area you arrived in, and the only function that maps a floor to an area is core's
+`areaForFloor()`, which takes no argument and reads `run.floor`. Writing the 4/8/12 thresholds out a
+second time in the presentation layer would be two copies of a ladder boundary, and temporary-swapping
+`run.floor` to ask the question is a draw function mutating simulation state. **The beat says the
+floor and the palette says the area**, which is the whole of the identity the spec asks for. Naming it
+at a boundary is a one-line core change (`areaForFloor(floor)` with an optional argument) and is
+recorded as a request rather than worked around.
+
+The HUD is **ink on the existing wood**, not themed wood: a themed HUD means re-baking every plate in
+every area, which is per-frame work for a signal the depth plate already gives for free. The accent is
+one numeral and the character sheet's rule.
+
 ## Rooms bigger than the screen, and a camera
 
 A room is DATA. `bounds` sits on the room record — `{l,t,r,b,w,h}` written out rather than derived,
@@ -1539,8 +1638,8 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **202 checks**, every test seeded to an identical world. All must pass at
-  every commit. The change history (`FIXES`, in `80-ui.js`) is **107** entries and is itself checked.
+- `src/99-tests.js` - **207 checks**, every test seeded to an identical world. All must pass at
+  every commit. The change history (`FIXES`, in `80-ui.js`) is **115** entries and is itself checked.
   `verify.ps1` counts that table from a regex and prints the number; it does **not** assert it, and
   this paragraph used to claim the suite did. What the suite actually checks is the direction that
   matters: every pinned fix must have a test carrying its name, and an entry with no matching result
