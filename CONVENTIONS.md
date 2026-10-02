@@ -959,6 +959,18 @@ a test. All four are asserted to fail; none of them is a claim about what the co
 
 ## Parked, with the measurements that produced it
 
+**Visual-pass deferred items (framebuffer-measured, need a human eye).** From the headless-Edge
+visual pass over the HUD top band + area palettes; left for a playtest, not guessed at:
+- *Minimap palette.* Paper reads #77746D/#7A7368/#76766C/#7C7169 across the four areas - 2-5 units
+  apart. Root cause confirmed to the pixel: `paperTex` base #efe7d1 carries a +30 r-b warm bias,
+  contributing +14.4 lean at 0.48 weight and swamping ink leans of ±8-11 at 0.52. Options: (a) accept
+  the map as a neutral instrument and delete per-area `mapWash`, or (b) darken the board and re-tune
+  unvisited-shell contrast. No test covers the map in the four-surfaces-agree check.
+- *Mouse glyph badges* straddle the slot plates' bottom-right corners (~1px right, 4px below).
+- *Lab middle specimen name* permanently occluded by the centred player ("shooter" reads "sh…").
+- *Lantern Friend caption* collides with the Warden's plinth (Lab-only).
+- *Warden specimen readout* clipped at the right canvas edge.
+
 **AZERTY, and why the obvious fix is not the fix.** Movement reads `e.key`, which is the CHARACTER the
 layout produces rather than the key's position — so on a French keyboard the key where QWERTY keeps A
 produces `q`, and since **Q is the item button here**, a player pressing "left" spends their item while

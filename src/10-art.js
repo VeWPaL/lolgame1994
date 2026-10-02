@@ -92,9 +92,9 @@ const AREA_PAL={
                                                         the two warm areas are distinguishable on
                                                         a channel rather than on brightness.
 
-     Every pair is at least 28 apart in summed RGB on the wall and 44 on the floor wash, and those
-     are the floors of the test rather than the numbers I would have liked: the wall is the largest
-     thing on screen and 28 is already visible on it. */
+     Every pair is 42 apart in summed RGB on the wall and 49 on the floor wash (measured, visual pass), and those
+     are the measured minimums; the test floors sit below them. The wall is the largest
+     thing on screen and the wall floor sits exactly at its minimum, so any nudge breaks the bar. */
   Area2:{ id:'Area2',
     stone:'#3d2a20', stoneLit:'#63432e', mortar:'#261811',
     floor:'#30231a', floorLight:'255,224,168', floorTint:'#5a3a12', wash:0.22,
