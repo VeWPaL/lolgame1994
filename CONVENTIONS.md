@@ -1509,8 +1509,9 @@ having is the one that says what happens when the content outgrows the code.
   the other, so they drift apart when either is edited — read both, trust neither alone. The panel
   prints both and names each, because they are genuinely different: the table is bugs found and
   pinned, the suite is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` - **88 checks**, parity-verified against the JavaScript.
-  Still no world state; see the section on the port boundary above.
+- `csharp/Depths.Core` + `Depths.Tests` - **109 checks**, parity-verified against the JavaScript.
+  The generator is ported (`Dungeon`, in `World.cs`); there is still no player, no projectile and no
+  `update()`. See the section on the port boundary below.
 
 ### The port's own drift, and the test that was defending it
 
@@ -1542,8 +1543,10 @@ and the port has no presentation layer to keep in sync; the second is the next s
 next *because* the foundation now models a room as data.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
   first, because it is the only artifact the player can run, then ported.
-- Unity 6 LTS and VS2022 are installed. The port resumes at `60-tick.js` (`update()`), then the
-  world generator, then the presentation layer against the finished core.
+- Unity 6 LTS and VS2022 are installed. The world generator is now ported. The port resumes at
+  `60-tick.js` (`update()`), then the spawn plan (`spawnPlan`/`rollPack`, which the generator already
+  leans on for its keys and its secret), then the presentation layer against the finished core. The
+  generator was moved ahead of `update()` deliberately — see "The port order was wrong" above.
 
 ### The fodder, and what each one is for
 
@@ -1565,22 +1568,94 @@ teaches; the other three exist to make a room's answer depend on which of them i
 ### The C# port, and exactly where its boundary is
 
 `csharp/Depths.Core` has `Balance` (all the tuning, plus the depth ladder), `Hit` (the player hit
-test), `Intercept` (lunge and gun solutions), `Mulberry32` and `Rng` (the three streams, the floor
-seed, the base36 codec). `csharp/Depths.Tests` has **88 checks**, all parity-verified against numbers
+test), `Intercept` (lunge and gun solutions), `Bodies`/`Body` (the body table, the spawner and the
+build-dependent traits), `Frame` (`RoomBounds` and the frame timing), `Mulberry32` and `Rng` (the
+three streams, the floor seed, the base36 codec), and `World` (`Dir`, `RoomKind`, `Room`, `Map` and
+the `Dungeon` generator). `csharp/Depths.Tests` has **109 checks**, all parity-verified against numbers
 read out of the running JavaScript.
 
-**There is no world in the port yet.** No player, no body, no projectile, no room, no tick. Everything
-ported so far is a function of its arguments, which is exactly why it could be ported honestly — the
-moment a type needs to hold mutable state that another type also mutates, "translate it mechanically"
-stops being available and `update()` has to be ported against the tests rather than by reading it.
+**There is still no player, no projectile and no `update()`.** The generator is in, which was
+deliberate — see the port order below.
+
+#### The port order was wrong, and here is the measurement that says so
+
+This file used to record the order as: `60-tick.js` (`update()`) → world generator → presentation.
+`update()` alone is 868 of `60-tick.js`'s 1123 lines and reaches into `run`, `currentRoom()`,
+`player`, the body list, projectiles, momentum and boss state — none of which existed in the port. So
+porting it first meant inventing the whole mutable world model with no parity spec behind it except
+"the JavaScript suite still passes".
+
+The generator was the better first slice, on four counts:
+
+| | `update()` | generator |
+|---|---|---|
+| size | 868 lines, plus everything it touches | 247 lines |
+| dependencies | everything | `Rnd.run()` and nothing else — no jitter, no art, no globals |
+| parity spec | none that existed | four passing JS tests, plus the seed round-trips |
+| applies finding #8 | eventually | at the point of creation |
+
+`DepthLadderParityTests` gained **21 checks** from this slice, taking the C# suite from 88 to 109.
 
 Two things to know before adding to the port:
 
 - **A port that agrees with its own source is not parity.** Every expected value in
-  `RngParityTests` and `DepthLadderParityTests` was read out of the browser. When a value was
-  hand-computed instead, three of nine were wrong and the *test* was what failed.
+  `RngParityTests`, `DepthLadderParityTests` and `GeneratorParityTests` was read out of the browser.
+  When a value was hand-computed instead, three of nine were wrong and the *test* was what failed.
 - **C# is not JavaScript where it looks identical.** `(uint)someDouble` above `uint.MaxValue`
-  saturates; `>>> 0` wraps. The original's `Decode` relies on the wrap, so the largest seed the game
-  can display could not be typed back in. That was a real bug in the port, found by a parity test,
-  and it is the kind of thing that would have shipped.
+  saturates; `>>> 0` wraps — and `>>>` does not even exist in C#, so a transliteration of a seed
+  expression does not compile. `uint` arithmetic already wraps, which is why `Rng.Decode`'s
+  explicit wrap still has to be written out rather than inherited.
+- **Run state must be instance state, never `static`.** The JavaScript keeps `FLANK_CURSOR` and
+  `PACK_CURSOR` at module scope and had to be taught to reset them (finding #8). A C# port that
+  reaches for `static` reproduces the bug in a language where the compiler will not warn about it,
+  because `static` looks like the *right* answer for a module-level helper and nothing in the type
+  system connects it to a run. `Rng` is an instance with three streams inside it, and `Dungeon` takes
+  its `Rng` by constructor, so two generators cannot share a stream and a generator cannot outlive the
+  run it was seeded for — the type makes both impossible rather than merely discouraged.
+
+#### An int grid key is not a string grid key, and the difference is silent
+
+The one real porting bug in this slice, and it is worth the space because **it matched on 6 seeds out
+of the first 10 and failed on 4** — the worst possible signature.
+
+JavaScript keys rooms by the string `"x,y"`, which is injective over the whole integer plane. The port
+uses `x*Grid + y`, which is injective only for `0 <= x,y < Grid`. One step outside and it stops being
+injective in the worst way available:
+
+```
+Cell(4,7) = 35     out of grid, y is 7
+Cell(5,0) = 35     IN grid - in seed 3, the silver key room
+```
+
+Strict mode asks "does this candidate touch any room but its parent?" by probing all four neighbours,
+and two of those are off the grid whenever the candidate sits on an edge. So an off-grid probe aliased
+onto a real room across the grid, strict mode refused a perfectly good placement, and the trunk turned
+the other way. It matched on the seeds that did not put a room where the alias pointed.
+
+Three rules that came out of it:
+
+1. **Bounds-check at the boundary of the map, never at the edge of arithmetic.** Every probe goes
+   through `Occupied(x,y)`, which bounds-checks first. `Cell` is private and its precondition is only
+   honoured by callers that have already established `InGrid`.
+2. **Compare the draw COUNT before the layout.** The C# drew all 23 values in exactly the JS order and
+   still built a different floor, so the draw sequence was never the suspect — the interpreter was.
+   `RunCalls` is exposed on `Rng` for exactly this, and asserting it alongside the signature is worth
+   more than the signature: a count difference names the bug class immediately.
+3. **A parity table sampled at unlucky seeds reads as a pass.** Thirteen rows is not many. The
+   structural tests — tree, reachability, one of each, gold-key-not-behind-the-boss, 5000 seeds all
+   produce a floor — cannot say a floor is *right*, and they are what covers the seeds nobody sampled.
+
+Mutation-checked, because a parity table that cannot fail is a table of nothing. Each of these was
+introduced, confirmed to go red, and reverted:
+
+| mutation | result |
+|---|---|
+| `ArmDirs` order changed | 8 failures |
+| `TURNS[S]` mirrored — a pure left/right flip | 7 failures |
+| the `Cell` aliasing bug, reintroduced | 6 failures |
+
+The `TURNS` row is the one worth keeping: swapping `[E,W]` for `[W,E]` on a single heading produces
+dungeons that are all individually valid, all walkable, all with one boss and both keys — and none of
+them the floor that seed names. Room-count and shape assertions pass straight through it. Only
+comparing a specific seed catches it, which is the argument for keeping the signature rows at all.
 
