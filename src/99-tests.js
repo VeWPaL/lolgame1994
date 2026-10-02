@@ -1830,7 +1830,13 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     // and the bar's numbers are derived from the body rather than assumed
     const rect=bossBarRect();
     ok(rect.w>0&&rect.h>0,'the bar has no size: '+rect.w+'x'+rect.h);
-    ok(rect.x+rect.w<=ROOM_RIGHT,'the bar runs past the right wall: '+(rect.x+rect.w)+
+    /* ON THE CANVAS, which is the property that holds in BOTH places. It used to assert the room's
+       right wall, which is true on a floor and meaningless in a room wider than the screen - and the
+       Lab is the one place this bar is checked by eye. The room's right edge is not where the bar
+       stops; the canvas is. */
+    ok(rect.x>=0&&rect.x+rect.w<=canvas.width,'the bar runs from x '+rect.x+' to '+(rect.x+rect.w)+
+      ' on a '+canvas.width+'px canvas, so part of it is off the side of the screen');
+    ok(rect.x+rect.w<=ROOM_RIGHT,'on this floor the bar runs past the right wall: '+(rect.x+rect.w)+
       ' against a wall at '+ROOM_RIGHT);
     /* The bar must be OUT OF THE PLAYING AREA and ON THE CANVAS, and both of those are asserted as
        geometry rather than as a description of where it is.
@@ -1857,8 +1863,13 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     // the labels sit ABOVE the bar, so they need room between the bar and the room's floor
     ok(rect.y-6>ROOM_TOP,'the labels sit at y '+(rect.y-6)+', which is inside the room, so the '+
       'caption for the fight is over the play area');
-    // and it is nowhere near the HUD plates, which are at the top
-    const platesBottom=HUD_MARGIN_Y+HUD_HP_H+HUD_ROW_H+HUD_FRAME;
+    /* And it is nowhere near the HUD plates, which are at the top. The plate block is three rows tall
+       and now starts under the top band, so its bottom is the DEPTH plate - the third row - not the
+       first two. This used to stop at HUD_HP_H+HUD_ROW_H, which was already the wrong row: the depth
+       plate hangs 31px below that, so the assertion was passing with 31px of unused margin and would
+       have kept passing if the depth plate had grown twice as tall again. Read as the block's real
+       extent, from the same terms drawHUD lays it out with. */
+    const platesBottom=HUD_BLOCK_Y+HUD_HP_H+HUD_ROW_H+HUD_GAP+HUD_ROW_H+HUD_FRAME;
     ok(rect.y>platesBottom,'the bar is at y '+rect.y+' and the HUD plates end at y '+platesBottom);
   });
 
@@ -1893,31 +1904,82 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(boss.bar>0,'the boss has no bar offset, so anything else reading e.bar gets undefined');
   });
 
-  test('the bar belongs to the room it is drawn in, not the room the module loaded in',()=>{
-    /* The Lab is 1680x760 and the floors are 700x450. The first version read ROOM_W and ROOM_TOP
-       into constants at load time, so in the Lab it drew a bar sized for a 700px room inside a
-       1680px one. Nothing about that looks broken in a screenshot at a glance - a bar that is a bit
-       too small is not an obviously wrong bar - which is why it is asserted here as a RELATIONSHIP:
-       the bar must be a fixed fraction of the room it is in, whatever that room is. */
+  test('the bar is sized to the SCREEN, so the Lab gets one too and the floor is unchanged',()=>{
+    /* Two bugs in one rectangle, and they pull in opposite directions.
+
+       The first version read ROOM_W and ROOM_TOP into constants at load time, so the Lab drew a bar
+       sized for a 700px room inside a 1680px one. bossBarRect() fixed that by measuring the room per
+       draw - and introduced the opposite failure: measuring the room per draw in a room that is
+       WIDER THAN THE SCREEN draws a 1640px bar starting at x 70 on a 960px canvas. 750px of it, the
+       flush-right "PHASE n" caption and the right-hand side of both phase notches were off the side
+       of the screen. The Lab is where every tell gets checked, so that is the one place the bar was
+       not visible.
+
+       Neither of those is caught by asserting a WIDTH against the room, which is what this test used
+       to do - and which is why it went green over both defects in turn. So it asserts the property
+       each one violates: the bar fits the canvas it is drawn on, and it fits it the same way in both
+       places.
+
+       FLOOR UNCHANGED is asserted explicitly and exactly. A fix that made the Lab correct by
+       re-anchoring everything to the screen would have widened the floor bar from 660 to 920, moved
+       it 50px left, and every screenshot of a normal run would have changed. The room still decides
+       where the bar sits; only a room wider than the screen gives up its edges. */
     startGame();
     const floorW=ROOM_RIGHT-ROOM_LEFT;
     const floorRect=bossBarRect();
     ok(floorRect.w===floorW-BOSS_BAR_INSET_X*2,'on a floor the bar is '+floorRect.w+'px in a '+
       floorW+'px room, expected '+(floorW-BOSS_BAR_INSET_X*2));
+    ok(floorRect.x===ROOM_LEFT+BOSS_BAR_INSET_X,'the floor bar starts at x '+floorRect.x+', which is '+
+      'not inset '+BOSS_BAR_INSET_X+' from the room left edge at '+ROOM_LEFT+' - the fix for the Lab '+
+      'has moved the bar in an ordinary run');
+    ok(floorRect.x+floorRect.w===ROOM_RIGHT-BOSS_BAR_INSET_X,'the floor bar ends at '+
+      (floorRect.x+floorRect.w)+', which is not inset '+BOSS_BAR_INSET_X+' from the room right edge '+
+      'at '+ROOM_RIGHT);
+
     Lab.enter();
     const labW=ROOM_RIGHT-ROOM_LEFT;
     const labRect=bossBarRect();
     ok(labW!==floorW,'the Lab room is the same size as a floor ('+labW+'px), so this test cannot '+
-      'tell whether the bar follows the room or was baked at load time');
-    ok(labRect.w===labW-BOSS_BAR_INSET_X*2,'in the Lab the bar is '+labRect.w+'px in a '+labW+
-      'px room, expected '+(labW-BOSS_BAR_INSET_X*2)+' - it was sized for a floor');
-    ok(labRect.w>floorRect.w,'the Lab bar is not wider than the floor bar ('+labRect.w+' vs '+
-      floorRect.w+'), so it did not follow the room');
-    ok(labRect.x===ROOM_LEFT+BOSS_BAR_INSET_X,'the Lab bar starts at x '+labRect.x+', which is not '+
-      'inset '+BOSS_BAR_INSET_X+' from the room left edge at '+ROOM_LEFT);
+      'tell whether the bar follows the room, the screen, or was baked at load time');
+    ok(labW>canvas.width,'the Lab room ('+labW+'px) is not wider than the canvas ('+canvas.width+
+      'px), so the clamp this test exists for is never exercised here');
+    // and here is the clamp, as the thing the player can actually see
+    ok(labRect.x>=0&&labRect.x+labRect.w<=canvas.width,'in the Lab the bar runs from x '+
+      labRect.x+' to '+(labRect.x+labRect.w)+' on a '+canvas.width+'px canvas, so '+
+      (canvas.width-(labRect.x+labRect.w))+'px of it - including the flush-right caption - is off the '+
+      'side of the screen');
+    ok(labRect.w===canvas.width-BOSS_BAR_INSET_X*2,'the Lab bar is '+labRect.w+'px, expected the '+
+      'screen width less both insets ('+(canvas.width-BOSS_BAR_INSET_X*2)+')');
+    ok(labRect.x===BOSS_BAR_INSET_X,'the Lab bar starts at x '+labRect.x+', which is not inset '+
+      BOSS_BAR_INSET_X+' from the SCREEN - with no room wall on screen to line up with, the bar should '+
+      'be symmetric rather than offset');
+    ok(labRect.x+labRect.w>=canvas.width-BOSS_BAR_INSET_X,'the Lab bar stops short of the right '+
+      'inset, so it is not using the screen it has');
+
+    /* BOTH NOTCHES AND THE CAPTION, measured off the framebuffer rather than off the arithmetic.
+
+       The claim is that they are ON the screen, which is a claim about pixels, and a rectangle whose
+       width is correct can still put a notch outside the canvas if the notch is placed from something
+       other than the bar's own left edge. So: draw it, and sample the notch in the Lab. The notch is
+       bone-white standing proud of the bar, 2px wide and h+8 tall, so at full health it is against the
+       dark recess - which is what makes it findable at all. */
+    render();
+    const nx=labRect.x+Math.round(labRect.w*BOSS_PHASE_1);
+    ok(nx>=0&&nx<=canvas.width-2,'BOSS_PHASE_1 puts its notch at x '+nx+', which is not on the canvas');
+    /* The bar is drawn in SCREEN space, so it is sampled as screen - which is why cam is added back on
+       both axes before handing world coordinates to the one sampler in this file. pixelsAtWorld is
+       the only pixel reader here and it converts the other way; passing it screen coordinates in the
+       Lab, where the camera is not the identity, would sample the wrong part of the frame entirely. */
+    const band=pixelsAtWorld(nx+cam.x-1,labRect.y+cam.y+2,2,4);
+    let lit=0;
+    for(let i=0;i<8;i++) if(band[i*4]>200&&band[i*4+1]>200&&band[i*4+2]>170) lit++;
+    ok(lit>=4,'the BOSS_PHASE_1 notch was not drawn on screen in the Lab ('+lit+' of 8 samples are '+
+      'bone-white), so the threshold the whole phase change hangs on is not visible there');
+
     // and the Lab is where this gets checked by eye, which is the point of the Lab
     ok(currentRoom().enemies.some(e=>e.type==='boss'),'the Lab has no Warden on its row, so the bar '+
       'cannot be looked at in the place it exists to be looked at');
+    Lab.leave();
   });
 
   test('the bar marks the two phase thresholds exactly where the fight changes',()=>{
@@ -1946,6 +2008,98 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(BOSS_PHASE_1>BOSS_PHASE_2,'the phases are not ordered: '+BOSS_PHASE_1+' then '+BOSS_PHASE_2);
     ok(BOSS_PHASE_1<1&&BOSS_PHASE_2>0,'a phase threshold sits outside the bar: '+BOSS_PHASE_1+
       ', '+BOSS_PHASE_2);
+  });
+
+  test('the Warden has a readable bar in the Lab, above the legend and below the band',()=>{
+    /* THE LAB IS WHERE THIS BAR GETS LOOKED AT. Every other tell in the game is checked there
+       without playing a run, and this one was the exception: the Lab's room is 1680px wide and the
+       screen is 960, so for the whole life of the bar roughly half of it - and the flush-right
+       "PHASE n" caption with it - was drawn off the side of the canvas in the one place you would go
+       to check it. A bar that is only really drawn on a floor is a bar that is only really checked on
+       a floor, which means the Lab has been testing nothing about it.
+
+       This asserts the vertical relationships that make it legible, and it asserts them against
+       PIXELS wherever the claim is about what is on the screen, because each of them is a claim about
+       overlap and overlap is not a property of two numbers - it is a property of what got painted on
+       top of what. The measurements are stated because the alternative was three more pairs of
+       hand-copied constants that agree with each other and disagree with the drawing:
+
+         the boss bar        567..577, frame 564..580
+         the Lab legend      574..600   <- 6px of overlap, and the legend drew last
+
+       So the legend gives up the 6. It is the one that moves, for two reasons that are in the code
+       beside it: the bar is anchored to the canvas edge and is the one fixed thing in a fight, and
+       the legend is screen space over a world-space SHELF, so moving the legend up would put it on
+       the shelf at some camera positions and not others. */
+    startGame();
+    Lab.enter();
+    readyT=0; fadeT=0; roomFade=0;   // the fade is opaque black over everything, pixels included
+    render();
+    const b=bossBarRect();
+    ok(liveBossInRoom(),'the Lab has no live Warden, so there is no bar to check and this test is '+
+      'measuring the empty case');
+
+    /* 1. THE LEGEND LANE IS BELOW THE BAR'S FRAME. Not "the legend is at the bottom" - it was, and it
+       still is, and that is the bug. */
+    const lane=Lab.legendLane();
+    const frameBottom=b.y+b.h+3;
+    ok(lane.y>=frameBottom,'the Lab legend lane starts at y '+lane.y+' and the boss bar frame ends at '+
+      frameBottom+', so the legend is painted over '+Math.max(0,frameBottom-lane.y)+
+      'px of the bar - and the legend draws after the HUD, so the bar is the one that disappears');
+
+    /* 2. THE BAR'S OWN PIXELS ARE STILL THE BAR'S. The overlap was invisible in the data and obvious
+       on the screen, so this is a framebuffer read: sample the middle of the fill and require the
+       Warden's green. 0x5ee27a is the fill colour the bar draws, and under an 86%-opaque legend strip
+       it would be roughly 0x1a1d1b - the same dark that an absent bar would give. */
+    const pxAt=(x,y)=>{ const d=pixelsAtWorld(x+cam.x,y+cam.y,1,1); return [d[0],d[1],d[2]]; };
+    const mid=pxAt(b.x+b.w/2,b.y+b.h/2);
+    ok(mid[1]>mid[0]+40&&mid[1]>mid[2]+40,'the middle of the boss bar is rgb('+mid+') in the Lab, which '+
+      'is not a lit bar - the legend is drawn on top of it, or it is not drawn at all');
+
+    /* 3. THE LEGEND IS STILL THERE. Shrinking its lane must not have shrunk it out of existence, and
+       "no overlap" is satisfied just as well by a legend that is not drawn - so the strip's own
+       pixels are read too. It is 86%-opaque near-black over whatever is behind it, so it lands dark
+       and neutral regardless of the room, which is what makes it findable. */
+    const lg=pxAt(W/2,lane.y+lane.h-4);
+    ok(lg[0]<60&&lg[1]<60&&lg[2]<70,'the Lab legend lane at y '+(lane.y+lane.h-4)+' is rgb('+lg+
+      '), which is not the legend strip - the lane was made to avoid the bar by removing it');
+
+    /* 4. AND THE CHIPS ARE INSIDE THAT LANE. This is the assertion the shrink is really for, and it
+       is the one that was missing until the row was made to follow the lane.
+
+       A 26px strip with its chips on a fixed y was correct and became wrong the moment the strip
+       shrank to 20: the chips stayed at y+6 and hung 3px out of the bottom of their own background,
+       over the canvas edge. Every assertion above still passed - the lane was below the bar, the strip
+       was still drawn, the bar's pixels were still the bar's - because none of them were about where
+       the CONTENTS are. An overlay's background being in the right place says nothing about its text,
+       which is the same failure as a health bar drawn in the right frame with the wrong number in it.
+
+       So the chips' own rects are read out of the drawing and asked whether they fit. Sized by what
+       the chip colour is rather than by position, because the state caption on the right is drawn as
+       text with no rect of its own and the strip's own background is a rect too. */
+    const rects=[], realFill=ctx.fillRect.bind(ctx);
+    ctx.fillRect=(x,y,w,h)=>{rects.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});
+      return realFill(x,y,w,h); };
+    try{ Lab.drawLegend(); }finally{ ctx.fillRect=realFill; }
+    const chips=rects.filter(r=>r.h===15&&r.y>=lane.y&&r.y+15<=lane.y+lane.h&&r.w>20);
+    ok(chips.length===5,'the Lab legend drew '+chips.length+' key chips inside its lane, wanted 5 - '+
+      'the chips are either not being drawn or they are hanging outside the strip they belong to ('+
+      rects.map(r=>r.y+'+'+r.h).join(', ')+' against a lane at y '+lane.y+' h '+lane.h+')');
+    for(const c of chips)
+      ok(c.y>=lane.y&&c.y+c.h<=lane.y+lane.h,'a Lab legend chip at y '+c.y+' ('+c.h+' tall) does not '+
+        'fit in its lane at y '+lane.y+' h '+lane.h);
+
+    /* 5. AND WITH NO WARDEN THE LEGEND IS BACK TO ITS FULL HEIGHT. A lane that only ever shrinks is a
+       lane that took its height from the one frame where something else needed the room; this is the
+       assertion that the bar's arrival is temporary and the legend's 26px is its normal size. */
+    const boss=liveBossInRoom();
+    boss.hp=0;
+    ok(Lab.legendLane().h>lane.h,'with the Warden dead the legend lane is '+
+      Lab.legendLane().h+'px against '+lane.h+'px with it alive, so the strip does not give its '+
+      'height back - the whole design is that only a live boss shrinks it');
+    ok(Lab.legendLane().y+Lab.legendLane().h===H,'the legend lane does not reach the bottom of the '+
+      'screen with no Warden: y '+(Lab.legendLane().y+Lab.legendLane().h)+' against H '+H);
+    Lab.leave();
   });
 
   test('crossing a threshold visibly changes the bar, and the bar is named',()=>{
@@ -3510,7 +3664,11 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       return rects;
     };
     void marks;
-    const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-14-pw,my0=14,mx=mx0+14,my=my0+14;
+    /* The map's own placement, read from the HUD's terms rather than retyped. It was `my0=14` here
+       and `MARGIN_Y` in drawHUD, which is two copies of one number - and the two copies disagreed the
+       moment the top band arrived, so the test was watching for a mark in a cell that was no longer
+       where the map was. A test that computes where the drawing is has to compute it the same way. */
+    const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-HUD_MARGIN_X-pw,my0=HUD_BLOCK_Y,mx=mx0+14,my=my0+14;
     const bcell={x:mx+boss.x*cell,y:my+boss.y*cell};
     ok(!boss.cleared,'the boss room starts cleared');
     // the mark is a stroke on the boss cell, so watch for exactly that stroke
@@ -3539,7 +3697,15 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // 70-view.js, read by both, which is the same fix as the boss door and the pulse.
     const MARGIN_X=HUD_MARGIN_X, MARGIN_Y=HUD_MARGIN_Y, FRAME=HUD_FRAME, GAP=HUD_GAP;
     const HP_H=HUD_HP_H, ROW_H=HUD_ROW_H, KEY_W=HUD_KEY_W, KEY_H=HUD_KEY_H, BLINK_W=HUD_BLINK_W;
+    /* BLOCK_Y is the top of the PLATES, which is no longer the top margin: the top band owns the
+       strip above it. It is read rather than recomputed, and the assertions below are all relative -
+       the block's plates against each other - so they read the new silhouette rather than the old
+       numbers. What they must not do is re-derive BLOCK_Y here, because a test that has its own copy
+       of the layout cannot tell a moved HUD from a moved expectation. */
+    const BLOCK_Y=HUD_BLOCK_Y;
     ok(MARGIN_X!==MARGIN_Y,'the two margins have been collapsed back into one number, which is what made the corner look wrong');
+    ok(BLOCK_Y>MARGIN_Y,'the plate block is back on the top margin, so the top band owns nothing and '+
+      'whatever goes in the band will be drawn through the health plate');
     const hearts=Math.ceil(player.maxHp/2), armorSlots=Math.ceil(MAX_ARMOR/2);
     const healthW=30+(hearts+armorSlots)*26;
     const grab=()=>{
@@ -3555,7 +3721,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const health=plates.find(p=>p.w===healthW&&p.h===HP_H);
     ok(health,'the health plate was not drawn at its derived size');
     eq(health.x,MARGIN_X,'the health plate is not on the screen margin');
-    eq(health.y,MARGIN_Y,'the health plate is not on the screen margin');
+    eq(health.y,BLOCK_Y,'the health plate is not at the top of the plate block, under the band');
     // the keys sit on the same row, top-aligned, TOUCHING, and at their own height rather than
     // stretched to match the health plate. Matching it was an over-correction: it is two small
     // icons, and the empty wood around them read as three missing slots.
@@ -3605,7 +3771,14 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // The four HUD plates carry a wooden frame and an inset. The small weapon slots under the map are
     // drawn at 25x22 and have neither, so including them would only produce a guaranteed failure
     // about a plate that was never framed. Sized by what drawInset is called with, not by a name.
-    const big=plates.filter(p=>p.w>=60&&p.h>=28);
+    /* The top band is EXCLUDED BY NAME rather than by its height. It is a wood image with no inset, so
+       including it makes this loop report "a plate at 0,0 has no inset drawn inside it, so its borders
+       cannot be compared" - which is true of the band and useless as a statement about borders. It
+       currently drops out anyway because 15px fails the >=28 height test, which is an accident of the
+       band's size rather than a decision: raise the band to 40px and a border test fails on a plate
+       that is not a plate. Being explicit here means the answer survives the band's height changing,
+       which is the whole subject of the band's existence. */
+    const big=plates.filter(p=>p.w>=60&&p.h>=28&&!(p.w===W&&p.y===0));
     ok(big.length>=3,'only '+big.length+' framed plates were found (sizes '+big.map(p=>p.w+'x'+p.h)+
        '), so the border check has nothing to compare and would pass on an empty set');
     for(const p of big){
@@ -3633,7 +3806,8 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // the minimap hangs off the SAME right margin as the left-hand plates, so the two edges of the
     // HUD are the same distance from the screen and the block reads as one inset
     eq(map.x+map.w,W-MARGIN_X,'the map is not flush to the right margin');
-    eq(map.y,MARGIN_Y,'the map is not on the top margin with the rest of the HUD');
+    eq(map.y,BLOCK_Y,'the map is not at the top of the plate block with the rest of the HUD, so the '+
+       'two columns do not start on the same line');
     const SLOT_H=50, SLOT_GAP=2, wSlot=Math.floor((map.w-SLOT_GAP*2)/3);
     const row=plates.filter(p=>p.w===wSlot&&p.h===SLOT_H&&p.y===map.y+map.h+GAP).sort((a,b)=>a.x-b.x);
     eq(row.length,3,'the weapon row is not three plates (two hands plus the reserved middle)');
@@ -3653,6 +3827,102 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // and the outer two are pushed to the ends, so the reserved space is in the middle where it
     // belongs rather than swallowed by the right-hand plate
     ok(row[1].x-row[0].x>wSlot/2,'the reserved middle slot is not between the two hands');
+
+    /* THE BLOCK CLEARS THE ROOM, which is the whole reason the band is 15px and not 40.
+
+       The depth plate is the third row and it is the thing that would touch the play area: ROOM_TOP is
+       a balance constant this file does not own, so the band cannot grow past what leaves the left
+       column ending above it. A band that pushed the depth plate onto the top wall would hide bodies
+       walking along it, and no test anywhere was watching for that - which is why the number lives
+       here as a constraint on the layout rather than as a preference in a comment.
+
+       The right column is checked against the SCREEN rather than the room: the map hangs in the margin
+       outside a 700px room, and it is the canvas it has to stay inside. */
+    const leftColumnBottom=BLOCK_Y+HP_H+ROW_H+GAP+ROW_H;
+    ok(leftColumnBottom<=ROOM_TOP,'the left plate column ends at y '+leftColumnBottom+' and the room '+
+      'starts at y '+ROOM_TOP+', so the top band has pushed the depth plate onto the room and it will '+
+      'cover bodies walking the top wall');
+    ok(map.y+map.h+GAP+50<=H,'the map and its weapon row end at y '+(map.y+map.h+GAP+50)+' on a '+H+
+      'px screen, so the right column has run off the bottom');
+  });
+
+  test('the top band owns the top of the screen, and nothing else is drawn in it',()=>{
+    /* THE BAND IS THE ONE THING AT THE TOP OF THE SCREEN, and the plates are under it.
+
+       This is asserted as PIXELS rather than as a pair of numbers, and that is the whole point of it:
+       "the health plate is at y 29" is true whether or not anything was drawn over it, and the failure
+       mode for a band is precisely that - a band arrives, nothing moves, and a plate is drawn straight
+       through the thing that was supposed to own the strip. Numbers cannot see that. Pixels can.
+
+       So the band is sampled where it is (wood, warm and mid-tone) and the plate is sampled where it
+       is (the inset's near-black fill), and the band is sampled again where a plate WOULD have been
+       had it stayed on the top margin - which is the assertion that actually catches the regression:
+       the band is opaque there, not HUD showing through it. */
+    startGame();
+    currentRoom().enemies.length=0; currentRoom().pickups.length=0;
+    /* The room fade goes to black over the whole canvas, so a pixel read taken during the arrival
+       samples the fade rather than the HUD - and it samples it as opaque black, which is a colour
+       nothing in this HUD is. Every other pixel check in this file zeroes the fade first for the same
+       reason, and this one has to as well. */
+    readyT=0; fadeT=0; roomFade=0;
+    render();
+    const pxAt=(x,y)=>{ const d=pixelsAtWorld(x+cam.x,y+cam.y,1,1); return [d[0],d[1],d[2]]; };
+    const isWood=c=>c[0]>45&&c[0]>c[2]+15&&c[1]>c[2];
+    const MARGIN_Y=HUD_MARGIN_Y;   // read, not retyped: the old margin is the point of assertion 2
+
+    /* 1. THE BAND IS DRAWN, ACROSS THE WHOLE WIDTH, INCLUDING WHERE NO PLATE IS. Sampled at three x:
+       over the health plate, in the gap between the two columns, and over the map. A band drawn only
+       as wide as the left column would pass the first and fail the other two, and a band drawn as a
+       fill without its wood would be flat where the plates have grain. */
+    for(const [x,what] of [[30,'over the health plate'],[W/2|0,'between the columns'],[W-40,'over the map']]){
+      const c=pxAt(x,HUD_TOP_BAND_H/2);
+      ok(isWood(c),'the top band at x '+x+' ('+what+') is rgb('+c+'), which is not wood: the band is '+
+        'either not drawn there or something is drawn over it');
+    }
+    /* 2. AND IT IS OPAQUE OVER THE STRIP THE HEALTH PLATE USED TO START ON. MARGIN_Y is 14 and the
+       band is 15 tall, so a plate left on the old margin would be sitting inside it with its own wood
+       and studs showing through the band's own. The band is the only thing allowed to be there. */
+    const atOldMargin=pxAt(30,MARGIN_Y+HUD_HP_H/2);
+    ok(isWood(atOldMargin),
+      'inside the band at y '+(MARGIN_Y+HUD_HP_H/2)+' the screen is rgb('+atOldMargin+') - the health '+
+      'plate has been left on the old top margin and is being drawn through the band');
+
+    /* 3. THE PLATES ARE UNDER IT, not beside it. The health plate's inset is the one dark hole in the
+       HUD, and it is at HUD_BLOCK_Y - which is what "the band displaced the row" means on screen. */
+    const inset=pxAt(30,HUD_BLOCK_Y+HUD_HP_H/2);
+    ok(inset[0]<40&&inset[1]<35&&inset[2]<35,'the middle of the health plate is rgb('+inset+'), which '+
+      'is not the plate inset - the plate has not been drawn under the band at y '+HUD_BLOCK_Y);
+    /* and the gap between the band and the plate is the room, not more HUD. The band casts a shadow
+       and then the plates start; if the band were growing into the block without the block moving,
+       this gap would be wood all the way down rather than ending. */
+    const gap=pxAt(30,HUD_TOP_BAND_H+6);
+    ok(!isWood(gap),'the strip between the band and the plates at y '+(HUD_TOP_BAND_H+6)+' is rgb('+
+      gap+'), which is wood: the band has been drawn taller than its own height');
+
+    /* 5. THE RAIL IS A RAIL AND NOT A TEXTURE CHANGE: it has its own dark lower border, and what is
+       under it is the empty space over the room rather than more HUD.
+
+       This replaced an assertion about a drop shadow the band used to draw, which could not fail -
+       the band is above ROOM_TOP, so what was behind the shadow was already rgb(0,0,0), and a shadow
+       over black is black. The test passed on the shadowed version and on the version with the shadow
+       deleted, which is the exact property a check is supposed to lack. What IS there and visible is
+       woodPlate's own dark border at the rail's lower edge, so that is what is asserted: the last two
+       rows of the rail are its dark frame, and the row below them is the void and not the rail's
+       middle. A band with no border reads as the texture changing rather than as a frame ending. */
+    const border=pxAt(W/2|0,HUD_TOP_BAND_H-2);
+    ok(border[0]<50&&border[0]<border[1]*2,'the second-to-last row of the band is rgb('+border+
+      '), which is not its dark lower border - the rail has no edge, so the plates below it float '+
+      'next to a texture rather than hanging off a frame');
+    const below=pxAt(W/2|0,HUD_TOP_BAND_H);
+    ok(!isWood(below),'the row under the band is rgb('+below+'), which is wood: the rail is taller than '+
+      'the height the block is laid out under, so the band is running into the plates');
+
+    /* 4. AND THE BAND DOES NOT COST THE PLAY AREA. This is the constraint that set its height, asserted
+       as a consequence rather than as a restatement of the constant: the left column's last plate ends
+       at or above the room's top wall. */
+    const colBottom=HUD_BLOCK_Y+HUD_HP_H+HUD_ROW_H+HUD_GAP+HUD_ROW_H;
+    ok(colBottom<=ROOM_TOP,'the plate column ends at y '+colBottom+' and the room starts at '+
+      ROOM_TOP+': the band has eaten the play area');
   });
   test('both keys always sit in the HUD, dimmed while unheld',()=>{
     startGame();
@@ -7955,6 +8225,12 @@ const BOSS_TICKS=26000;
        'the plate and leaves a bar too short to read a change on.');
     // and it must stay on screen: the row is now health+keys wide on one line and blink+momentum on
     // the next, and only one of those was ever checked against the room
+    /* ON THE SCREEN, not merely clear of the room. The row is health+keys on one line and
+       blink+momentum on the next, and only the room was ever checked - which is a check that cannot
+       fail in a room wider than the screen, and the momentum plate is on the left so it does not
+       happen to reach the map. The screen is what the player is looking at. */
+    ok(plate.x+plate.w<=W,'the Momentum plate runs to '+(plate.x+plate.w)+'px on a '+W+
+       'px screen, so it is drawn off the side of the display');
     ok(plate.x+plate.w<ROOM_RIGHT,'the Momentum plate runs to '+(plate.x+plate.w)+
        'px, past the room edge at '+ROOM_RIGHT+', so it is drawn off the play area');
 
@@ -8348,17 +8624,30 @@ const BOSS_TICKS=26000;
        somebody looking at it. The HUD margin is the reason the row needs to be well clear of the
        top rather than merely on-screen, so the threshold is the HUD's depth plus its furniture. */
     Lab.enter();
+    readyT=0; fadeT=0; roomFade=0;
     render();
     const b=currentRoom().bounds;
     const onScreen=y=>y-cam.y;
     const shelfY=b.t+b.h/2+130;
-    /* 150 is not arbitrary: the health, momentum and depth plates together run to about 120px, and
-       a plinth's nameplate hangs 26px below the body it belongs to. Anything under 150 is furniture
-       the HUD is sitting on. */
+    /* THE TOP THRESHOLD IS THE HUD'S OWN DEPTH, not the 150 it used to be.
+
+       It was 150 with a comment saying it came from "the health, momentum and depth plates together
+       run to about 120px" plus a 26px nameplate - which is 146, not 150, and both halves of it were a
+       re-derivation of a layout the drawing already states. Then the top band arrived and pushed the
+       block down 15px, and the number did not move: the furniture still cleared the HUD, so the test
+       stayed green and nothing noticed that its margin had quietly shrunk from 30px to 15px. A
+       threshold with a stale derivation is a threshold that is wrong by exactly the amount something
+       else moved.
+
+       So it is computed from HUD_BLOCK_Y and the three rows, plus the nameplate, which is what the
+       150 was trying to be. The band's height is in there, which is the point: grow the band and this
+       threshold follows it rather than quietly going stale a second time. */
+    const HUD_DEEP=HUD_BLOCK_Y+HUD_HP_H+HUD_ROW_H+HUD_GAP+HUD_ROW_H+HUD_FRAME+26;
     const row=currentRoom().enemies.filter(e=>e.labSpecimen);
     for(const e of row){
-      ok(onScreen(e.y)>150,'the '+e.labName+' specimen is at screen y '+
-        onScreen(e.y).toFixed(0)+', which is under the HUD or off the top');
+      ok(onScreen(e.y)>HUD_DEEP,'the '+e.labName+' specimen is at screen y '+
+        onScreen(e.y).toFixed(0)+', which is under the HUD (which now reaches y '+HUD_DEEP+
+        ') or off the top');
       ok(onScreen(e.y)<H-40,'the '+e.labName+' specimen is at screen y '+
         onScreen(e.y).toFixed(0)+', below the bottom of the view');
     }
@@ -8368,8 +8657,8 @@ const BOSS_TICKS=26000;
         (e.x-cam.x).toFixed(0)+', off the side of the view');
     }
     for(const s of Lab.shelfData()){
-      ok(onScreen(s.y)>150,'the '+s.name+' alcove is at screen y '+onScreen(s.y).toFixed(0)+
-        ', which is under the HUD or off the top');
+      ok(onScreen(s.y)>HUD_DEEP,'the '+s.name+' alcove is at screen y '+onScreen(s.y).toFixed(0)+
+        ', which is under the HUD (which now reaches y '+HUD_DEEP+') or off the top');
       ok(onScreen(s.y)<H-20,'the '+s.name+' alcove is at screen y '+onScreen(s.y).toFixed(0)+
         ', below the bottom of the view');
       ok(s.x-cam.x>-60&&s.x-cam.x<W+60,'the '+s.name+' alcove is at screen x '+
@@ -8386,7 +8675,9 @@ const BOSS_TICKS=26000;
         (s.y+49).toFixed(0)+' vs '+railBot+')');
     }
     // the player, too: if the camera does not frame the player then none of the above is stable
-    ok(onScreen(player.y)>150&&onScreen(player.y)<H-40,'the player is not in the clear part of the view');
+    ok(onScreen(player.y)>HUD_DEEP&&onScreen(player.y)<H-40,'the player is at screen y '+
+      onScreen(player.y).toFixed(0)+', which is not in the clear part of the view (clear is y '+
+      HUD_DEEP+' to '+(H-40)+')');
     // and the room really is bigger than the frame, or none of this is a test of anything
     ok(b.w>W&&b.h>H,'the lab room is '+b.w+'x'+b.h+' and fits on screen, so the camera is idle');
     Lab.leave();

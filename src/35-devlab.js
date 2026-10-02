@@ -945,7 +945,18 @@ const Lab=(function(){
        canvas is a row of key chips. So the lab legend reads as part of the same language rather
        than as a debug overlay parked on the picture, and it cannot collide with anything, because
        the only thing it shares its row with is the shelf ABOVE it. */
-    const h=26, y=H-h, x=10;
+    const lane=legendLane();
+    const h=lane.h, y=lane.y, x=10;
+    /* THE CONTENTS ARE CENTRED IN WHATEVER LANE THERE IS, not pinned to a y that was measured against
+       a 26px strip. The strip is 26px when no Warden is on the row and 20px when one is, because the
+       bar's frame is in the way (see legendLane), and a chip row pinned to the old y would hang 3px
+       out of the bottom of its own background the moment the Warden spawned - which is to say, in the
+       lab, on the row you built the lab to look at.
+
+       The chip is 15px and the text baseline sits 12px below the chip's top, which is the pair that
+       made the 26px lane read. Both are derived from the lane, so the one thing that can change - the
+       lane's height - is the only thing that has to be re-measured when the boss bar moves. */
+    const chipTop=y+Math.max(2,Math.min(6,Math.round((h-15)/2))), baseline=chipTop+12;
     ctx.save();
     ctx.fillStyle='rgba(8,9,13,0.86)';
     ctx.fillRect(x,y,W-2*x,h);
@@ -956,9 +967,9 @@ const Lab=(function(){
     for(const k of LEGEND){
       const kw=ctx.measureText(k[0]).width+12;
       ctx.fillStyle='rgba(198,152,74,0.18)';
-      ctx.fillRect(cx,y+6,kw,15);
-      engraved(k[0],cx+kw/2,y+18,'#e8cf94','center','11px monospace');
-      engraved(k[1],cx+kw+7,y+18,'rgba(186,194,208,0.92)','left','11px monospace');
+      ctx.fillRect(cx,chipTop,kw,15);
+      engraved(k[0],cx+kw/2,baseline,'#e8cf94','center','11px monospace');
+      engraved(k[1],cx+kw+7,baseline,'rgba(186,194,208,0.92)','left','11px monospace');
       cx+=kw+7+ctx.measureText(k[1]).width+20;
     }
     // the lab's own state, on the right of the same row: frozen or not, and what the dropper is
@@ -966,14 +977,63 @@ const Lab=(function(){
     // debug view that makes you guess produces a wrong number and blames the game.
     const t=LAB_SPECIMENS[dropper];
     engraved((frozen?'FROZEN':'LIVE')+'   dropper: '+(t.type==='boss'?'warden':t.type),
-             W-x-12,y+18,frozen?'#9fd0ff':'#7fe0a8','right','11px monospace');
+             W-x-12,baseline,frozen?'#9fd0ff':'#7fe0a8','right','11px monospace');
     ctx.restore();
+  }
+
+  /* THE LEGEND'S LANE, and it is a function of whether a Warden is alive in this room.
+
+     THE COLLISION, MEASURED. The boss bar hangs 23px off the bottom of the canvas, so its bar is at
+     y 567..577 and its FRAME at 564..580. The legend was a fixed 26px strip at y 574..600. Those
+     overlap by 6px, and they overlapped for the whole of the lab's life - which is worse than a bug
+     in a game, because the lab is where you go to look at the bar.
+
+     Which of the two should move is not a free choice, so the reasons are both here:
+
+     - THE BAR DOES NOT MOVE. It is anchored to the canvas bottom, it is the one thing in a fight that
+       is not moving, and it is already at the bottom because below it is the canvas edge.
+     - THE LEGEND DOES NOT MOVE UP. Moving it up would put it across the SHELF, which is the item rail
+       across the lower band of the lab room and the thing the lab exists to check - and the shelf is
+       world-space, so an up-shifted legend would sit on it at some camera positions and not at
+       others, which is worse than a collision you can predict.
+
+     So the legend gives up the 6px. The lane SHRINKS to whatever is left below the bar's frame, which
+     here is 20px: enough for a 15px chip and its baseline, because those are the only two things in
+     it that have a height. With no Warden on the row the lane is its full 26px again, so the legend is
+     pixel-for-pixel what it has always been in every frame that is not a boss fight.
+
+     A minimum is stated rather than assumed: a lane thinner than a chip plus a baseline cannot draw
+     the thing it exists to draw, and silently overflowing it would put the chips back on top of the
+     bar - which is the defect this whole function is about, re-introduced by a different route. */
+  const LEGEND_H=26, LEGEND_MIN_H=20;
+  function legendLane(){
+    const full=H-LEGEND_H;
+    let top=full;
+    if(liveBossInRoom()){
+      const b=bossBarRect();
+      /* MAX, not min. The lane's top moves DOWN to clear the bar's frame - and when the bar happens to
+         sit entirely above the full lane there is nothing to clear, in which case max leaves the lane
+         where it was. min got this exactly backwards: it would have picked whichever of the two was
+         HIGHER, which is the one that overlaps, and the strip would have been pinned over the bar
+         again. */
+      /* b.y-3 .. b.y+b.h+3 is the FRAME, because drawBossBar fills the recess at (x-3, y-3, w+6,
+         h+6) - so the frame's bottom edge is b.y+b.h+3 and not b.y+b.h. Getting that 3 wrong puts
+         the legend's rule line exactly on the frame's last pixel row, which is a 1px overlap that no
+         width comparison would have caught. */
+      top=Math.min(H-LEGEND_MIN_H,Math.max(full,Math.min(H,b.y+b.h+3)));
+    }
+    /* and the floor is applied to the TOP, not the height: a lane that cannot be as tall as a chip is
+       anchored to the bottom of the screen and overhangs upward rather than downward, so the failure
+       mode is a strip that is a few px short against the top of its own background rather than five
+       rows of chips printed off the bottom of the canvas. */
+    const h=Math.max(LEGEND_MIN_H,H-top);
+    return {y:Math.min(top,H-h),h};
   }
 
   const shelfData=()=>shelf;
 
   return {on:()=>on, frozen:()=>frozen, dropper:()=>dropper, toggle, enter, leave, key,
-          build, layRow, layShelf, drove, tickNumbers, freeze, remember, draw, drawNumbers, drawLegend,
+          build, layRow, layShelf, drove, tickNumbers, freeze, remember, draw, drawNumbers, drawLegend, legendLane,
           shelfData, numbers:()=>numbers, LAB_W, LAB_H, tickShelf, syncShelfPickups, BRAZIER_GEOM,
           gridAlphas:()=>({minor:GRID_MINOR_ALPHA, major:GRID_MAJOR_ALPHA, minorStep:MINOR, majorStep:MAJOR}),
           refill:()=>{ for(const s of shelf) s.gone=0; syncShelfPickups(); }};

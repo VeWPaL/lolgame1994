@@ -636,20 +636,94 @@ function drawSlot(x,y,w,idx,side,color,ready){
 const HUD_MARGIN_X=15, HUD_MARGIN_Y=14, HUD_FRAME=6, HUD_GAP=1;
 const HUD_HP_H=40, HUD_ROW_H=30, HUD_KEY_W=62, HUD_KEY_H=34, HUD_BLINK_W=150, HUD_DEPTH_W=104;
 const HUD_MOMENTUM_W=208;
+/* THE TOP BAND, AND THE TOP OF THE PLATE BLOCK UNDER IT.
 
-/* WHERE THE BAR GOES, worked out from the room being drawn right now.
+   The band is a full-width rail across the top of the screen and it OWNS that strip: nothing else
+   draws there. It is drawn as wood, in the same material as the plates, because a band that is a
+   different substance from the thing hanging off it reads as a second system rather than as a
+   frame - and for now it carries no content of its own. That is a deliberate blank, not an
+   oversight: the band's job here is to own the strip, and the strip has to be owned before anything
+   is allowed to put an instrument in it.
+
+   WHY THE BLOCK IS PUSHED DOWN RATHER THAN THE BAND ABSORBING IT: the band is additive, and the
+   block below it is three rows tall. HP_H + ROW_H + GAP + ROW_H is 101px, and the left column has to
+   end at or above ROOM_TOP (130) or the depth plate sits on the top wall of the room and hides bodies
+   walking along it. So the band can be at most 29 - HUD_MARGIN_Y = 15px tall before the HUD would
+   have to start eating the play area, which is a balance constant and not this file's to move.
+
+   15 is therefore not a taste decision, it is the largest rail that costs the play area nothing.
+   Both numbers are here rather than at the call site so the suite can read them; the tests assert the
+   CONSTRAINT (the block still ends above the room) rather than the 15, because the 15 is what falls
+   out of the constraint and not the other way round. */
+const HUD_TOP_BAND_H=15;
+const HUD_BLOCK_Y=HUD_MARGIN_Y+HUD_TOP_BAND_H;
+
+/* THE RAIL. Drawn first, so everything else in the HUD is on top of it, and drawn in screen space
+   like the rest of the HUD - it is part of the interface, not of the room, and a band that scrolled
+   with the camera would be a band you had to walk back to. */
+function drawTopBand(){
+  /* No drop shadow under the rail, and there was one for a while. It was 3px of rgba(8,5,3,0.55) and
+     it did nothing measurable: the band sits above ROOM_TOP on every map, so what is behind it is the
+     empty space over the room and that is already rgb(0,0,0). A shadow over black is black, and the
+     suite could not tell the two apart - removing it entirely left every check green, which is the
+     signature of a decoration that was never visible. The rail's lower edge comes from woodPlate's
+     own dark border, which is at y 13..14 against the void and does read.
+
+     This is worth writing down because the obvious next move is to "put the shadow back, it must be
+     doing something". It is not. If the band ever carries content with a hard bottom edge of its own,
+     that is the thing that needs a shadow, and it should be added with the content. */
+  ctx.drawImage(woodPlate(W,HUD_TOP_BAND_H),0,0);
+}
+
+/* WHERE THE BAR GOES, worked out from the room being drawn right now AND from the screen it is being
+   drawn on.
 
    A function rather than a constant, because there is more than one room: the Lab is 1680x760 and the
    floors are 700x450. The first version baked the rectangle out of ROOM_W and ROOM_TOP at load time,
    so a bar sized 660px wide for a 700px room was being drawn 660px wide inside a 1680px one, at a y
    captured before the Lab changed the room. A constant that describes a room is wrong the moment
-   there is more than one room, and the Lab exists precisely to prove those are not the same thing. */
+   there is more than one room, and the Lab exists precisely to prove those are not the same thing.
+
+   THE ROOM IS THEN CLAMPED TO THE SCREEN, which is the half that was still missing after the above.
+   A per-draw rectangle that still measured ROOM_RIGHT-ROOM_LEFT drew a 1640px bar starting at x 70
+   in the Lab - a bar whose right-hand 750px, both phase notches' surroundings and the flush-right
+   "PHASE 3" caption were off the side of a 960px canvas. Nothing about that looks broken in a
+   screenshot unless you are looking for it: you see a bar, it is at the bottom, and the part you
+   cannot see is the part that was wrong.
+
+   The Lab is the place every tell gets checked without playing a run, so a bar that runs off the
+   screen there is a bar that is only really drawn in one of the two places it can be drawn - which is
+   the same argument BOSS_BAR_MARGIN's own comment makes about the vertical edge, applied to the
+   horizontal one.
+
+   THE ROOM STILL DECIDES WHERE IT SITS. On a floor the room is 700px inside a 960px screen, so the
+   clamp does nothing and the bar is 70..730 - the same 660px it has always been, aligned to the
+   play area, because that alignment is the reason the bar is inset from the room's own walls. Only
+   a room wider than the screen (the Lab, and only the Lab) gives up its edges: the bar then spans
+   the screen's full width, inset BOSS_BAR_INSET_X each side, because there is no room wall there to
+   line up with and a 20px offset from the left of the screen with nothing on the right of it reads
+   as a mistake rather than as an alignment.
+
+   Both thresholds are read from BOSS_PHASE_1/2 by the caller, and both land inside the bar in both
+   rooms - which is the property that was true of the floor and false of the Lab. */
 function bossBarRect(){
   const bottom=canvas.height-BOSS_BAR_MARGIN;
-  return {x:ROOM_LEFT+BOSS_BAR_INSET_X,
+  const span=Math.min(ROOM_RIGHT-ROOM_LEFT,canvas.width);
+  const left=Math.max(0,Math.min(ROOM_LEFT,canvas.width-span));
+  return {x:left+BOSS_BAR_INSET_X,
           y:bottom-BOSS_BAR_H,
-          w:ROOM_RIGHT-ROOM_LEFT-BOSS_BAR_INSET_X*2,
+          w:span-BOSS_BAR_INSET_X*2,
           h:BOSS_BAR_H};
+}
+/* THE BOSS THE BAR IS ABOUT, or null. One predicate, because the bar's drawing and everything that
+   has to make room for the bar are asking the same question - "is there a Warden in THIS room right
+   now" - and the Lab's legend lane has to answer it identically or the two draw over each other.
+   hp>0 is the whole of "alive": a body killed on the last tick is still in the array until the
+   killer's sweep removes it, and a bar for a corpse is a bar lying about the fight. */
+function liveBossInRoom(){
+  const r=currentRoom();
+  if(!r) return null;
+  return r.enemies.find(b=>b.type==='boss'&&b.hp>0)||null;
 }
 
 /* THE WARDEN'S HEALTH, as the one piece of the fight that is fixed to the screen.
@@ -767,6 +841,14 @@ function drawHUD(){
      in the same frame of reference, which is what they are. */
   const MARGIN_X=HUD_MARGIN_X, MARGIN_Y=HUD_MARGIN_Y, FRAME=HUD_FRAME, GAP=HUD_GAP;
   const HP_H=HUD_HP_H, ROW_H=HUD_ROW_H, KEY_W=HUD_KEY_W, KEY_H=HUD_KEY_H, BLINK_W=HUD_BLINK_W;
+  /* The band owns the top of the screen, so the block starts under it rather than on the top margin.
+     One number for the whole block: the health plate, the key plate on its shoulder, the blink row,
+     the Momentum plate beside it and the depth plate underneath are one object, and they move as
+     one. Placing them off MARGIN_Y individually is the hand-placed-everything bug this table was
+     written to end - a block that is pinned to the top margin in five places is five chances for
+     the top band to arrive and only one of them to move. */
+  drawTopBand();
+  const hy=HUD_BLOCK_Y;
   /* THE HEART PLATE GROWS WITH maxHp, AND maxHp HAS NO CEILING - so it needs a ceiling of its OWN.
 
      Vigor is unbounded by design, so a build with enough Iron Ribs puts 28 hearts in the plate, and
@@ -804,7 +886,7 @@ function drawHUD(){
   const heartsHidden=hearts-heartsDrawn;
   const labelW=heartsHidden>0?LABEL_W:0;
   const healthW=30+(heartsDrawn+armorSlots)*heartSlot+labelW;
-  const hx=MARGIN_X, hy=MARGIN_Y;
+  const hx=MARGIN_X;   // hy came from HUD_BLOCK_Y, above the heart budget
 
   // row 1: health, with the keys on its right shoulder, top-aligned and touching
   ctx.drawImage(woodPlate(healthW,HP_H),hx,hy);
@@ -1094,7 +1176,7 @@ function drawHUD(){
      bench works in the lab, and the lab is exactly where you want to be able to swap guns. */
   // the minimap hangs off the same right-hand margin as the left-hand one, so the two edges of the
   // HUD are the same distance from the screen and the whole block reads as one inset
-  const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-MARGIN_X-pw,my0=MARGIN_Y,mx=mx0+14,my=my0+14,ic=3;
+  const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-MARGIN_X-pw,my0=HUD_BLOCK_Y,mx=mx0+14,my=my0+14,ic=3;
   if(state!=='dev'){
   ctx.drawImage(woodPlate(pw,pw),mx0,my0);
   drawInset(mx0+8,my0+8,pw-16,pw-16,null);
@@ -1229,7 +1311,7 @@ function drawHUD(){
      in the same place, and it is drawn only while a boss is actually alive in THIS room - a bar for a
      boss that is not here would be a lie about the current fight, and the depths after the boss room
      would carry it forever if nothing took it away. */
-  const warden=currentRoom().enemies.find(b=>b.type==='boss'&&b.hp>0);
+  const warden=liveBossInRoom();
   if(warden) drawBossBar(warden);
 
   ctx.textAlign='left';
@@ -1835,8 +1917,13 @@ function render(){
     drawRoom();
     ctx.restore();
     drawHUD();
-    // the lab's legend is screen space, so it is drawn out here with the HUD rather than in the
-    // room pass - see Lab.drawLegend for why it does not scroll with the world
+    /* The lab's legend is screen space, so it is drawn out here with the HUD rather than in the room
+       pass - see Lab.drawLegend for why it does not scroll with the world.
+
+       It is drawn AFTER the HUD, and that ordering is load-bearing rather than incidental: the two
+       share the bottom strip of the screen whenever a Warden is on the row, and the legend gives up
+       the 6px it overlaps by rather than the bar giving up its fixed place. See Lab.legendLane for
+       the measurement and for why neither of them can simply move. */
     Lab.drawLegend();
     if(roomFade>0){ctx.fillStyle='rgba(0,0,0,'+roomFade+')';ctx.fillRect(0,0,W,H);}
     drawBossWarning();   // over the fade, so a room transition cannot swallow the warning

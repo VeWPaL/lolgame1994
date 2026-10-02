@@ -1229,6 +1229,14 @@ scrolls, so a room-anchored bar lands 290px **off-screen** in the one place the 
 looked at. The tests now assert the two properties that survived every version — *on the canvas* and
 *out of the room* — rather than a description of where it is.
 
+**And horizontally, the bar is clamped to the canvas too.** Being per-draw is not the same as being
+correct: a rectangle that measured `ROOM_RIGHT-ROOM_LEFT` every frame drew a **1640px** bar from x 70 in
+the Lab, on a **960px** screen — 750px of it, both notches' surroundings and the flush-right `PHASE n`
+caption off the side of the canvas. `bossBarRect()` now takes `min(ROOM_RIGHT-ROOM_LEFT, canvas.width)`
+and lets the room decide the position only when the room fits. On a floor nothing changes (70..730, the
+same 660px, still inset from the room's own walls); only the Lab gives up its edges, and it gets
+20..940.
+
 `BOSS_BAR_MARGIN` is **23**, not the 14 it started at: the bar carries a 3px frame, and at 14 that
 frame straddled the room's bottom wall (wall at y 580, frame ending at 589), so the bar looked bolted to
 the masonry. The labels sit **above** the bar, because below is the canvas edge.
@@ -1254,6 +1262,37 @@ those are not the same thing. It is `bossBarRect()`, worked out per draw.
 > fractions — `round(w*th)/w` against `th` — comes out 0.0006 apart, which reads as a mismatch and is
 > not one. Dividing a rounded pixel back out and comparing it to a raw fraction manufactures a
 > disagreement that does not exist on screen.
+
+## The HUD's top band, and why the plates are not on the top margin
+
+`HUD_TOP_BAND_H` is **15**, and `HUD_BLOCK_Y = HUD_MARGIN_Y + HUD_TOP_BAND_H` is where every plate
+starts. The band is a full-width wood rail across the top of the screen and it **owns that strip**:
+nothing else draws there. For now it carries no content of its own, which is deliberate — the strip
+has to be owned before anything is allowed to put an instrument in it.
+
+**15 is a constraint, not a preference.** The plate block under it is three rows: `HP_H 40 +
+ROW_H 30 + GAP 1 + ROW_H 30` = **101px**. `ROOM_TOP` is 130. So the block may start at most at 29, and
+`HUD_MARGIN_Y` is 14, which leaves exactly **15px**. A 40px band puts the depth plate's bottom edge at
+y 155, 25px into the room, and it will cover bodies walking the top wall. `ROOM_TOP` is a balance
+constant this file does not own, so the band is sized to fit under it rather than the other way round.
+Both layout tests assert the **constraint** (`block bottom <= ROOM_TOP`), not the 15.
+
+Everything moves as one block: health, the key plate on its shoulder, blink, Momentum, depth, and the
+minimap column's `my0`. `drawHUD` reads `HUD_BLOCK_Y` once; the map reads it too, because the band spans
+the whole width and a right-hand column that stayed on the top margin would start 15px above the left.
+
+**The lab's legend lane is a function of whether a Warden is alive.** Measured: the boss bar is
+y 567..577 with its frame at 564..580; the legend was a fixed 26px strip at 574..600. **6px of overlap,
+and the legend drew last** — so the bar was the thing that disappeared, in the one place you would go
+to look at it. The bar does not move (canvas-anchored, and the one fixed thing in a fight). The legend
+does not move up (it is screen space over a world-space **shelf**, so an up-shifted legend would sit on
+the shelf at some camera positions and not others). So `Lab.legendLane()` gives up the 6px: 20px with a
+Warden, the full 26px without one, with a floor so the chips can always fit.
+
+> The chips are positioned **from the lane**, not from a `y+6` that was correct while the lane was 26px
+> tall. A mutation pinning them back to the fixed `y+6` left every overlap assertion green while the
+> chips hung 3px below their own background — which is why that test reads the chips' rects out of the
+> drawing. *An overlay's background being in the right place says nothing about its text.*
 
 ## The lab — four defects that only walking into it could find
 
@@ -1500,7 +1539,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **200 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **202 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **107** entries and is itself checked.
   `verify.ps1` counts that table from a regex and prints the number; it does **not** assert it, and
   this paragraph used to claim the suite did. What the suite actually checks is the direction that

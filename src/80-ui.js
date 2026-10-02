@@ -211,6 +211,30 @@ const FIXES={
     'moves at 1.20 - faster than the player, and a threat you cannot outrun is not one you lost to. '+
     'Uncapped density is 246 bodies by floor 40 and 1869 by floor 50, which is a hang. The old ceiling '+
     'was never wrong so much as unreachable: its own saturation never got there before content ran out'],
+
+  /* ---- the HUD reshape: the top band, and the bar that had to fit on the screen ----
+     Three defects that all read as "the HUD moved" and none of which was. Each one is a different
+     kind of invisible: one drew off the side of the canvas, one drew on top of another instrument,
+     and one let a stale derived number stay put while everything around it moved. */
+  'the bar is sized to the SCREEN, so the Lab gets one too and the floor is unchanged':['HUD and interface',
+    'the bar was fixed from load-time room constants, then moved to bossBarRect() - which measured the '+
+    'room per draw, and in the Lab that room is 1680px wide on a 960px screen. So 750px of the bar, both '+
+    'phase notches\' surroundings and the flush-right PHASE n caption were drawn off the side of the '+
+    'canvas, in the one place the Lab exists to let you look at the bar. Asserting a WIDTH against the '+
+    'room had gone green over both defects in turn. The floor bar is unchanged at 660px, because the room '+
+    'still decides where it sits and only a room wider than the screen gives up its edges'],
+  'the Warden has a readable bar in the Lab, above the legend and below the band':['HUD and interface',
+    'the Lab legend was a fixed 26px strip at y 574..600 and the boss bar\'s frame ends at 580 - a 6px '+
+    'overlap, with the legend drawn last, so the bar was the thing that vanished. In a room wider than '+
+    'the screen, where a player goes specifically to read the Warden\'s phase. The bar does not move and '+
+    'the legend does not move up (it is screen space over a world-space shelf); the legend gives up the '+
+    '6px, and its chips are positioned from the lane rather than from a y that was correct at 26px'],
+  'the top band owns the top of the screen, and nothing else is drawn in it':['HUD and interface',
+    'the band is a full-width rail and the plate block moved down under it. The interesting part is what '+
+    'it cost: the block is three rows (101px) and ROOM_TOP is 130, so the band can be at most 15px before '+
+    'the depth plate sits on the room\'s top wall and hides bodies walking along it. Asserted as the '+
+    'CONSTRAINT rather than the number, and read off the framebuffer rather than off the layout - '+
+    '"the plate is at y 29" is true whether or not anything was drawn through it'],
 };
 
 
