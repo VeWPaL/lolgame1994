@@ -2801,6 +2801,44 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       'change which way the bar drains, only how many slots there are');
     ok(capped.filter(s=>s.fill>0).length===1,'a capped plate at 2 health lights '+
       capped.filter(s=>s.fill>0).length+' hearts');
+
+    /* THE HALO SITS ON THE HEART WITH BLOOD IN IT.
+
+       The "one heart left" pulse is a warning about a specific slot, so where it is drawn is part of
+       what it says. It was drawn on `slotX + (heartsDrawn-1)*heartSlotW` - the last slot ON THE PLATE -
+       on the reasoning that "the last heart" meant the last heart. It does not: the row drains left to
+       right, so at one heart the only lit slot is the FIRST, and the halo pulsed an empty heart at the
+       far end while the one being looked for sat unlit at the other.
+
+       Measured before the fix: lit heart at x 43, halo at x 225, on an eight-heart plate.
+
+       Asserted as POSITION against the fill, at a health where the two are far apart - one heart is
+       the sharpest case, because "last drawn" and "last lit" are then 182px apart. Also asserted on a
+       capped plate, where the gap is even wider. */
+    const haloAt=(mx,hp)=>{
+      player.maxHp=mx; player.hp=hp;
+      const arcs=[]; const realArc=ctx.arc;
+      ctx.arc=function(x,y,r){ arcs.push(Math.round(x)); return realArc.call(ctx,x,y,r,0,7); };
+      try{ drawHUD(); }finally{ ctx.arc=realArc; }
+      return arcs;
+    };
+    for(const [mx,hp] of [[16,2],[16,1],[16,1.24],[98,2],[98,1]]){
+      const row=rowAt(mx,hp);
+      const lit=row.filter(s=>s.fill>0);
+      const wantX=lit.length?lit[lit.length-1].x:null;
+      const arcs=haloAt(mx,hp);
+      eq(arcs.length,1,'at '+hp+' of '+mx+' the low-health halo was drawn '+arcs.length+' times, '+
+        'expected one - a duplicated draw block would draw it twice');
+      eq(arcs[0],wantX,'at '+hp+' of '+mx+' health the halo is at x '+arcs[0]+' and the last lit heart '+
+        'is at '+wantX+', so the "one heart left" warning is pulsing a heart with no blood in it');
+    }
+    /* and it must NOT pulse at all while there is more than a heart left, or the plate never stops
+       blinking and the warning stops meaning anything */
+    for(const hp of [16,8,4,3]){
+      const arcs=haloAt(16,hp);
+      eq(arcs.length,0,'the low-health halo is pulsing at '+hp+' of 16 health, where there is more '+
+        'than a heart left to warn about');
+    }
   });
 
   /* A ROLL STAT PRINTS ITS SIGN. Reverting this fails silently, which is the point of pinning it. */

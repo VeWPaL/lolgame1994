@@ -875,24 +875,27 @@ function drawHUD(){
      while their health is anywhere near it. So the halo asks the same question the plate answers
      rather than a different and stricter one. */
   if(Math.round((player.hp/2)*2)/2<=1&&player.hp>0){
+    /* ON THE LAST HEART THAT STILL HAS BLOOD IN IT, which is not the last slot on the plate.
+
+       This drew the halo on `slotX + (heartsDrawn-1)*heartSlotW` - the last slot DRAWN - on the
+       reasoning that "the last heart" meant the last heart. It does not: the row drains left to right,
+       so at one heart the only lit slot is the FIRST one, and the halo was pulsing an empty heart at the
+       far end of the plate. Measured: lit heart at x 43, halo at x 225. A warning that points at an
+       empty slot while the one you are looking for sits unlit at the other end is worse than no halo,
+       because it is a warning about the wrong thing.
+
+       So the halo follows the fill: the last slot with `fill > 0`. At one heart that is slot 0; at two
+       and a half it is slot 1; at full health on an uncapped plate it is the last slot, which is where
+       it always was and why the mistake went unnoticed for a full plate. */
+    let litLast=-1;
+    for(let i=0;i<heartsDrawn;i++){ if(Math.max(0,Math.min(1,(player.hp-i*2)/2))>0) litLast=i; }
     const pulse=0.5+0.5*Math.sin(frameCount*0.16/SPEEDUP);
     ctx.save();
     ctx.globalAlpha=0.35+0.55*pulse;
     ctx.fillStyle='#e8395a';
     ctx.beginPath();
-    /* on the LAST HEART DRAWN, which is not the first slot. With a capped plate the row is drawn from the
-     right, so the heart that says "this is the last of it" is the last one on screen - and the halo on
-     the first slot would pulse a heart that is nowhere near the player's actual health. */
-  if(Math.round((player.hp/2)*2)/2<=1&&player.hp>0){
-    const pulse=0.5+0.5*Math.sin(frameCount*0.16/SPEEDUP);
-    ctx.save();
-    ctx.globalAlpha=0.35+0.55*pulse;
-    ctx.fillStyle='#e8395a';
-    ctx.beginPath();
-    ctx.arc(slotX+Math.max(0,heartsDrawn-1)*heartSlotW,heartY,15+3*pulse,0,7);
-    ctx.fill();
-    ctx.restore();
-  }
+    // nothing is lit only if hp is 0, which the guard above already excludes, so litLast is >= 0 here
+    ctx.arc(slotX+Math.max(0,litLast)*heartSlotW,heartY,15+3*pulse,0,7);
     ctx.fill();
     ctx.restore();
   }
