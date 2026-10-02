@@ -1509,9 +1509,9 @@ having is the one that says what happens when the content outgrows the code.
   the other, so they drift apart when either is edited — read both, trust neither alone. The panel
   prints both and names each, because they are genuinely different: the table is bugs found and
   pinned, the suite is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` - **109 checks**, parity-verified against the JavaScript.
-  The generator is ported (`Dungeon`, in `World.cs`); there is still no player, no projectile and no
-  `update()`. See the section on the port boundary below.
+- `csharp/Depths.Core` + `Depths.Tests` - **127 checks**, parity-verified against the JavaScript.
+  The generator (`Dungeon`) and the spawn planner (`WavePlanner`) are ported; there is still no player,
+  no projectile and no `update()`. See the section on the port boundary below.
 
 ### The port's own drift, and the test that was defending it
 
@@ -1543,10 +1543,10 @@ and the port has no presentation layer to keep in sync; the second is the next s
 next *because* the foundation now models a room as data.
 - `src/` is the reference implementation and stays alive. Features are designed and playtested here
   first, because it is the only artifact the player can run, then ported.
-- Unity 6 LTS and VS2022 are installed. The world generator is now ported. The port resumes at
-  `60-tick.js` (`update()`), then the spawn plan (`spawnPlan`/`rollPack`, which the generator already
-  leans on for its keys and its secret), then the presentation layer against the finished core. The
-  generator was moved ahead of `update()` deliberately — see "The port order was wrong" above.
+- Unity 6 LTS and VS2022 are installed. The generator and the spawn planner are ported. The port
+  resumes at `60-tick.js` (`update()`) — the player, movement, shooting and the boss — then the
+  presentation layer against the finished core. Both pure slices were moved ahead of it deliberately;
+  see "The port order was wrong" above.
 
 ### The fodder, and what each one is for
 
@@ -1570,12 +1570,44 @@ teaches; the other three exist to make a room's answer depend on which of them i
 `csharp/Depths.Core` has `Balance` (all the tuning, plus the depth ladder), `Hit` (the player hit
 test), `Intercept` (lunge and gun solutions), `Bodies`/`Body` (the body table, the spawner and the
 build-dependent traits), `Frame` (`RoomBounds` and the frame timing), `Mulberry32` and `Rng` (the
-three streams, the floor seed, the base36 codec), and `World` (`Dir`, `RoomKind`, `Room`, `Map` and
-the `Dungeon` generator). `csharp/Depths.Tests` has **109 checks**, all parity-verified against numbers
-read out of the running JavaScript.
+three streams, the floor seed, the base36 codec), `World` (`Dir`, `RoomKind`, `Room`, `Map` and the
+`Dungeon` generator) and `SpawnPlan` (`SpawnSlot`, `PlannedBody`, `WavePlan` and the `WavePlanner`).
+`csharp/Depths.Tests` has **127 checks**, all parity-verified against numbers read out of the running
+JavaScript.
 
-**There is still no player, no projectile and no `update()`.** The generator is in, which was
-deliberate — see the port order below.
+**There is still no player, no projectile and no `update()`.** The generator and the spawn planner are
+in, which was deliberate — see the port order below.
+
+#### `char + double` is arithmetic in C#, and it looked like a 103px bug
+
+The parity rows for the spawn planner all failed at once on the first run, every slot exactly 103, 108
+or 115 pixels to the right of the JavaScript's, with the y coordinate correct in every row. That is
+not a plausible shape for a generator bug — a shifted candidate changes y too — so the draw counts
+were the thing to read, and they were **identical on every row** (647, 650, 646, 644, 648).
+
+The renderer was building its string with `Letter(kind) + Math.Round(x)`. In C# a `char` converts to
+its numeric value, so that is `'g' + 142` = **245**, and the table read like every spawn had moved.
+The port was correct and the test was lying about it.
+
+Worth stating as a rule: **in C#, build strings with `+` only when an operand is a `string`.** A
+`char` in an arithmetic expression is a small integer without any complaint. And when a table of
+measured values disagrees in a way that looks impossible, check the measurement before the thing being
+measured — the impossibility was the tell.
+
+#### A cursor that skips values is not a bug the tests could see
+
+The pack id is taken once per PACK. Mutating it to advance once per body — the shape finding #1 had —
+left the suite **green**, twice, for two different reasons:
+
+- First attempt bumped the counter in a separate loop, so every body still shared the last id. Harmless.
+- Second attempt put the bump in the body loop but assigned the id outside it, so all bodies still
+  shared one id and only the counter drifted. Still harmless, and still green.
+
+Only giving each body a *unique* id — the actual bug — went red. And that is the point: the wall rule
+asks how many bodies share an id, so nothing downstream of the id can detect a counter that skips. The
+test now asserts `planner.PacksIssued == seen.Count`, i.e. the counter advances exactly once per pack,
+not merely that what it hands out is unique. **Assert the shape of the bookkeeping, not just its
+output.**
 
 #### The port order was wrong, and here is the measurement that says so
 

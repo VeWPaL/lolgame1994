@@ -202,6 +202,38 @@ namespace Depths
         public const double TraitFarFloor = 90;       // ...and above this
         public const double TraitBandMin = 40;        // a band narrower than this is a jitter, not a stance
 
+        // ------------------------------------------------------------- the Brunch pack
+
+        /// <summary>
+        /// How many bodies a Brunch pack is, and how likely each size is.
+        ///
+        /// <para>
+        /// The sizes ascend and so do the weights, deliberately: a big pack is the rarer event, so a
+        /// room with eight is something to remember rather than the default. The weights sum to exactly
+        /// 1, which is why the roll can walk the table subtracting as it goes and fall off the end into
+        /// the smallest size.
+        /// </para>
+        /// </summary>
+        public static readonly int[] BrunchPack = { 4, 5, 6, 7, 8 };
+        public static readonly double[] BrunchWeight = { 0.30, 0.25, 0.20, 0.15, 0.10 };
+
+        /// <summary>How often a room contains a pack at all, before the depth ladder touches it.</summary>
+        public const double BrunchChance = 0.45;
+
+        /// <summary>
+        /// A pack smaller than this is a knot rather than a wall.
+        ///
+        /// <para>
+        /// The formation rule asks whether the bodies sharing one pack id number at least this many, so
+        /// this is the line between "arrives as a crowd" and "arrives as a wall you have to go around".
+        /// It is asserted in the spawn tests because a pack that can never reach it is a documented
+        /// mechanic that is dead in the game - which is exactly what finding #1 was, and it shipped
+        /// because the only wall anyone had seen was the boss's, which uses a fixed id and so was
+        /// unaffected.
+        /// </para>
+        /// </summary>
+        public const int BrunchWallMin = 3;
+
         /// <summary>
         /// Applies a trait to a body, in place.
         ///

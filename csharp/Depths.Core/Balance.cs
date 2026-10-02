@@ -35,6 +35,28 @@ namespace Depths
         public const int RoomLeft = 50, RoomRight = 750, RoomTop = 130, RoomBottom = 580;
         public const int MidX = (RoomLeft + RoomRight) / 2, MidY = (RoomTop + RoomBottom) / 2;
 
+        // ------------------------------------------------------------- spawning
+
+        /// <summary>
+        /// Where a body may NOT be, and how far apart the ones that may.
+        ///
+        /// <para>
+        /// Four separate rules rather than one "spawn away from things" number, because they answer
+        /// different questions. The margin keeps a body off the wall; the middle keeps the middle of the
+        /// room walkable so the player is never somewhere they cannot fight from; the doorway keeps a
+        /// body from appearing on top of the player; and the separation is the only one that is about
+        /// the bodies themselves rather than the room.
+        /// </para>
+        /// <para>
+        /// The separation is 158 against a room 700 wide, which is what lets five bodies have a real
+        /// choice of where to stand instead of all taking the roomiest corner.
+        /// </para>
+        /// </summary>
+        public const double SpawnMargin = 76, SpawnMid = 104, SpawnSep = 158, SpawnDoor = 130, SpawnFar = 210;
+
+        /// <summary>How far in from a wall the player enters, and therefore where a body must not start.</summary>
+        public const double EntryInset = 36;
+
         /// <summary>A room's bounds in world space. A room is DATA, not a shape.</summary>
         /// <remarks>
         /// The four constants above used to mean "the room", and this whole port was built on that:
