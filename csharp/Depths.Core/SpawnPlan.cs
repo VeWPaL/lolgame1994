@@ -254,8 +254,9 @@ namespace Depths
         /// one and the shapes are still the shapes on floor twelve.
         /// </para>
         /// </summary>
-        public WavePlan PlanWave(int floor, Dir fromDir)
+        public WavePlan PlanWave(int floor, Dir fromDir, Area area = Area.Area1)
         {
+            var mix = Bodies.MixFor(area);
             var rolled = 2 + (int)(_rng.Run() * (2 + Balance.PressureRate));
             var n = Math.Max(2, (int)Math.Floor(rolled + Balance.DepthBodies(floor, 0)));
 
@@ -264,19 +265,19 @@ namespace Depths
             // At most one gunner, and only where there are enough bodies to space it from the rest.
             // The n>=3 test SHORT-CIRCUITS, so a two-body room does not draw here at all. That is
             // load-bearing: it is why a two-body room costs 644 draws and a four-body room 647.
-            var heavy = n >= 3 && _rng.Run() < 0.55;
+            var heavy = n >= 3 && _rng.Run() < mix.Heavy;
 
             // A pack is the most interesting thing a room can contain and the most reliable cover, so
             // if deep floors were only tougher they would be the same rooms with longer fights. Capped
             // in DepthPack, because a room that is always a pack is a single shape.
-            var pack = _rng.Run() < Balance.DepthPack(floor, Bodies.BrunchChance) && n >= 2 ? RollPack() : 0;
+            var pack = _rng.Run() < Balance.DepthPack(floor, mix.Brunch) && n >= 2 ? RollPack() : 0;
 
             // Farthest-from-the-door first, so slot 0 is the one a gunner takes.
             var slots = pts.OrderByDescending(p => p.FromEntry).ToList();
 
             foreach (var s in slots)
             {
-                s.Kind = _rng.Run() < 0.5 ? BodyKind.Lunger : BodyKind.Shooter;
+                s.Kind = _rng.Run() < mix.Lunger ? BodyKind.Lunger : BodyKind.Shooter;
             }
             if (heavy) slots[0].Kind = BodyKind.Gunner;
             foreach (var s in slots)

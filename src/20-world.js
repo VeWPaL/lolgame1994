@@ -482,13 +482,13 @@ function spawnWave(room,fromDir){
   const n=Math.max(2,Math.floor(rolled+depthBodies(0)));
   const pts=spawnPlan(n,fromDir);
   // at most one gunner, and only where there are enough bodies to space it from the rest
-  const heavy=n>=3&&Rnd.run()<0.55;
+  const heavy=n>=3&&Rnd.run()<areaMix().heavy;
   // depthPack() rather than BRUNCH.chance: a pack is the most interesting thing a room can contain
   // and the most reliable cover, so if deep floors were only tougher they would be the same rooms
   // with longer fights. Capped, because a room that is always a pack is a single shape.
   const pack=Rnd.run()<depthPack()&&n>=2?rollPack():0;
   const slots=pts.slice().sort((a,b)=>b.d-a.d).map((p,k)=>{
-    let type=Rnd.run()<0.5?'lunger':'shooter';
+    let type=Rnd.run()<areaMix().lunger?'lunger':'shooter';
     if(heavy&&k===0) type='gunner';
     else if(type==='shooter'&&p.d<SPAWN_FAR) type='lunger';   // no gunner starts on the doorstep
     return {x:p.x,y:p.y,d:p.d,type};

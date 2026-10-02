@@ -861,13 +861,40 @@ const FADE_DESCEND=sec(0.9);
 function depthFloor(){ return (run&&run.floor)||1; }
 function depthSteps(){ return Math.max(0,depthFloor()-1); }
 
+/* AREA. Which themed block the current floor is in. Pure: it reads the floor number and nothing
+   else, spends no RNG, and is therefore safe to call anywhere without touching the draw order -
+   a function of the floor alone is the only shape that keeps a seeded run replayable. Endless
+   descent stays Final: the ladder is unbounded and the theme does not cycle back. */
+function areaForFloor(){
+  const f=depthFloor();
+  return f<=4?'Area1':f<=8?'Area2':f<=12?'Area3':'Final';
+}
+
+/* THE ENEMY-MIX DIALS, per area. An area changes TWO things only: which bodies a normal slot
+   rolls (mix.lunger is the probability a slot is a lunger, the rest are shooters), how often
+   a room with enough bodies carries a heavy (mix.heavy), and the base the pack chance ramps
+   from (mix.brunch). The depth ladder itself - toughness, rate, density, pack - has the SAME
+   shape in every area: an area is an identity, not a harder or easier version of the climb.
+
+   Area1 reproduces the numbers pinned before areas existed (lunger 0.5, heavy 0.55, brunch
+   0.45 == BRUNCH.chance), so on floors 1-4 a room draws exactly what it drew. Area2/Area3/
+   Final are explicit guesses awaiting a playtest, not values read out of the game - change
+   them, then re-measure. */
+const AREA_MIX={
+  Area1:{lunger:0.5, heavy:0.55, brunch:0.45},
+  Area2:{lunger:0.45,heavy:0.60, brunch:0.50},
+  Area3:{lunger:0.55,heavy:0.50, brunch:0.60},
+  Final:{lunger:0.50,heavy:0.65, brunch:0.55},
+};
+function areaMix(){ return AREA_MIX[areaForFloor()]; }
+
 /* THE CURVE. 1 + growth * (e^(rate*steps) - 1), which is exactly 1 on floor one, strictly increasing
    for every floor after it, and unbounded - so "the ladder" is now a direction rather than a number
    the curve approaches. The -1 rather than a bare e^ is what makes floor one free. */
 const ramp=(steps,growth,rate)=>1+growth*(Math.exp(rate*steps)-1);
 function depthTough(){ return ramp(depthSteps(),DEPTH_GROWTH,DEPTH_POW); }
 function depthRate(){ return Math.min(DEPTH_RATE_CAP,ramp(depthSteps(),DEPTH_GROWTH,DEPTH_POW*0.55)); }
-function depthPack(){ return Math.min(DEPTH_PACK_CAP,BRUNCH.chance+DEPTH_PACK_STEP*depthSteps()); }
+function depthPack(){ return Math.min(DEPTH_PACK_CAP,areaMix().brunch+DEPTH_PACK_STEP*depthSteps()); }
 /* Density is its own exponent rather than the HP one, because it is a different kind of lever: HP
    makes a fight longer and density makes it wider, and they should not move in lockstep or every
    deep floor would be the same fight with more health.

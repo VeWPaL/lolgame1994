@@ -221,6 +221,51 @@ namespace Depths
         public const double BrunchChance = 0.45;
 
         /// <summary>
+        /// The enemy-mix dials for one area: which bodies a normal slot rolls, how often a room
+        /// carries a heavy, and the base pack chance the depth ladder starts from.
+        ///
+        /// <para>
+        /// This is the ONLY thing an area changes. The ladder itself (<see cref="Balance.DepthTough"/>,
+        /// <see cref="Balance.DepthRate"/>, <see cref="Balance.DepthBodies"/>,
+        /// <see cref="Balance.DepthPack"/>) is the same shape in every area - an area is an identity,
+        /// not a harder or easier version of the climb.
+        /// </para>
+        /// </summary>
+        public struct AreaMix
+        {
+            /// <summary>Probability a normal slot is a lunger; the rest are shooters.</summary>
+            public double Lunger;
+
+            /// <summary>Probability a room with enough bodies carries one gunner.</summary>
+            public double Heavy;
+
+            /// <summary>The base the pack chance ramps from, before the depth ladder's step.</summary>
+            public double Brunch;
+        }
+
+        /// <summary>
+        /// The mix for an area. Area1 reproduces the measured numbers the port pinned before areas
+        /// existed (lunger 0.5, heavy 0.55, brunch 0.45 == <see cref="BrunchChance"/>), so a default
+        /// Area1 plan is byte-identical to the pre-area plan the 127 parity rows were read from.
+        ///
+        /// <para>
+        /// Area2/Area3/Final are explicit guesses, marked as such: they are design intent awaiting a
+        /// playtest, not values read out of the running JavaScript. Area1 is the only row that is
+        /// measured. Do not retune an area by feel - change it, then re-measure.
+        /// </para>
+        /// </summary>
+        public static AreaMix MixFor(Area area)
+        {
+            switch (area)
+            {
+                case Area.Area2: return new AreaMix { Lunger = 0.45, Heavy = 0.60, Brunch = 0.50 };
+                case Area.Area3: return new AreaMix { Lunger = 0.55, Heavy = 0.50, Brunch = 0.60 };
+                case Area.Final: return new AreaMix { Lunger = 0.50, Heavy = 0.65, Brunch = 0.55 };
+                default: return new AreaMix { Lunger = 0.50, Heavy = 0.55, Brunch = BrunchChance };
+            }
+        }
+
+        /// <summary>
         /// A pack smaller than this is a knot rather than a wall.
         ///
         /// <para>
