@@ -2753,31 +2753,54 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       try{ drawHUD(); }catch(e){ threw=e.message; }
       eq(threw,null,'drawing the HUD at maxHp '+mx+' threw: '+threw);
     }
-    /* AND THE CAPPED ROW IS DRAWN FROM THE RIGHT, because a capped row drawn from the left is full then
-       empty - which at 98 health reads as "I am nearly dead", the exact opposite of the truth.
+    /* THE ROW DRAINS LEFT TO RIGHT, AND THAT IS NOT NEGOTIABLE.
 
-       Asserted by DAMAGE rather than by geometry: at full health every drawn heart is full whichever
-       end it starts from, so the test takes damage down to the last of it and checks that the heart that
-       still has blood in it is the LAST one on the plate. That is the property, and it is the one a
-       player reads. */
-    player.maxHp=98; player.hp=2;   // one heart, and it is the last of the row
-    const seen=[]; const real=window.drawHeart;
-    window.drawHeart=(x,y,fill,kind)=>seen.push({x:x,fill:fill,kind:kind});
-    try{ drawHUD(); }finally{ window.drawHeart=real; }
-    /* The HEALTH row only. The armour slots draw through the same function with 'dimgray', so counting
-       every lit heart counts the player's armour - and at 98 health with no armour bought, those are the
-       only lit things on the plate and the assertion below would be measuring the wrong row entirely. */
-    const health=seen.filter(s=>s.kind==='red');
-    const lit=health.filter(s=>s.fill>0);
-    ok(lit.length>=1,'at 1 heart out of 98, no health heart is lit on the plate at all');
-    /* hp is in HALF-HEARTS and each heart is worth 2, so hp 2 is exactly one full heart and it must be
-       the LAST health slot drawn. With a capped row drawn from the left the lit heart would instead be
-       the first, which reads as "nearly dead" at full health - the opposite of the truth. */
-    const lastX=Math.max.apply(null,health.map(s=>s.x));
-    eq(lit[lit.length-1].x,lastX,'the lit heart is at x='+lit[lit.length-1].x+' and the last health slot '+
-      'is at '+lastX+', so a capped row is drawn from the left and reads full-then-empty');
-    eq(lit[0].x,lastX,'the one lit heart is at x='+lit[0].x+' and the last slot is at '+lastX+', so the '+
-      'row is drawn from the left and the lit heart sits where the missing health is not');
+       This test previously asserted the OPPOSITE - that at 1 heart out of 98 the lit heart must be the
+       last slot on the plate - because that is what the code was doing. The bar counted backwards: at 2
+       health the row read `[empty x7, full]`, the one heart with blood in it sitting in the far right
+       slot. The test was written to match the implementation, which is the exact failure this file
+       exists to prevent, and it is the second time in one session I have done it.
+
+       The direction is not a style question and does not depend on whether hearts are hidden. A health
+       bar that empties from the left, at every health, in every game, is the contract; the only question
+       the cap raises is how many slots exist, not which way they fill.
+
+       So this asserts the DIRECTION, on an ordinary uncapped plate where every heart is visible, at
+       enough health values to catch a reversal - a single sample cannot tell "drains right" from
+       "drains left" when both ends are lit. */
+    const rowAt=(mx,hp)=>{
+      player.maxHp=mx; player.hp=hp;
+      const seen=[]; const real=window.drawHeart;
+      window.drawHeart=(x,y,fill,kind)=>seen.push({x:x,fill:fill,kind:kind});
+      try{ drawHUD(); }finally{ window.drawHeart=real; }
+      // the HEALTH row only: the armour slots draw through the same function as 'dimgray'
+      return seen.filter(s=>s.kind==='red').sort((a,b)=>a.x-b.x);
+    };
+    const full=rowAt(16,16);
+    eq(full.length,8,'an ordinary 16-health plate drew '+full.length+' health hearts, expected 8');
+    ok(full.every(s=>s.fill===1),'a full plate drew a heart that is not full');
+    // and at half health the empties must be on the RIGHT
+    const half=rowAt(16,8);
+    const halfLit=half.filter(s=>s.fill>0);
+    eq(halfLit.length,4,'at 8 of 16 health, '+halfLit.length+' hearts are lit, expected 4');
+    // the lit hearts must be the FIRST four slots, and the empties the last four
+    eq(halfLit[0].x,half[0].x,'at half health the first slot is empty, so the bar drains from the RIGHT');
+    eq(halfLit[3].x,half[3].x,'at half health the lit hearts are not the first four slots, so the '+
+      'empties are on the left and the bar counts backwards');
+    eq(half[half.length-1].fill,0,'the last heart on the plate is lit at half health, so the bar '+
+      'drains from the RIGHT - empties belong at the end of the row');
+    // one heart is the sharpest case: it must be the FIRST slot, or the plate reads almost empty
+    const one=rowAt(16,2);
+    eq(one[0].fill,1,'at 2 of 16 health the FIRST heart is empty, so the bar counts backwards');
+    eq(one.filter(s=>s.fill>0).length,1,'at 2 of 16 health, '+one.filter(s=>s.fill>0).length+
+      ' hearts are lit, expected exactly 1');
+    /* and the capped plate, where the label has to fit inside the wood rather than past the frame */
+    player.maxHp=98; player.hp=2;
+    const capped=rowAt(98,2);
+    eq(capped[0].fill,1,'on a CAPPED plate the first heart is empty at 2 health - the cap must not '+
+      'change which way the bar drains, only how many slots there are');
+    ok(capped.filter(s=>s.fill>0).length===1,'a capped plate at 2 health lights '+
+      capped.filter(s=>s.fill>0).length+' hearts');
   });
 
   /* A ROLL STAT PRINTS ITS SIGN. Reverting this fails silently, which is the point of pinning it. */

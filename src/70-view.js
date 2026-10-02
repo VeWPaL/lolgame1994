@@ -787,10 +787,23 @@ function drawHUD(){
   const heartSlot=26;
   /* the minimap plate starts here: W - MARGIN_X - (GRID*17 + 28), with a gutter of its own */
   const miniLeft=W-MARGIN_X-(GRID*17+28);
-  const roomForHearts=Math.max(4,Math.floor((miniLeft-HUD_GAP-MARGIN_X-30)/heartSlot)-armorSlots);
-  const heartsDrawn=Math.min(hearts,roomForHearts);
+  /* HOW MANY HEARTS FIT, AND HOW MUCH ROOM IS LEFT OVER.
+
+     Solved in two steps rather than one, because the label and the heart budget both need the other's
+     answer: the label only exists if hearts are hidden, and the hearts only fit if the label has been
+     paid for. So the budget is computed with the label reserved, and if it turns out nothing is hidden
+     the reserved width is handed back.
+
+     The reservation is one 26px slot, which is what "+23" at 11px monospace needs with room to spare,
+     and it is paid out of the heart budget rather than added to the total - so a wide plate still cannot
+     reach the minimap however much health there is. */
+  const LABEL_W=26;
+  const fitWithLabel=Math.max(4,Math.floor((miniLeft-HUD_GAP-MARGIN_X-30)/heartSlot)-armorSlots-1);
+  const heartsWouldHide=hearts>Math.max(4,Math.floor((miniLeft-HUD_GAP-MARGIN_X-30)/heartSlot)-armorSlots);
+  const heartsDrawn=Math.min(hearts,heartsWouldHide?fitWithLabel:Math.max(4,fitWithLabel+1));
   const heartsHidden=hearts-heartsDrawn;
-  const healthW=30+(heartsDrawn+armorSlots)*heartSlot;
+  const labelW=heartsHidden>0?LABEL_W:0;
+  const healthW=30+(heartsDrawn+armorSlots)*heartSlot+labelW;
   const hx=MARGIN_X, hy=MARGIN_Y;
 
   // row 1: health, with the keys on its right shoulder, top-aligned and touching
@@ -804,27 +817,43 @@ function drawHUD(){
   const rowW=(heartsDrawn+armorSlots)*heartSlotW;
   const slotX=insetX+Math.floor((insetW-rowW)/2)+13;   // +13: the sprite is 26 wide, origin is its left edge
   const heartY=hy+HP_H/2;
-  /* WHEN THE PLATE CANNOT SHOW EVERY HEART, IT SHOWS THE ONES THAT MATTER.
+  /* EACH SLOT IS ITS OWN INDEX, AND HEALTH DRAINS LEFT TO RIGHT.
 
-     A capped row drawn from the left would be full and then empty, which reads as "I am nearly dead at
-     98 health" - the exact opposite of the truth. So when hearts are hidden the row is drawn from the
-     RIGHT: the last heart is the one that tells you how close you are, and the empties that fall off the
-     left end are the ones whose absence costs nothing. The number is printed beside it either way. */
+     `i` is the slot's own heart number, so the fill is `(hp - i*2)/2`: full hearts first, empties at
+     the right. That is the direction the bar has always drained and the direction a player reads.
+
+     This measured `heartsDrawn-1-i` instead - the slot's distance from the END of the row - which
+     reverses the whole plate. At 2 health the row read `[empty x7, full]`: the one heart with blood in
+     it sat in the far-right slot, and the bar counted backwards. It read as a deliberate choice
+     because it was written to fix a real problem, so it is worth being explicit about what that problem
+     was and why this is the right answer instead.
+
+     The problem: when the plate is CAPPED and hearts are hidden, drawing only the first `heartsDrawn`
+     slots means a player at 98 health sees 26 full hearts and no empties - which is correct - but a
+     player at LOW health has their remaining health in the FIRST hearts, which are the ones being
+     drawn, so the row correctly showed the damage. The original worry was that a capped row would be
+     "full then empty", which is only wrong if it is drawn from the wrong end.
+
+     Measured, at maxHp 98 with 23 hearts hidden, from the left:
+         hp 98  26 full hearts              hp 46  23 full then 3 empty
+         hp 2   1 full then 25 empty       hp 1   1 half then 25 empty
+     Every one reads as the health it is, because a prefix of the row IS the player's remaining health
+     and the "+23" says how much of the total is not on screen. */
   for(let i=0;i<heartsDrawn;i++){
-    /* Each heart is worth 2hp, so the fill is this heart's share of one, clamped: a slot further along
-       the plate can have a large `val` and must still read as simply full.
-
-       `fromEnd` is the distance of this slot FROM THE END OF THE ROW, not its index. That matters only
-       when hearts are hidden: the row is drawn from the right, so the visible slots are the LAST ones,
-       and measuring them by index would ask "how much health is left after the 23 hearts I am not
-       drawing" - which is nothing at all, at every health, so the whole row read empty. */
-    const fromEnd=heartsDrawn-1-i;
-    const fill=Math.max(0,Math.min(1,(player.hp-fromEnd*2)/2));
+    // each heart is worth 2hp, so the fill is this heart's share of one, clamped: a slot further
+    // along the plate can have a large `val` and must still read as simply full
+    const fill=Math.max(0,Math.min(1,(player.hp-i*2)/2));
     drawHeart(slotX+i*heartSlotW,heartY,fill,'red',3);
   }
+  /* "+N" GOES AFTER THE LAST HEART, not before the first one.
+
+     The row now runs left to right with the health on it, so a label at the left end sits exactly where
+     a player's remaining health is drawn - on top of the first heart, which is the one they are reading.
+     The count of hidden hearts belongs on the far side, past the empties, where it reads as "and there
+     are more of these". */
   if(heartsHidden>0){
-    ctx.font='bold 11px monospace';ctx.textAlign='right';ctx.fillStyle='#e8c9a0';
-    ctx.fillText('+'+heartsHidden,slotX-rowW+armorSlots*heartSlotW-6,heartY+4);
+    ctx.font='bold 11px monospace';ctx.textAlign='left';ctx.fillStyle='#e8c9a0';
+    ctx.fillText('+'+heartsHidden,slotX+heartsDrawn*heartSlotW+4,heartY+4);
     ctx.textAlign='left';
   }
   // The last point of life gets a halo so "one heart left" can never be misread as "none left".
