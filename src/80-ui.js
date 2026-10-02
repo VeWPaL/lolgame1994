@@ -96,6 +96,7 @@ const FIXES={
   'fractional damage can never leave you alive on an empty health bar':['movement and being hit','repeated fractional subtraction landed health on 6.66e-16, which is not zero, so the death check never fired'],
 
   /* ---- rooms, keys and getting further ---- */
+  'a seed replays the same FIGHT, not just the same dungeon':['rooms and progression','two cursors lived at module scope and survived startGame, so the second run from a seed began part-way round the flank walk. Same rooms, same bodies, every lunger circling from a slightly different angle - the first fight of a session played differently from the second, with no seed change to explain it'],
   'every dungeon: a branching tree with a reward at each of two ends, and a key in a branch':['rooms and progression','the map had loops in it, so a run could be all backtracking and no depth. The name of this entry drifted when the test was rewritten - it read "four winding runs" and matched nothing, which is how a pinned fix ends up looking verified while nothing checks it'],
   'the critical path is walkable: silver to the upgrade, gold to the boss':['rooms and progression','a generator could produce a floor whose key room could not be reached'],
   'the two keys gate different doors and are each spent once':['rooms and progression','one key could open both doors, so the progression was one gate with two props'],

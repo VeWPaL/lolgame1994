@@ -50,10 +50,67 @@ too — strip with
 
 ## Working rules
 
+**When the DRAWING changes, verify the PIXELS. Never the data.**
+
+Three regressions in one session, all the same shape, all found by the user rather than by the suite:
+
+| what changed | what I checked | what went wrong |
+|---|---|---|
+| heart plate fill, capped row | `drawHeart` fills | the bar drained **right to left** |
+| halo position after that fix | `drawHeart` fills | the pulse sat on an **empty** heart |
+| the same halo block | halo drawn once | it was drawn **twice** — duplicate `if` |
+
+Every one passed a data-level assertion, because the DATA was right: fills were computed, slots were
+counted, positions were recorded. The mistake was in what got drawn and where. `drawHeart(x, fill)` being
+called with sensible arguments proves nothing about which way the bar reads — only sampling the
+framebuffer, or asserting on the *relationship* between what is drawn and what is meant ("the lit heart
+must be at x 43"), catches that.
+
+So the rule for anything in `70-view.js`:
+
+1. **Assert on meaning, not on calls.** "The halo is on the last LIT heart" is a claim about the screen.
+   "The halo is drawn once" is a claim about the code, and a duplicated block satisfies it.
+2. **Sample pixels when the question is "does it look right".** `pixelsAtWorld` exists for this. The
+   flame needed it. The bar should have needed it.
+3. **A direction or an ORDER is a property worth pinning explicitly.** Left-to-right was never written
+   down; both bugs were reversals of it, and both were invisible to a suite that never said which way it
+   was supposed to go.
+
+**And never write the assertion after the code to match what the code does.** Twice this session I fixed
+a drawing bug and then wrote a test asserting the new behaviour — which is how the reversed bar got a
+test that passed. The test is written from the *specification* ("empties belong at the right end") and
+only then checked against the code; if the code and the specification disagree, the code is wrong.
+
 **Always work prototype graphics into anything the player actually sees.** No grey rectangles, no
 "TODO art". If a player will look at it, draw it properly the first time. The controls sheet and the
 bug list are the standard: real key caps, a drawn mouse, a wood-and-paper card. A feature that is 95%
 done and looks like a spreadsheet reads as broken, not as unfinished.
+
+**A loop that says `startGame()` N times is not N trials. Assert the trials differ.**
+
+`Rnd.fresh` is stubbed to a single `TEST_SEED` at the top of the suite — it has to be, so a bare
+`startGame()` is reproducible. So a fuzz loop written as
+
+```js
+for (let trial = 0; trial < 140; trial++) { startGame(); /* fight */ }
+```
+
+builds the **same dungeon 140 times**. The suite's zero-health fuzz was in exactly that state and had
+been passing for a wrong reason: the `FLANK_CURSOR` / `PACK_CURSOR` module counters leaked across
+`startGame`, so iteration 87 fought differently from iteration 1, and those accidental differences
+were where its deaths came from. Removing the leak — a real fix, so the same seed replayed — turned
+the fuzz red, and the honest diagnosis was that the fuzz had only ever been testing one fight.
+
+The lesson generalises past this suite: **variety that a test does not ask for is variety it cannot
+claim.** Anything randomised must be seeded explicitly inside the loop, and the loop must assert that
+its iterations were actually distinct. It now asserts `worlds.size > 120` over 140 seeds. That check
+would have caught this immediately, and it cannot itself pass by accident — a fixture that collapses
+to one world is a fixture that has stopped testing anything, and it is *never* the fixture's job to
+notice.
+
+Diagnosing it was cheap only because the fix could be switched off again: neutering the reset made the
+fuzz go green and the new test go red, which named the cause in one run. When two changes interact,
+bisect by disabling the fix, not by reading harder.
 
 **Measure, do not model.** A model of the right answer disagrees with reality about as often as it
 agrees. When they disagree, find out which is wrong before explaining the discrepancy. Prefer the
@@ -1408,14 +1465,15 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **199 checks**, every test seeded to an identical world. All must pass at
-  every commit. The change history (`FIXES`, in `80-ui.js`) is **105** entries and is itself checked.
-  `verify.ps1` prints an estimate of that count from a regex and is routinely one or two low; the
-  figure above is the one read out of `Object.keys(FIXES)`, and the suite asserts the two agree.
-  every pinned fix must have a test carrying its name, and an entry with no matching result is
-  reported **UNVERIFIED** in amber rather than scored as a pass. The panel prints both numbers and
-  names each, because they are genuinely different — the table is bugs found and pinned, the suite
-  is every standing guarantee.
+- `src/99-tests.js` - **200 checks**, every test seeded to an identical world. All must pass at
+  every commit. The change history (`FIXES`, in `80-ui.js`) is **107** entries and is itself checked.
+  `verify.ps1` counts that table from a regex and prints the number; it does **not** assert it, and
+  this paragraph used to claim the suite did. What the suite actually checks is the direction that
+  matters: every pinned fix must have a test carrying its name, and an entry with no matching result
+  is reported **UNVERIFIED** in amber rather than scored as a pass. Neither number is derived from
+  the other, so they drift apart when either is edited — read both, trust neither alone. The panel
+  prints both and names each, because they are genuinely different: the table is bugs found and
+  pinned, the suite is every standing guarantee.
 - `csharp/Depths.Core` + `Depths.Tests` - **88 checks**, parity-verified against the JavaScript.
   Still no world state; see the section on the port boundary above.
 

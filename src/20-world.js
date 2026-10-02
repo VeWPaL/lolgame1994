@@ -56,6 +56,27 @@ let FLANK_CURSOR=0;
 // Pack identity, handed out one ID per wall. Never reused and never reset, so a body that outlives a
 // room transition cannot end up sharing a formation with a pack it has never met.
 let PACK_CURSOR=1;
+/* THE TWO CURSORS ABOVE ARE THE ONLY MODULE STATE A RUN OWNS, AND BOTH ARE NOW RESET BY IT.
+
+   Neither was. They are module-level `let`s outside every object, so they survived `startGame()` and
+   simply carried on counting - which is correct WITHIN a run and quietly wrong across one.
+
+   The consequence was the second fight from a seed not matching the first: the dungeon was identical,
+   the bodies were identical, and every lunger circled the player from a slightly different angle
+   because the golden-angle walk had not gone back to zero. Measured, same seed and same commands twice:
+
+       run 1   flank 0.00 2.40 4.80 0.92 3.32 5.72 1.83 4.23    lunger at 401, 414, 430
+       run 2   flank 0.35 2.75 5.15 1.27 3.67 6.07 2.18 4.58    lunger at 398, 411, 427
+
+   A seed exists so two people can play the same run, and the first run of a session played differently
+   from the second - so a friend comparing runs got a difference with no seed to explain it, which is
+   exactly the situation the whole feature exists to prevent.
+
+   "Never reset" was the right instinct for the wrong scope. It was defending against a body outliving a
+   room transition and colliding with a pack from another room, and that is a WITHIN-run concern; both
+   counters are reset at the start of a run and never touched again until the next one. A pack id is
+   unique within a run, which is all the collision argument ever needed. */
+function resetRunCursors(){ FLANK_CURSOR=0; PACK_CURSOR=1; }
 let paused=false, acc=0, run=null, lastRun=null;
 // The between-floors banner: the floor you came from and how long the fade has left to run. Lives
 // here with the other module-level run state because it is set by descend() and read by the view,

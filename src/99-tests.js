@@ -290,6 +290,97 @@ if(new URLSearchParams(location.search).has('test')) (function(){
    fixture cannot drift from the behaviour it is checking again. */
   const runAt=seed=>{startGame(seed);return probeRun();};
 
+  test('a seed replays the same FIGHT, not just the same dungeon',()=>{
+    /* The dungeon is not the run. Two cursors live at MODULE scope in 20-world.js - FLANK_CURSOR, which
+       decides which slice of the circle the next lunger takes, and PACK_CURSOR, which hands out wall
+       identities - and neither was reset by startGame. They are correct WITHIN a run and wrong ACROSS
+       one: the second run from a seed began with the golden-angle walk already part-way round.
+
+       Measured, same seed and same commands twice, before the fix:
+
+           run 1   flank 0.00 2.40 4.80 ...   lunger at 401, 414, 430
+           run 2   flank 0.35 2.75 5.15 ...   lunger at 398, 411, 427
+
+       Same rooms, same bodies, same everything the fingerprint below can see - and a different fight,
+       because a lunger approaching from a different angle is a different fight. The first run of a
+       session played differently from the second, so a friend comparing runs got a difference with no
+       seed to explain it. That is the one thing a seed cannot be asked to absorb.
+
+       So the check is a PLAYED fingerprint rather than a generated one: build the world, enter a room,
+       play six hundred ticks of the same held key, and compare where every body ended up. A test that
+       only compared the dungeon would have passed throughout - `runAt` above does exactly that. */
+    const play=(seed,ticks)=>{
+      startGame(seed);
+      const n=Object.values(rooms).find(r=>r.type==='normal');
+      enterRoom(n.x,n.y,'W'); readyT=0; fadeT=0; roomFade=0;
+      for(let t=0;t<ticks;t++){ keys={d:1}; mouseDown=(t%2===0); update(); }
+      // BOTH cursors have to appear in the fingerprint, not just the one the bug report happened to name.
+       // A `resetRunCursors` that reset FLANK_CURSOR but left PACK_CURSOR alone would satisfy a
+       // position-only check, and pack ids are as much a part of what a body is as its flank angle.
+       return currentRoom().enemies
+        .map(e=>e.type[0]+'@'+Math.round(e.x)+','+Math.round(e.y)+
+                  (e.flank===undefined?'':':f'+e.flank.toFixed(2))+
+                  (e.packId===undefined?'':':p'+e.packId))
+        .sort().join('|');
+    };
+    const a=play(12345,600);
+    const b=play(12345,600);
+    eq(b,a,'the same seed played twice produced a different fight - a module-level counter survived the '+
+      'restart, so the second run did not begin where the first one did');
+    // three in a row, because a cursor that resets once and drifts after would pass a two-run check
+    eq(play(12345,600),a,'the third run from the same seed differed from the first two');
+    // and the reset must not flatten the seed space: neighbours still have to play differently
+    ok(play(12346,600)!==a,'two different seeds played the identical fight');
+    /* AND THE RESET IS THE RUN'S, NOT THE FLOOR'S. descend() must not call it: a pack id is unique within
+       a RUN, and clearing it mid-run would let a body outlive a room transition and end up sharing a
+       formation with a pack it has never met - which is exactly what the original comment on those
+       counters was defending. The scope is the run.
+
+       Asserted on the pack ids, which are the thing that actually has to stay unique: descending and
+       then spawning more bodies must not hand out an id the run has already used. */
+    startGame(12345);
+    const perId=new Map();
+    const collect=()=>{
+      for(const r of Object.values(rooms)){
+        if(r.type!=='normal') continue;
+        enterRoom(r.x,r.y,'W'); readyT=0; fadeT=0; roomFade=0;
+        for(const e of currentRoom().enemies){
+          if(e.packId===undefined) continue;
+          perId.set(e.packId,(perId.get(e.packId)||0)+1);
+        }
+      }
+    };
+    collect();
+    const floor1Ids=perId.size;
+    ok(floor1Ids>0,'floor 1 handed out no pack ids at all, so nothing below is being checked');
+    /* THROUGH A REAL FLOOR CHANGE. Setting `run.floor` does not regenerate anything - descend() is what
+       calls generateDungeon - so the first version of this asserted on the same dungeon twice and saw
+       no new ids, and read it as "descending does nothing". It calls descend() because that is the path
+       a player takes and the one that has to keep the counters running. */
+    descend();
+    collect();
+    ok(perId.size>floor1Ids,'descending to floor 2 added no new pack ids ('+floor1Ids+' -> '+perId.size+
+      '), so the second floor is not really being generated');
+    // and the ids a single floor hands out must be one per PACK, with enough bodies to form a wall
+    startGame(12345);
+    const perPack=new Map();
+    for(const r of Object.values(rooms)){
+      if(r.type!=='normal') continue;
+      enterRoom(r.x,r.y,'W'); readyT=0; fadeT=0; roomFade=0;
+      const pack=currentRoom().enemies.filter(e=>e.type==='brunch');
+      if(!pack.length) continue;
+      const ids=new Set(pack.map(e=>e.packId));
+      eq(ids.size,1,'a pack of '+pack.length+' brunch bodies was handed '+(ids.size>1?ids.size:1)+
+        ' pack ids, so no two of them agree on which pack they are in');
+      for(const id of ids) perPack.set(id,(perPack.get(id)||0)+pack.length);
+    }
+    const sizes=[...perPack.values()];
+    ok(sizes.length>0,'no brunch packs were found anywhere in the dungeon');
+    ok(Math.max(...sizes)>=BRUNCH_WALL_MIN,'the largest pack across the dungeon holds '+
+      Math.max(...sizes)+' bodies, which is under BRUNCH_WALL_MIN '+BRUNCH_WALL_MIN+
+      ', so no pack can ever form a wall');
+  });
+
   test('a seed is a short fixed-width string that survives the trip through text',()=>{
     // A seed is worthless if the player cannot copy it reliably. It has to be typable, come back
     // the same length every time so the screen never reflows, and survive being pasted out of a
@@ -4529,9 +4620,28 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // Fuzzed against real combat rather than reasoned about: play whole fights with the bot's
     // decisions, and after every single tick assert the one invariant that must never break. If any
     // code path can leave a player at zero health still holding the controller, this finds it.
+    //
+    /* THE TRIALS MUST NAME THEIR OWN SEED. This loop used a bare `startGame()`, which means "whatever
+       `Rnd.fresh()` returns" - and `Rnd.fresh` is STUBBED to TEST_SEED at the top of this suite, so
+       140 iterations built the SAME dungeon 140 times and the fuzz was really testing one fight. It
+       passed by accident: `FLANK_CURSOR` and `PACK_CURSOR` leaked across `startGame`, so iteration 87
+       fought differently from iteration 1, which is where its deaths came from.
+
+       That is the leak the seed-replay fix removed, and the fuzz stopped passing - not because a
+       player stopped dying, but because it had never been killing 140 different people. Verified by
+       disabling the reset again: the fuzz went back to green, which is what made it diagnosable.
+
+       So the variety has to be asked for explicitly. `trial*TRIAL_STRIDE` walks 140 distinct seeds,
+       and the check below asserts they really were distinct worlds, because "140 trials" that
+       silently collapse to one is a fixture that has stopped testing anything. */
+    const TRIAL_STRIDE=0x9E3779B1>>>0;   // the odd-constant stride, so the seeds are not adjacent
+    const worldSig=()=>Object.values(rooms).filter(r=>r.type==='normal')
+      .map(r=>r.x+','+r.y).join(';');
     let checked=0, fights=0, deaths=0;
+    const worlds=new Set();
     for(let trial=0;trial<140;trial++){
-      startGame();
+      startGame((trial*TRIAL_STRIDE)>>>0);
+      worlds.add(worldSig());
       const all=Object.values(rooms).filter(r=>r.type==='normal');
       for(const target of all){
         enterRoom(target.x,target.y,'W'); readyT=0; fadeT=0; trans=null;
@@ -4571,14 +4681,21 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       }
     }
     ok(checked>15000,'the fuzz only ran '+checked+' ticks, too few to be worth anything');
+    ok(fights>300,'the fuzz only entered '+fights+' fights, too few to be worth anything');
+    /* and the 140 trials really were 140 different dungeons. A fuzz that collapses to one world
+       cannot fail, so this is asserted rather than assumed - it is the check that would have caught
+       the bare `startGame()` this loop used to make. */
+    ok(worlds.size>120,'the fuzz asked for 140 distinct seeds and got only '+worlds.size+
+      ' distinct dungeons, so most trials replayed the same fight');
     ok(deaths>0,'the fuzz never killed anybody, so it never reached the case under test');
-    ok(true,'checked '+checked+' ticks across '+fights+' fights, '+deaths+' deaths, no zero-health survivor');
+    ok(true,'checked '+checked+' ticks across '+fights+' fights in '+worlds.size+
+      ' dungeons, '+deaths+' deaths, no zero-health survivor');
     // ...and the same thing again through the REAL frame loop, walking out through doors rather than
     // teleporting between rooms. update() on its own is not the whole story: advance() can run a
     // burst of ticks in one frame, a room transition can hand over mid-frame, and the ready window
     // can swallow a whole frame. This drives advance() with a plausible frame time instead.
     for(let trial=0;trial<40;trial++){
-      startGame();
+      startGame((trial*TRIAL_STRIDE)>>>0);   // same reasoning: distinct worlds, or nothing is fuzzed
       let frames=0;
       while(state==='playing'&&frames<4000){
         frames++;

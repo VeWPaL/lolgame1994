@@ -90,6 +90,12 @@ function startGame(root){
      With no argument it takes a fresh seed, which is what starting from the title screen wants and
      what the seed sheet wants after it has decoded the code the player typed. */
   Rnd.set(root===undefined?Rnd.fresh():root);
+  /* The flank walk and the pack-id counter live at module scope in 20-world.js, so they are part of
+     what "start from nothing" has to mean. Neither was reset, so a second run from the same seed began
+     with the golden-angle walk already part-way round: identical dungeon, identical bodies, every lunger
+     circling from a slightly different angle. The first fight of a session played differently from the
+     second, which is the one thing a seed cannot be asked to absorb. */
+  resetRunCursors();
   generateDungeon();
   cur={x:START,y:START};
   // the wall shorthand, re-synced before the player is placed: the line below puts the player at
