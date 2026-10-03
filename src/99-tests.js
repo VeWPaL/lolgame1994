@@ -2644,9 +2644,12 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       Stats.reset();
       const before=JSON.stringify(Content.all('item'));
       Stats.flat('intelligence',3);
+      /* This IS the hook, and no `ok(true,'')` is needed beside it. When magic doors land they gate
+         items, this eq() goes red, and the failure message - "Intelligence changed the item table,
+         which is not what it is for" - is the note to whoever lands them. A passing assertion with an
+         empty message adds nothing beside it and reads like a check that has not been written yet. */
       eq(JSON.stringify(Content.all('item')),before,'Intelligence changed the item table, which is not '+
          'what it is for');
-      ok(true,'');   // the assertion that matters is the comment above this line
     }
     // and the sheet must not be able to show a stat that is not in this list
     for(const s of Stats.sheet())
