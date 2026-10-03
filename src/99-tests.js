@@ -10063,6 +10063,104 @@ const BOSS_TICKS=26000;
     run=undefined;
   });
 
+  /* DESCENDING IS ALSO A NEW SEED, and the caches have to be cleared there too.
+
+       `startGame` cleared them because a new run is a new seed, and the fix I wrote first stopped
+       there. But `descend()` calls `Rnd.set(Rnd.floorSeed(root, floor))` — a different seed for a
+       different floor — and the caches are keyed by (type, size, area) with no seed in the key.
+
+       So floors 1 to 4 share one key and every one of them was handed floor 1's baked floor canvas.
+       Measured on seed 31337 before the fix: floors 1, 2, 3 and 4 all hash to 3905066258 with exactly
+       one cache key throughout, and floor 5 rebakes only because the area changes. The same two seeds
+       on a cleared cache produce different tiles, so the content really is seed-derived and the art
+       stream was never the broken part.
+
+       This test DESCENDS, where the earlier one called `startGame`. Asserting across a descent is the
+       only version of the claim that can fail: a test that starts a run twice is testing a path that
+       already worked. */
+  /* THE HUD MUST SURVIVE A HELD ITEM WHOSE DEFINITION IS GONE.
+
+       `Content.get` throws on a missing id, and that is correct: a missing definition used to flow
+       silently into a stat read and become a NaN three frames later. But `drawActivePlate` called it
+       **unguarded, every frame**, so the failure mode is not one loud throw at the mistake — it is a
+       throw inside `render()`, which escapes into the animation loop and stops it. The game freezes
+       with the HUD half-drawn and no message.
+
+       The state is reachable rather than theoretical: `loadout` is a plain data object, and
+       `Content.resetMods()` rebuilds the table from the pristine copy, so anything holding an id the
+       table no longer has ends up here.
+
+       Three other call sites read the same definition and all three guard with `Content.has` first
+       (`10-art.js:803`, `10-art.js:829`, and `70-view.js:1410` three lines away in the same file,
+       drawing the same item). This was the only one that did not, and the asymmetry is the tell. */
+  test('the HUD draws a held item whose id is not in the content table',()=>{
+    /* THE FIXTURE IS `Items.active()`, NOT `loadout.active`. The first version of this test set
+       `loadout.active` directly and passed - while proving nothing, because `drawHUD` reads
+       `Items.active()` and `Items` keeps its own module-scope slot. Two of the three assertions in
+       it were measuring a game state that cannot occur, which is the `spawnEnemy(false, ...)` shape:
+       a fixture that returns something usable-looking instead of the thing asked for.
+
+       So this gives a real item through the real API and then makes the HELD SLOT point at an id the
+       content table does not have - which is the state a mod produces, and the state `resetMods`
+       produces by rebuilding the table from the pristine copy. */
+    startGame();
+    Items.reset();
+    const given=Items.give('lantern_friend');
+    ok(given&&given.taken,'could not give the fixture item, so the rest of this test would be '+
+       'measuring an empty hand');
+    const slot=Items.active();
+    ok(slot&&slot.id==='lantern_friend','the fixture item did not land in the active slot (got '+
+       JSON.stringify(slot)+')');
+    /* THE HELD SLOT IS `loadout.items[slot===ACTIVE_SLOT]`, and there is no setter for it - `active()`
+       reads the array, `give()` appends to it, and nothing else writes it. So the reachable state is
+       produced by rewriting the entry in place, which is what a mod restoring a save, or `resetMods`
+       rebuilding the content table under a live loadout, actually leaves behind: a slot pointing at an
+       id the table no longer has. */
+    const i=loadout.items.findIndex(s=>s.slot===Items.ACTIVE_SLOT);
+    ok(i>=0,'the active slot is not in loadout.items, so the fixture cannot address it');
+    loadout.items[i]={id:'an_item_that_does_not_exist',name:'Gone',charges:2,slot:Items.ACTIVE_SLOT};
+    ok(Items.active()&&Items.active().id==='an_item_that_does_not_exist',
+       'the held slot still reads '+JSON.stringify(Items.active())+' after being pointed at an '+
+       'unknown id, so this test is not exercising the state it claims to');
+    let threw='';
+    try{ render(); }catch(e){ threw=e.name+': '+e.message; }
+    ok(threw==='','drawing the HUD with an unknown held item threw '+threw+' - the active plate '+
+       'reads its definition unguarded, so the throw happens inside render(), the animation loop '+
+       'stops, and the game freezes with the HUD half-drawn');
+    loadout.items.length=0;
+    run=undefined;
+  });
+
+  test('descending rebakes the art, so the floor is a function of (root, floor)',()=>{
+    const hash=()=>{ drawFloor('normal');
+      const k=Object.keys(floorCache)[0];
+      const c=floorCache[k];
+      return c.getContext('2d').getImageData(0,0,c.width,c.height).data.reduce((a,v)=>((a*31+v)>>>0),7); };
+    startGame(31337);
+    const byFloor=[];
+    for(let f=1;f<=4;f++){
+      if(f>1) descend();
+      run.floor=f;
+      byFloor.push({floor:f, hash:hash(), keys:Object.keys(floorCache).length});
+    }
+    /* Every floor in the same area has the same key by construction - (type, size, area) - so a
+       repeated hash across floors 1..4 IS the defect. Distinct hashes are the claim. */
+    const distinct=new Set(byFloor.map(f=>f.hash)).size;
+    eq(distinct,4,'descending floors 1-4 produced '+distinct+' distinct floor textures ('+
+       byFloor.map(f=>'f'+f.floor+':'+f.hash).join(' ')+') - the art caches are not cleared on '+
+       'descend, so each floor is painted with the previous floor\'s baked pixels and the art is not '+
+       'a pure function of (root, floor)');
+    /* AND THE DETERMINISM HALF, which is the property that actually matters: the same descent twice
+       must bake the same thing, or clearing the cache has merely replaced one inconsistency with
+       another. */
+    startGame(31337);
+    const again=[];
+    for(let f=1;f<=4;f++){ if(f>1) descend(); run.floor=f; again.push(hash()); }
+    eq(again.join(),byFloor.map(f=>f.hash).join(),
+       'replaying the same descent produced different floor textures ('+again.join(' ')+' against '+
+       byFloor.map(f=>f.hash).join(' ')+') - the bake is not a function of the seed');
+  });
+
   test('the descent banner still draws while the room-arrival window is running',()=>{
     const wasRun=run;
     startGame();

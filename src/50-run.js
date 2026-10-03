@@ -191,6 +191,28 @@ function descend(){
   // the one seed on the luggage tag. Floor 1 keeps the root exactly, because the seed the player
   // typed should be the dungeon they actually get. See Rnd.floorSeed for why chaining would be wrong.
   Rnd.set(Rnd.floorSeed(run.rootSeed,run.floor));
+  /* THE ART CACHES ARE CLEARED HERE TOO, and this is the second place that has to happen.
+
+     `startGame` clears them because a new run is a new seed. But `descend()` is ALSO a new seed - it
+     sets the floor seed from (root, floor) on the line above - and the three caches are keyed by
+     (type, size, area) with no seed in the key, because there was nowhere to put one that would be
+     correct for a cache whose contents are baked from `Rnd.art()`.
+
+     So on floors 1-4 the key is byte-identical across descents and every one of them is handed floor
+     1's baked cave tile, wall tile and floor canvas. Measured, seed 31337, hashing the floor canvas:
+     floors 1, 2, 3 and 4 all read 3905066258 and the cache holds exactly one key throughout; floor 5
+     rebakes because the area changes and reads 1783679762. The same two seeds on a cleared cache give
+     different tiles (1698881801 against 4006777781), so the content genuinely is a function of the
+     seed and the art stream is not the thing that is broken.
+
+     Which means two players typing the same seed see a different-looking dungeon, and - the part that
+     actually matters - the art is not a pure function of (root, floor), which is the property the
+     whole seeding design rests on. It is invisible in a screenshot: stone is stone either way, and
+     the first floor of every area is correct, so the error repeats on a period of four.
+
+     It is called before `generateDungeon()` rather than after, because the generator is about to
+     build rooms whose first draw will pull from these caches. */
+  clearArtCaches();
   generateDungeon();
   cur={x:START,y:START};
   // same reason as startGame: the line below re-centres the player on MIDX, and this is a freshly

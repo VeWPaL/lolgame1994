@@ -651,7 +651,20 @@ function drawActivePlate(x,y,w,held){
     ctx.restore();
     return;
   }
-  const def=Content.get('item',held.id);
+  /* GUARDED, like every sibling. `Content.get` throws on a missing id - loudly, and correctly, because
+     a missing definition used to flow into a stat read and become a NaN three frames later. But this
+     is the per-frame HUD path, so a throw here does not fail loudly once: it fails every frame, from
+     inside render(), and the animation loop stops with the game frozen.
+
+     The id comes from `loadout`, which is a plain data object a mod can write, and `Content.resetMods()`
+     rebuilds the table from the pristine copy - so a held item whose id is not in the table is a
+     reachable state, not a theoretical one.
+
+     Four call sites read an item definition and this was the only one that did not check first:
+     `10-art.js:803` and `:829` guard with `Content.has`, and `70-view.js:1410` — three lines away in
+     the same file, drawing the same held item — guards too. The guard being present in one place and
+     absent in its neighbour is the whole tell. */
+  const def=Content.has('item',held.id)?Content.get('item',held.id):null;
   /* A CAPTION STRIP, because the first version drew Q and the count straight onto the tile and they
      landed on its bottom corners - a 34px tile in a 50px plate leaves no room for a second row, and
      "Q" over the tile's lower-left bevel reads as part of the item's own artwork. The neighbours get
@@ -671,7 +684,7 @@ function drawActivePlate(x,y,w,held){
     ctx.fillText('x',x+w-9,y+h-9);
   }else{
     ctx.textAlign='right';
-    ctx.fillStyle=held.charges>0?(def.color||'#e8dcc0'):'#c85a5a';
+    ctx.fillStyle=held.charges>0?((def&&def.color)||'#e8dcc0'):'#c85a5a';
     ctx.fillText('x'+held.charges,x+w-9,y+h-9);
   }
   // the key, bottom-left, dim once there is nothing to press
