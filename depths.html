@@ -35,8 +35,14 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
 /* ---- the controls sheet --------------------------------------------------------------
    Opened on H. Drawn as key caps and a mouse rather than written as prose, because the point of a
    bind list is that you can see the shape of the thing your hand has to do. Two columns, keyboard
-   and mouse, matching the way the game is actually played. */
-#ctlSheet{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+   and mouse, matching the way the game is actually played.
+
+   align-items is flex-start, not center, and that is the same fix as the character sheet's. A flex
+   item taller than its container is centred by being pushed off BOTH ends - so the heading and the
+   last row of binds were both unreachable at a short viewport, and the sheet scrolls to a middle that
+   is not the top of anything. flex-start keeps the top of the card at the top of the sheet and lets
+   `overflow:auto` do its job. Verified at 960x600, where centred clipped it and flex-start does not. */
+#ctlSheet{position:fixed;inset:0;z-index:20;display:none;align-items:flex-start;justify-content:center;
   background:rgba(6,8,12,.86);padding:20px;overflow:auto;}
 #ctlSheet.on{display:flex;}
 #ctlCard{background:#10141c;border:1px solid #2b3342;border-radius:6px;padding:18px 22px 20px;

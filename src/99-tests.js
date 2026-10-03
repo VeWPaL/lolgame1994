@@ -4215,6 +4215,102 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        The claim asserted here is the state, not the hit rate: the velocity component the wall is
        eating must be zero while it is being eaten, and only that component - a player sliding along a
        wall while moving on the other axis keeps the velocity that is still real. */
+  /* A BLINK'S TRAIL STAYS INSIDE THE ROOM AND MATCHES HOW FAR THE PLAYER ACTUALLY WENT.
+
+       The trail used to be six puffs laid along `BLINK_DIST` BEFORE the move, on the assumption the
+       blink completed. It does not complete when there is a wall in the way - `doBlink` moves the
+       player and then calls `clampPlayer()` - so every puff was placed where the player would have
+       reached had the wall not been there, and the VFX was drawn through the wall and out of the
+       play area. Measured, starting 30px from each wall:
+
+           before   6 puffs, 4 of them outside the room, worst by 86px, in all four directions
+           after    1-3 puffs, 0 outside, in all four directions
+
+       Two separate things were wrong and fixing only the first still failed:
+
+         - the trail ignored how far the player travelled, so a 17px nudge into a wall drew the same
+           140px streak as a full blink. Length is the only thing telling the player how far they
+           went, so it is now derived from the move that actually happened.
+         - `clampPlayer` ends with a deliberately loose outer bound (`ROOM_LEFT-40` to
+           `ROOM_RIGHT+40`) so a player can sit outside the wall line in a doorway. Using the clamped
+           position as the trail's end point therefore still put puffs 40px outside the room on the
+           left and bottom walls. The player keeps that overshoot for transitions; the VFX is clamped
+           to the room box instead, because a puff drawn outside the room is drawn over the wall.
+
+       Asserted as two separate claims because they fail separately: no puff outside the room, and
+       trail length proportional to distance travelled rather than constant. */
+  /* THE RUN SUMMARY DOES NOT PRINT THE SAME ROW TWICE, in any format.
+
+       The records block once gained "Bodies killed" and "Accuracy" to replace two rows that could
+       never change ("Fastest clear" and "Dungeons cleared" - nothing increments `records.fastest` or
+       `records.wins` any more, since a cleared boss room opens a way out instead of ending the run).
+       That fixed the unchangeable pair and created a new problem: the card already carried "Enemies
+       defeated" and an accuracy row, so the kill count printed twice and the accuracy printed twice in
+       two different formats - "42% (17/40)" up top and "42%" down below.
+
+       Asserted as uniqueness over the LABEL rather than as a fixed list, because a label check is what
+       catches the next accidental duplicate, and because the two accuracy rows had different labels'
+       worth of disagreement only in their VALUE format - the label 'Accuracy' was genuinely repeated,
+       which is the part a reader notices.
+
+       The third assertion is the load-bearing one for the future: the records block must not be left
+       empty by a well-meaning removal. The pair it originally replaced was unfixable - nothing
+       increments those two fields - and deleting it without replacing it would have turned a
+       permanently-zero record into no record at all. */
+  test('the run summary prints no row label twice',()=>{
+    const s={floor:3,floorTicks:sec(12),ticks:sec(200),explored:5,total:9,kills:42,dmgTaken:7,
+             shots:40,hits:17,weapon:'bolts',seed:'abc123',won:false,newDepth:false,newFastest:false,
+             newRooms:false};
+    const lay=summaryLayout(s);
+    const labels=lay.items.filter(it=>it.kind==='row'||it.kind==='seed').map(it=>it.label);
+    const dupes=labels.filter((l,i)=>labels.indexOf(l)!==i);
+    ok(dupes.length===0,'the summary prints '+(dupes.length?dupes.join(' and '):'')+
+       ' more than once ('+labels.length+' rows) - two numbers that must agree, formatted differently, '+
+       'on one card, with nothing to say whether they are meant to differ');
+    /* and the replaced pair must actually be gone, not merely relabelled */
+    ok(!labels.includes('Fastest clear'),'"Fastest clear" is back on the card, and `records.fastest` is '+
+       'never incremented by anything - it would print "not yet" on every summary forever');
+    ok(!labels.includes('Dungeons cleared'),'"Dungeons cleared" is back on the card, and `records.wins` '+
+       'is never incremented by anything');
+    /* every record row must be one a player can actually move */
+    const recs=labels.filter(l=>/deepest|best/i.test(l));
+    ok(recs.length>0,'the records block is empty - the unchangeable pair was removed and nothing '+
+       'replaced it');
+  });
+
+  test('a blink trail stays inside the room and scales with the distance actually covered',()=>{
+    const legs=[['right',ROOM_RIGHT-30,(ROOM_TOP+ROOM_BOTTOM)/2,'d'],
+                ['left', ROOM_LEFT+30, (ROOM_TOP+ROOM_BOTTOM)/2,'a'],
+                ['top',  (ROOM_LEFT+ROOM_RIGHT)/2,ROOM_TOP+30,   'w'],
+                ['bottom',(ROOM_LEFT+ROOM_RIGHT)/2,ROOM_BOTTOM-30,'s']];
+    let worstOutside=0, over=[], short=[];
+    for(const [label,sx,sy,k] of legs){
+      startGame(31337);
+      const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+      player.x=sx; player.y=sy; player.blinkCharges=2;
+      keys={}; keys[k]=true;
+      dashFX.length=0;
+      doBlink();
+      keys={};
+      const puffs=dashFX.filter(f=>f.mine);
+      const outside=puffs.filter(f=>f.x<ROOM_LEFT-1||f.x>ROOM_RIGHT+1||
+                                    f.y<ROOM_TOP-1||f.y>ROOM_BOTTOM+1);
+      worstOutside=Math.max(worstOutside,outside.length);
+      const trav=Math.hypot(player.x-sx,player.y-sy);
+      /* the trail's SPAN, not its puff count: a short blink must not draw a long streak */
+      const span=puffs.length>1?Math.hypot(puffs[puffs.length-1].x-puffs[0].x,
+                                          puffs[puffs.length-1].y-puffs[0].y):0;
+      over.push({label,travelled:+trav.toFixed(0),span:+span.toFixed(0),puffs:puffs.length});
+      if(span>trav+2) short.push(label+': span '+span.toFixed(0)+' over '+trav.toFixed(0)+' travelled');
+    }
+    ok(worstOutside===0,worstOutside+' blink trail puffs landed outside the room - the trail is drawn '+
+       'along the distance the player WOULD have covered had nothing stopped them, so it renders '+
+       'through the wall and over the play area');
+    ok(short.length===0,'the trail is longer than the blink in '+short.length+' of four directions ('+
+       short.join('; ')+') - a 17px nudge into a wall must not draw a 140px streak');
+    run=undefined;
+  });
+
   test('a player held against a wall reports no velocity into it',()=>{
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;

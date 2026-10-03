@@ -31,15 +31,65 @@ function doBlink(){
      Read once here rather than read live in the draw, because a trail that re-read the meter while it
      was still on screen would flicker up the whole ramp as the meter moved underneath it. */
   const mom=Momentum.level();
-  for(let i=0;i<6;i++){const t=i/5;dashFX.push({x:player.x+ux*BLINK_DIST*t,y:player.y+uy*BLINK_DIST*t,
-    life:DASH_TRAIL,mine:true,mom});}
-  // the position the enemies aim at stays put and eases across over ~0.4s, which is the reaction
-  // window a blink is supposed to buy. without it a gunner that was already tracking you gets a
-  // free intercept shot the instant you vanish
-  player.lagX=player.x; player.lagY=player.y;
+  /* THE TRAIL FOLLOWS WHERE THE PLAYER ACTUALLY ENDED UP, and it used to be six puffs laid along
+     `BLINK_DIST` regardless of whether the blink went that far.
+
+     `doBlink` moves the player by BLINK_DIST and then calls `clampPlayer()`, so a blink into a wall -
+     or into a corner, or short of a door - travels much less than the full 140px. The trail was laid
+     out BEFORE the move and on the assumption it completed, so every one of those puffs was placed
+     at the position the player would have reached had the wall not been there. The result was a VFX
+     drawn through the wall and out of the play area, which is what was reported.
+
+     It is also the wrong read on the move itself: a blink that covers 40px should not draw the same
+     140px of smoke as one that covers 140px, because the length of the trail is the only thing
+     telling the player how far they went. So the trail is laid out after the move, over the distance
+     actually covered.
+
+     Two things it still has to do:
+
+       - stay dense. Spacing the puffs over the travelled distance alone would make a short blink
+         drop all six puffs in a clump and a long one spread them thin, which is backwards - so the
+         spacing is capped, and a short blink gets a tight cluster rather than six overlapping copies
+         of the same sprite.
+       - never reach past the landing point. The interpolation runs to t=1 inclusive, so the last
+         puff sits exactly where the player arrived. */
+  const fromX=player.x, fromY=player.y;
   player.x+=ux*BLINK_DIST; player.y+=uy*BLINK_DIST;
   player.blinkCharges--;
   clampPlayer();
+  /* the puffs are laid after the clamp, over the distance that was actually covered. Computed from
+     the clamped position rather than from `ux*BLINK_DIST`, so a blink into a wall draws a short
+     trail and a blink stopped by a door gap draws what it covered.
+
+     BUT NOT FROM THE CLAMPED POSITION DIRECTLY, and the first version of this did exactly that and
+     was still wrong. `clampPlayer` ends with a deliberately loose outer bound - `Math.max(ROOM_LEFT-
+     40, Math.min(ROOM_RIGHT+40, ...))` - so a player can sit up to 40px outside the wall line in a
+     doorway, and a puff placed at that clamped position is 40px outside the play area. Measured:
+     a blink into the left or bottom wall left two puffs 40px outside the room, while the right and
+     top walls were clean because that fixture started from a different distance out.
+
+     So the trail is clamped to the room box, not to the player's own (looser) bounds. The player is
+     allowed the doorway overshoot for the sake of transitions; the VFX is not, because a puff drawn
+     outside the room is drawn over the wall. */
+  const endX=Math.max(ROOM_LEFT,Math.min(ROOM_RIGHT,player.x));
+  const endY=Math.max(ROOM_TOP,Math.min(ROOM_BOTTOM,player.y));
+  const trav=Math.hypot(endX-fromX,endY-fromY);
+  /* SPACING IS CAPPED so a short blink is a tight cluster rather than six puffs stacked on one
+     pixel, and a full-length blink is unchanged. 24px is roughly a body width: close enough that the
+     six read as a continuous streak, far enough that they do not all land on the same sprite. */
+  const puffs=Math.max(1,Math.min(6,Math.ceil(trav/24)));
+  for(let i=0;i<puffs;i++){
+    const t=puffs===1?1:i/(puffs-1);
+    dashFX.push({x:fromX+(endX-fromX)*t,y:fromY+(endY-fromY)*t,life:DASH_TRAIL,mine:true,mom});
+  }
+  /* THE POSITION THE ENEMIES AIM AT STAYS PUT, and it stays at the PRE-MOVE position - which is now
+     `fromX`/`fromY` rather than `player.x`, because the movement happens above so the trail can be
+     laid over the distance actually covered. Setting it to the landed position instead looks harmless
+     and is not: it makes the hitbox start easing out of where the player ended up, so a blink buys no
+     reaction window at all, and a gunner that was already tracking you gets a free intercept shot the
+     instant you vanish. That is the whole point of the lag, and there is a test pinning it.
+     The trail block above is the only thing that needed the move to happen first. */
+  player.lagX=fromX; player.lagY=fromY;
   checkDoorTransition();
   // Invulnerable for the whole travel, not just the first frame of it. BLINK_IFRAMES used to be a
   // flat 0.17s that began on the same tick as the jump, so a blink into a closing Brunch or past a

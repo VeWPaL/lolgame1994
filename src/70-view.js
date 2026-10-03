@@ -2069,11 +2069,18 @@ function summaryLayout(s){
      is not a record, and a permanent zero reads as "you have done nothing" rather than "this line is
      from a version that no longer exists".
 
-     What replaces them is what THIS run did, which is the question the rest of the card is answering:
-     how far you got, how much of the floor you saw, how many bodies you killed, and how well you shot.
-     Accuracy is shown as a percentage rather than as a ratio of two numbers the reader has to divide. */
-  row('Bodies killed',String(s.kills));
-  row('Accuracy',s.shots>0?Math.round(s.hits/s.shots*100)+'%':'-');
+     WHAT REPLACES THEM. The first attempt added "Bodies killed" and "Accuracy" - which fixed the
+     unchangeable pair and immediately created a different problem: both were already on the sheet
+     higher up, as "Enemies defeated" and as an accuracy row that also shows the raw hits/shots. The
+     card then printed the kill count twice and the accuracy twice, in two different formats, once as
+     "42% (17/40)" and once as "42%". Two numbers that must agree, formatted differently, on the same
+     card, is worse than either one alone: a reader comparing them has no way to tell whether they are
+     meant to differ.
+
+     So nothing is added here. The two rows that could never change are gone, the two rows that
+     replaced them turned out to be duplicates of rows already higher up, and what remains is four
+     records that all move and none of which appears twice. Accuracy and kills stay in the run
+     section, once each, in the format that carries the raw numbers with the percentage. */
 
   // the card is as tall as the list, plus the air at the top and the foot. Nothing about this number
   // is a design decision, which is the point.
