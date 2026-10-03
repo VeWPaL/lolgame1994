@@ -13,6 +13,7 @@
 
 param(
   [switch]$SkipCsharp,
+  [switch]$SkipJs,
   [switch]$Quiet
 )
 
@@ -160,12 +161,95 @@ if ($jsClaim.Success) { Note "   JS suite claimed as $($jsClaim.Groups[1].Value)
 if ($csClaim.Success) { Note "   C# suite claimed as $($csClaim.Groups[1].Value)" }
 Note "   (the run above is authoritative - if these disagree, CONVENTIONS.md is the wrong one)"
 
+# ---------------------------------------------------------------- 6. the JavaScript suite, RUN
+# This is the step the script existed without. For its whole life step 3 printed "open
+# http://127.0.0.1:8731/depths.html?test to read the list" and the verdict added that the suite
+# "still has to be read in the browser - this script cannot run it, because the suite executes at
+# page load and needs a real canvas."
+#
+# Every gap in this project traces back to that one admission. The suite drifted from 207 declared
+# to 211 actual without anything going red, because nothing ever compared the two. A character-sheet
+# layout bug and a pointer-mapping bug both lived for the entire life of the suite because they are
+# INVISIBLE AT 1280x720, and 1280x720 is what a developer gets. And the C# parity tables are
+# hand-transcribed from "read it out of the running JavaScript", which is exactly what you cannot do
+# unattended.
+#
+# So the suite is now run here, headlessly, and the count CONVENTIONS.md claims is asserted against
+# the run rather than printed beside it.
+#
+# IT RUNS AT MORE THAN ONE VIEWPORT, and that is the part that earns the step. A single window hides
+# a whole class of defect by construction: at 1280x720 the suite was 211/211 while at 960x600 - the
+# canvas's own design size - it was failing. The design size is in the list deliberately.
+#
+# PLAYWRIGHT IS REQUIRED FROM THE HERMES INSTALL, not vendored, so this adds no dependency to the
+# project and no package.json. If that path is missing the step reports itself SKIPPED and says why,
+# rather than reporting a pass it did not perform.
+Note ""
+Note "6. the JavaScript suite, run"
+if ($SkipJs) {
+  Note "   SKIPPED (-SkipJs)"
+} else {
+  $pw = Join-Path $env:LOCALAPPDATA 'hermes\hermes-agent\node_modules\playwright'
+  if (-not (Test-Path $pw)) {
+    Note "   SKIPPED - playwright not found at '$pw'."
+    Note "   This step is a REAL assertion. Without it the counts above are printed, not checked."
+  } else {
+    $runner = Join-Path $env:TEMP 'depths-suite.js'
+    $runnerBody = @"
+const pw=require('$($pw -replace '\\','/')');
+const vps=[[960,600],[1280,720],[1920,1080]];
+let claimedTotal=0;
+(async()=>{
+  let browser;
+  try{ browser=await pw.chromium.launch({channel:'msedge'}); }
+  catch(e){ console.log('LAUNCHFAIL '+e.message); process.exit(2); }
+  let worst=0, out=[];
+  for(const [w,h] of vps){
+    const p=await browser.newPage({viewport:{width:w,height:h}});
+    try{
+      await p.goto('http://127.0.0.1:8731/depths.html?test',{waitUntil:'load',timeout:60000});
+      await p.waitForFunction('window.__testResults!==undefined',{timeout:300000});
+      const r=await p.evaluate(()=>({pass:window.__testResults.pass,total:window.__testResults.total,
+        fails:window.__testResults.results.filter(x=>!x.ok).map(x=>x.name+' :: '+x.msg)}));
+      out.push(w+'x'+h+' '+r.pass+'/'+r.total+(r.fails.length?(' FAIL '+r.fails.length):''));
+      r.fails.forEach(f=>out.push('    '+f));
+      worst=Math.max(worst,r.total-r.pass);
+      if(r.total>claimedTotal) claimedTotal=r.total;
+    }catch(e){ out.push(w+'x'+h+' ERROR '+e.message.slice(0,120)); worst=999; }
+    await p.close();
+  }
+  await browser.close();
+  console.log(out.join('\n'));
+  console.log('WORSTFAILURES '+worst);
+  console.log('CLAIMEDTOTAL '+claimedTotal);
+})();
+"@
+    [System.IO.File]::WriteAllText($runner, ($runnerBody -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
+    $jsOut = & node $runner 2>&1 | Out-String
+    if ($jsOut -match 'WORSTFAILURES\s+(\d+)') {
+      $worst = [int]$Matches[1]
+      $claimedTotal = 0
+      if ($jsOut -match 'CLAIMEDTOTAL\s+(\d+)') { $claimedTotal = [int]$Matches[1] }
+      ($jsOut -split "`n" | Where-Object { $_.Trim() -ne '' -and $_ -notmatch 'CLAIMEDTOTAL' }) | ForEach-Object { Note "   $($_.Trim())" }
+      if ($worst -eq 0) {
+        Note "   the suite ran and every check passed at all three viewports"
+        if ($jsClaim.Success -and [int]$jsClaim.Groups[1].Value -ne $claimedTotal) {
+          Bad "CONVENTIONS.md claims $($jsClaim.Groups[1].Value) JS checks but the suite actually runs $claimedTotal - the document is asserting a number and the number is wrong"
+        }
+      } else {
+        Bad "the JavaScript suite: $worst failing check(s) at one or more viewports"
+      }
+    } else {
+      Bad "the JavaScript suite did not report a result - read it by hand: node $runner"
+      Note ($jsOut.Trim())
+    }
+  }
+}
+
 # ---------------------------------------------------------------- verdict
 Note ""
 if ($failures.Count -eq 0) {
-  Note "VERIFY: the mechanical checks passed."
-  Note "        The JavaScript suite still has to be read in the browser - this script cannot"
-  Note "        run it, because the suite executes at page load and needs a real canvas."
+  Note "VERIFY: all mechanical checks passed, and the JavaScript suite RAN."
   exit 0
 } else {
   Note ("VERIFY: " + $failures.Count + " problem(s).") -ForegroundColor Yellow
