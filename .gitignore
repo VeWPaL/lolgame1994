@@ -36,6 +36,12 @@ obj/
 # to git - which is exactly what happened to REPORT.md, written and then silently not committed.
 !REPORT.md
 
+# The port manifest. Untracked until 2026-10-03, by the same mechanism one line above: it was written
+# before the whitelist rule existed and nothing ever added it, so the file that exists to keep the
+# C# port honest was itself not under version control. It is the most load-bearing document in the
+# repo after CONVENTIONS.md and it was invisible to `git status` for its entire life.
+!PORTED.md
+
 # Scratch state for a session in progress. The start timestamp is written here at the beginning of
 # a working session so that a report can state how long it took WITHOUT relying on remembering to
 # note the time - an unattended session that ends in a power cut otherwise has no start time at all,
