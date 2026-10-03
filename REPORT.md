@@ -107,11 +107,27 @@ precisely what makes Strength sigils worth 3.5× to it — but it should be *cho
 run to floor 10 with a fresh Beam feels like a wall, this number is why, and the fix is a starting
 Strength floor rather than a nerf.
 
-### 5. Accessibility: AZERTY movement
+### 5. Accessibility: AZERTY movement — MEASURED THIS SESSION, still deliberately not applied
 
-Movement reads `e.key`, so on a French layout the key where QWERTY keeps A fires the **item**. The fix
-is four lines, deliberately not applied: a keybind screen is coming, and a half-migration now would
-mean writing the physical-key path and then replacing it.
+Movement reads `e.key.toLowerCase()` (80-ui.js:892), so the binding follows the KEY LABEL rather than
+the physical key. Measured by dispatching real `KeyboardEvent`s and watching the player move, 60 ticks
+held, px travelled:
+
+| physical key | `e.key` on a French layout | moved |
+|---|---|---|
+| where QWERTY keeps A (meant: move left) | `"q"` | **0px** |
+| where QWERTY keeps Q (meant: nothing) | `"a"` | **73px** |
+| ArrowLeft | `"ArrowLeft"` | 73px |
+
+So on AZERTY the movement key does nothing at all and the key to its right takes over movement — worse
+than the "fires the item" framing this item used to carry, because a non-QWERTY player does not get
+the wrong action, they get **no action**, and the arrow keys are the only reliable way to move left.
+
+The fix is `e.code` (`"KeyA"`), which is layout-independent. It is still deliberately not applied, and
+the reason is unchanged rather than renewed: a keybind screen is coming, and a half-migration now means
+writing the physical-key path and then replacing it. But the fix is no longer four lines against an
+unmeasured claim — it is a decision about whether the bind set becomes `code`-based before the rebind
+UI exists to populate it.
 
 ---
 
