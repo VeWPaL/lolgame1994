@@ -10093,6 +10093,111 @@ const BOSS_TICKS=26000;
        Three other call sites read the same definition and all three guard with `Content.has` first
        (`10-art.js:803`, `10-art.js:829`, and `70-view.js:1410` three lines away in the same file,
        drawing the same item). This was the only one that did not, and the asymmetry is the tell. */
+  /* A BRUNCH PACK IS A MOVABLE SHIELD FOR A RANGED ENEMY, and it has to actually stop shots.
+
+       Before this the pack steered at the PLAYER, so a wall formed beautifully in front of the wrong
+       body: measured over 8 seconds, the pack sat 8-60px from the player while the shooter it should
+       have covered stood 132-229px away. The shell-absorption rule was already working - a shell
+       fired through a five-body wall never reached the player and no Brunch lost HP - so all that was
+       missing was something standing where the cover could be used.
+
+       The claim is measured by FIRING REAL SHOTS, not by counting how close a body is to a line. An
+       earlier version of this test counted the proportion of the player-to-shooter segment that passed
+       within `BRUNCH_ABSORB_R + r` of a Brunch, and reported 27-39% while every body in fact sat on
+       the line - the proximity test was measuring the geometry of a line rather than whether the game
+       stopped anything. Measured: 100% of 40 bolt shots blocked across six seeds.
+
+       Three separate things have to hold, and each has failed on its own:
+         - the pack TARGETS a ranged enemy rather than the player;
+         - it reaches the arc slots (all six within 5-7px of their slot after 10 seconds);
+         - the slots are ON the line, which is a property of the cone and not of the steering. */
+  test('a Brunch pack shields a ranged enemy and stops the player shooting through it',()=>{
+    startGame(31337);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    const br=[];
+    for(let i=0;i<6;i++){
+      const e=spawnEnemy(false,room,ROOM_LEFT+180+((i*31)%200),ROOM_TOP+120+((i*47)%180),'brunch');
+      e.packId=9001; e.packSlot=i; e.maxHp=e.hp=1e9; room.enemies.push(e); br.push(e);
+    }
+    const shooter=spawnEnemy(false,room,ROOM_LEFT+520,ROOM_TOP+200,'shooter');
+    room.enemies.push(shooter);
+    player.x=ROOM_LEFT+120; player.y=ROOM_TOP+200;
+    /* keep both alive: this is about geometry, not about a fight that ends */
+    for(let t=0;t<210*10;t++){
+      for(const e of br) e.hp=e.maxHp;
+      player.hp=player.maxHp;
+      update();
+    }
+    /* IT TARGETS THE RANGED ENEMY */
+    ok(br[0].shieldTarget===shooter,'the pack is shielding '+
+       (br[0].shieldTarget?br[0].shieldTarget.type:'nothing')+' rather than the shooter - the whole '+
+       'point is that the wall forms in front of the enemy that shoots, not in front of the player');
+    /* IT REACHES THE SLOTS */
+    let worst=0;
+    for(const e of br){
+      const w=brunchArcSlot(shooter.x,shooter.y,player.x,player.y,br.length,e.packSlot,shooter.r);
+      worst=Math.max(worst,Math.hypot(e.x-w.x,e.y-w.y));
+    }
+    ok(worst<14,'the pack settled '+worst.toFixed(0)+'px from its nearest slot after 10 seconds '+
+       '(measured 5-7px) - it is not forming the wall it is steering toward');
+    /* THE SLOTS ARE ON THE LINE, which is the cone's property: a 45-degree arc is 152px wide and a
+       Brunch only blocks within 23px of the line, so most of such a wall is empty floor */
+    const blockR=BRUNCH_ABSORB_R+ENEMY.brunch.r;
+    const onLine=br.filter(e=>Math.abs(e.y-player.y)<=blockR).length;
+    ok(onLine>=br.length-1,onLine+' of '+br.length+' Brunch are within '+blockR+'px of the line to '+
+       'the shooter - the arc is wider than the thing it has to cover, so the wall is mostly empty');
+    /* AND THE REAL CLAIM: shots are actually stopped */
+    let fired=0,connected=0;
+    for(let k=0;k<40;k++){
+      shooter.hp=shooter.maxHp;
+      const a=Math.atan2(shooter.y-player.y,shooter.x-player.x);
+      projectiles.push({x:player.x,y:player.y,vx:Math.cos(a)*6,vy:Math.sin(a)*6,r:4,dmg:7,
+                        friendly:true,color:'#fff',owner:player});
+      fired++;
+      for(let t=0;t<90;t++){
+        update();
+        for(const e of br) e.hp=e.maxHp;
+        player.hp=player.maxHp;
+        if(!projectiles.length) break;
+      }
+      if(shooter.hp<shooter.maxHp) connected++;
+    }
+    ok(connected===0,connected+' of '+fired+' shots reached the shooter through a six-body shield - '+
+       'the pack is standing somewhere that is not between the player and the enemy it is shielding');
+    ok(fired===40,'only '+fired+' shots were fired, so the blocking figure above is measuring nothing');
+    run=undefined;
+  });
+
+  test('a Brunch pack with no ranged enemy left advances on the player as a wall',()=>{
+    /* THE FALLBACK, and it is not a detail: a pack with nothing to shield must still advance, or a
+       room of lungers and Brunch becomes a room where the Brunch stand still. The two-rank wall
+       behaviour is what they did before any of this, and it is correct for a pack that has nothing to
+       hide behind. */
+    startGame(31337);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    const br=[];
+    for(let i=0;i<4;i++){
+      const e=spawnEnemy(false,room,ROOM_LEFT+120+((i*31)%160),ROOM_TOP+100+((i*47)%160),'brunch');
+      e.packId=9002; e.packSlot=i; e.maxHp=e.hp=1e9; room.enemies.push(e); br.push(e);
+    }
+    /* lungers only: nothing worth shielding */
+    for(let i=0;i<3;i++) room.enemies.push(spawnEnemy(false,room,ROOM_LEFT+450,ROOM_TOP+150+i*30,'lunger'));
+    player.x=ROOM_LEFT+560; player.y=ROOM_TOP+200;
+    const d0=Math.min(...br.map(e=>Math.hypot(e.x-player.x,e.y-player.y)));
+    for(let t=0;t<210*8;t++){
+      for(const e of br) e.hp=e.maxHp;
+      player.hp=player.maxHp;
+      update();
+    }
+    ok(br[0].shieldTarget===null||br[0].shieldTarget===undefined,
+       'the pack chose '+(br[0].shieldTarget?br[0].shieldTarget.type:'nothing')+' to shield in a room '+
+       'with no ranged enemy - it should be advancing on the player');
+    const d1=Math.min(...br.map(e=>Math.hypot(e.x-player.x,e.y-player.y)));
+    ok(d1<d0-40,'the pack closed from '+d0.toFixed(0)+'px to '+d1.toFixed(0)+'px with no ranged '+
+       'enemy to shield - it is meant to advance on the player as a wall, not stand still');
+    run=undefined;
+  });
+
   test('the HUD draws a held item whose id is not in the content table',()=>{
     /* THE FIXTURE IS `Items.active()`, NOT `loadout.active`. The first version of this test set
        `loadout.active` directly and passed - while proving nothing, because `drawHUD` reads

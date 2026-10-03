@@ -312,6 +312,184 @@ const BRUNCH_WALL_GAP=19,     // along the wall, between columns. Brunch r is 8,
       BRUNCH_WALL_RANK=17,    // between the two ranks, along the approach. Also above 2*r
       BRUNCH_WALL_MIN=3;      // a pack smaller than this is a knot, not a wall, and walks straight in
 
+/* BRUNCH AS A MOVABLE SHIELD: the arc, the target, and the commitment.
+
+   The two-rank wall above is a good formation aimed at the wrong thing. Measured, an eight-body pack
+   with a shooter and a gunner in the room, eight seconds: the pack held together well (mean nearest
+   neighbour 15.8-19.3px, spread across its own centroid 20-32px) and sat 8-60px from the PLAYER while
+   the shooter stood 132-229px away untouched. So it was never a formation failure - it was a wall
+   built in front of the wrong body, which is the same thing as no wall at all.
+
+   The shell-absorption rule above already does its half of the job and was verified working: a shell
+   fired from a shooter through a five-body wall never reached the player and no Brunch lost HP. The
+   cover exists. Nothing was standing where it could be used.
+
+   THE ARC, and the geometry is the whole of it. Slots lie on a minor arc CENTRED ON THE TARGET'S
+   HITBOX, not on a line through the pack centroid, because a shield that is centred on itself drifts
+   off the thing it is shielding the moment the target moves. Radius is solved from the pack size so
+   that every pack fits inside the same angular window:
+
+       arc length  =  (n-1) * BRUNCH_ARC_GAP
+       radius      =  arc length / (2 * sin(halfAngle))
+
+   which is the chord-to-arc relation inverted - `n` points spaced `gap` apart along an arc of total
+   angle `2*halfAngle` subtend a radius of exactly that. So the cone stays fixed at 45-60 degrees for
+   every pack size and the pack grows outward along it, rather than a fixed radius that a big pack
+   cannot fit into and a small pack wastes.
+
+   HALF-ANGLE IS CLAMPED TO 45-60 DEGREES. Narrower than 45 and the wall is a post the player walks
+   around in one step; wider than 60 and it stops being a shield facing the player and becomes a crowd
+   wrapping the target, which is the mob this replaces. A pack of two cannot subtend 45 degrees without
+   standing absurdly far out, so small packs sit at the near end of the band - the clamp is what keeps
+   every size usable rather than one size correct.
+
+   THE TARGET IS COMMITTED, not re-chosen. A pack that re-picks its shield whenever a nearer shooter
+   walks past becomes a thing that oscillates between two enemies, and the player reads that as noise
+   rather than as cover. The choice is made when the pack has no target, and it holds until either the
+   shield or the target dies - at which point the pack picks again and the new wall is somewhere else
+   on screen, which is a legible event rather than a twitch.
+
+   ONLY RANGED ENEMIES COUNT: shooter, gunner and boss. A lunger is not something a Brunch can hide
+   anything behind, because it is already on top of the player - shielding it would put the pack between
+   the player and a threat that does not threaten from range, which is just a wall in the way.
+
+   WITH NO RANGED ENEMY IN THE ROOM the pack has nothing to shield and advances on the player as a
+   wall, which is the two-rank behaviour it already had. That fallback matters: a pack with nothing to
+   cover milling around a corner would be strictly worse than the bum-rush it replaces. */
+const BRUNCH_ARC_FLOOR=9*Math.PI/180,    // the narrowest a shield may be: enough to be an obstacle
+                                           // rather than a post, and roughly one body's width
+      BRUNCH_ARC_CEIL=60*Math.PI/180,    // the widest: past this it wraps the target and reads as the
+                                           // mob this replaces, which is the failure this prevents
+      BRUNCH_ARC_GAP=19,                    // along the arc between slots. Same job as WALL_GAP, on a curve
+      BRUNCH_SHIELD_R=118,                  // the MINIMUM stand-off. Below this the wall is inside the
+                                            // target's own hitbox and stops being cover; above it the
+                                            // wall is placed proportionally to the player-target gap
+      BRUNCH_SHIELD_FRAC=0.55,             // where on that gap the wall sits. 0.55 is a little over
+                                            // half way from the target to the player
+      BRUNCH_SHIELD_MIN=2;                  // fewer than two bodies cannot cover anything
+
+/* THE ARC SOLVER: a pure function of (target, player, pack size, slot) returning a slot position, so
+   it can be tested with no room, no player and no running fight.
+
+   THE SHAPE. Slots lie on a minor arc centred on a point `BRUNCH_SHIELD_R` out from the target's
+   centre along the bearing to the player - that is, on the target's near FACE. The arc is perpendicular
+   to that bearing, so it bows across the line the player is shooting down and opens away from the
+   target. Centring on the target's own centre instead would put half the shield behind it, which stops
+   being cover the moment anything moves.
+
+   THE CONE IS FIXED AND THE RADIUS IS PACK-DEPENDENT, which is the requirement. `n` points spaced
+   `gap` apart along an arc subtending half-angle `h` subtend a chord of `2*r*sin(h)`, so for a pack
+   whose widest rank is `w = (cols-1)*gap` across, the half-angle that fits it at radius `r` is
+   `asin(w / (2r))`. Solving the other way - radius from half-angle - is what makes the CONE the fixed
+   quantity and the radius grow with the pack, rather than a fixed radius a large pack cannot fit inside
+   and a small pack wastes.
+
+   So the half-angle is the pack's own (bigger pack, wider arc), clamped into the 45-60 degree band.
+   Below 45 the wall is a post the player steps around in one move; above 60 it stops being a shield
+   facing the player and becomes a crowd wrapping the target, which is the mob this replaces. A pack of
+   two cannot subtend 45 degrees without standing absurdly far out, so small packs sit at the narrow end
+   of the band and the clamp is what keeps every size usable rather than one size correct.
+
+   The offset from the centreline is then `sin(half) * radius` - the chord, not the arc length, because
+   what matters is how much WIDTH the wall subtends across the player's line of sight. The slots are
+   placed on that chord, which bows them onto a circle of `radius` centred behind the target: a chord
+   rather than a straight line, so the ends of the wall are further from the player than the middle.
+   That is the difference between a shield and a barricade, and it is the whole reason for the curve.
+
+   TWO RANKS ON THE CURVE. Rank 0 is the near arc, rank 1 stands `BRUNCH_WALL_RANK` further out along
+   the SAME bearing, which keeps the property the two-rank wall was built for: a shot that finds the
+   gap in the front rank does not find a body directly behind it. Rank 1 shares the target's bearing,
+   so both ranks present the same face to the player rather than the back rank splaying outward.
+
+   `null` for a pack too small to cover anything, which is what sends it back to advancing on the player
+   instead of forming a degenerate one-body arc. */
+function brunchArcSlot(tx,ty,px,py,n,slot,tgtR){
+  if(n<BRUNCH_SHIELD_MIN) return null;
+  /* bearing target -> player. Everything is measured along it. */
+  const dx=px-tx, dy=py-ty, d=Math.hypot(dx,dy)||1;
+  const ux=dx/d, uy=dy/d;                    // unit vector, target toward player
+  const cols=Math.ceil(n/2);
+  const rank=slot%2;
+  const col=((slot/2)|0)-((cols-1)/2);       // symmetric about the centreline, in half-steps
+  /* THE STAND-OFF IS A FRACTION OF THE GAP, NOT A CONSTANT, and the constant was badly wrong.
+
+     `BRUNCH_SHIELD_R=118` sounds like a reasonable place for a shield to stand. It is not, because
+     the thing it has to fit between is the distance from the player to the enemy being shielded - and
+     that is not a fixed quantity. It is whatever the fight has produced so far, and it gets SMALL: a
+     player who closes on a shooter is inside 118px inside a second.
+
+     Measured before this was fixed: player 170,330 and shooter 334,330 is a 164px gap, and the shield
+     formed at radius 118 - which is BEHIND the player. The wall was correctly built, correctly
+     centred on the target and correctly angled, and it was on the wrong side of the person it was
+     supposed to be protecting. Line of sight was blocked 27-39% of the way rather than being closed.
+
+     So the stand-off is a share of the gap: far enough out to be a substantial obstacle, never so far
+     out that it overshoots. At 0.55 the wall sits a little over half way from the target to the
+     player, which leaves the player room to reposition around it rather than being sealed behind a
+     wall they cannot get past - and at close range it converges on the target rather than passing
+     through the player to stand somewhere unreachable.
+
+     Measured after: player 170,330 and shooter 334,330 is a 164px gap, so the wall forms at 90px from
+     the shooter - that is 80px from the player, well inside the room between them, instead of 118px
+     which put it behind the player's own position. */
+  const gap=Math.max(BRUNCH_SHIELD_R*0.35,d);
+  const radius=Math.min(d*BRUNCH_SHIELD_FRAC, d-ENEMY.brunch.r-2)+(rank?BRUNCH_WALL_RANK:0);
+  /* THE CONE IS SIZED TO THE THING BEING COVERED, and the 45-degree floor is GONE.
+
+     The wall was specified as a minor arc subtending 45-60 degrees, and that shape is what it took -
+     but measured against a shooter it was mostly empty:
+
+         pack   wall width   slots actually blocking a 23px line   % of the wall doing anything
+           3       140px                    0                              0%
+           6       152px                    2                             33%
+          12       152px                    4                             33%
+
+     A Brunch stops a shell within `BRUNCH_ABSORB_R + r` = 23px of the line, so a 152px arc spends most
+     of its bodies 60px off the shot path: a wall wide enough to walk around and too thin to block
+     anything. The floor was the cause. A shooter's hitbox at the measured 164px gap subtends 22.8
+     degrees, so `max(45, 22.8)` was always 45 - the floor could never lose, whatever the target.
+
+     So the cone is the target's own apparent width, plus one body's margin either side, and the only
+     remaining limit is the 60-degree ceiling - which stops a large boss at close range from wrapping
+     into a mob, which is the thing this whole change exists to remove.
+
+     The arc keeps its 45-60 degree CHARACTER for a large target, because a Warden across the room
+     genuinely does present that much width. The difference is that it is now derived rather than
+     assumed, so a small enemy at close range gets a shield sized to it rather than a barricade with
+     three useful pixels. */
+  const apparent=Math.atan2((tgtR||12)+BRUNCH_ARC_GAP*2,Math.max(1,d-radius));
+  const half=Math.max(BRUNCH_ARC_FLOOR,Math.min(BRUNCH_ARC_CEIL,apparent));
+  /* THE SLOT'S POSITION ON THE ARC, and this is where the pack-size dependence actually lives.
+
+     The cone is the target's apparent width - a fixed thing, the same for a 6-pack and a 12-pack. What
+     changes with pack size is how many bodies have to FIT ALONG it, and the original `frac = col /
+     ((cols-1)/2)` spread them to the cone's edges regardless of whether they fit there:
+
+         pack   wall width   slots blocking a 23px line
+           3       121px                    0
+           6       142px                    2
+          12       142px                    4
+
+     The width barely moved with pack size, which is the tell: bodies were being placed past the end
+     of the wall rather than along it. 12 bodies on a wall that 6 bodies already overran means half
+     the pack was standing in empty floor beside its own shield.
+
+     So the columns are spaced along the cone at `BRUNCH_ARC_GAP` and CLIPPED to the cone's own arc
+     length - and the surplus stacks BEHIND the front rank at the same angle instead of sliding
+     outward. A shield that is two deep in the middle and thin at the ends is still a shield; one that
+     is a single file with six stragglers beside it is a queue. */
+  const arcLen=2*half*radius;
+  const maxAlong=Math.max(0,arcLen/2-BRUNCH_ARC_GAP*0.5);
+  const rawAlong=col*BRUNCH_ARC_GAP;
+  const along=Math.max(-maxAlong,Math.min(maxAlong,rawAlong));
+  /* rank 1 sits behind rank 0 at the same angle, so surplus bodies deepen the wall rather than
+     widening it. The second rank repeats the angle because it is deliberately the same face. */
+  const ang=along/Math.max(1,radius);
+  const ca=Math.cos(ang), sa=Math.sin(ang);
+  const qx=-uy, qy=ux;                        // perpendicular to the bearing
+  return {x:tx+ux*radius*ca+qx*radius*sa, y:ty+uy*radius*ca+qy*radius*sa};
+}
+
 
 /* A lunger does not walk at you. It closes the distance, stops, TELLS you where it is going, and
    then commits to a straight line at that point. Every number here exists because of a specific way

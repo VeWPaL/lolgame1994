@@ -670,6 +670,40 @@ function update(){
   }
   for(const k in packC){ const c=packC[k]; c.x/=c.n; c.y/=c.n; }
 
+  /* THE PACK'S SHIELD TARGET, chosen once and committed to.
+
+     A pack picks the nearest RANGED enemy in the room - shooter, gunner or boss - and holds that
+     choice until either the pack or its target dies. The commitment is the point: a pack that
+     re-picked whenever a nearer shooter walked past would swing between two enemies, and a wall that
+     moves is not a wall, it is noise the player has to learn to ignore.
+
+     ONLY RANGED. A lunger is not cover for anything, because it is already on top of the player;
+     shielding one would put a wall between the player and a threat that does not threaten from range.
+
+     The target is stored as a live body reference, not as an id or a position, so the expiry test is
+     `hp <= 0` and a target removed from the room - which is how bodies die - retires it correctly. A
+     stored id would dangle and the pack would walk to a point where nothing is.
+
+     `alive` is the guard against that: a body can be spliced out of the room by a caller that never
+     touches its hp, and a stale reference would point at a corpse the pack keeps shielding. */
+  const RANGED={shooter:1,gunner:1,boss:1};
+  const pickShield=(c)=>{
+    let best=null,bestD=Infinity;
+    for(const o of r.enemies){
+      if(o.hp<=0||!RANGED[o.type]) continue;
+      const d=(o.x-c.x)*(o.x-c.x)+(o.y-c.y)*(o.y-c.y);
+      if(d<bestD){ bestD=d; best=o; }
+    }
+    return best;
+  };
+  for(const e of r.enemies){
+    if(e.type!=='brunch'||e.packId===undefined) continue;
+    const c=packC[e.packId];
+    if(!c) continue;
+    if(!e.shieldTarget||e.shieldTarget.hp<=0||!r.enemies.includes(e.shieldTarget))
+      e.shieldTarget=pickShield(c);
+  }
+
 
 
 
@@ -766,7 +800,22 @@ function update(){
              spends itself on contact the way a Brunch always has. */
           const pc=e.packId!==undefined?packC[e.packId]:null;
           let mdx=edx,mdy=edy;
-          if(pc&&pc.n>=BRUNCH_WALL_MIN){
+          /* A PACK WITH A SHIELD TARGET FORMS THE ARC IN FRONT OF THAT TARGET, and this branch comes
+             FIRST - it is the whole point of the change. Previously every pack steered at the player,
+             so a wall formed beautifully in front of the wrong body: measured over 8 seconds, the
+             pack sat 8-60px from the player while the shooter it should have been covering stood
+             132-229px away. The shell-absorption rule already worked (verified: a shell through a
+             five-body wall never reached the player and no Brunch lost HP), so all that was missing
+             was something standing where the cover could be used.
+
+             With no ranged enemy in the room the pack falls through to the two-rank wall below, which
+             is the advance-on-the-player behaviour it always had. A pack with nothing to cover milling
+             around a corner would be strictly worse than the bum-rush it replaces. */
+          const tgt=e.shieldTarget;
+          if(tgt&&tgt.hp>0&&pc&&pc.n>=BRUNCH_SHIELD_MIN){
+            const slotPt=brunchArcSlot(tgt.x,tgt.y,player.x,player.y,pc.n,e.packSlot||0,tgt.r);
+            if(slotPt){ mdx=slotPt.x-e.x; mdy=slotPt.y-e.y; }
+          } else if(pc&&pc.n>=BRUNCH_WALL_MIN){
             // the approach vector, pack centre to player, IS the wall's normal
             const ndx=hx-pc.x, ndy=hy-pc.y, nd=Math.hypot(ndx,ndy)||1;
             const ux=ndx/nd, uy=ndy/nd;
