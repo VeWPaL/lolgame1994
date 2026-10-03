@@ -131,3 +131,36 @@ mean writing the physical-key path and then replacing it.
 **Not recommended, and why:** refactoring the O(P×N) projectile collision. It is measured at 8.7% of
 frame budget at a body count (`DEPTH_BODY_CAP=28`) the game forbids. Optimising something that is not
 slow is how real slowdowns get introduced.
+
+---
+
+# Queued fixes, in the order they were raised
+
+Two of these were raised after the audit above and are not in it.
+
+1. **Pitch-jitter feedback: `run.pitch` is written and never read.** The audio layer sets a pitch
+   multiplier on damage and the momentum meter; nothing consumes it. Either wire it to the SFX or
+   delete the field. Worth deciding which — a written-but-unread tuning field is the shape of thing
+   that quietly rots into a false belief about what the game does.
+
+2. **The boss volley has no tell.** `stepBoss` solves the intercept and sets `castAim` for the volley
+   exactly as a gunner does, but a boss is not a gunner: at Warden scale a shot you cannot read is a
+   shot you cannot answer. The gunner's tell is the model to copy — aim committed at cast start,
+   visible before the shell leaves. Measured first, like everything else here: how long the volley
+   takes to arrive, and whether the player has any window at all at the range a Warden is fought at.
+
+3. **`saveRecords`' empty `catch`.** A failed write leaves records half-written with no report. Low
+   severity — localStorage rarely fails — but a swallowed exception here means a lost run record
+   with nothing in the log to explain it.
+
+4. **Three tests that cannot fail.** From the audit, not yet re-verified line by line.
+
+5. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
+   code no longer uses. Several were fixed in passing during the Brunch and hit-rate work; the rest
+   are unaudited.
+
+**The rule for all of these: measure first.** Every one of them was found by measurement rather than
+by reading, and roughly half of what looked like a bug during this session turned out to be a fixture
+that was lying — a body in a room the tick never walks, a player teleported instead of driven through
+the real input path, a probe comparing against the sprite origin rather than the hitbox. A probe that
+cannot fail is worse than no probe, because it produces confident nonsense.

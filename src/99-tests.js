@@ -4427,6 +4427,158 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     run=undefined;
   });
 
+  /* A PACK SWITCHES TO THE CHASE WHEN THE ENEMY IT WAS GUARDING DIES, and the whole of this test is
+       built around the fixture traps that hid the bug for a long time.
+
+       The reported symptom was "when the enemy being guarded dies, the Brunch do not activate the
+       chase". Measured across six GENERATED rooms, the transition itself is fine:
+
+           rooms where the pack guarded the shooter we killed   4 of 6
+             guard count before      7, 5, 6, 4   (every body)
+             guard count after       0, 0, 0, 0   (cleared on the same tick)
+             time to 90% chase speed  62-67ms
+             still guarding a dead body  0
+
+       The two rooms that appeared to fail were both rooms with a SECOND shooter, and in both the
+       pack had been guarding the other one - so killing the body this test happened to pick left it
+       guarding a live enemy 153px away at 0.25 speed. Which is correct, and looks exactly like the
+       bug. That is why the assertion below kills the body the pack is ACTUALLY guarding rather than
+       a body the fixture chose.
+
+       Two fixture traps, both of which produced confident nonsense before this test existed:
+
+         - a body spawned into a room the tick is not walking is NEVER TICKED. `currentRoom()` is the
+           room the PLAYER is in, so a detached scratch room full of enemies reports "nothing is
+           happening" forever. Every probe that built its own room shared this.
+         - `spawnEnemy` RETURNS a body and does not add it, so a hand-built pack that forgets the push
+           is simply not there.
+
+       This test uses currentRoom() and pushes what it builds. */
+  /* A PACK RELEASES A TARGET THE PLAYER HAS WALKED AWAY FROM, and does not immediately re-take it.
+
+       The pack guards a FIGHT, not a body. `stale` used to ask only three questions - null, dead, gone
+       from the room - so a LIVE shooter in the room always passed and the pack held its commitment
+       indefinitely. That is what the reported symptom turned out to be, in the one case where it is a
+       bug at all: measured in a real fight, a shooter alive at (402,330) with the player at (63,373)
+       kept five bodies at the 0.72 shield speed for four seconds with the distance to the player
+       frozen at 226px.
+
+       Two halves, because they fail separately and the second is invisible without the first:
+
+         - BRUNCH_GUARD_LEASH releases a target further than 420px from the player. Measured against a
+           room 700x450 (diagonal 832), so the leash is reachable in normal play and is not a
+           corridor-only rule.
+         - BRUNCH_GUARD_RELEASE stops the released target being re-acquired for 0.4s. Without it the
+           leash fires and then undoes itself: measured, the pack walked out at 0.72, re-acquired the
+           same shooter 241px away on a later scan, and returned to being a wall 155px from the player
+           it had just left.
+
+       Asserted as both halves plus the commitment that must SURVIVE all of this: a target the player
+       is still fighting is never released, because a pack that gives up on every small repositioning
+       is worse than one that never gives up. */
+  test('a Brunch pack releases a target the player has walked away from, and holds on to one they have not',()=>{
+    startGame(31337);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    const br=[];
+    for(let i=0;i<6;i++){
+      const e=spawnEnemy(false,room,ROOM_LEFT+200+((i*29)%170),ROOM_TOP+110+((i*51)%200),'brunch');
+      e.packId=9401; e.packSlot=i; e.maxHp=e.hp=1e9; room.enemies.push(e); br.push(e);
+    }
+    const shooter=spawnEnemy(false,room,(ROOM_LEFT+ROOM_RIGHT)/2,ROOM_TOP+120,'shooter');
+    room.enemies.push(shooter);
+    /* ENGAGED: the player is in the middle of the pack-to-shooter line */
+    player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=ROOM_BOTTOM-140; player.maxHp=player.hp=1e9;
+    for(let t=0;t<210*6;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
+    ok(br.every(e=>e.shieldTarget===shooter),'the pack is not guarding the shooter while the player is '+
+       'in the fight ('+(br[0].shieldTarget?br[0].shieldTarget.type:'nothing')+', at '+
+       Math.round(Math.hypot(shooter.x-player.x,shooter.y-player.y))+'px, leash '+
+       BRUNCH_GUARD_LEASH+') - the commitment does not survive ordinary engagement');
+    /* DISENGAGED: the player crosses to the corner OPPOSITE the shooter. Room is 700x450, so the
+       diagonal from a shooter at top-centre to the bottom corner is ~430px and to the FAR bottom
+       corner opposite it is more - the leash is 420, so the position has to be chosen against the
+       measured geometry or the assertion is testing nothing. An earlier version of this put the
+       player at (ROOM_RIGHT-30, ROOM_TOP+30), which is only 341px from a top-centre shooter: inside
+       the leash, so the pack correctly kept guarding and the test reported the feature as broken. */
+    player.x=ROOM_RIGHT-40; player.y=ROOM_BOTTOM-40;
+    const sep=Math.round(Math.hypot(shooter.x-player.x,shooter.y-player.y));
+    let releasedAt=-1, reacquiredAt=-1;
+    for(let t=1;t<=210*3;t++){
+      for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp;
+      update();
+      const held=br.filter(e=>e.shieldTarget===shooter).length;
+      if(releasedAt<0&&held===0) releasedAt=t;
+      if(releasedAt>0&&reacquiredAt<0&&held>0&&t<releasedAt+BRUNCH_GUARD_RELEASE) reacquiredAt=t;
+    }
+    ok(releasedAt>0,'the pack still holds the shooter '+BRUNCH_GUARD_LEASH+
+       ' ticks after the player walked away (separation '+sep+'px, leash '+BRUNCH_GUARD_LEASH+
+       ') - it is guarding a fight nobody is having');
+    ok(reacquiredAt<0,'the pack re-acquired the target it had just released, at tick '+
+       reacquiredAt+' of a '+BRUNCH_GUARD_RELEASE+'-tick cooldown - the leash fires and then undoes '+
+       'itself, which reads as a stutter rather than a decision');
+    /* and it must be able to come back: after the cooldown expires and the player returns, the pack
+       picks the fight up again. A leash that permanently disarms the pack is not a leash. */
+    player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=ROOM_BOTTOM-140;
+    let backAt=-1;
+    for(let t=1;t<=210*4&&backAt<0;t++){
+      for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp;
+      update();
+      if(br.filter(e=>e.shieldTarget===shooter).length===br.length) backAt=t;
+    }
+    ok(backAt>0,'the pack never re-acquired the shooter after the player came back into the fight - a '+
+       'leash that permanently disarms the pack is a leash that deleted the mechanic');
+    run=undefined;
+  });
+
+  test('a Brunch pack switches to the chase when the enemy it was guarding dies',()=>{
+    let checked=0;
+    for(const seed of [1,2,3,11,22,33,44]){
+      startGame(seed);
+      const room=currentRoom();
+      room.enemies.length=0; projectiles.length=0;
+      const br=[];
+      for(let i=0;i<6;i++){
+        const e=spawnEnemy(false,room,ROOM_LEFT+200+((i*29)%170),ROOM_TOP+110+((i*51)%200),'brunch');
+        e.packId=9300+seed; e.packSlot=i; e.maxHp=e.hp=1e9; room.enemies.push(e); br.push(e);
+      }
+      const shooter=spawnEnemy(false,room,(ROOM_LEFT+ROOM_RIGHT)/2,ROOM_TOP+120,'shooter');
+      room.enemies.push(shooter);
+      /* the player stands BETWEEN the pack and the thing it is escorting - the wall only forms if
+         the guarded enemy is inside BRUNCH_GUARD_LEASH of the player, and a player parked in a
+         corner puts every enemy outside it */
+      player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=ROOM_BOTTOM-140;
+      player.maxHp=player.hp=1e9;
+      for(let t=0;t<210*6;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
+      /* KILL THE BODY THE PACK IS GUARDING, which is not necessarily the one the fixture spawned:
+         with more than one ranged enemy the pack takes the nearest, and killing any other leaves it
+         faithfully guarding a live target - correct, and indistinguishable from the bug by eye. */
+      const guarded=br.filter(e=>e.shieldTarget).map(e=>e.shieldTarget)[0];
+      if(guarded!==shooter||!br.every(e=>e.shieldTarget===shooter)){
+        // a room where the pack chose differently: record and move on rather than assert noise
+        continue;
+      }
+      checked++;
+      shooter.hp=0;
+      const ix=room.enemies.indexOf(shooter); if(ix>=0) room.enemies.splice(ix,1);
+      let t90=-1;
+      for(let t=1;t<=210*4;t++){
+        for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp;
+        update();
+        if(t90<0&&Math.hypot(br[0].vx||0,br[0].vy||0)>=BRUNCH_RUN*0.9) t90=t;
+      }
+      ok(br.every(e=>!e.shieldTarget),'after the guarded shooter died, '+
+         br.filter(e=>e.shieldTarget).length+' of '+br.length+' bodies are still holding a target - '+
+         'the pack did not release the corpse');
+      ok(br.every(e=>!e.shieldTarget||e.shieldTarget.hp>0),'a body is guarding something with hp<=0, '+
+         'which means the stale-link guard failed and the pack is shielding a body it cannot see');
+      ok(t90>0&&t90<=60,'the pack took '+(t90>0?t90+' ticks':'more than 4 seconds')+
+         ' to reach 90% of chase speed after its target died (measured 10-14 ticks, 48-67ms) - it is '+
+         'not switching to the chase');
+    }
+    ok(checked>=3,'only '+checked+' of 7 seeds produced a pack guarding the shooter this test kills, '+
+       'so the transition is barely being exercised - the fixture is drifting away from the real case');
+    run=undefined;
+  });
+
   test('a Brunch wall stands close to the enemy it covers, not out on the player',()=>{
     const fracs=[];
     for(const seed of [11,22,33]){
@@ -7997,7 +8149,14 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       room.enemies.push(e); pack.push(e);
     }
     const e=pack[0];
-    const shooter=spawnEnemy(false,room,ROOM_LEFT+600,ROOM_TOP+420,'shooter');
+    /* The guarded shooter has to be INSIDE the player's fight, or the pack correctly declines to
+       guard it. This fixture had the shooter at (600,420) and the player at (100,420) - 500px apart,
+       beyond BRUNCH_GUARD_LEASH - so it was asserting that a pack would form a wall around a shooter
+       the player had no route to, which is precisely the behaviour the leash was added to stop. It
+       passed for the same reason the live game looked stuck: the pack was faithfully guarding an
+       argument nobody was having.
+       340px is inside the leash and still far enough for the wall to be a wall. */
+    const shooter=spawnEnemy(false,room,ROOM_LEFT+440,ROOM_TOP+420,'shooter');
     room.enemies.push(shooter);
     player.x=ROOM_LEFT+100; player.y=ROOM_TOP+420;
     /* start from rest in VELOCITY while already at speed, so what is measured is the body's momentum
