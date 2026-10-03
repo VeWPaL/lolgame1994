@@ -149,18 +149,36 @@ Two of these were raised after the audit above and are not in it.
    visible before the shell leaves. Measured first, like everything else here: how long the volley
    takes to arrive, and whether the player has any window at all at the range a Warden is fought at.
 
-3. **`saveRecords`' empty `catch`.** A failed write leaves records half-written with no report. Low
+3. **Enemy mix per floor, and therefore how often an escort encounter happens.** 32.8% of generated
+   rooms contain both a Brunch pack and a ranged enemy, which is the shield mechanic appearing in real
+   play roughly one room in three. That is a floor-1 number on the current ladder, and the ladder has
+   no per-floor enemy roster to speak of — every floor draws from the same `areaMix`. When the
+   per-floor enemy types are elaborated, decide this factor deliberately rather than letting it
+   emerge: the number to choose is what share of rooms *should* pair a pack with something worth
+   guarding, per floor. Higher on floors where the new types are ranged, lower where they are not —
+   a pack escorting a lunger is a crowd, not a wall.
+
+4. **`saveRecords`' empty `catch`.** A failed write leaves records half-written with no report. Low
    severity — localStorage rarely fails — but a swallowed exception here means a lost run record
    with nothing in the log to explain it.
 
-4. **Three tests that cannot fail.** From the audit, not yet re-verified line by line.
+5. **Three tests that cannot fail.** From the audit, not yet re-verified line by line.
 
-5. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
+6. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
    code no longer uses. Several were fixed in passing during the Brunch and hit-rate work; the rest
    are unaudited.
+
+**On the Brunch commitment, since it has been through three shapes in one session.** The rule is now
+the user's and it is short: a pack holds its escort until the escorted body is dead, and sprints at the
+player only when there is nothing left to shield. A distance-based leash was implemented first, on the
+reasoning that a pack should not guard a fight the player has walked out of. That was wrong — it made
+the wall conditional on the player's habits, so the mechanic was only present when they happened to be
+nearby. If a future change makes the pack conditional on anything other than target death, it is
+probably making the same mistake.
 
 **The rule for all of these: measure first.** Every one of them was found by measurement rather than
 by reading, and roughly half of what looked like a bug during this session turned out to be a fixture
 that was lying — a body in a room the tick never walks, a player teleported instead of driven through
-the real input path, a probe comparing against the sprite origin rather than the hitbox. A probe that
-cannot fail is worse than no probe, because it produces confident nonsense.
+the real input path, a probe comparing against the sprite origin rather than the hitbox, and a
+commitment test that passed vacuously because the alternative candidate was further from the pack. A
+probe that cannot fail is worse than no probe, because it produces confident nonsense.

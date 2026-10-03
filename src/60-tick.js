@@ -750,31 +750,27 @@ function update(){
      `alive` is the guard against that: a body can be spliced out of the room by a caller that never
      touches its hp, and a stale reference would point at a corpse the pack keeps shielding. */
   const RANGED={shooter:1,gunner:1,boss:1};
-    /* THE CANDIDATE MUST BE IN THE PLAYER'S FIGHT, not merely in the room.
+  /* THE COMMITMENT IS TO THE BODY, AND IT ENDS ONLY WHEN THE BODY DIES.
 
-       The nearest-ranged rule picks the right BODY but says nothing about whether the player is
-       engaged with it, which is what let a pack walk to the far corner of a room and stand in front of
-       a shooter the player had no route to. Reached through BRUNCH_GUARD_LEASH rather than through the
-       pack centroid, deliberately: the question is whether the guarded enemy and the player are in the
-       same fight, and the pack's own position is not part of that question.
+     This is the design, stated by the user and now the rule: a Brunch pack's primary purpose is to be
+     a living shield, and it leaves that job for one reason only - the thing it is shielding is dead.
+     Not because the player walked away, not because a nearer shooter appeared, not because the fight
+     moved to another part of the room.
 
-       Nearest-to-the-pack still breaks the tie among candidates that pass, so the pack protects the
-       shooter closest to where it already is rather than the one closest to the player.
+     A leash on player distance was implemented here and then removed. It was a reasonable reading of
+     the mechanic and it was wrong, because it made the pack conditional on the player's habits: cross
+     the room and the escort abandoned the shooter it was standing in front of. The result is that the
+     wall - the whole reason the mechanic exists - is only present when the player happens to be
+     nearby, which makes it a decoration rather than a threat.
 
-       AND A FRESH SCAN DOES NOT IMMEDIATELY RE-GRAB WHAT THE LEASH JUST RELEASED. The leash releases
-       the target and the same tick's scan is free to pick it straight back up, which turns a leash
-       into a stutter rather than a decision - measured, a pack that disengaged walked out at 0.72,
-       then re-acquired at 241px on the next scan and went back to being a wall 155px from a player it
-       had just walked away from. The leash has to mean "this fight is over", so a released target is
-       not eligible again for BRUNCH_GUARD_RELEASE ticks. That is long enough to be a decision the
-       player can see and short enough that a new fight still gets its escort. */
+     So `pickShield` filters on two things only: the candidate is ranged, and it is alive. Nothing
+     about where the player is, and nothing about how far away the candidate is. A pack that has
+     nothing to guard walks at the player at BRUNCH_RUN, which is the last-resort sprint and the only
+     time it is used. */
   const pickShield=(c)=>{
     let best=null,bestD=Infinity;
     for(const o of r.enemies){
       if(o.hp<=0||!RANGED[o.type]) continue;
-      if(Math.hypot(o.x-player.x,o.y-player.y)>BRUNCH_GUARD_LEASH) continue;
-      /* not eligible again while it is still cooling down from being leashed */
-      if(o.guardReleasedUntil&&frameCount<o.guardReleasedUntil) continue;
       const d=(o.x-c.x)*(o.x-c.x)+(o.y-c.y)*(o.y-c.y);
       if(d<bestD){ bestD=d; best=o; }
     }
@@ -823,18 +819,13 @@ function update(){
        it is "not in another part of the room" - and breaking it costs the pack nothing it was using,
        because the only thing it gives up is guarding a fight that is not happening. */
     const tgt=e.shieldTarget;
-    const leashed=tgt&&tgt.hp>0&&Math.hypot(tgt.x-player.x,tgt.y-player.y)>BRUNCH_GUARD_LEASH;
-    const stale=!tgt||tgt.hp<=0||!r.enemies.includes(tgt)||leashed;
-    if(stale||(!e.shieldTarget&&(frameCount%BRUNCH_SCAN_TICKS===0))){
-      if(leashed){
-        /* the leash stamps the TARGET, not the pack: several packs can be guarding the same shooter
-           and all of them give up together, and the cooldown belongs to the fight rather than to any
-           one body. `guardReleasedUntil` is compared against frameCount in pickShield, so a target
-           that is leashed once is not re-acquired by any pack until it expires. */
-        tgt.guardReleasedUntil=frameCount+BRUNCH_GUARD_RELEASE;
-        e.shieldTarget=null;
-      } else e.shieldTarget=pickShield(c);
-    }
+    /* THE ONLY REASONS TO RE-PICK ARE THE TARGET'S DEATH AND THE PACK HAVING NO TARGET. Not the
+       player's position, not a nearer candidate, not the fight moving away: the pack holds its
+       escort until the escorted body is dead, and a leashed-distance clause was implemented here and
+       removed because it made the wall conditional on the player staying nearby. */
+    const stale=!tgt||tgt.hp<=0||!r.enemies.includes(tgt);
+    if(stale||(!e.shieldTarget&&(frameCount%BRUNCH_SCAN_TICKS===0)))
+      e.shieldTarget=pickShield(c);
   }
   /* THE REVERSE LINK, REBUILT EVERY TICK: for each shielded enemy, the bodies guarding it.
 

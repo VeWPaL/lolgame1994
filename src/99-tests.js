@@ -4454,29 +4454,26 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
            is simply not there.
 
        This test uses currentRoom() and pushes what it builds. */
-  /* A PACK RELEASES A TARGET THE PLAYER HAS WALKED AWAY FROM, and does not immediately re-take it.
+  /* A PACK HOLDS ITS ESCORT UNTIL THE ESCORTED BODY DIES, and sprints at the player only when there
+       is nothing left to shield.
 
-       The pack guards a FIGHT, not a body. `stale` used to ask only three questions - null, dead, gone
-       from the room - so a LIVE shooter in the room always passed and the pack held its commitment
-       indefinitely. That is what the reported symptom turned out to be, in the one case where it is a
-       bug at all: measured in a real fight, a shooter alive at (402,330) with the player at (63,373)
-       kept five bodies at the 0.72 shield speed for four seconds with the distance to the player
-       frozen at 226px.
+       The design, as stated: a Brunch pack's primary purpose is to be a living shield. It leaves that
+       job for one reason only - the thing it is shielding is dead. The sprint at the player is the
+       LAST RESORT, not a fallback that gets used whenever the pack feels like it.
 
-       Two halves, because they fail separately and the second is invisible without the first:
+       This replaces a leash that was implemented here and removed. The leash released the target when
+       the player moved more than BRUNCH_GUARD_LEASH away, and it was a defensible reading of the
+       mechanic that turned out to be wrong: it made the wall conditional on the player's habits.
+       Cross the room and the escort abandoned the shooter it was standing in front of, which means the
+       mechanic is only present when the player happens to be nearby - a decoration rather than a
+       threat. The wall is the point, so it does not get switched off by walking.
 
-         - BRUNCH_GUARD_LEASH releases a target further than 420px from the player. Measured against a
-           room 700x450 (diagonal 832), so the leash is reachable in normal play and is not a
-           corridor-only rule.
-         - BRUNCH_GUARD_RELEASE stops the released target being re-acquired for 0.4s. Without it the
-           leash fires and then undoes itself: measured, the pack walked out at 0.72, re-acquired the
-           same shooter 241px away on a later scan, and returned to being a wall 155px from the player
-           it had just left.
-
-       Asserted as both halves plus the commitment that must SURVIVE all of this: a target the player
-       is still fighting is never released, because a pack that gives up on every small repositioning
-       is worse than one that never gives up. */
-  test('a Brunch pack releases a target the player has walked away from, and holds on to one they have not',()=>{
+       Three claims, and the second is the one that was actually wrong before:
+         - a target stays held through any player movement, including the far corner;
+         - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
+           wall oscillate as bodies shuffle;
+         - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  test('a Brunch pack holds its escort until the escorted body dies, then sprints',()=>{
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
     const br=[];
@@ -4486,46 +4483,70 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     }
     const shooter=spawnEnemy(false,room,(ROOM_LEFT+ROOM_RIGHT)/2,ROOM_TOP+120,'shooter');
     room.enemies.push(shooter);
-    /* ENGAGED: the player is in the middle of the pack-to-shooter line */
     player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=ROOM_BOTTOM-140; player.maxHp=player.hp=1e9;
     for(let t=0;t<210*6;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
-    ok(br.every(e=>e.shieldTarget===shooter),'the pack is not guarding the shooter while the player is '+
-       'in the fight ('+(br[0].shieldTarget?br[0].shieldTarget.type:'nothing')+', at '+
-       Math.round(Math.hypot(shooter.x-player.x,shooter.y-player.y))+'px, leash '+
-       BRUNCH_GUARD_LEASH+') - the commitment does not survive ordinary engagement');
-    /* DISENGAGED: the player crosses to the corner OPPOSITE the shooter. Room is 700x450, so the
-       diagonal from a shooter at top-centre to the bottom corner is ~430px and to the FAR bottom
-       corner opposite it is more - the leash is 420, so the position has to be chosen against the
-       measured geometry or the assertion is testing nothing. An earlier version of this put the
-       player at (ROOM_RIGHT-30, ROOM_TOP+30), which is only 341px from a top-centre shooter: inside
-       the leash, so the pack correctly kept guarding and the test reported the feature as broken. */
+    ok(br.every(e=>e.shieldTarget===shooter),'the pack is not guarding the shooter to begin with ('+
+       (br[0].shieldTarget?br[0].shieldTarget.type:'nothing')+') - nothing below can mean anything');
+
+    /* CLAIM 1: the player leaves. The far corner, ~450px from a top-centre shooter in a 700x450 room,
+       which is most of the way to the diagonal. The pack must not care. */
     player.x=ROOM_RIGHT-40; player.y=ROOM_BOTTOM-40;
     const sep=Math.round(Math.hypot(shooter.x-player.x,shooter.y-player.y));
-    let releasedAt=-1, reacquiredAt=-1;
-    for(let t=1;t<=210*3;t++){
+    for(let t=0;t<210*4;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
+    ok(br.every(e=>e.shieldTarget===shooter),'the pack dropped its escort when the player moved '+
+       sep+'px away - the wall has to survive the player leaving the room, or it is only present when '+
+       'they happen to be nearby');
+
+    /* CLAIM 2: a DIFFERENT, and pack-nearer, shooter appears. The pack keeps the body it committed to.
+
+       The second candidate has to be nearer to THE PACK than the committed one, not merely nearer to
+       the player. `pickShield` breaks ties by distance to the pack centroid, so a shooter that is
+       closer to the player but further from the pack loses anyway - and this assertion passed
+       VACUOUSLY while the commitment was removed entirely: with unconditional re-picking, pickShield
+       still returned the committed body, because it was the nearer one to the pack. Measured: peak
+       player-to-shooter separation in this fixture is 424px, so a distance leash is also reachable
+       here, and neither was actually being tested until both were fixed.
+
+       So this spawns the second shooter right next to the pack, which is the case that would flip the
+       pick for real. */
+    const nearPack=br.reduce((a,e)=>({x:a.x+e.x/br.length,y:a.y+e.y/br.length}),{x:0,y:0});
+    const nearer=spawnEnemy(false,room,nearPack.x-70,nearPack.y-40,'shooter');
+    room.enemies.push(nearer);
+    for(let t=0;t<210*3;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
+    const dPackCommit=Math.round(Math.hypot(shooter.x-nearPack.x,shooter.y-nearPack.y));
+    const dPackNew=Math.round(Math.hypot(nearer.x-nearPack.x,nearer.y-nearPack.y));
+    ok(dPackNew<dPackCommit,'the second shooter is NOT the nearer one to the pack ('+dPackNew+
+       'px vs '+dPackCommit+'px), so this fixture cannot test what it claims - pickShield would '+
+       're-pick to the committed body anyway and the assertion passes vacuously');
+    ok(br.every(e=>e.shieldTarget===shooter),'the pack switched to a shooter that appeared '+
+       dPackNew+'px from it (against '+dPackCommit+'px for the committed one) - re-picking on '+
+       'proximity makes the wall oscillate as bodies shuffle, which is what the commitment exists '+
+       'to prevent');
+
+    /* CLAIM 3: the escorted body dies, and only then does the pack come at the player.
+
+       The `nearer` shooter from claim 2 has to GO before this, or the pack correctly re-acquires it
+       on the next scan and the assertion reads "6 of 6 still holding a target" - which is right, and
+       is not the claim being tested. Claim 2 proved the pack does not switch while both are alive;
+       claim 3 is about what happens when the committed one dies and nothing else is left. */
+    const ixN=room.enemies.indexOf(nearer); if(ixN>=0) room.enemies.splice(ixN,1);
+    ok(br.every(e=>e.shieldTarget===shooter),'the pack abandoned its committed escort the moment the '+
+       'nearer shooter was removed, before the escorted body had died - the commitment ends on death '+
+       'and not when a candidate disappears');
+    shooter.hp=0;
+    const ix=room.enemies.indexOf(shooter); if(ix>=0) room.enemies.splice(ix,1);
+    let t90=-1;
+    for(let t=1;t<=210*4;t++){
       for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp;
       update();
-      const held=br.filter(e=>e.shieldTarget===shooter).length;
-      if(releasedAt<0&&held===0) releasedAt=t;
-      if(releasedAt>0&&reacquiredAt<0&&held>0&&t<releasedAt+BRUNCH_GUARD_RELEASE) reacquiredAt=t;
+      if(t90<0&&Math.hypot(br[0].vx||0,br[0].vy||0)>=BRUNCH_RUN*0.9) t90=t;
     }
-    ok(releasedAt>0,'the pack still holds the shooter '+BRUNCH_GUARD_LEASH+
-       ' ticks after the player walked away (separation '+sep+'px, leash '+BRUNCH_GUARD_LEASH+
-       ') - it is guarding a fight nobody is having');
-    ok(reacquiredAt<0,'the pack re-acquired the target it had just released, at tick '+
-       reacquiredAt+' of a '+BRUNCH_GUARD_RELEASE+'-tick cooldown - the leash fires and then undoes '+
-       'itself, which reads as a stutter rather than a decision');
-    /* and it must be able to come back: after the cooldown expires and the player returns, the pack
-       picks the fight up again. A leash that permanently disarms the pack is not a leash. */
-    player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=ROOM_BOTTOM-140;
-    let backAt=-1;
-    for(let t=1;t<=210*4&&backAt<0;t++){
-      for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp;
-      update();
-      if(br.filter(e=>e.shieldTarget===shooter).length===br.length) backAt=t;
-    }
-    ok(backAt>0,'the pack never re-acquired the shooter after the player came back into the fight - a '+
-       'leash that permanently disarms the pack is a leash that deleted the mechanic');
+    ok(br.every(e=>!e.shieldTarget),'after the escorted body died, '+
+       br.filter(e=>e.shieldTarget).length+' of '+br.length+' bodies are still holding a target - the '+
+       'pack did not release the corpse');
+    ok(t90>0&&t90<=60,'the pack took '+(t90>0?t90+' ticks':'more than 4 seconds')+
+       ' to reach 90% of chase speed after its escort died (measured 10-14 ticks, 48-67ms) - the '+
+       'last-resort sprint is not happening');
     run=undefined;
   });
 

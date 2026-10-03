@@ -407,39 +407,6 @@ const BRUNCH_ARC_FLOOR=9*Math.PI/180,    // the narrowest a shield may be: enoug
    when a pack has NO target - a pack already holding one never reconsiders, which is what keeps the
    wall from oscillating as a nearer shooter walks past. */
 const BRUNCH_SCAN_TICKS=20;
-/* HOW FAR A GUARDED ENEMY MAY BE FROM THE PLAYER AND STILL BE WORTH A WALL.
-
-   A Brunch pack guards a FIGHT, not a body. If the player and the guarded shooter are far enough
-   apart that no shot is being exchanged between them, the pack is standing in front of an argument
-   nobody is having - and it does so silently, because the shooter is alive and in the room, so every
-   validity check passes and the pack never reconsiders.
-
-   Measured, in a real fight: shooter alive at (402,330), player at (63,373) across the room. Five
-   bodies held that target for four seconds, moving at the 0.72 shield speed the whole time, with the
-   distance to the player frozen at 226px. That is indistinguishable from the reported symptom of a
-   pack refusing to chase, and it was never a dead target - it was a live one in a fight the player
-   had walked out of.
-
-   420 is generous on purpose. It is not "close by": a shooter's own engage range is 520 and a
-   gunner's is 600, so this leash is TIGHTER than the range at which those enemies will shoot at all.
-   The pack therefore gives up before the gunner loses interest, which is the right way round - a wall
-   standing between an enemy and a player who are 400px apart is blocking a lane nobody is shooting
-   down.
-
-   Measured against the fixture above: 226px is inside the leash, so that particular standoff is
-   still guarded deliberately. What the leash catches is the far corner - the reported case had the
-   player pressed against the opposite wall, and the practical effect is that a pack commits to
-   whatever is nearest the player and abandons a target the moment the player disengages from it. */
-const BRUNCH_GUARD_LEASH=420;
-/* HOW LONG A LEASHED TARGET IS INELIGIBLE, in ticks. 84 is 0.4s - long enough that releasing a target
-   reads as a DECISION rather than a stutter, short enough that walking back into the same fight gets
-   its escort again almost immediately.
-
-   The stutter this prevents is measured, not hypothetical: with no cooldown, a pack that disengaged
-   walked out at 0.72 for one second, then re-acquired the same shooter at 241px on a later scan and
-   returned to being a wall 155px from the player it had just left. The leash fired, and then undid
-   itself. */
-const BRUNCH_GUARD_RELEASE=sec(0.4);
 /* A GUARDED RANGED BODY HOLDS A LONGER STANDOFF, and the reason is that its own escort is in the way.
 
    The standoff is where a gunner wants to be: far enough that the player has to come to it, close
