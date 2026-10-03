@@ -106,7 +106,21 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
    rather than smooth, and notched for a reason that is not decoration: a stat that is a percentage
    wants to be read against the ceiling it is measured against, and a smooth bar with no graduations
    cannot answer "how much of this have I used". The notch count IS the scale. */
-#charSheet{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;
+/* align-items is flex-START, not center, and that is a bug fix rather than a style choice.
+
+   A centered flex item that is TALLER than its container is pushed off BOTH ends, and the overflow
+   above the origin is unreachable: scrolling up stops at 0, so the top of the card simply cannot
+   be brought into view. Measured at a 960x600 window with the standard roster: the card is 680px in
+   a 569px viewport, scrollTop runs 0..76, and the card's first children sit at -37px - above the
+   scroll origin, permanently clipped.
+
+   It read as a working scroll area, because the FOOT scrolls into view. The defect is entirely at
+   the head, and the only thing that makes it visible is the window being shorter than the card: at
+   1280x720 and above, maxScrollTop is 0 and nothing is clipped at all.
+
+   flex-start anchors the top, so the head is always at the origin and the whole card is reachable by
+   scrolling down. Same measurement after the change: maxScrollTop 76 -> 151, head at +39px. */
+#charSheet{position:fixed;inset:0;z-index:20;display:none;align-items:flex-start;justify-content:center;
   background:rgba(6,8,12,.88);padding:20px;overflow:auto;}
 #charSheet.on{display:flex;}
 #charCard{background:#10141c;border:1px solid #2b3342;border-radius:6px;padding:18px 24px 20px;

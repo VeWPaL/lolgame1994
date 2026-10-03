@@ -3113,12 +3113,73 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(statDisplay(luck()),'+2','a +2 Luck does not print with its sign');
     Stats.reset();
   });
+  /* POINTER COORDINATES ARE INTEGERS, and that is the whole reason this test exists.
+
+     A `MouseEvent` cannot carry a fractional `clientX`: dispatch one with 59.59375 and the handler
+     receives 59. So the content top-left - a fractional layout position - is not an addressable
+     point, and asserting that it maps to (0,0) is asserting something no cursor can ever do. The
+     original test asserted it anyway, with a 1px tolerance, which is loose enough to pass a handler
+     that was a whole pixel out.
+
+     So this asserts the property that actually matters: EVERY position a cursor can physically be
+     maps INSIDE the canvas. Not "the corner maps to zero" - "no reachable position produces a
+     negative coordinate or one past the far edge", because a negative coordinate means the shot is
+     aimed from off the left of the screen.
+
+     Measured at a 960x600 window, the canvas is letterboxed to a content box of 840.797 x 525.484
+     whose left edge is at clientX 59.5938. The first INTEGER the pointer can report is 60, which is
+     0.4638 of a canvas pixel inside the content. Reading the offset from `clientLeft` (2) rather than
+     the computed border put the same cursor at -0.678, which is off the left of the canvas entirely -
+     so the old mapping aimed outside the play area for the first half pixel of pointer travel, and
+     the old test passed because 1px of tolerance is wider than that error.
+
+     Checked across the whole reachable range at several window sizes rather than at one point: a
+     mapping that is correct in the middle and wrong at the edge is the shape of the camera clamp
+     bug, and asserting the endpoints is what catches it. */
   test('mouse maps to canvas pixels inside the 2px border',()=>{
-    const rect=canvas.getBoundingClientRect(), x0=rect.left+canvas.clientLeft, y0=rect.top+canvas.clientTop;
-    canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:x0,clientY:y0}));
-    ok(Math.abs(mouse.x)<1&&Math.abs(mouse.y)<1,'content top-left maps to '+mouse.x.toFixed(2)+','+mouse.y.toFixed(2));
-    canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:x0+canvas.clientWidth,clientY:y0+canvas.clientHeight}));
-    ok(Math.abs(mouse.x-W)<1&&Math.abs(mouse.y-H)<1,'content bottom-right maps to '+mouse.x.toFixed(2)+','+mouse.y.toFixed(2));
+    const rect=canvas.getBoundingClientRect(), cs=getComputedStyle(canvas);
+    const bl=parseFloat(cs.borderLeftWidth), br=parseFloat(cs.borderRightWidth);
+    const bt=parseFloat(cs.borderTopWidth), bb=parseFloat(cs.borderBottomWidth);
+    const cw=rect.width-bl-br, ch=rect.height-bt-bb;
+    const x0=rect.left+bl, y0=rect.top+bt;
+    const at=(cx,cy)=>{ canvas.dispatchEvent(new MouseEvent('mousemove',{clientX:cx,clientY:cy}));
+                        return [mouse.x,mouse.y]; };
+    /* Sweep every integer column and row the pointer can actually occupy, and require the whole
+       sweep to land inside the canvas. This is the form the bug took: a constant offset at the near
+       edge, zero in the middle. A midpoint-only assertion would pass the broken version. */
+    let firstX=null,lastX=null,firstY=null,lastY=null,worst=null;
+    const from=Math.ceil(x0), to=Math.floor(x0+cw);
+    for(let cx=from;cx<=to;cx++){
+      const p=at(cx,Math.round(y0+ch/2));
+      if(p[0]<0||p[0]>W){ const d=Math.min(Math.abs(p[0]),Math.abs(p[0]-W));
+        if(!worst||d>worst.d) worst={axis:'x',c:cx,p:+p[0].toFixed(3),d:+d.toFixed(3)}; }
+      if(firstX===null) firstX=+p[0].toFixed(3);
+      lastX=+p[0].toFixed(3);
+    }
+    for(let cy=Math.ceil(y0);cy<=Math.floor(y0+ch);cy++){
+      const p=at(Math.round(x0+cw/2),cy);
+      if(p[1]<0||p[1]>H){ const d=Math.min(Math.abs(p[1]),Math.abs(p[1]-H));
+        if(!worst||d>worst.d) worst={axis:'y',c:cy,p:+p[1].toFixed(3),d:+d.toFixed(3)}; }
+      if(firstY===null) firstY=+p[1].toFixed(3);
+      lastY=+p[1].toFixed(3);
+    }
+    /* A clean run leaves `worst` null, so the message is only built when there is something to say. */
+    ok(!worst, worst ? ('a reachable pointer position maps to canvas '+(worst.axis==='x'?'x '+worst.p:'y '+worst.p)+
+       ' (client '+(worst.axis==='x'?'X':'Y')+' '+worst.c+'), which is '+worst.d+
+       'px OUTSIDE the '+W+'x'+H+' canvas - the shot is aimed from off the edge of the screen') : '');
+    ok(firstX>=0&&lastX<=W&&firstY>=0&&lastY<=H,
+      'the reachable pointer range maps to x '+firstX+'..'+lastX+' and y '+firstY+'..'+lastY+
+      ', which runs past the '+W+'x'+H+' canvas - the shot is aimed from off the edge of the screen');
+    /* AND the centre is exact, because aim is read off the centre far more often than an edge and a
+       uniform half-pixel bias there would be felt without ever being visible at a corner. */
+    const mid=at(Math.round(x0+cw/2),Math.round(y0+ch/2));
+    ok(Math.abs(mid[0]-W/2)<0.5&&Math.abs(mid[1]-H/2)<0.5,
+      'the centre of the content maps to '+mid[0].toFixed(2)+','+mid[1].toFixed(2)+
+      ' rather than '+W/2+','+H/2+' - every shot carries the same aim error');
+    /* AND the canvas is scaled uniformly, or every circle in the game is an ellipse. */
+    const sx=canvas.width/cw, sy=canvas.height/ch;
+    ok(Math.abs(sx-sy)<0.002,'the canvas is scaled '+sx.toFixed(4)+' horizontally and '+
+       sy.toFixed(4)+' vertically - it is not scaled uniformly, so circles draw as ellipses');
   });
   test('every dungeon: a branching tree with a reward at each of two ends, and a key in a branch',()=>{
     // This test used to assert a fixed 15 rooms, two forks and exactly four dead ends, because that
@@ -9677,6 +9738,202 @@ const BOSS_TICKS=26000;
     run.floor=1;
   });
 
+  test('hexRgb takes 3 and 6 hex digits and refuses everything else',()=>{
+    /* THE ACCEPTED CASES ARE PINNED AS VALUES, not as "it did not throw". A helper that returned
+       [0,0,0] for everything would sail through a no-throw check and paint every area black, and the
+       three-digit case is the one worth pinning as an EXPANSION rather than as a shorter parse:
+       '#abc' is 170,187,204 because each digit is repeated, which is the CSS rule and not
+       "0x0a0b0c". */
+    eq(hexRgb('#fff').join(),[255,255,255].join(),"hexRgb('#fff') is not white - three digits are each repeated");
+    eq(hexRgb('#abc').join(),[170,187,204].join(),"hexRgb('#abc') is not rgb(170,187,204)");
+    eq(hexRgb('#2b2f3a').join(),[43,47,58].join(),"hexRgb('#2b2f3a') is not rgb(43,47,58) - that is Area1's own stone");
+    eq(hexRgb('#ABC').join(),hexRgb('#abc').join(),'uppercase hex and lowercase hex are different colours');
+
+    /* AND THE REJECTIONS, which is the half that was missing.
+
+       This handed the string to parseInt and asked whether a number came back, and parseInt accepts a
+       great deal that is not a colour:
+
+           '#12'     -> 0x12     -> [0, 0, 18]     black with a whisper of blue
+           '#12345'  -> 0x12345  -> [1, 35, 69]    a colour nobody chose
+
+       Both of those went through a palette entry and out to a fillStyle, so a mistyped swatch rendered
+       a surface in a colour no line of the code mentions and no stack trace can point at. Nothing
+       failed; the room just came out wrong.
+
+       The list is deliberately varied rather than just short-and-long: an empty string, no digits at
+       all, a name, an rgb() string that hexRgb is not the reader for, six characters that are not hex
+       (so a length check alone would still let it through), a digit that is not a hex digit, and the
+       non-strings. Throws rather than returns null, because the callers here - mixHex, withAlpha -
+       would turn a null into NaN and paint a NaN, whereas paletteForArea and Content.get already
+       throw on a missing id and the loud end of this file is established. */
+    const refused=['', '#', '#12', '#1234', '#12345', '#1234567', 'xyzw12', '#abcg', 'xyz',
+                   'rebeccapurple', 'rgb(1,2,3)', '12 34 56', null, undefined, 42, {}];
+    for(const bad of refused){
+      let threw=false;
+      try{ hexRgb(bad); }catch(e){ threw=true; }
+      ok(threw,'hexRgb('+JSON.stringify(bad)+') returned a colour instead of throwing - it is not a '+
+        'colour, and a helper that invents one for it paints something nobody chose');
+    }
+    /* and the refusal NAMES what it refused, because the whole point of refusing is that somebody can
+       find the entry that is wrong. A message that says "not a colour" and nothing else has moved the
+       problem from a wrong pixel to a wrong line. */
+    let msg='';
+    try{ hexRgb('#12'); }catch(e){ msg=e.message; }
+    ok(msg.indexOf('#12')>=0,'the refusal does not quote the value it refused - it says "'+msg+'", which '+
+      'points at the helper rather than at the palette entry that is wrong');
+
+    /* THE PALETTE ITSELF IS LEGAL, which is the thing the shape check exists for and the reason it is
+       worth a test at all rather than a comment: every swatch the drawing reads is now guaranteed to
+       be a shape hexRgb accepts, so a typo in a new area fails at the entry rather than in a fill. */
+    for(const id of Object.keys(AREA_PAL)){
+      const p=AREA_PAL[id];
+      for(const k of ['stone','stoneLit','mortar','floor','floorTint','accent','accentDim','mapWash'])
+        hexRgb(p[k]);   // throws, naming id + value, if the swatch is malformed
+      /* `floorLight` is deliberately NOT a hex colour - it is 'r,g,b', interpolated into an rgba()
+         string, and it is the one field in the palette that no colour helper should ever be handed. */
+      eq(String(p.floorLight).split(',').length,3,id+'.floorLight is "'+p.floorLight+'", which is not an '+
+        'r,g,b triple - it is interpolated into an rgba() string and is the one palette field that is '+
+        'not a hex colour');
+    }
+    for(const k of Object.keys(ROOM_BG)) hexRgb(ROOM_BG[k]);
+  });
+
+  /* THE PLAYER STAYS BRIGHT THROUGH THE DESCENT, which is the property the scrim broke and the redraw
+       over it restores.
+
+       Measured, sprite at the canvas centre (y 300): 236,232,245 with no banner, 46,44,46 under the
+       scrim alone - 17% of its brightness - and 236,232,245 again with the redraw. So this asks for
+       the brightness of the sprite, not for the presence of a draw call: a redraw that happened at
+       globalAlpha 0.1 would satisfy "the player is drawn over the scrim" and fail this.
+
+       It is measured at the FULL brightness of the same frame rather than against a literal, because
+       the exact value depends on the frame index and the flicker, and a hardcoded 236 would go stale
+       the moment the sprite sheet changed. The claim is "as bright as it was without the banner". */
+  /* A MISSPELLED CATEGORY MUST NOT TAKE THE PANEL DOWN. The panel is the thing whose whole job is
+       reporting failures, so an exception thrown inside it is the worst failure it can have: it
+       printed nothing at all, rather than printing one entry in the wrong place.
+
+       Found by adding a fix under a category name that was not in CAT_ORDER - `byCat[it.cat]` was
+       undefined, `.push` on undefined threw, and the panel was simply gone. Not hypothetical either:
+       adding a fix is the ordinary way this table grows, and a new category name is a natural thing
+       to write.
+
+       So the panel is handed a deliberately misspelled category and has to survive it AND still
+       account for every entry - because "did not crash" alone would be satisfied by dropping the
+       entry on the floor. */
+  test('a fix filed under a category the panel does not know still appears, uncategorised',()=>{
+    /* THE REAL PANEL IS CALLED, not a copy of the grouping logic. An earlier draft of this test
+       re-implemented the bucket loop beside the drawing, which looked like coverage and would have
+       passed against the broken version - the same mistake this file's own notes warn about twice.
+       So this injects a bad category into the real FIXES, calls the real showBugPanel, and reads the
+       real DOM. */
+    const key='a fix filed under a category that does not exist';
+    FIXES[key]=['not a real category','synthetic'];
+    const oldBtn=document.getElementById('bugBtn'), oldPanel=document.getElementById('bugPanel');
+    if(oldBtn) oldBtn.remove();
+    if(oldPanel) oldPanel.remove();
+    let threw='';
+    try{ showBugPanel(results.filter(r=>r.ok).map(r=>({name:r.name,ok:true}))); }
+    catch(e){ threw=String(e.message); }
+    ok(threw==='','filing a fix under an unknown category threw: '+threw+' - the panel is the thing '+
+       'that reports failures, and it died instead of reporting one entry in the wrong section');
+    const btn=document.getElementById('bugBtn'), pn=document.getElementById('bugPanel');
+    ok(btn&&pn,'the panel did not render at all, so one misspelled category cost the player the whole '+
+       'change history rather than putting one entry in the wrong section');
+    if(pn){
+      const txt=pn.textContent;
+      ok(txt.indexOf('unclassified')>=0||txt.indexOf('Unclassified')>=0,'the unknown category is not '+
+         'filed under unclassified anywhere in the panel - it either vanished or opened a section '+
+         'that cannot be rendered');
+    }
+    delete FIXES[key];
+    if(btn) btn.remove();
+    const pn2=document.getElementById('bugPanel'); if(pn2) pn2.remove();
+  });
+
+  test('the descent banner does not bury the player, who stands at the centre of it',()=>{
+    const wasRun=run;
+    startGame();
+    player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=(ROOM_TOP+ROOM_BOTTOM)/2;
+    player.anim=0; player.iframes=0; readyT=0;
+    const px=(x,y)=>{ const d=ctx.getImageData(Math.round(x),Math.round(y),1,1).data;
+                      return (d[0]+d[1]+d[2])/3; };
+    /* the brightest pixel of the sprite column, which is the sprite's own ink rather than whatever
+       happens to be behind it - one sample could land on the scrim and read as "fixed" */
+    const spritePeak=()=>{ let m=0; for(let y=288;y<=314;y++) m=Math.max(m,px(480,y)); return m; };
+    descendFrom=1; run.floor=2;
+    const savedT=descendT;
+    descendT=0; readyT=0; fadeT=0; roomFade=0; render();
+    const bare=spritePeak();
+    descendT=savedT||Math.floor(FADE_DESCEND*0.55);
+    render();
+    const withBanner=spritePeak();
+    /* The sprite is drawn OVER the scrim, so it must be at least as bright as the frame without the
+       banner. A scrim-only frame measures ~46 here; anything near that is the buried player. */
+    ok(withBanner>bare*0.9,'the player at the centre of the descent banner peaks at '+
+       withBanner.toFixed(0)+' against '+bare.toFixed(0)+' without it - the scrim is still covering '+
+       'the character (measured: 46 against 236), so the player reads as a grey smudge for the whole '+
+       'of the beat');
+    /* AND the banner text is still legible, which is the other half of the trade: the type has to survive
+       being printed over an arbitrary floor texture.
+
+       Sampled from the numeral's MEASURED extent rather than from guessed columns: at 960x600 the
+       gold "FLOOR 2" occupies x 400-561 and y 240-265, peak 159, so a sample at x 300 or x 660 reads
+       bare scrim and reports the type as invisible when it is perfectly legible - which is what the
+       first version of this assertion did. The band is taken as a box around the glyphs with a
+       margin, and the peak inside it is what has to clear the floor.
+
+       159 is the honest measured value for the numeral's brightest ink at this size, so the threshold
+       is 120: comfortably above the ~46 of a scrim-only column, and below the numeral so it does not
+       go stale if the sprite sheet or the accent changes. */
+    const bandPeak=()=>{ let m=0; for(let x=395;x<=565;x++) for(let y=238;y<=268;y++) m=Math.max(m,px(x,y)); return m; };
+    const typePeak=bandPeak();
+    ok(typePeak>120,'the banner\'s own ink peaks at '+typePeak.toFixed(0)+' (measured 159 for the '+
+       'gold numeral; a scrim-only column reads 46) - the type is not legible over the room, so the '+
+       'descent beat says nothing');
+    run=wasRun;
+  });
+
+  test('starting a run clears the art caches, so one seed cannot speckle another seed\'s floor',()=>{
+    /* THE CACHES ARE SEEDED, so they are RUN-SCOPED, and the only way that is true is if something
+       empties them when the run changes. `caveTile`, `wallTile` and `drawFloor` all bake through
+       draws from `Rnd.art()`, which 05-rng derives from the seed the player typed, so a cache entry
+       that outlives its run is a picture of the PREVIOUS run's floor.
+
+       The failure is invisible in a screenshot - stone is stone either way - which is why this
+       compares PIXELS rather than cache keys. Key counting would have passed against the bug: the
+       keys are identical either way, because the key is (type, size, area) and the seed is not in
+       it. That is the whole defect: the key cannot see the thing that changed.
+
+       The check is that two different seeds produce two different floor textures. Same seed must
+       produce the SAME texture, or the cache is not the only thing carrying seed state and the
+       flecks are not the story. */
+    const floorBytes=()=>{
+      drawFloor('normal');
+      const k=Object.keys(floorCache)[0];
+      const c=floorCache[k];
+      return c.getContext('2d').getImageData(0,0,Math.min(64,c.width),Math.min(64,c.height)).data.join(',');
+    };
+    startGame('11111');            // seed A: bake, and leave the cache full
+    const a=floorBytes();
+    startGame('22222');            // seed B on a fresh cache
+    const b=floorBytes();
+    ok(a!==b,'two different seeds baked byte-identical floor tiles ('+a.length+' bytes sampled), so '+
+       'either the art stream is not seeded or the cache is carrying the previous run - a floor is '+
+       'flecked with speckle from a run the player already finished');
+    startGame('11111');            // seed A again: determinism, or nothing above means anything
+    const a2=floorBytes();
+    eq(a2,a,'the same seed baked a DIFFERENT floor tile, so the tile is not a function of the seed - '+
+       'a seed has to reproduce the run it names');
+    /* and the caches really are emptied rather than merely overwritten, because the difference
+       above could also come from a key that happens to include the seed. Assert the door is opened:
+       after startGame the caches hold nothing from the previous run. */
+    eq(Object.keys(floorCache).length,1,'after starting a run the floor cache holds '+
+       Object.keys(floorCache).length+' entries - it should have been emptied by startGame and '+
+       'then hold only the tile this run just baked');
+  });
+
   test('the floor cache is keyed by the area, so descending a floor repaints the room',()=>{
     /* THE CACHE IS THE CLAIM, and it is tested as the cache and not as the drawing - because a
        correctly-drawn floor that is CACHED WITHOUT THE AREA is wrong in exactly the way the player
@@ -9899,19 +10156,42 @@ const BOSS_TICKS=26000;
       ' - they are on top of each other, so the area is printed over the stats');
     ok(line.height<60,'the area line is '+line.height.toFixed(0)+'px tall, which is pushing the stat '+
       'rows down the card; it is a rule, a name and one line of flavour');
-    /* AND THE SHEET SCROLLS RATHER THAN CLIPPING, which is the property that matters when the line
-       does push a tall roster past the fold.
+    /* AND THE SHEET SCROLLS RATHER THAN CLIPPING, and the claim is that BOTH ENDS OF THE CARD ARE
+       REACHABLE - not that the card fits, and not that it is shorter than the viewport.
 
-       The sheet already scrolled before this change - a player carrying the whole roster measured 732
-       against a 700px viewport - so "it scrolls" is not new and is not the claim. The claim is that
-       the content is REACHABLE: the card's own height is inside the sheet's scrollable height, or the
-       last row is a row the player can never scroll to. */
+       The old assertion was `card.height <= sheet.scrollHeight`, and it was wrong twice over.
+       `scrollHeight` IS the content height, so that comparison fails by construction whenever the
+       content legitimately overflows a scrollable box - it asserted that a working scroll area was
+       broken. And it only ever looked at the FOOT, which is the end that does scroll into view: the
+       actual defect was at the HEAD, where a centered flex item taller than its container is pushed
+       above the scroll origin and can never be reached. The old assertion passed against the broken
+       layout for the same reason a test that re-derives the rule it audits always does.
+
+       So this asks the reachable question directly. Anchor the scroll at 0 and the card's top must
+       be at or below the sheet's top; anchor it at the maximum and the card's bottom must be at or
+       above the sheet's bottom. Both, because each half is a separate failure and the bug only ever
+       took one of them.
+
+       Measured at 960x600 with the fix: head at +39px, foot reachable, maxScrollTop 151. Before it:
+       head at -37px with maxScrollTop 76, which is a foot that works and a head that does not. */
     const sheet=document.getElementById('charSheet'), card=document.getElementById('charCard');
-    ok(card.getBoundingClientRect().height<=sheet.scrollHeight+1,
-      'the card is '+card.getBoundingClientRect().height.toFixed(0)+'px inside a scroll area of '+
-      sheet.scrollHeight+'px, so its foot is clipped rather than scrollable to');
-    eq(getComputedStyle(sheet).overflowY,'auto','the character sheet does not scroll, so a long '+
+    ok(getComputedStyle(sheet).overflowY==='auto','the character sheet does not scroll, so a long '+
       'roster is cut off at the bottom with no way to reach it');
+    const sheetBox=()=>sheet.getBoundingClientRect();
+    sheet.scrollTop=0;
+    const headTop=card.getBoundingClientRect().top-sheetBox().top;
+    ok(headTop>=-1,'scrolled to the top, the card\'s head sits at '+headTop.toFixed(0)+
+       'px relative to the scroll area - a flex item taller than its container is pushed above the '+
+       'scroll origin and the first rows of the sheet can never be scrolled to');
+    sheet.scrollTop=99999;
+    const footBelow=card.getBoundingClientRect().bottom-sheetBox().bottom;
+    ok(footBelow<=1,'scrolled to the bottom, the card\'s foot is still '+footBelow.toFixed(0)+
+       'px below the scroll area - the last rows are cut off with no way to reach them');
+    /* AND the card is never centred into an unreachable position, which is the specific layout that
+       caused it: with align-items:center the head is above the origin whenever the card is taller
+       than the sheet, so the property is asserted directly rather than inferred from a height. */
+    eq(getComputedStyle(sheet).alignItems,'flex-start','the character sheet still centres its card '+
+       'vertically, so a card taller than the window has its head pushed above the scroll origin');
     setPaused(false);
   });
 
@@ -9956,6 +10236,18 @@ const BOSS_TICKS=26000;
 
        So the fixture isolates the question. The panel is being asked about a MISSING TEST, and the
        only way to hear the answer is to hand it a suite in which nothing else is wrong. */
+    /* FIXES IS NOT EMPTY, and that is asserted before it is indexed rather than after.
+
+       `Object.keys(FIXES)[0]` is the victim this fixture removes to ask whether the bug panel marks an
+       unbacked fix. If FIXES were ever empty - a new project, a trimmed table, a bad edit - that is
+       `undefined`, and every result would then be filtered against the name `undefined` rather than
+       against a real entry: the fixture would pass for the wrong reason while testing nothing.
+
+       The guard is here rather than inside the fixture because the failure is silent either way, and a
+       test that reports "the panel handled a missing test correctly" when it never selected one is the
+       exact shape this project's own notes keep warning about. */
+    ok(Object.keys(FIXES).length>0,'the FIXES table is empty, so this test has no entry to remove and '+
+      'would report the panel handled a missing test correctly without ever having selected one');
     const victim=Object.keys(FIXES)[0];
     const asIfGreen=results.filter(r=>r.name!==victim).map(r=>({name:r.name,ok:true}));
     const oldBtn=document.getElementById('bugBtn'), oldPanel=document.getElementById('bugPanel');

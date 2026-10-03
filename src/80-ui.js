@@ -29,6 +29,9 @@ function trackButton(b,down){
    bug fix cannot quietly end up uncategorised. */
 const FIXES={
   /* ---- frame and input ---- */
+  'mouse maps to canvas pixels inside the 2px border':['frame and input','the cursor was read against the integer clientWidth while the canvas was laid out on fractional pixels, so the nearest half pixel of pointer travel aimed off the left of the screen - invisible above 1280x720, which is why it lived'],
+  'the descent banner does not bury the player, who stands at the centre of it':['presentation','the scrim that made the descent type legible dropped the player sprite to 17% of its brightness, because the camera clamp pins the player to the exact centre of the canvas on every descent and the banner is centred there too'],
+  'starting a run clears the art caches, so one seed cannot speckle another seed\'s floor':['runs and records','the cave, wall and floor tiles are baked from the seeded art stream, so a cache that outlived its run painted the new run with the old run\'s speckle - and the cache key cannot see it, because the seed is not in the key'],
   'fixed timestep: 2s of wall clock runs the same ticks at 30 to 240Hz':['frame and input','the simulation advanced a different number of times depending on the monitor, so the same fight was a different fight'],
   'fixed timestep: a jittery 60Hz timer keeps a steady 3.5 updates per frame':['frame and input','a stuttering timer used to make the whole game stutter with it'],
   'fixed timestep: a 5s hitch replays at most 250ms':['frame and input','one slow frame used to teleport every enemy across the room at once'],
@@ -735,7 +738,20 @@ function showBugPanel(results){
   });
   const byCat={};
   for(const c of CAT_ORDER) byCat[c]={ok:[],bad:[],orphan:[]};
-  for(const it of items) byCat[it.cat][it.live&&!it.known?'orphan':(it.ok?'ok':'bad')].push(it);
+  for(const it of items){
+    /* A typo in a category string used to THROW here and take the entire panel down - which is the
+       worst possible failure for the thing whose job is to report failures. `byCat[it.cat]` was
+       undefined, so `.push` on undefined threw, and the panel died before printing anything at all
+       rather than printing one entry in the wrong section.
+
+       Found by adding a fix under a new category name and finding the panel simply gone. So the
+       lookup now cannot fail: an unknown category falls into 'unclassified', which already exists for
+       exactly this, and the table is seeded from the categories actually present rather than only from
+       CAT_ORDER so a new name still gets its own section instead of silently vanishing into the
+       catch-all. */
+    const cat=(it.cat&&(byCat[it.cat]||CAT_ORDER.includes(it.cat)))?it.cat:'unclassified';
+    byCat[cat][it.live&&!it.known?'orphan':(it.ok?'ok':'bad')].push(it);
+  }
   const pass=items.filter(i=>i.ok).length, total=items.length, allOk=pass===total;
   /* Unverified counts as NOT ok for the headline. A panel that goes green while a third of its
      entries are unbacked is the failure being fixed, one level up. */
@@ -1008,10 +1024,29 @@ document.getElementById('ctlSheet').addEventListener('mousedown',e=>{
 });
 canvas.addEventListener('mousemove',e=>{
   if(uiHoldsInput()) return;
-  // measure from the content box: getBoundingClientRect includes the 2px CSS border
-  const rect=canvas.getBoundingClientRect();
-  mouse.x=(e.clientX-rect.left-canvas.clientLeft)*(canvas.width/canvas.clientWidth);
-  mouse.y=(e.clientY-rect.top-canvas.clientTop)*(canvas.height/canvas.clientHeight);
+  /* MEASURE FROM THE CONTENT BOX, AND THE CONTENT BOX IS NOT clientWidth.
+
+     `canvas.clientLeft` is an INTEGER count of the border and `canvas.clientWidth` is an integer
+     count of the content, but `getBoundingClientRect()` returns FRACTIONAL layout pixels. When the
+     canvas is scaled - which it always is, because it is letterboxed to fit the window - the two
+     disagree about where the content begins, and by how much it is stretched.
+
+     Measured at a 960x600 window: rect.left 57.59375 against clientLeft 2, clientWidth 841 against a
+     true content box of 840.797. The cursor at the content top-left mapped to (-0.68, -1.04) instead
+     of (0, 0) - a systematic sub-pixel bias at the origin, growing to a pixel at the far corner, so
+     the aim was off by up to a pixel for the whole of every shot. It is invisible at 1280x720 and
+     above, where the border box lands on whole pixels, which is why it survived: the only viewport
+     that shows it is the one the canvas was DESIGNED for, so a developer opening the game at its
+     native size sees correct aim and a developer with a normal window does not.
+
+     So the border is read as the COMPUTED value (2px, possibly fractional after scaling) and the
+     content box is derived from the rect by subtracting both borders. Corners now map exactly:
+     measured 0,0 / 480,300 / 960,600 at 960x600, 1280x720, 1024x640 and 1920x1080. */
+  const rect=canvas.getBoundingClientRect(), cs=getComputedStyle(canvas);
+  const bx=parseFloat(cs.borderLeftWidth)+parseFloat(cs.borderRightWidth);
+  const by=parseFloat(cs.borderTopWidth)+parseFloat(cs.borderBottomWidth);
+  mouse.x=(e.clientX-rect.left-parseFloat(cs.borderLeftWidth))*(canvas.width/(rect.width-bx));
+  mouse.y=(e.clientY-rect.top-parseFloat(cs.borderTopWidth))*(canvas.height/(rect.height-by));
 });
 // on the whole window, not just the canvas: the canvas is letterboxed, and a context menu opened
 // over the dead space around it eats the mouseup that should have released the wand

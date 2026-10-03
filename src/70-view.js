@@ -89,6 +89,42 @@ function drawFloor(type){
   }
   ctx.drawImage(c,roomL(),roomT());
 }
+/* THE FLOOR CACHE IS EMPTIED HERE, BECAUSE ITS PIXELS BELONG TO A RUN AND NOT TO A SESSION.
+
+   The key is three fields wide (type, size, area) and that is what stops one floor's room being
+   painted in another area's stone. It is still not enough across a RUN boundary, because the canvas
+   it stores was filled through `caveTile`, and that tile was baked from Rnd.art() - the stream 05-rng
+   derives from the seed the player typed. Start a new run on a new seed and the key still matches, so
+   the cache hands back the previous run's baked floor, speckle included.
+
+   Which is why this sits next to drawFloor rather than in the art file: it is the same cache, the
+   same key, and the same reasoning that produced the key in the first place, and splitting the
+   argument for why a key is insufficient across two files is how the key stops being believed.
+
+   `floorCache` is a const OBJECT rather than a Map, so it is emptied by deleting its keys rather than
+   by reassigning it - reassigning would rebind nothing at all, and an empty-looking local next to a
+   full cache is the quietest possible version of this bug.
+
+   NOT CALLED FROM ANYWHERE YET. 50-run owns startGame and the run lifecycle, so the hook belongs to
+   the agent that owns that file: one call before a new run draws anything. This file's job is to
+   expose the door and say plainly that it is not yet wired up. */
+function clearFloorCache(){
+  for(const k of Object.keys(floorCache)) delete floorCache[k];
+}
+/* ALL THREE RUN-DEPENDENT ART CACHES, in the one call the run lifecycle should have to make.
+
+   One entry point rather than three because the failure is collective: a run that clears the floor
+   sprite but not the cave tile underneath it repaints the room and changes nothing, because the
+   pattern it fills the canvas with is the cached one from the last run. That is a version of this bug
+   that is invisible in a screenshot and obvious in the pixels, and it is exactly what three separate
+   hooks invite.
+
+   `clearTileCaches` lives in 10-art because the two tile caches are declared there; this file can
+   call it because 10-art is loaded first, and nothing here is invoked at load time. */
+function clearArtCaches(){
+  clearFloorCache();
+  clearTileCaches();
+}
 /* THE WALL, as four bands of one masonry pattern anchored to the room's own corner.
 
    It was four `fillRect`s of a flat colour, which is fine for exactly one area and reads as a frame
@@ -1504,6 +1540,47 @@ function drawDescent(){
   scrim.addColorStop(1,'rgba(5,4,3,0)');
   ctx.fillStyle=scrim;
   ctx.fillRect(0,scrimTop,W,scrimBot-scrimTop);
+  /* THE PLAYER IS REDRAWN OVER THE SCRIM, and this is the fix for the thing the scrim itself caused.
+
+     The scrim exists because the player is pinned to the exact centre of the canvas on every descent
+     - the camera clamp takes its "room fits on screen" branch for a 450px room in a 600px canvas, so
+     camY is (130+580-600)/2 = 55 and the room's midpoint lands on y 300 = H/2, with the four banner
+     lines centred on W/2. Measured: the player's near-white sprite reads 236,232,245 before the scrim
+     and 46,44,46 after it, so the character is knocked to 17% of its brightness for the length of the
+     beat. The type is legible; the player is a grey smudge standing on it.
+
+     So the sprite and its wand are put back, at full brightness, over the top of the band. Not the
+     whole player pass - the lag ghost and the ground shadow stay under the scrim, because they are
+     part of the room, and drawing them again would double them. The wand and muzzle flash come with
+     it, because a character pointing at nothing while the banner is up reads as a broken frame.
+
+     This is one extra sprite draw for the length of one descent (FADE_DESCEND, 0.9s), inside the same
+     guard that already draws the banner. */
+  ctx.save();
+  ctx.translate(-cam.x,-cam.y);   // the room pass draws the player in world space, under the camera
+  {
+    const fr2=player.anim>0?Math.floor(player.anim)%4:-1, frame2=fr2<0?1:fr2;
+    const bob2=fr2<0?Math.round(Math.sin(frameCount*0.07/SPEEDUP)):((fr2&1)?-2:0);
+    const hop2=readyT>0?-Math.sin(readyProg*Math.PI)*7:0;
+    const flick2=player.iframes>0&&((player.iframes/IFRAME_FLICKER)|0)%2===0;
+    const oy2=player.y+bob2+hop2;
+    /* The aim angle is recomputed rather than read from the room pass: `a` is a local of drawRoom()
+       and this is a different function, so reaching for it would be reaching across a boundary into
+       a variable that only happens to be in scope while nothing has re-entered. It is two lines and
+       it cannot go stale. */
+    const aim2=mouseWorld();
+    const a2=Math.atan2(aim2.y-player.y,aim2.x-player.x);
+    const behind2=Math.sin(a2)<-0.35;
+    const glow2=readyT>0?0.5*readyProg:0;
+    ctx.globalAlpha=a*(flick2?0.35:1);
+    let tip2;
+    if(behind2) tip2=drawWand(player.x,oy2,a2,WEAPONS[player.weaponIdx].color,glow2);
+    drawSprite(PLAYER_FRAMES[frame2],PLAYER_PAL,player.x,oy2-4,2,null,'player'+frame2);
+    if(!behind2) tip2=drawWand(player.x,oy2,a2,WEAPONS[player.weaponIdx].color,glow2);
+    ctx.globalAlpha=a;
+    drawMuzzleFlash(tip2[0],tip2[1],player.muzzleTimer);
+  }
+  ctx.restore();
   /* THE FLOOR NUMBER IS STRUCK IN THE AREA'S ACCENT, like the depth numeral, so the beat and the
      plate agree about where you are. It was its own literal (`#e8b06a`), which was Area1's accent
      written out in a second place - the exact arrangement that lets two things that mean the same

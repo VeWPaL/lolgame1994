@@ -70,37 +70,40 @@ try {
 if (-not $serverUp) {
   Note "   server not answering on 8731 - starting it"
   $sh = Join-Path $env:TEMP 'depths-server.ps1'
-  $body = @'
-# The project root, derived from where this script lives. A hardcoded absolute path made the script
-# work on exactly one machine and quietly serve an empty 404 everywhere else, which is the worst
-# failure mode for a gate: it starts, it prints reassuring headings, and it checks nothing.
-$root = Split-Path -Parent $PSScriptRoot
-if (-not $root -or -not (Test-Path (Join-Path $root 'depths.html'))) {
-  $root = $PSScriptRoot
-}
-if (-not (Test-Path (Join-Path $root 'depths.html'))) {
-  Write-Error "verify.ps1 cannot find depths.html - looked in '$root' and '$PSScriptRoot'."
+  # THE ROOT IS PASSED IN, not guessed. This used to derive itself as `Split-Path -Parent $PSScriptRoot`
+  # and fall back to `$PSScriptRoot` - but it lives in %TEMP%, so the first is the parent of TEMP and
+  # the second is TEMP itself, and neither can contain depths.html. It therefore hit its own
+  # Write-Error every time and the gate reported "the local server is not answering on 8731" while
+  # the real fault was three lines of path arithmetic. A gate that cannot start its own dependency
+  # gets muted, and a muted gate is worse than no gate.
+  $body = @"
+`$root = '$($root -replace "'","''")'
+if (-not (Test-Path (Join-Path `$root 'depths.html'))) {
+  Write-Error "the server script cannot find depths.html under '$root'."
   exit 1
 }
-$listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add("http://127.0.0.1:8731/")
-$listener.Start()
-while ($listener.IsListening) {
-  $ctx = $listener.GetContext()
-  $rel = $ctx.Request.Url.AbsolutePath.TrimStart('/')
-  if (-not $rel) { $rel = 'depths.html' }
-  $path = Join-Path $root $rel
-  if (Test-Path $path) {
-    $ext = [System.IO.Path]::GetExtension($path).ToLower()
-    $type = switch ($ext) { '.html' {'text/html'} '.js' {'application/javascript'} '.css' {'text/css'} default {'text/plain'} }
-    $bytes = [System.IO.File]::ReadAllBytes($path)
-    $ctx.Response.ContentType = $type
-    $ctx.Response.ContentLength64 = $bytes.Length
-    $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)
-  } else { $ctx.Response.StatusCode = 404 }
-  $ctx.Response.Close()
+`$listener = New-Object System.Net.HttpListener
+`$listener.Prefixes.Add("http://127.0.0.1:8731/")
+`$listener.Start()
+while (`$listener.IsListening) {
+  `$ctx = `$listener.GetContext()
+  `$rel = `$ctx.Request.Url.AbsolutePath.TrimStart('/')
+  if (-not `$rel) { `$rel = 'depths.html' }
+  `$path = Join-Path `$root `$rel
+  if (Test-Path `$path) {
+    `$ext = [System.IO.Path]::GetExtension(`$path).ToLower()
+    `$type = switch (`$ext) { '.html' {'text/html'} '.js' {'application/javascript'} '.css' {'text/css'} default {'text/plain'} }
+    `$bytes = [System.IO.File]::ReadAllBytes(`$path)
+    `$ctx.Response.ContentType = `$type
+    `$ctx.Response.ContentLength64 = `$bytes.Length
+    # no-store, or the browser is entitled to serve a stale module for the rest of the session -
+    # which is exactly how a verified fix appears not to have landed
+    `$ctx.Response.Headers.Add('Cache-Control','no-store')
+    `$ctx.Response.OutputStream.Write(`$bytes, 0, `$bytes.Length)
+  } else { `$ctx.Response.StatusCode = 404 }
+  `$ctx.Response.Close()
 }
-'@
+"@
   [System.IO.File]::WriteAllText($sh, ($body -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
   Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $sh -WindowStyle Hidden
   Start-Sleep -Milliseconds 1500

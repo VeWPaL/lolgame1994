@@ -17,13 +17,33 @@
 
    Hex only, because everything in the existing vocabulary is written as hex. A three-digit form is
    expanded rather than rejected, so a hand-typed '#abc' is a legal argument and not a silent
-   black. */
+   black.
+
+   AND NOTHING ELSE IS ACCEPTED, which is the second half of the same rule and was the half that was
+   missing. This used to hand the string to parseInt and check that a number came back, and
+   parseInt is a much more forgiving thing than a colour:
+
+       '#12'      -> 0x12       -> [0, 0, 18]      black with a whisper of blue
+       '#12345'   -> 0x12345    -> [1, 35, 69]      a colour nobody chose
+       '#xyz'     -> NaN        -> rejected
+       'rebeccapurple' -> NaN   -> rejected
+
+   So a malformed palette entry did not fail, it quietly resolved to the darkest colour available and
+   drew an area in near-black - a whole floor rendered wrong, with the mistake sitting in a table
+   entry rather than anywhere a stack trace could point. The check is now a SHAPE check, not a
+   "did it parse" check: three or six hex digits and nothing else. That is stricter than parseInt and
+   exactly as strict as the palette.
+
+   Throwing rather than returning null is deliberate, and it is what this function already did for the
+   cases it caught: `paletteForArea` throws on an unknown area and Content.get throws on an unknown id,
+   so the vocabulary of this file is loud about its own mistakes. A null would propagate into
+   mixHex, where it would become a NaN pixel rather than a message naming the entry that is wrong. */
 function hexRgb(h){
   let s=String(h).replace('#','').trim();
+  if(!/^([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s))
+    throw new Error('not a colour: "'+h+'" - expected 3 or 6 hex digits, e.g. #abc or #aabbcc');
   if(s.length===3) s=s[0]+s[0]+s[1]+s[1]+s[2]+s[2];
-  const n=parseInt(s,16);
-  if(!Number.isFinite(n)) throw new Error('not a colour: "'+h+'"');
-  return [(n>>16)&255,(n>>8)&255,n&255];
+  return [parseInt(s.slice(0,2),16),parseInt(s.slice(2,4),16),parseInt(s.slice(4,6),16)];
 }
 const rgbHex=(r,g,b)=>'#'+[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');
 /* MIX. `t` is how much of B lands in the result, so mixHex(a,b,0) is a and mixHex(a,b,1) is b. Both
@@ -218,6 +238,30 @@ function wallTile(area){
   }
   wallCache.set(area,c);
   return c;
+}
+/* ---------- CLEARING THE TILES, because they are SEEDED PER RUN ----------
+   These two caches, and the floor cache beside them in 70-view, hold canvases that were baked with
+   draws from Rnd.art(). The art stream is derived from the seed the player typed (05-rng: OFF_ART), so
+   what is in those canvases is a function of THE SEED and nothing else.
+
+   Which means a cache that outlives the run that filled it is carrying seed A's speckle into seed B:
+   start a second run on a new seed and the floor you are standing on is flecked with the previous
+   run's flecks. It is invisible on any single screenshot - the texture is stone-coloured either way -
+   and it is the reason this function exists rather than a comment asking people to remember.
+
+   NOTHING CALLS THIS YET, and that is deliberate at this layer. 50-run owns the run lifecycle and is
+   not mine to edit, so the hook into startGame is left for the agent that owns it: one call at the
+   top of a new run, before anything draws. What this file owes is the DOOR and an honest statement of
+   what walking through it does - a function nobody has wired up yet is a latent capability, and
+   pretending otherwise by calling it from somewhere would be a run-lifecycle change wearing a hat.
+
+   Tile caches only. `spriteCache`, `glowCache`, `woodCache`, `paperCache`, `iconCache` and
+   `glyphCache` are keyed by shape or colour and are NOT seeded - they are the same pixels whatever
+   the seed is - so clearing them would spend a re-bake per body per frame for nothing at all. The
+   distinction is not which cache is convenient to clear but which one holds run-dependent pixels. */
+function clearTileCaches(){
+  caveCache.clear();
+  wallCache.clear();
 }
 
 /* THE COLOUR OF THE AIR IN A ROOM, in one place.

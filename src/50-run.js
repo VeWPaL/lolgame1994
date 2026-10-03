@@ -90,6 +90,24 @@ function startGame(root){
      With no argument it takes a fresh seed, which is what starting from the title screen wants and
      what the seed sheet wants after it has decoded the code the player typed. */
   Rnd.set(root===undefined?Rnd.fresh():root);
+  /* THE ART CACHES ARE RUN-SCOPED, and this is the line that makes them so.
+
+     `caveCache`, `wallCache` and `floorCache` hold canvases that were baked through draws from
+     `Rnd.art()` - the stream 05-rng derives from the seed the player typed. So what is inside those
+     canvases is a function of THE SEED and nothing else, and a cache that outlives the run that
+     filled it is carrying seed A's speckle into seed B: start a second run and the floor you are
+     standing on is flecked with the previous run's flecks.
+
+     It is invisible on any single screenshot - the texture is stone-coloured either way - which is
+     exactly why it needs to be a call rather than a comment asking people to remember. And it has
+     to happen HERE, immediately after the seed is set and before anything draws, because the next
+     line generates a dungeon whose rooms will pull from these caches.
+
+     Only the three tile caches. `spriteCache`, `glowCache`, `woodCache`, `paperCache`, `iconCache`
+     and `glyphCache` are keyed by shape or colour, are the same pixels whatever the seed is, and
+     clearing them would spend a re-bake per body per frame for nothing. The distinction is not which
+     cache is convenient to clear but which one holds run-dependent pixels. */
+  clearArtCaches();
   /* The flank walk and the pack-id counter live at module scope in 20-world.js, so they are part of
      what "start from nothing" has to mean. Neither was reset, so a second run from the same seed began
      with the golden-angle walk already part-way round: identical dungeon, identical bodies, every lunger

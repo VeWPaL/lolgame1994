@@ -1650,8 +1650,11 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **207 checks**, every test seeded to an identical world. All must pass at
-  every commit. The change history (`FIXES`, in `80-ui.js`) is **115** entries and is itself checked.
+- `src/99-tests.js` - **211 checks**, every test seeded to an identical world. All must pass at
+  every commit. The change history (`FIXES`, in `80-ui.js`) is **118** entries and is itself checked.
+  Note that `verify.ps1`'s regex counts **117** here, because one key contains an escaped apostrophe
+  (`another seed\'s floor`) and the pattern stops at the quote. The regex is the script's own
+  arithmetic and the table is the truth; when they disagree, the table wins.
   `verify.ps1` counts that table from a regex and prints the number; it does **not** assert it, and
   this paragraph used to claim the suite did. What the suite actually checks is the direction that
   matters: every pinned fix must have a test carrying its name, and an entry with no matching result
@@ -1715,6 +1718,80 @@ teaches; the other three exist to make a room's answer depend on which of them i
   exactly what it is. The type test means the movement change costs it nothing.
 - **Boss** — the Warden. Not a scaled lunger: a phased fight with a TELL, a COMMIT and a RECOVER for
   every move, and a wall it can call. See the section above.
+
+### Three defects the viewport found, and two of them were invisible by construction
+
+The suite passes at 1280x720 and FAILED at 960x600 — the canvas's own design size, in a window of
+the same size. Both of the failures it found there had a shape that made them untestable at the
+window size the author was using.
+
+**The pointer mapping read integers against fractional layout.** `canvas.clientLeft` and
+`canvas.clientWidth` are integer counts; `getBoundingClientRect()` is fractional. At 960x600 the
+canvas is letterboxed to a content box of 840.797 x 525.484 sitting at clientX 59.5938, so the two
+disagreed: the nearest pointer position the cursor can physically be at is clientX 60, which the old
+mapping put at **-0.678** — off the left of the canvas entirely, so the shot was aimed from outside
+the play area. Above 1280x720 the border box lands on whole pixels and the two agree exactly, which
+is why it lived: the only window that shows the bug is the one the game was designed for.
+
+**A `MouseEvent` cannot carry a fractional `clientX`.** Dispatching one with 59.59375 delivers 59.
+So the old test's claim — "the content top-left maps to 0,0" — was asserting something no cursor can
+do, and it passed anyway because its 1px tolerance was wider than the error it was supposed to catch.
+The test now sweeps every integer position the pointer can occupy and requires the whole sweep inside
+the canvas, which is the form the bug actually took: a constant offset at the near edge, zero in the
+middle.
+
+**The character sheet clipped its HEAD, not its foot, and the assertion looked at the foot.**
+`#charSheet` was `display:flex; align-items:center`, and a centred flex item taller than its container
+is pushed off BOTH ends — the overflow above the scroll origin is unreachable, because scrolling up
+stops at 0. Measured at 960x600: card 680px in a 569px viewport, `scrollTop` 0..76, first children at
+**-37px**. The foot scrolled into view fine, which is why it read as a working scroll area.
+
+The assertion that was supposed to catch it was `card.height <= sheet.scrollHeight` — and
+`scrollHeight` IS the content height, so that fails by construction whenever content legitimately
+overflows a scrollable box. It asserted a working scroll area was broken, and passed against the
+broken layout for the same reason a test that re-derives the rule it audits always does. It now
+anchors the scroll at both ends and asks whether the head and the foot are each reachable, and
+asserts `align-items:flex-start` directly rather than inferring it from a height. Measured after:
+`scrollTop` 0..151, head at +39px. Same change is invisible at 1280x720, where nothing was clipped.
+
+### The descent scrim fixed the type and buried the player
+
+`drawDescent` draws a scrim behind four centred lines because the player is pinned to the exact
+centre of the canvas: the camera clamp takes its "room fits on screen" branch for a 450px room in a
+600px canvas, so `camY` is 55 and the room midpoint lands on y 300 = `H/2`, with the banner centred
+on `W/2`. The collision is structural — the player cannot be anywhere else.
+
+The scrim lifted the type off the player, which was the point. But a 0.90 plateau over a near-white
+sprite is not a legibility fix, it is a deletion: measured at the sprite's centre, **236,232,245**
+without the banner and **46,44,46** with it — 17% of its brightness, for the length of the beat.
+
+So the sprite and its wand are redrawn over the band at full brightness (`drawDescent`, after the
+scrim, under the camera transform it shares with the room pass). The lag ghost and ground shadow are
+NOT redrawn — they belong to the room, and drawing them twice would double them. The redraw carries
+the beat's own `globalAlpha`, so the player still arrives and leaves with it; a redraw at full alpha
+would pop. The test asserts the sprite's peak brightness against the same frame without the banner,
+because a redraw at `globalAlpha 0.1` satisfies "the player is drawn over the scrim" and must fail.
+
+### A misspelled category took the whole bug panel down
+
+`showBugPanel` grouped entries with `byCat[it.cat][...].push(it)`, and `byCat` is seeded from
+`CAT_ORDER`. A category name not in that list made `byCat[it.cat]` undefined, and `.push` on
+undefined threw — so the panel, whose entire job is reporting failures, rendered nothing at all.
+
+Found by adding a fix under a new category name, which is the ordinary way the table grows. The
+lookup now falls back to `unclassified`, which already exists for exactly this, and the test calls the
+real `showBugPanel` with a deliberately unknown category and reads the real DOM. An earlier draft of
+that test re-implemented the bucket loop beside the drawing — which would have passed against the
+broken version, the same mistake this file's own notes warn about twice.
+
+### Three things, and what they have in common
+
+Each was invisible at the window the work was done in, and each was caught by asking the question in
+a place where the answer could be different: a second viewport, a pixel instead of a draw call, and
+a category name nobody had used yet. **A defect that a single environment cannot show is not a defect
+you have tested for**, and the gate that would have caught all three is the one this project cannot
+currently run — `verify.ps1` counts `test(` declarations and prints the number, because the suite
+needs a canvas at page load and the script has no browser.
 
 ### The C# port, and exactly where its boundary is
 
