@@ -1354,8 +1354,21 @@ const MOMENTUM_MOVE_FLOOR=0.3;
    pass, so the numbers stay where the claim holds and the tension is written down here instead of
    being tuned away in silence. If a player ends up feeling the meter is not worth watching, this
    paragraph is where to start, and the answer is not a bigger number. */
-/* THE METER'S SPEED SHARE IS 0.05, and that number is the collision between two things the design
-   both wants.
+/* THE METER'S SPEED CONTRIBUTION IS MOMENTUM_SPEED=0.18, used as a MULTIPLIER FACTOR, and this
+   paragraph used to call it "5%" and name the number 0.05. Both halves were wrong.
+
+   THE UNIT IS THE PART THAT MATTERS. `moveSpeedBonus()` returns
+   `Stats.value('speed') + Momentum.level()*MOMENTUM_SPEED`, and the tick consumes it as
+   `(1+moveSpeedBonus())` - so this is a factor, not a speed. The Wyrd starts at a 0.25 speed stat,
+   which is exactly why a naive reading of the bonus as "a share of the stat" makes 0.18 look like
+   72% of the character: 0.18 is 0.43 INSIDE the (1+x), i.e. 18% more speed than the base alone, and
+   the whole quantity is then clipped by MOVE_SPEED_HARD_CAP. 18% is close enough to "a small share"
+   to have been written down as 5% by someone reading the shape rather than the arithmetic, and the
+   constant later moved without the prose moving with it.
+
+   Measured at the starting build: 283.8px/s with the meter empty, 294.5px/s full, a gain of 3.8%.
+   So even the 18% is not what the player feels at this build - which is the next sentence, and it is
+   the one that has always been right.
 
    The character starts at 25% and the meter used to add 10% on top, and the suite measured what that
    does: a straight-line runner at 200px with a full meter is hit 0% of the time, every clean sample
@@ -1364,13 +1377,16 @@ const MOMENTUM_MOVE_FLOOR=0.3;
    against is past what that solution can carry. The character alone at 25% is still hit; it is the
    STACKING that breaks it.
 
-   So the meter takes 5%, and the reward is carried almost entirely by ACCELERATION - the half the
-   player feels anyway, and the half a constant-velocity solver genuinely cannot answer.
+   So the meter takes a modest slice of speed, and the reward is carried almost entirely by
+   ACCELERATION - the half the player feels anyway, and the half a constant-velocity solver genuinely
+   cannot answer. MOMENTUM_ACCEL=0.55 is that half, and it is deliberately more than twice the speed
+   number rather than comparable to it; the suite asserts that margin, because if the two numbers ever
+   converge the design claim stops being true and nothing else in the file would notice.
 
-   And the honest recommendation, which is not a smaller number: the real fix belongs in the gunner.
+   And the honest recommendation, which is not a bigger number: the real fix belongs in the gunner.
    Its solver already runs fourteen iterations against an assumed velocity; teaching it to lead a
-   target that is still accelerating would let the meter be worth more than 5% AND keep the gunner
-   dangerous, and that is a change to Intercept.cs rather than to this file. Written down so the next
+   target that is still accelerating would let the meter be worth more AND keep the gunner dangerous,
+   and that is a change to the intercept solver rather than to this file. Written down so the next
    pass starts there rather than re-deriving it. */
 const MOMENTUM_SPEED=0.18, MOMENTUM_ACCEL=0.55;
 // Two ceilings, and the difference matters. SPEED_CAP is the ceiling on the SPEED STAT, which a

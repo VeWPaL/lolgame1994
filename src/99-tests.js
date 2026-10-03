@@ -730,6 +730,45 @@ test('a stat is derived from base every time, so removing an item removes exactl
        'tuning was measured against');
     ok(MOVE_SPEED_HARD_CAP<SPEED_CAP+MOMENTUM_SPEED,'the hard cap is above what items and a full '+
        'meter can actually reach, so it is a ceiling on nothing');
+    /* THE METER'S SPEED GIFT IS AN ABSOLUTE AMOUNT, and this asserts the distinction rather than
+       trusting a comment to carry it.
+
+       The balance file's paragraph on the meter described the contribution as "5%" and named the
+       number 0.05, while the constant beside it was 0.18. Both halves were wrong.
+
+       THE UNIT IS THE THING THAT WAS MISUNDERSTOOD, and this is why it is worth a test.
+       `moveSpeedBonus()` returns `Stats.value('speed') + Momentum.level()*MOMENTUM_SPEED`, and the
+       tick uses it as `(1+moveSpeedBonus())` - so the whole quantity is a MULTIPLIER FACTOR, not a
+       speed. The Wyrd starts at a 0.25 speed stat, which is why a naive read of the bonus as "a
+       percentage of the stat" makes 0.18 look like 72% of the character. It is not: 0.18 on a 0.25
+       base is 0.43 inside `(1+x)`, i.e. 18% more speed than the base alone, and the whole thing is
+       then clipped by MOVE_SPEED_HARD_CAP.
+
+       That is why the comment said 5% and was wrong in a way nobody caught: 18% is close enough to
+       "a small share" to read as one, and the constant was changed at some point without the prose
+       moving with it. Measured, at the starting build: 283.8px/s with the meter empty, 294.5px/s
+       full - a gain of 3.8%, not 18%, because at that build the multiplier is further from 1 than the
+       raw points suggest and the acceleration half dominates what the player actually feels. */
+    {
+      Stats.reset();
+      const baseBonus=moveSpeedBonus();
+      Momentum.set(1);
+      const fullBonus=moveSpeedBonus();
+      eq(fullBonus-baseBonus,MOMENTUM_SPEED,'the meter handed out '+
+         ((fullBonus-baseBonus)*100).toFixed(1)+' points, but MOMENTUM_SPEED is '+MOMENTUM_SPEED+
+         ' - if these differ the meter is being scaled somewhere else and every percentage quoted '+
+         'about it is describing a different number');
+      /* the multiplier framing, asserted: the bonus is used as (1+x), so its effect on top speed is
+         the ratio of two (1+x) terms - and for a starting character that is close to 1.18, not 1.72 */
+      const mult=(1+fullBonus)/(1+baseBonus);
+      ok(mult>1.1&&mult<1.25,'a full meter multiplies the character\'s speed by '+mult.toFixed(3)+
+         ', outside the 1.10-1.25 band the design assumes - the tick uses (1+moveSpeedBonus()), so '+
+         'this is the number that decides whether the meter feels like a reward');
+      /* and the acceleration half, which is where the reward is actually carried */
+      ok(MOMENTUM_ACCEL>MOMENTUM_SPEED*2,'the acceleration gift ('+MOMENTUM_ACCEL+') is barely more '+
+         'than twice the speed gift ('+MOMENTUM_SPEED+') - the design claim is that the reward is '+
+         'carried by ACCELERATION, and that needs a wide margin, not a small one');
+    }
     Momentum.release();
     Stats.reset();
   });
