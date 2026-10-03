@@ -14,6 +14,7 @@
 param(
   [switch]$SkipCsharp,
   [switch]$SkipJs,
+  [switch]$Deep,
   [switch]$Quiet
 )
 
@@ -186,6 +187,7 @@ Note "   (the run above is authoritative - if these disagree, CONVENTIONS.md is 
 # rather than reporting a pass it did not perform.
 Note ""
 Note "6. the JavaScript suite, run"
+if ($Deep) { Note "   (-Deep: 14 viewports, 720x480 through 2560x1440 - use sparingly, it is a full suite run each)" }
 if ($SkipJs) {
   Note "   SKIPPED (-SkipJs)"
 } else {
@@ -195,9 +197,19 @@ if ($SkipJs) {
     Note "   This step is a REAL assertion. Without it the counts above are printed, not checked."
   } else {
     $runner = Join-Path $env:TEMP 'depths-suite.js'
+    # The viewport list is built HERE rather than inside the here-string. PowerShell 5.1 has no
+    # ternary, and an inline if-expression in an expandable here-string either does not evaluate or
+    # silently drops the brackets - which produced `const vps=[960,600],[1280,720]` and a syntax
+    # error at line 2 of the generated file. A variable interpolated into the string cannot lose its
+    # punctuation.
+    if ($Deep) {
+      $vpList = '[720,480],[800,600],[960,540],[960,600],[1024,640],[1024,768],[1152,720],[1280,720],[1280,1024],[1366,768],[1440,900],[1600,900],[1920,1080],[2560,1440]'
+    } else {
+      $vpList = '[960,600],[1280,720],[1920,1080]'
+    }
     $runnerBody = @"
 const pw=require('$($pw -replace '\\','/')');
-const vps=[[960,600],[1280,720],[1920,1080]];
+const vps=[$vpList];
 let claimedTotal=0;
 (async()=>{
   let browser;
@@ -232,7 +244,7 @@ let claimedTotal=0;
       if ($jsOut -match 'CLAIMEDTOTAL\s+(\d+)') { $claimedTotal = [int]$Matches[1] }
       ($jsOut -split "`n" | Where-Object { $_.Trim() -ne '' -and $_ -notmatch 'CLAIMEDTOTAL' }) | ForEach-Object { Note "   $($_.Trim())" }
       if ($worst -eq 0) {
-        Note "   the suite ran and every check passed at all three viewports"
+        Note "   the suite ran and every check passed at every viewport tested"
         if ($jsClaim.Success -and [int]$jsClaim.Groups[1].Value -ne $claimedTotal) {
           Bad "CONVENTIONS.md claims $($jsClaim.Groups[1].Value) JS checks but the suite actually runs $claimedTotal - the document is asserting a number and the number is wrong"
         }

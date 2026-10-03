@@ -1667,12 +1667,16 @@ having is the one that says what happens when the content outgrows the code.
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
 - `src/99-tests.js` - **213 checks**, every test seeded to an identical world. All must pass at
-  every commit. The change history (`FIXES`, in `80-ui.js`) is **118** entries and is itself checked.
-  Note that `verify.ps1`'s regex counts **117** here, because one key contains an escaped apostrophe
-  (`another seed\'s floor`) and the pattern stops at the quote. The regex is the script's own
-  arithmetic and the table is the truth; when they disagree, the table wins.
-  **This number is now ASSERTED by step 6 of `verify.ps1`, not printed beside a claim.** It went stale
-  at 207 and again at 211 before that, because nothing compared the document to a run.
+  every commit. `verify.ps1` step 6 **runs** the suite headlessly (Edge via Playwright, required from
+  the Hermes install — no dependency added to this repo) and asserts this number, which went stale at
+  207 and again at 211 before that because nothing compared the document to a run.
+  `verify.ps1 -Deep` runs it at **14 viewports, 720×480 through 2560×1440**; the default three are
+  the canvas design size and two common windows. The change history (`FIXES`, in `80-ui.js`) is **118**
+  entries and is itself checked.
+
+  **The multi-viewport run is not ceremony — it is the only reason two of today's bugs were found.**
+  Both the pointer-mapping defect and the character-sheet overflow were invisible at 1280×720 and
+  failed at 960×600. A suite that runs at one window size cannot see that class of bug at all.
   `verify.ps1` counts that table from a regex and prints the number; it does **not** assert it, and
   this paragraph used to claim the suite did. What the suite actually checks is the direction that
   matters: every pinned fix must have a test carrying its name, and an entry with no matching result
