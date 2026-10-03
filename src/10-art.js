@@ -342,7 +342,36 @@ const TEMPO={rate:1.5}, PRESSURE={rate:1.5}, PLAYER_MOVE=1.2;
 //
 // BRUNCH_WALK is the idle speed a body falls to when it has arrived and is milling rather than
 // advancing.
-const BRUNCH_CHASE_SPEED=1.35,     // no target to protect: the original chase speed, restored
+/* BRUNCH_CHASE_SPEED IS 1.75, and 1.35 was not enough - it was a number that LOOKED right.
+
+   The chase speed is only ever compared against one thing, the player's 1.2, and 1.35 is a ratio of
+   1.13. That looks decisive on paper. Measured in a room big enough that a 14-second chase never
+   reaches a wall, with the player running flat out in a straight line and the pack starting 450px
+   behind, the gap every two seconds:
+
+       run 1.35   451  682  790  898  1005  1112  1219    grows ~107px per 2s
+       run 1.50   451  643  688  733   777   822   866    slows, still grows
+       run 1.62   451  609  604  599   594   589   583    holds, never closes
+       run 1.75   451  572  513  445   383   322   261    closes ~62px per 2s
+       run 1.90   451  538  423  300   176   197   156    closes ~110px per 2s
+
+   So 1.35 was the worst of the available numbers: the pack could not run you down, which is the one
+   job the last-resort sprint exists for. 1.62 is the interesting one - it is where the gap stops
+   growing, which sounds like parity and is not, because a chase held at 450px is a chase the player
+   is never caught by and can therefore walk away from indefinitely. 1.75 is the first value on the
+   sweep that closes, and it closes steadily rather than snapping: the pack gets within 200px at 13.5s
+   from 450px, which is a fight, not an ambush.
+
+   The ramp is UNCHANGED and still does its job, which was the thing most likely to break here. The
+   `curSpeed` curve at 1.75 is 0.62, 0.73, 0.92, 1.08, 1.22, 1.35, 1.45 ... 1.75 over about 2.6s -
+   a pack that is slower than the player for its first two seconds and crosses the player's speed
+   around the 1.2 mark at roughly 1.1s. The announcement still happens. A higher peak reached through
+   the same ramp is a faster arrival, not a faster appearance.
+
+   The shield speed is untouched at 0.72. That one is a body walking onto a FIXED point, where
+   overshooting is a real failure, and the two jobs want opposite things - which is the whole reason
+   there are two numbers rather than one compromise between them. */
+const BRUNCH_CHASE_SPEED=1.75,     // no target to protect: the speed at which a pack actually catches you
       BRUNCH_SHIELD_SPEED=0.72,   // walking onto a slot: slow, because the slot is a fixed point
       BRUNCH_WALK=0.52*PLAYER_MOVE;
 const BRUNCH_RUN=BRUNCH_CHASE_SPEED;

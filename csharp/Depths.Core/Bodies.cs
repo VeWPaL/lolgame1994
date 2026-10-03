@@ -47,7 +47,15 @@ namespace Depths
         /// </para>
         /// </summary>
         public const double BrunchWalk = 0.62 * Balance.PlayerMove;
-        public const double BrunchRun = 1.35;
+        /// <summary>
+        /// The Brunch's last-resort chase speed: the one it uses when it has nothing left to shield.
+        /// Measured against the player's 1.2 in a room large enough that a 14s chase never reaches a
+        /// wall, 1.35 grew the gap ~107px per 2s - a pack that could never run the player down, which
+        /// is the only job this sprint exists for. 1.62 merely held the gap and never closed it.
+        /// 1.75 is the first value on the sweep that closes (~62px per 2s from 450px). The BRUNCH_RAMP
+        /// announcement is unchanged, so the pack is still slower than the player for ~1.1s.
+        /// </summary>
+        public const double BrunchRun = 1.75;
 
         /// <summary>
         /// The table. Built once, because it is constant - and built rather than written out, so the

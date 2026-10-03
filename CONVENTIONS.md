@@ -1666,7 +1666,7 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **229 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **230 checks**, every test seeded to an identical world. All must pass at
   every commit. `verify.ps1` step 6 **runs** the suite headlessly (Edge via Playwright, required from
   the Hermes install — no dependency added to this repo) and asserts this number, which went stale at
   207 and again at 211 before that because nothing compared the document to a run.

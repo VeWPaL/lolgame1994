@@ -39,7 +39,10 @@ namespace Depths.Tests
             Assert.That(brunch.Bar, Is.EqualTo(11));
             Assert.That(brunch.Hp, Is.EqualTo(2.7).Within(1e-9));
             Assert.That(brunch.Walk, Is.EqualTo(0.744).Within(1e-9));
-            Assert.That(brunch.Run, Is.EqualTo(1.35).Within(1e-9));
+            Assert.That(brunch.Run, Is.EqualTo(1.75).Within(1e-9),
+                "the last-resort chase speed: measured at 1.35 the pack grew the gap ~107px per 2s "
+                + "against a player running flat out, so it could never catch them - and 1.62 only "
+                + "held the gap rather than closing it. 1.75 is the first value that closes.");
             Assert.That(brunch.Armour, Is.EqualTo(1.0).Within(1e-9),
                 "the Brunch is the one body below the size line, so it takes full damage; armouring "
                 + "the chip body broke the alt blast's promise that one budget deletes a small group");

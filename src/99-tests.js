@@ -4839,6 +4839,74 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     run=undefined;
   });
 
+  test('a pack with nothing to protect CLOSES on a fleeing player, and announces itself doing it',()=>{
+    /* This asserts the BEHAVIOUR, because the number is what went wrong. The chase speed was 1.35
+       against a player at 1.2 - a ratio of 1.13, which reads as decisive in a table and is not. In a
+       room big enough that a 14-second chase never reaches a wall, with the player running flat out
+       and the pack starting 450px behind, the gap GREW ~107px per 2s. A pack that cannot run you down
+       is scenery, and the sprint's entire reason for existing is the moment there is nothing left to
+       shield.
+
+       Every previous check on this number was a RATIO against the player or against a lunger, and
+       ratios pass at almost any value between them - which is why a 13% cut to 1.18 went unnoticed.
+       So this measures the gap over time and asks a question about its SHAPE.
+
+       Two things have to hold and they pull against each other:
+         - the gap must SHRINK, or the pack cannot catch anyone;
+         - the pack must be slower than the player for a real interval first, or there is no window in
+           which to pick your ground, which is the entire reason BRUNCH_RAMP exists.
+       A speed high enough to satisfy the first can trivially break the second, so neither alone is
+       worth asserting. */
+    startGame();
+    const r=currentRoom();
+    /* 9000x2600 is not decoration. In a standard 700px room the pack reaches the west wall within
+       seconds of the chase starting and the gap then measures THE ROOM, not the chase - the first
+       version of this probe plateaued at exactly the room width and read as "the pack caught up". */
+    r.bounds=roomBounds(9000,2600);
+    r.cx=r.bounds.l+r.bounds.w/2; r.cy=r.bounds.t+r.bounds.h/2;
+    r.doors={}; r.spawned=true; r.enemies.length=0; r.pickups.length=0; r.cleared=true;
+    syncRoomBounds();
+    const px0=r.cx, py0=r.cy;
+    player.x=px0; player.y=py0; player.lagX=px0; player.lagY=py0;
+    const hp0=player.hp;
+    const pack=[];
+    for(let i=0;i<3;i++){
+      const g=spawnEnemy(false,r,px0-450,py0+(i-1)*22,'brunch');
+      r.enemies.push(g); pack.push(g);
+    }
+    const gapAt=[];
+    let gapEndOfRamp=null;
+    const RAMP_TICKS=BRUNCH_RAMP+BRUNCH_RAMP/2;   // past the ramp, still a long way off
+    for(let t=0;t<210*14;t++){
+      keys={d:1};                        // the player runs flat out, away, in a straight line
+      player.hp=hp0; player.iframes=0;   // and is never killed, so the chase is never cut short
+      update();
+      const gap=Math.hypot(pack[0].x-player.x,pack[0].y-player.y);
+      if(gapEndOfRamp===null&&t>=RAMP_TICKS) gapEndOfRamp=gap;
+      if(t%(210*2)===0) gapAt.push(Math.round(gap));
+    }
+    keys={};
+    const gapFinal=Math.hypot(pack[0].x-player.x,pack[0].y-player.y);
+    /* The announcement bar is deliberately loose. The first version wanted the pack to still be 450px
+       out once its ramp finished, and it read 407px - which is the ramp WORKING, not failing: the gap
+       is expected to open slightly during the phase where the pack is deliberately slower than the
+       player, and the point is only that it must not have closed. Asserting "no closer than the start"
+       would be asserting that a pack which never chased would pass, which is the exact opposite of
+       this test. What has to hold is that the gap is still open and the pack has not arrived. */
+    ok(gapEndOfRamp>350,'the pack was already within '+Math.round(gapEndOfRamp)+'px of the player '+
+       'just after its ramp finished, so the chase never gave the player a window to choose their '+
+       'ground in (450  '+gapAt.join('  ')+')');
+    ok(gapFinal<gapEndOfRamp-120,'the pack did not close: '+Math.round(gapEndOfRamp)+'px after the '+
+       'ramp became '+Math.round(gapFinal)+'px 14 seconds later (450  '+gapAt.join('  ')+') - a '+
+       'last-resort sprint that cannot catch a kiting player is scenery, not a threat');
+    ok(gapFinal<420,'the pack closed to '+Math.round(gapFinal)+'px but not into a range where it '+
+       'can actually reach the player (450  '+gapAt.join('  ')+')');
+    /* and the shield half of the split must be untouched by any of this - the two numbers exist
+       because the two jobs want opposite things, so a chase fix must not have dragged the wall along */
+    ok(BRUNCH_SHIELD_SPEED<1,'the shield speed moved to '+BRUNCH_SHIELD_SPEED+' while the chase was '+
+       'raised; a wall that walks onto a fixed mark quickly overshoots it and stops blocking');
+  });
+
   test('Brunch: tiny, quick, in a knot, and the big packs are the rare ones',()=>{
     ok(ENEMY.brunch.r<ENEMY.lunger.r,'brunch is not the smallest body');
     ok(ENEMY.brunch.hp<ENEMY.shooter.hp,'brunch is not the frailest body');
@@ -4849,21 +4917,42 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(packHp/fastest<2.2,'a maximum pack is more than two seconds of work for the best gun');
     // and they are quicker than the player, which is the point of them, but only just
     ok(ENEMY.brunch.run>ENEMY.lunger.run,'brunch is not quicker than a lunger');
-    /* The 0.55/1.35 bounds below are relative and both survived a 13% speed cut without noticing: a
-       value can be "slower than 1.3x the player" and "faster than a lunger" at almost any number in
-       between, so nothing here objected when BRUNCH_RUN went 1.35 -> 1.18. This pins the cut. Reverting
-       it to 1.35 turns this red.
+    /* THE 0.55/1.35 BOUNDS WERE RELATIVE, AND RELATIVE BOUNDS DID NOT NOTICE A REAL REGRESSION.
+       Both of these survived a 13% speed cut without complaining: a value can be "slower than 1.3x the
+       player" and "faster than a lunger" at almost any number in between, so nothing objected when
+       BRUNCH_RUN went 1.35 -> 1.18 and the pack became scenery. That comment claimed this test
+       "pins the cut", and it did not pin anything.
 
-       The chase speed is back to 1.35 as a DELIBERATE split rather than a reversal: BRUNCH_RUN is what
-       a pack uses with nothing to protect, and BRUNCH_SHIELD_SPEED (0.72) is what it uses walking onto
-       a slot. Both are asserted so neither can be moved without the other being noticed. */
-    ok(ENEMY.brunch.run>1.30,'the chase speed is '+ENEMY.brunch.run+', down from 1.35 - a pack with '+
-       'nothing to protect has to be able to catch a kiting player, or it is scenery');
+       What the number has to satisfy is a BEHAVIOUR, not a ratio: with nothing to protect, a pack must
+       actually close on a player running flat out. Measured in a room large enough that a 14-second
+       chase never reaches a wall, gap every 2s from 450px:
+
+           run 1.35   451  682  790  898  1005  1112  1219    grows
+           run 1.62   451  609  604  599   594   589   583    holds, never closes
+           run 1.75   451  572  513  445   383   322   261    closes
+           run 1.90   451  538  423  300   176   197   156    closes faster
+
+       So 1.35 failed the property it existed for, and 1.62 is the more dangerous value: it holds the
+       gap, which looks like parity in a table and is not, because the player is never caught and can
+       walk away indefinitely. 1.75 is the pick - the first on the sweep that closes, and it closes
+       steadily rather than snapping.
+
+       The two speeds are asserted separately on purpose. BRUNCH_RUN is what a pack uses with nothing
+       to protect and BRUNCH_SHIELD_SPEED (0.72) is what it uses walking onto a slot, and the second
+       is a body heading for a FIXED point where overshooting is a real failure - so neither bound
+       can move without the other being noticed. */
+    ok(ENEMY.brunch.run>1.70,'the chase speed is '+ENEMY.brunch.run+' - measured, 1.35 grew the gap '+
+       '~107px per 2s against a fleeing player and 1.62 only held it, so anything under ~1.7 is a '+
+       'pack that cannot catch a kiting player and is therefore scenery');
     ok(BRUNCH_SHIELD_SPEED<ENEMY.brunch.run*0.75,'the shield speed is '+BRUNCH_SHIELD_SPEED+
        ' against a chase speed of '+ENEMY.brunch.run+' - the wall has to walk onto a fixed mark slowly '+
        'even when the chase is quick, which is the whole reason there are two numbers');
     ok(ENEMY.brunch.run>playerSpeedForTest(),'brunch no longer outruns the player, so kiting never fails now');
-    ok(ENEMY.brunch.run<playerSpeedForTest()*1.3,'brunch is so quick the player cannot kite them at all ('+(ENEMY.brunch.run/playerSpeedForTest()).toFixed(2)+'x the player)');
+    /* the upper bound is now 1.6x rather than 1.3x, because 1.75 measures at 1.46x the player and the
+       old ceiling would have rejected a chase that demonstrably works. It is still a ceiling: a pack
+       that is more than 1.6x the player's speed is a pack nobody can kite at all, which trades a
+       threat that can be avoided for one that cannot. */
+    ok(ENEMY.brunch.run<playerSpeedForTest()*1.6,'brunch is so quick the player cannot kite them at all ('+(ENEMY.brunch.run/playerSpeedForTest()).toFixed(2)+'x the player)');
     // reaching you must cost them something real, and it must be survivable once
     ok(ENEMY.brunch.hp>=2,'a brunch dies on its first touch, so the mechanic is invisible');
     // the size roll has to fall off as the bunch gets bigger
@@ -8483,9 +8572,21 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     /* the body has ARRIVED, so it is at speed - that is the claim working, not failing. The first
        version of this assertion read the speed and called it "teleporting", which is backwards: the
        body is at its slot, and at its slot it should be moving at full speed. */
-    ok(Math.hypot(e.vx||0,e.vy||0)>e.runSpeed*0.5,'the body is at '+
+    /* The expected speed here is BRUNCH_SHIELD_SPEED, not runSpeed, and using runSpeed was wrong rather
+       than merely fragile: this fixture has a live target, so `shielding` is true and the shield branch
+       sets `desired=BRUNCH_SHIELD_SPEED=0.72` explicitly (see stepBrunch). The assertion passed for
+       years only because the two numbers happened to sit close together - 0.72 against a runSpeed of
+       1.35 clears a `runSpeed*0.5` bar with almost no margin, and raising the chase to 1.75 put the
+       bar above the value the body is actually allowed to travel at. The test broke on an unrelated
+       change, which is the only reason it was ever going to break: it was measuring the wrong branch.
+
+       The claim this is really making is about MOMENTUM - that the body carries velocity between ticks
+       rather than snapping onto a bearing each tick - and that claim is about the body moving AT ALL
+       at a speed near the one it was asked for, not about which of two speeds it was asked for. */
+    const wantSpeed=BRUNCH_SHIELD_SPEED;
+    ok(Math.hypot(e.vx||0,e.vy||0)>wantSpeed*0.5,'the body is at '+
        Math.hypot(e.vx||0,e.vy||0).toFixed(3)+' having been asked to accelerate from rest, against a '+
-       'run speed of '+e.runSpeed.toFixed(2)+' - it did not move at all');
+       'shield speed of '+wantSpeed.toFixed(2)+' - it did not move at all');
     /* now yank the target across the room and watch the heading turn over several ticks. THIS is the
        momentum claim: a body that teleports along its bearing is on the new heading the same tick,
        and a body carrying velocity lags it. */
