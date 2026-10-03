@@ -1515,9 +1515,34 @@ const RESTORE_FX_SPAN=READY;
    reversal at full strength from across the room. That is not a subtle balance drift; it is the
    counter to the whole mechanic switching itself off at range, and it is silent.
 
-   A function, for the same reason and with the same guarantee: in a standard room these return
-   exactly the 300 and 430 they always did, so no measured number in this file moves. */
-const swerveDeadzone=()=>Math.round(roomW()/2)-50, SWERVE_FULL_BASE=130;
+   A function, for the same reason: it is re-derived per room rather than frozen at load.
+
+   AND THE WINDOW IS NOW A WINDOW RATHER THAN A NOTCH. It used to be `roomW()/2 - 50` to
+   `+ SWERVE_FULL_BASE(130)`, so in a 700px room the range in which distance opened the gunner's aim at
+   all was 300px to 430px: 130px, and the spread multiplier `reach` was then pinned at 1.0 for every
+   pixel beyond it. Measured, with the real input path:
+
+       straight runner   100% hit at 200px, 300px, 400px and 500px
+       counterstrafer     13% hit at 200px, 300px, 400px and 500px
+
+   Flat. Counterstrafing was worth −87 points of hit rate at EVERY range, so the mechanic was not "worth
+   nothing up close and something far away" - it was a flat 87-point dodge that the distance component
+   did not touch. The design intent is in the test's own name ("only far away misses") and in the
+   comment above the spread; the numbers contradicted both.
+
+   Three assertions in that test were parked behind a guard for exactly this reason, as three
+   `ok(true,'')` calls - passing assertions standing in for real ones. That is the shape of thing this
+   file keeps warning about, and it is how a genuine design bug survives: the test went green and
+   stopped checking the range where the mechanic claims to live.
+
+   The window now runs from a quarter of the room to four fifths of it: 175px to 560px in a 700px room,
+   and 385px of ramp rather than 130. Both bounds are still fractions of the room, so a big room gets a
+   proportionally wide window and `reach` never saturates inside a room at all - which is the property
+   that was missing, since a saturated multiplier cannot express "further is worse".
+
+   SWERVE_TRUST_WALKING and the spread size are untouched: this changes WHERE the tactic starts being
+   worth something, not how much it is worth when it does. */
+const swerveDeadzone=()=>Math.round(roomW()*0.25), SWERVE_FULL_BASE=Math.round(roomW()*0.55);
 const swerveFull=()=>swerveDeadzone()+SWERVE_FULL_BASE;
 // The gunner's cast tell. This is the whole of the change: the shell used to leave the instant the
 // gunner's cooldown ran out, so the player had nothing to read and the only counter was not being

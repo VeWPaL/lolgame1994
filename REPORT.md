@@ -154,13 +154,13 @@ Two of these were raised after the audit above and are not in it.
    guarding, per floor. Higher on floors where the new types are ranged, lower where they are not —
    a pack escorting a lunger is a crowd, not a wall.
 
-3. **`saveRecords`' empty `catch`.** A failed write leaves records half-written with no report. Low
-   severity — localStorage rarely fails — but a swallowed exception here means a lost run record
-   with nothing in the log to explain it.
+3. **Three tests that cannot fail.** From the audit, not yet re-verified line by line. This is the
+   highest-value item left: every fix in this session landed with a mutation check proving the test
+   goes red without the fix, and three tests that cannot fail are three places where that guarantee is
+   silently absent. Worth auditing specifically for `ok(...)` calls whose condition is a literal, a
+   comparison of a value to itself, or an assertion made before the code under test has run.
 
-4. **Three tests that cannot fail.** From the audit, not yet re-verified line by line.
-
-5. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
+4. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
    code no longer uses. Several were fixed in passing during the Brunch and hit-rate work; the rest
    are unaudited.
 

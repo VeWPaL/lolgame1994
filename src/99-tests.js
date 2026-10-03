@@ -97,11 +97,34 @@ if(new URLSearchParams(location.search).has('test')) (function(){
     try{ Momentum.release(); }catch(e){}
   };
   const test=(name,fn)=>{
-    try{ Rnd.set(TEST_SEED); Momentum.lock(); resetUI(); fn(); results.push({name,ok:true}); }
-    catch(err){ results.push({name,ok:false,msg:err.message}); }
+    /* ASSERTION COUNTING, and the distinction matters more than the count.
+
+       A test that makes no assertions at all passes unconditionally, and that is the whole of the
+       `eq(FRAME,FRAME)` shape this file keeps warning about. A test whose assertions all PASS is
+       obviously not the same thing - that is what a passing test looks like - so nothing here tries to
+       detect it by outcome.
+
+       What IS worth detecting is an assertion that can never fail, and the only sound way to find one
+       is to watch it fail: run the suite, then re-run each test with a deliberately broken world and
+       see which still pass. That is a mutation harness, not a counter, and it is the correct tool. The
+       counts recorded here are kept because they are cheap and because `asserts===0` is a real and
+       sufficient signal on its own - a test with no assertions is dead, full stop.
+
+       An earlier version of this counted assertions that evaluated true and listed every test where
+       all of them did. That flagged 194 of 229 tests, including every correct one, because a passing
+       assertion evaluates true by definition. The number was not a finding; it was the definition of
+       passing. */
+    let n=0;
+    const _ok=ok, _eq=eq;
+    const countingOk=(c,msg)=>{ n++; return _ok(c,msg); };
+    const countingEq=(a,b,msg)=>{ n++; return _eq(a,b,msg); };
+    ok=countingOk; eq=countingEq;
+    try{ Rnd.set(TEST_SEED); Momentum.lock(); resetUI(); fn(); results.push({name,ok:true,asserts:n}); }
+    catch(err){ results.push({name,ok:false,msg:err.message,asserts:n}); }
+    finally{ ok=_ok; eq=_eq; }
   };
-  const ok=(c,msg)=>{if(!c)throw new Error(msg);};
-  const eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
+  let ok=(c,msg)=>{if(!c)throw new Error(msg);};
+  let eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
   const press=k=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:k}));window.dispatchEvent(new KeyboardEvent('keyup',{key:k}));};
   /* `eq` COMPARES BY ===, WHICH FOR AN ARRAY IS A REFERENCE COMPARISON.
 
@@ -7296,31 +7319,114 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        gunner is, and nothing at all up close. So that is the assertion: the gain a reversal is worth
        must be larger at 400px than at 200px. Comparing hit rates cannot express that, because "the
        gunner hits everything" is the correct answer at both ends of the near range. */
-    /* The three 400px comparisons below are SKIPPED when the 400px straight column came back empty,
-       which it now does, and the reason is written up above: at 400px against a character 25% faster
-       than the encounter tuning assumed, the constant-velocity intercept misses by 86-139px over a
-       195-tick flight and the straight runner is against the wall before its shot is culled. The
-       deadzone claims below are about the SPREAD opening with distance, and a spread cannot be
-       measured against a column of zero samples however the arithmetic is written.
+    /* THE 400px COMPARISONS RUN, and the guard that skipped them is gone.
 
-       They are guarded rather than deleted so they come back the moment the room can carry the
-       measurement - which happens if the character gets slower or the solver learns to lead an
-       accelerating target, and both are open questions rather than settled ones. */
-    if(fS.length>0){
-      const gainNear=mean(cC)-mean(cS), gainFar=mean(fC)-mean(fS);
-      ok(gainFar>gainNear*2,'a reversal is worth '+gainNear.toFixed(1)+'px of extra miss at 200px but '+
-         gainFar.toFixed(1)+'px at 400px, so distance is not what buys the player the tactic and the '+
-         'deadzone is decorative: reversing is worth the same everywhere');
-      ok(mean(fC)>mean(fS)*2.5,'at 400px a counterstrafer is missed by '+mean(fC).toFixed(1)+
-         'px against a straight runner at '+mean(fS).toFixed(1)+'px, so there is no reason to move '+
-         'well at distance either');
-      ok(mean(fS)<THR*1.5,'a gunner at 400px misses a straight runner by '+mean(fS).toFixed(1)+
-         'px on average over '+fS.length+' shots '+show(fS)+', so long range hits nobody and there is '+
-         'no reason to close the distance at all');
-    } else {
-      ok(true,'');
-      ok(true,'');
-      ok(true,'');
+       Three `ok(true,'')` calls used to stand in for these when the 400px straight column came back
+       empty. That is the worst shape a dead assertion takes: not a missing check, but a PASSING one,
+       carrying a message that reads like a result. The test reported green and had checked nothing at
+       400px, which is exactly where the deadzone claims to matter most - the whole point of the
+       mechanic is that a reversal is worth more the further away the gunner is.
+
+       The guard's comment blamed the player being pinned against the far wall at 400px in a 700x450
+       room. That part is real - the 200px fixture above needed a wall filter at the player's own radius
+       precisely because a body pressed flat against a wall can produce a clearance no shot could have
+       used. But the conclusion drawn from it ("the column is empty, so the assertions cannot run") was
+       not: the fixture needed to keep the player in open floor, which is what the block below does by
+       recentring them on the gunner rather than pinning them to a corner.
+
+       The measurement matches the 200px one exactly, because a different metric is not a comparison:
+       each shell is followed to its end and scored by the SMALLEST distance it ever had to the
+       hitbox, not the distance at the moment it was fired. A shell fired at a stale aim has a large
+       "distance" at birth and can still connect, and scoring that as a miss makes a reversal look
+       worse than it is - which is what the first version of this block did, reporting a reversal as
+       worth -10.7px of extra miss when it was worth nothing at all. */
+    let fFar=0;
+    {
+      /* `r` belongs to the 200px block, which closed before this one opens. Declaring it again is the
+         correct fix rather than hoisting the original: a fixture that reaches into a neighbouring
+         block's scope is one edit away from silently measuring a different room. */
+      const r=currentRoom();
+      const fS2=[],fC2=[];
+      /* THE GUNNER GOES IN THE MIDDLE, and that is not a convenience - it is the only position from
+         which 400px is a measurable range.
+
+         Measured: a 400px ring around a body in a 700x450 room clears the walls at only 13-17 of 72
+         directions, and at the room's edge that falls to near zero. Any fixture that parks the gunner
+         off-centre and then requires the player to stand 400px away is requiring the player to stand
+         in a wall for most angles, and the fallback that clamps them inward produces a shot taken at
+         250-300px scored into a column labelled 400px. That is the fault the guard's comment described,
+         and it is a fault of PLACEMENT rather than of the mechanic.
+
+         The gunner's own standoff is 200-250px, so the centre of the room is also where it spends a
+         real fight. */
+      const g2=spawnEnemy(false,r,(ROOM_LEFT+ROOM_RIGHT)/2,(ROOM_TOP+ROOM_BOTTOM)/2,'gunner');
+      r.enemies.push(g2); g2.noticeTimer=0; g2.alerted=true;
+      /* keep the player at RANGE and clear of every wall, so the sample is about the deadzone rather
+         than about the floor plan. The clearance test is the player's own radius, for the reason the
+         200px block sets out: a smaller margin lets a wall-born shot into the column. */
+      const R2=400, margin=player.r+6;
+      const clear=()=>player.x>ROOM_LEFT+margin&&player.x<ROOM_RIGHT-margin&&
+                        player.y>ROOM_TOP+margin&&player.y<ROOM_BOTTOM-margin;
+      for(let i=0;i<400&&(fS2.length<40||fC2.length<40);i++){
+        const strafe=i%2===1;
+        for(let k=0;k<90;k++){
+          /* a counterstrafer REVERSES: alternate the axis every window, so the column is reversals
+             rather than one long arc. A single fixed angle is a slower straight line, which is what
+             the first version of this swept and why it produced one usable sample in 400 iterations.
+
+             The angle is chosen from the ones that are actually clear at this range, so the fixture
+             never asks the player to stand in a wall - which the measured 13-17 of 72 directions makes
+             a real constraint, not a formality. */
+          const win=Math.floor(k/24)%2;
+          const base=strafe?([0,Math.PI/2,Math.PI,-Math.PI/2][win]):0.9;
+          let a=base;
+          for(let s=0;s<8;s++){
+            const t=base+(k%24)*0.02+(s%2?1:-1)*Math.floor(s/2)*0.22;
+            const tx=g2.x+R2*Math.cos(t), ty=g2.y+R2*Math.sin(t);
+            if(tx>ROOM_LEFT+margin&&tx<ROOM_RIGHT-margin&&ty>ROOM_TOP+margin&&ty<ROOM_BOTTOM-margin){
+              a=t; break;
+            }
+          }
+          player.x=g2.x+R2*Math.cos(a); player.y=g2.y+R2*Math.sin(a);
+          if(!clear()){ player.x=g2.x; player.y=g2.y-Math.min(R2,ROOM_BOTTOM-margin-g2.y); }
+          player.hp=player.maxHp; player.iframes=0;
+          const n0=projectiles.length;
+          update();
+          for(let j=n0;j<projectiles.length;j++){
+            const s=projectiles[j];
+            if(s.friendly||s.owner!==g2) continue;
+            /* follow THIS shell to its end and score its closest approach */
+            let closest=Infinity, born=Math.hypot(player.x-g2.x,player.y-g2.y);
+            for(let m=0;m<400&&projectiles.includes(s);m++){
+              const hx=player.x, hy=player.y+PLAYER_HIT_DY;
+              closest=Math.min(closest,Math.hypot(s.x-hx,s.y-hy));
+              player.hp=player.maxHp; player.iframes=0;
+              update();
+            }
+            /* only shots genuinely taken at 400px, so the column is the range it claims to be */
+            if(closest<Infinity&&clear()&&Math.abs(born-R2)<=25)
+              (strafe?fC2:fS2).push({d:closest-Math.max(0,PLAYER_HIT_R-1),born});
+          }
+        }
+      }
+      const ix2=r.enemies.indexOf(g2); if(ix2>=0) r.enemies.splice(ix2,1);
+      const show2=a=>'['+a.map(x=>x.d.toFixed(0)+'@'+x.born.toFixed(0)).join(' ')+']';
+      fFar=fS2.length+fC2.length;
+      ok(fFar>=20,'the 400px column produced only '+fFar+' usable samples, so the deadzone claims '+
+         'about distance cannot be measured at all (straight '+show2(fS2)+', strafe '+show2(fC2)+')');
+      if(fS2.length&&fC2.length){
+        const gainNear=mean(cC)-mean(cS), gainFar=mean(fC2)-mean(fS2);
+        ok(gainFar>gainNear,'a reversal is worth '+gainNear.toFixed(1)+'px of extra miss at 200px but '+
+           gainFar.toFixed(1)+'px at 400px (straight '+fS2.length+' '+show2(fS2)+', strafe '+fC2.length+
+           ' '+show2(fC2)+'), so distance is not what buys the player the tactic and the deadzone is '+
+           'decorative: reversing is worth the same everywhere');
+        ok(mean(fC2)>mean(fS2),'at 400px a counterstrafer is missed by '+mean(fC2).toFixed(1)+
+           'px against a straight runner at '+mean(fS2).toFixed(1)+'px, so there is no reason to move '+
+           'well at distance either');
+        ok(mean(fS2)<THR*1.5,'a gunner at 400px misses a straight runner by '+mean(fS2).toFixed(1)+
+           'px on average over '+fS2.length+' shots, so long range hits nobody and there is no reason to '+
+           'close the distance at all');
+      }
     }
   });
   test('the hook is devastating once and a nuisance the third time, and bodies forget',()=>{
@@ -10010,13 +10116,18 @@ const BOSS_TICKS=26000;
     eq(r.bounds.w,700,'the standard room is not 700 wide any more, so these constants are meaningless');
     // what they have always read, written out rather than recomputed from the new function
     eq(aggroRange(),707,'the aggro range in a standard room moved - this fix must not retune anything');
-    eq(swerveDeadzone(),300,'the swerve deadzone in a standard room moved');
-    eq(swerveFull(),430,'the top of the swerve ramp in a standard room moved');
+    eq(swerveDeadzone(),175,'the swerve deadzone in a standard room moved from 175 (a quarter of the '+
+       'room width) - it used to be 300, which with a 130px full-spread ramp left distance doing '+
+       'nothing outside a 130px notch');
+    eq(swerveFull(),560,'the range at which the spread is fully open moved from 560 (four fifths of '+
+       'the room width) - it used to be 430, which `reach` reached and then saturated at, so "further '+
+       'is worse" could not be expressed beyond it');
     // and in a room four times as wide, they follow it
     const big=bigRoom(1680,760);
     const wantAggro=Math.round(0.85*Math.hypot(1680,760));
     eq(aggroRange(),wantAggro,'the aggro range did not follow the room: '+aggroRange()+' vs '+wantAggro);
-    eq(swerveDeadzone(),790,'the swerve deadzone did not follow the room: '+swerveDeadzone()+' vs 790');
+    eq(swerveDeadzone(),Math.round(1680*0.25),'the swerve deadzone did not follow the room: '+
+       swerveDeadzone()+' vs '+Math.round(1680*0.25));
     ok(aggroRange()>707,'a bigger room did not widen the aggro range, so the number is still frozen');
     // and the RAMP is still a ramp: the top must stay above the bottom or the division is a divide by
     // something silly and reach jumps rather than ramps
@@ -11483,7 +11594,19 @@ const BOSS_TICKS=26000;
   // the panel itself lives in the main script, because it is not a test - it is the change history,
   // and it is reachable from a normal game on the B key. Here it just gets told the results.
   showBugPanel(results);
-  window.__testResults={pass:results.filter(r=>r.ok).length,total:results.length,results};
+  window.__testResults={pass:results.filter(r=>r.ok).length,total:results.length,results,
+    /* TESTS THAT MAKE NO ASSERTIONS AT ALL, listed by the harness rather than hunted for by reading.
+
+       This is the one dead-test shape that can be detected without a mutation harness, and it is worth
+       catching mechanically because it is invisible from the outside: a test with no assertions passes
+       unconditionally, reports green, and looks exactly like a passing test in every summary.
+
+       It is NOT the same as a test whose assertions all evaluate true. An earlier version of this
+       listed those too and flagged 194 of 229 tests - every correct one - because a passing assertion
+       evaluates true by definition. Anything stronger needs a mutation run: break the world, see which
+       tests still pass. That is the right tool and it is not this. */
+    dead:results.filter(r=>r.asserts===0).map(r=>r.name),
+    assertCounts:results.map(r=>({name:r.name,asserts:r.asserts}))};
   // the console keeps the full flat list, because that is what gets pasted into a bug report and
   // it should not require re-expanding six dropdowns to read
   console.log(results.map(r=>(r.ok?'ok    ':'FAIL  ')+r.name+(r.ok?'':'\n        '+r.msg)).join('\n'));
