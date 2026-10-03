@@ -13,12 +13,28 @@
    Seeded and synchronous, well under a second. Results go to the console, an on-page panel and
    window.__testResults. Saved records are backed up first and restored after, so real progress is untouched. */
 if(new URLSearchParams(location.search).has('test')) (function(){
-  // Every record key has to be listed here, and the list is the only thing standing between a test
-  // that writes a record and every test after it. depths_deepest was left off when the floor ladder
-  // landed, so a test that reached floor 6 wrote it to storage, clearRecords() did not remove it,
-  // loadRecords() read it straight back, and a later test asserting a depth of 4 saw 6 - a test
-  // failing on a record another test had set, which is exactly the class of bug this list prevents.
-  const REC_KEYS=['depths_best','depths_fastest','depths_wins','depths_deepest',TICK_KEY], saved={};
+  /* Every record key has to be listed here, and the list is the only thing standing between a test
+     that writes a record and every test after it. depths_deepest was left off when the floor ladder
+     landed, so a test that reached floor 6 wrote it to storage, clearRecords() did not remove it,
+     loadRecords() read it straight back, and a later test asserting a depth of 4 saw 6 - a test
+     failing on a record another test had set, which is exactly the class of bug this list prevents.
+
+     RECORDS_KEY is in the list for the same reason and one generation later: the records moved from
+     four flat keys to a single JSON key, and this list is what makes the suite back up and restore the
+     live one. Leaving it out would restore nothing while `clearRecords` deleted it, which is the
+     mirror image of the depths_deepest bug - a test quietly destroying real progress instead of
+     inheriting another test's. The legacy keys stay listed because a player (or an earlier test) may
+     still have written them. */
+  const REC_KEYS=[RECORDS_KEY,'depths_best','depths_fastest','depths_wins','depths_deepest',TICK_KEY],
+  saved={};
+  /* WHAT IS ACTUALLY ON DISK, read back through the game's own loader. Every assertion about a saved
+     record should go through this rather than reading a key directly: it is the only way to test what
+     a RELOAD would see, which is the thing that matters, and it stays correct across the move from
+     flat keys to a single JSON value without every test being rewritten when that happens again.
+     loadRecords writes into the global `records`, so this saves and restores it rather than
+     clobbering whatever the test around it was asserting. */
+  const storedRecords=()=>{ const keep=records; loadRecords(); const out=records;
+    records=keep; return {rooms:out.rooms,fastest:out.fastest,wins:out.wins,deepest:out.deepest}; };
   for(const k of REC_KEYS){try{saved[k]=localStorage.getItem(k);}catch(e){}}
   const realRandom=Math.random;
   /* The game draws from three named streams, so the suite seeds those rather than hijacking
@@ -2899,6 +2915,104 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const k0=run.kills; explode(r,MIDX,MIDY,{aoeRadius:2000,pool:1e5});
     eq(r.enemies.length,0); eq(run.kills,k0+n);
   });
+  /* RECORDS ARE WRITTEN AS ONE ATOMIC VALUE, so a failed save cannot leave a false record behind.
+
+       `saveRecords` used to write five separate keys inside one try/catch with an empty catch. Measured
+       by making the third `setItem` throw, which is what a quota error does:
+
+           depths_best      written
+           depths_fastest   written
+           depths_wins      stale
+           depths_deepest   stale
+           depths_tickhz    stale
+
+       A partial write is not a smaller record, it is a FALSE one. `depths_deepest` is the number the
+       summary tells the player they have reached; if it silently keeps an old value because the write
+       before it threw, the summary reports a personal best that is not one, and the old value survives
+       a reload. Nothing anywhere said so.
+
+       The records are now one JSON value under one key, because one `setItem` is atomic per key: it
+       lands or it does not. Measured after:
+
+           clean save        one key written, all four legacy keys removed
+           failed save       NOTHING written - 0 of 5 keys
+           three failures    one console warning, not three
+
+       Asserted as the outcome properties rather than as "calls setItem once", because atomicity is a
+       property of the storage API and the mechanism is free to change. The five properties that matter:
+
+         1. a clean save leaves exactly one record key and retires the legacy ones;
+         2. a save where every write throws leaves NOTHING behind - the whole point;
+         3. repeated failures warn once, so a loop cannot flood the console;
+         4. the previous flat format still loads, so an existing player loses nothing to the change;
+         5. a corrupt blob is treated as absent rather than thrown, because a bad value must not stop
+            the game starting.
+
+       Plus the read-order property, which is the one that would undo the fix from the other side: if a
+       browser has both formats, the single-key record is believed. Reading legacy first would let a
+       stale `depths_deepest` overwrite a good one - the exact failure this was introduced to prevent. */
+  test('records save atomically, load either format, and never leave a half-written record',()=>{
+    const real=Storage.prototype.setItem, realRemove=Storage.prototype.removeItem;
+    const backup={}; for(const k of REC_KEYS){try{backup[k]=localStorage.getItem(k);}catch(e){}}
+    try{
+      localStorage.clear();
+      records={rooms:7,fastest:8,wins:9,deepest:10};
+      saveRecords();
+      const raw=localStorage.getItem(RECORDS_KEY);
+      ok(!!raw,'a clean save wrote no record key at all ('+RECORDS_KEY+')');
+      ok(raw&&JSON.parse(raw).deepest===10,'the saved record does not contain the deepest floor ('+raw+
+         ') - the single value is not the whole record');
+      ok(RECORD_LEGACY_KEYS.every(k=>localStorage.getItem(k)===null),'a legacy key survived the save ('+
+         RECORD_LEGACY_KEYS.filter(k=>localStorage.getItem(k)!==null).join(',')+') - the old format is '+
+         'not being retired, so it can shadow the new one on a later load');
+
+      /* the whole point: nothing at all is written when the write fails */
+      localStorage.clear();
+      Storage.prototype.setItem=function(){ throw new DOMException('QuotaExceededError'); };
+      let warns=0; const realWarn=console.warn; console.warn=function(){warns++;};
+      RECORD_SAVE_WARNED=false;
+      saveRecords(); saveRecords(); saveRecords();
+      console.warn=realWarn;
+      Storage.prototype.setItem=real;
+      const wrote=Object.keys(localStorage).length;
+      ok(wrote===0,'a save in which every write threw still left '+wrote+' key(s) behind - the record '+
+         'is half-written, so a player can be shown a personal best that is not one');
+      ok(warns===1,'three consecutive failed saves produced '+warns+' console warnings, expected 1 - '+
+         'either the failure is silent, or it floods once per frame');
+    } finally {
+      Storage.prototype.setItem=real; Storage.prototype.removeItem=realRemove;
+      for(const k of REC_KEYS){ try{ if(backup[k]===null||backup[k]===undefined) localStorage.removeItem(k);
+        else localStorage.setItem(k,backup[k]); }catch(e){} }
+      loadRecords();
+    }
+    /* the previous format still loads */
+    localStorage.clear();
+    localStorage.setItem('depths_best','3'); localStorage.setItem('depths_deepest','6');
+    localStorage.setItem('depths_wins','2'); localStorage.setItem('depths_fastest','1000');
+    loadRecords();
+    ok(records.deepest===6&&records.rooms===3,'a record written by the previous format did not load '+
+       '(deepest '+records.deepest+', rooms '+records.rooms+') - an existing player loses everything '+
+       'to the format change');
+    /* a corrupt blob is absent, not fatal */
+    localStorage.setItem(RECORDS_KEY,'{not json');
+    let threw=false;
+    try{ loadRecords(); }catch(e){ threw=true; }
+    ok(!threw,'a corrupt record blob stopped the game from starting - a bad value must cost the player '+
+       'their record, not their session');
+    /* and the current format wins over a stale legacy value */
+    localStorage.clear();
+    localStorage.setItem(RECORDS_KEY,JSON.stringify({rooms:1,fastest:0,wins:0,deepest:12}));
+    localStorage.setItem('depths_deepest','2');
+    loadRecords();
+    ok(records.deepest===12,'with both formats present the loader read deepest='+records.deepest+
+       ', taking the stale flat value over the current one - that is the same false record the single '+
+       'key was introduced to prevent, arriving from the other direction');
+    localStorage.clear();
+    for(const k of REC_KEYS){ try{ if(backup[k]===null||backup[k]===undefined) localStorage.removeItem(k);
+      else localStorage.setItem(k,backup[k]); }catch(e){} }
+    loadRecords();
+  });
+
   test('records: a floor is recorded, and a slower deeper one does not replace a faster shallower',()=>{
     clearRecords();
     startGame(); const r=goTo('boss'); const explored=Object.values(rooms).filter(x=>x.visited).length;
@@ -2929,7 +3043,11 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(lastRun.floorTicks,run.floorTicks,'the summary floor time is not the floor time at death');
     eq(records.deepest,4,'the deepest floor reached was not recorded');
     ok(lastRun.newDepth,'a new deepest floor was not flagged as one');
-    eq(localStorage.getItem('depths_deepest'),'4','the deepest floor was not written to storage');
+    /* Read the record the way the game does, through loadRecords, rather than poking a flat key.
+       The records moved into a single JSON key so that a partial write is impossible; a test that
+       still reads `depths_deepest` would be asserting on a key the game no longer writes, and would
+       pass or fail for reasons that have nothing to do with the record. */
+    eq(storedRecords().deepest,4,'the deepest floor was not written to storage');
     // a shallower, later run must not lower the record
     const deepest=records.deepest;
     startGame(); run.floor=2; player.hp=0; update();
@@ -2947,7 +3065,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     player.hp=0; update();
     eq(state,'gameover','dying in a cleared boss room was counted as a win');
     startGame(); goTo('normal'); goTo('item'); player.hp=0; update();
-    eq(records.rooms,3); eq(localStorage.getItem('depths_best'),'3'); eq(lastRun.explored,3);
+    eq(records.rooms,3); eq(storedRecords().rooms,3); eq(lastRun.explored,3);
   });
   test('run stats count shots, hits, kills, damage and time exactly',()=>{
     startGame(); const r=goTo('normal'); r.enemies.length=0;

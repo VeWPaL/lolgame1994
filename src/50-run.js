@@ -198,21 +198,97 @@ function startGame(root){
 /* records: rooms and wins are unitless, but fastest is stored in ticks, so a run recorded under a
    different tick rate is converted on read (and TICK_KEY is rewritten on save) */
 const TICK_KEY='depths_tps';
+/* THE RECORDS LIVE IN ONE KEY, and the four flat ones are the previous format.
+
+   They are still read, so a player carrying records from an earlier build keeps them, and they are
+   removed on the first successful save so the format retires itself without a migration step. */
+const RECORDS_KEY='depths_records';
+const RECORD_LEGACY_KEYS=['depths_best','depths_fastest','depths_wins','depths_deepest'];
+/* ONE console line, not one per frame. `saveRecords` is called on run end and on every record beat, so
+   an unwarned failure in a loop is either invisible or a flood - and the case that matters is the first
+   one, which is the one a player would report if they noticed at all. */
+let RECORD_SAVE_WARNED=false;
 function loadRecords(){
   const get=k=>{try{return parseInt(localStorage.getItem(k)||'0',10)||0;}catch(e){return 0;}};
+  /* THE SINGLE-KEY RECORD IS THE CURRENT FORMAT, and the flat keys are the previous one.
+
+     Read order matters and it is new-first: if a build ships with a half-finished migration, or a
+     player's browser has both forms from different sessions, the newest complete record is the one to
+     believe. Reading the legacy keys first would let a stale `depths_deepest` overwrite a good
+     single-key record, which is the exact failure the single-key write was introduced to prevent.
+
+     A malformed JSON blob is treated as absent rather than thrown, because a corrupt value must not
+     stop the game from starting - it just means this player begins again from zero, which is the same
+     outcome as having no records and is recoverable by playing one run. */
+  let single=null;
+  try{
+    const raw=localStorage.getItem(RECORDS_KEY);
+    if(raw){ const o=JSON.parse(raw);
+      if(o&&typeof o==='object') single={rooms:+o.rooms||0,fastest:+o.fastest||0,
+                                          wins:+o.wins||0,deepest:+o.deepest||0}; }
+  }catch(e){ single=null; }
   const oldRate=get(TICK_KEY)||60;
+  if(single){
+    let fastest=single.fastest;
+    /* the tick-rate conversion still applies to a single-key record, because the key does not record
+       which tick rate wrote it - that is what TICK_KEY is for, and it is why the version is written
+       as its own key rather than inside the record */
+    if(fastest&&oldRate!==TICK_HZ) fastest=Math.round(fastest*TICK_HZ/oldRate);
+    records={rooms:single.rooms,fastest,wins:single.wins,deepest:single.deepest};
+    return;
+  }
   let fastest=get('depths_fastest');
   if(fastest&&oldRate!==TICK_HZ) fastest=Math.round(fastest*TICK_HZ/oldRate);
   records={rooms:get('depths_best'),fastest,wins:get('depths_wins'),deepest:get('depths_deepest')};
 }
 function saveRecords(){
+  /* ONE KEY, WRITTEN ONCE. The five separate `setItem` calls could leave the store half-written, and
+     the half that matters is the dangerous one.
+
+     Measured by making the third `setItem` throw, which is what a quota error does:
+
+         depths_best      written
+         depths_fastest   written
+         depths_wins      stale
+         depths_deepest   stale
+         depths_tickhz    stale
+
+     A partial write is not a smaller version of the record, it is a FALSE one. `depths_deepest` is the
+     number the player is told they have reached; if it silently keeps an old value because the write
+     before it threw, the summary reports a personal best that is not one, and nothing anywhere says so.
+     The old value also survives a reload, so it is not a display glitch for one screen - it is a lie
+     that persists.
+
+     So the records go in as a single JSON value under one key. One `setItem` is atomic per key: it
+     either lands or it does not, and there is no in-between where half the record is new and half is
+     from three runs ago. That is the whole fix.
+
+     The old flat keys are still READ on load, so a player who has records from a previous build does
+     not lose them to a format change, and they are then REMOVED on the first successful save - which
+     retires them without a separate migration step. Removal is per-key and individually guarded: a
+     browser that refuses `removeItem` would otherwise throw out of the try block and be reported as a
+     failed save when the record itself landed perfectly.
+
+     The catch is still silent in the sense that it does not throw, because a failed save must not take
+     the run down with it. What it does now is say so, once, on the console: a swallowed exception here
+     means a lost run record, and the cost of finding that out later is far higher than the cost of one
+     line in a log. `RECORD_SAVE_WARNED` keeps it to one line rather than one per frame. */
   try{
-    localStorage.setItem('depths_best',String(records.rooms));
-    localStorage.setItem('depths_fastest',String(records.fastest));
-    localStorage.setItem('depths_wins',String(records.wins));
-    localStorage.setItem('depths_deepest',String(records.deepest));
+    localStorage.setItem(RECORDS_KEY,JSON.stringify(records));
+    /* retire the flat keys on the first successful save, and keep writing TICK_KEY separately because
+       it is not part of the record - it is the schema version `loadRecords` needs in order to convert
+       an old fastest-time. Losing it is survivable; losing a record is not, which is why the order
+       is record first and version second. */
     localStorage.setItem(TICK_KEY,String(TICK_HZ));
-  }catch(e){}
+    for(const k of RECORD_LEGACY_KEYS){ try{localStorage.removeItem(k);}catch(e){} }
+  }catch(e){
+    if(!RECORD_SAVE_WARNED){
+      RECORD_SAVE_WARNED=true;
+      if(typeof console!=='undefined'&&console.warn)
+        console.warn('[depths] could not save records ('+(e&&e.name||'unknown')+') - this run will '+
+          'not be recorded. Storage may be full or blocked.');
+    }
+  }
 }
 // freeze the run's numbers for the summary screen and fold them into the records (death and win alike)
 /* DESCEND. The boss dies, the way out appears, and walking into it takes you DOWN rather than out.
