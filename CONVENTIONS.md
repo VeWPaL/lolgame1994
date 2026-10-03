@@ -1200,14 +1200,30 @@ anything. A pattern tile is periodic; that is the whole reason.
 
 ### What is deliberately NOT done
 
-**The descent banner does not name the area.** Announcing it properly means comparing the area you
-left with the area you arrived in, and the only function that maps a floor to an area is core's
-`areaForFloor()`, which takes no argument and reads `run.floor`. Writing the 4/8/12 thresholds out a
-second time in the presentation layer would be two copies of a ladder boundary, and temporary-swapping
-`run.floor` to ask the question is a draw function mutating simulation state. **The beat says the
-floor and the palette says the area**, which is the whole of the identity the spec asks for. Naming it
-at a boundary is a one-line core change (`areaForFloor(floor)` with an optional argument) and is
-recorded as a request rather than worked around.
+**RESOLVED — the descent banner now names the area, and the blocker was one parameter.**
+`areaForFloor()` used to take no argument and read `run.floor`, so the presentation layer could not
+ask "which area is floor N in?" without mutating simulation state. `AreaRules.AreaForFloor(int floor)`
+in C# always took it; the JS not taking it *was* the drift. It is now `areaForFloor(floor)` with the
+argument optional, so the hundred existing callers are unchanged and `drawDescent` can compare
+`areaForFloor(descendFrom)` against `areaForFloor(f)` and touch nothing. The thresholds exist in one
+place. The name appears **only on a boundary** — every descent already says which area you are in by
+looking like it, so repeating it on floors 6, 7 and 8 would be a caption for a caption.
+
+**A fifth line does not fit the existing band, and the pixel test did not notice.** The name went in
+at `H/2-52 = 248`; the scrim's flat 0.90 region begins at 249, so the line was in the alpha ramp and
+rendered at about a third of its value. The test I wrote first asserted the ink was *in the area
+accent* — and it was, and the test passed. A screenshot showed "THE KILN WORKS" in near-invisible grey.
+**A pixel can be the right hue and still be unreadable, and only one of those two failures is a
+number.** The band grew to `H/2-92 … H/2+68` (the rule under the last line was sitting exactly on the
+old `scrimBot`), and the test now measures *contrast between two renders* — a boundary crossing
+against a descent inside one area, same column, subtracted — because a peak absolute is dominated by
+whatever the background happened to be. Measured 175–176 summed units on the eight rows the glyphs
+occupy, against a self-comparison floor of 1.
+
+An earlier version of that test compared peak brightness of the two banners and read 134 against 134:
+the peak was the **floor numeral's** ink, which is drawn either way, so no amount of name-legibility
+would have moved it. The name sits above the numeral in the same accent and only a subtraction
+separates them.
 
 The HUD is **ink on the existing wood**, not themed wood: a themed HUD means re-baking every plate in
 every area, which is per-frame work for a signal the depth plate already gives for free. The accent is
@@ -1650,11 +1666,13 @@ having is the one that says what happens when the content outgrows the code.
 ## Current state
 
 - `depths.html` — a shell loading sixteen modules from `src/`. Playable, double-clickable.
-- `src/99-tests.js` - **211 checks**, every test seeded to an identical world. All must pass at
+- `src/99-tests.js` - **213 checks**, every test seeded to an identical world. All must pass at
   every commit. The change history (`FIXES`, in `80-ui.js`) is **118** entries and is itself checked.
   Note that `verify.ps1`'s regex counts **117** here, because one key contains an escaped apostrophe
   (`another seed\'s floor`) and the pattern stops at the quote. The regex is the script's own
   arithmetic and the table is the truth; when they disagree, the table wins.
+  **This number is now ASSERTED by step 6 of `verify.ps1`, not printed beside a claim.** It went stale
+  at 207 and again at 211 before that, because nothing compared the document to a run.
   `verify.ps1` counts that table from a regex and prints the number; it does **not** assert it, and
   this paragraph used to claim the suite did. What the suite actually checks is the direction that
   matters: every pinned fix must have a test carrying its name, and an entry with no matching result

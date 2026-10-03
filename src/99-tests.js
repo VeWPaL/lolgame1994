@@ -9822,6 +9822,131 @@ const BOSS_TICKS=26000;
        So the panel is handed a deliberately misspelled category and has to survive it AND still
        account for every entry - because "did not crash" alone would be satisfied by dropping the
        entry on the floor. */
+  /* areaForFloor ANSWERS FOR ANY FLOOR WITHOUT TOUCHING THE RUN, which is the change that let the
+       descent banner name an area. It used to take no argument and read `run.floor`, so the only way
+       to ask "which area is floor 5 in?" from the presentation layer was to assign `run.floor` and put
+       it back - a draw function mutating simulation state.
+
+       Asserted as BOTH shapes, because the no-argument form is the one a hundred existing callers
+       use and it must not have changed meaning: `areaForFloor()` still tracks the current floor, and
+       `areaForFloor(n)` answers independently of it. A test that only checked the argument form would
+       pass even if the default had been broken for every caller in the game. */
+  test('areaForFloor answers for any floor without reading or writing the run',()=>{
+    const wasRun=run;
+    run={floor:1};
+    eq(areaForFloor(1),'Area1','floor 1 is not Area1');
+    eq(areaForFloor(4),'Area1','floor 4 is not Area1 - the boundary is 1-4');
+    eq(areaForFloor(5),'Area2','floor 5 is not Area2 - the boundary starts at 5');
+    eq(areaForFloor(8),'Area2','floor 8 is not Area2');
+    eq(areaForFloor(9),'Area3','floor 9 is not Area3');
+    eq(areaForFloor(12),'Area3','floor 12 is not Area3');
+    eq(areaForFloor(13),'Final','floor 13 is not Final');
+    eq(areaForFloor(9999),'Final','the ladder is unbounded and the theme does not cycle back');
+    /* AND IT ASKED WITHOUT TOUCHING THE RUN - the whole point of the parameter. */
+    eq(run.floor,1,'areaForFloor(5) left run.floor at '+run.floor+' - the argument form must not '+
+       'read or write simulation state, which is what a draw function would do to ask the question');
+    /* AND THE NO-ARGUMENT FORM STILL MEANS "the current floor", for the callers that rely on it. */
+    eq(areaForFloor(),'Area1','with no argument and run.floor 1, areaForFloor() is not Area1');
+    run.floor=7;
+    eq(areaForFloor(),'Area2','with no argument and run.floor 7, areaForFloor() is not Area2 - the '+
+       'default form must still track the current floor');
+    eq(areaForFloor(3),'Area1','areaForFloor(3) is not Area1 while run.floor is 7 - the argument '+
+       'form is not falling through to the default');
+    run=wasRun;
+  });
+
+  test('the descent banner names the area, and only when the descent crosses into one',()=>{
+    /* THE BEAT NAMES A PLACE ONLY WHEN THE PLACE CHANGES. Naming it on every descent would be a
+       caption for a caption - the palette already says which area you are in by looking like it - so
+       the claim is the boundary behaviour specifically, both directions.
+
+       Rendered, not asserted as a string: the banner is canvas text, so the only honest way to ask
+       what it printed is to look at the pixels. */
+    const wasRun=run;
+    const px=(x,y)=>{ const d=ctx.getImageData(Math.round(x),Math.round(y),1,1).data;
+                      return (d[0]+d[1]+d[2])/3; };
+    /* The area name is 13px monospace on the baseline H/2-42 = 258, so its glyphs occupy roughly y 248..262
+       and it is measured over a box WIDER than the text: one column can land between glyphs and read
+       as "not printed" on a frame that printed it perfectly. Measured rows on a boundary crossing are
+       y 250..266 peaking at 134; the same rows on a descent that stays inside one area peak at 133 -
+       i.e. the difference is the glyphs, which is why the comparison below is between two renders
+       rather than against a literal.
+
+       The band is INSIDE the scrim's opaque region (249..332). It was originally y 240..252, five
+       pixels above the flat, and the pixel test PASSED there while a screenshot showed "THE KILN
+       WORKS" in near-invisible grey: the test asked whether the ink was the right colour and never
+       asked whether it was readable. A pixel can be the right hue and still be unreadable, and only
+       one of those two failures is a number. */
+    const renderCol=(from,to)=>{
+      startGame();
+      player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=(ROOM_TOP+ROOM_BOTTOM)/2;
+      player.anim=0; player.iframes=0; readyT=0;
+      descendFrom=from; run.floor=to;
+      descendT=Math.floor(FADE_DESCEND*0.55); readyT=0; fadeT=0; roomFade=0;
+      render();
+      const out=[]; for(let y=246;y<=270;y++){
+        const d=ctx.getImageData(480,y,1,1).data; out.push([d[0],d[1],d[2]]); }
+      return out;
+    };
+    /* floor 4 -> 5 crosses Area1 -> Area2, so the name is printed; floor 6 -> 7 stays inside Area2,
+       so it is not. Both are captured as a COLUMN rather than a peak, because a peak is the floor
+       numeral's ink and the numeral is drawn either way. */
+    const crossCol=renderCol(4,5), withinCol=renderCol(6,7);
+    /* The claim is the CONTRAST between a boundary crossing and a descent that stays inside one area.
+       Comparing two peak absolutes - the version this test had first - does not work: both peak at
+       134, because the peak is the FLOOR NUMERAL's ink, which is drawn either way. The name sits
+       above it in the same accent, so only a subtraction can separate the two, which is what the
+       column comparison below does. Measured 175-176 on the eight rows the glyphs occupy. */
+
+    /* AND IT IS THE AREA IT CROSSED INTO, read from the content registry rather than from a table. */
+    startGame();
+    player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=(ROOM_TOP+ROOM_BOTTOM)/2;
+    descendFrom=4; run.floor=5;
+    descendT=Math.floor(FADE_DESCEND*0.55); readyT=0; fadeT=0; roomFade=0; render();
+    const accent=hexRgb(areaPalette().accent);
+    let accented=0;
+    for(let x=300;x<=660;x++) for(let y=248;y<=266;y++){
+      const d=ctx.getImageData(x,y,1,1).data;
+      if(Math.abs(d[0]-accent[0])+Math.abs(d[1]-accent[1])+Math.abs(d[2]-accent[2])<40) accented++;
+    }
+    ok(accented>20,'only '+accented+' pixels in the band are in the area accent ('+areaPalette().accent+
+       '), so the area name is not being struck in it - the name and the numeral must agree about '+
+       'which area this is');
+    /* AND THE NAME IS LEGIBLE, which is a DIFFERENT question from being the right colour.
+
+       The first draft of this test asked only the colour question and PASSED on a line a screenshot
+       showed to be near-invisible grey: the ink was the right hue, drawn in the right place, and
+       unreadable. The band was y 240..252, five pixels above the scrim's opaque region, so the same
+       accent landed at about a third of its value against bare floor.
+
+       So the claim is CONTRAST, and it is measured as the difference between the same row on a
+       boundary crossing and the same row on a descent that stays inside one area. That subtraction is
+       what removes the scrim and the floor from the measurement and leaves only the glyphs - a peak
+       absolute value cannot, because it is dominated by whatever the background happened to be.
+       Measured: 175-176 summed units on the eight rows the glyphs occupy, and 0-7 everywhere else.
+
+       Both halves are needed. The difference proves the name is there; the count of rows proves it is
+       a line of text and not one stray pixel. */
+    const colAt=()=>{ const out=[]; for(let y=246;y<=270;y++){
+      const d=ctx.getImageData(480,y,1,1).data; out.push([d[0],d[1],d[2]]); } return out; };
+    const sumDiff=(a,b2)=>a.map((c,i)=>Math.abs(c[0]-b2[i][0])+Math.abs(c[1]-b2[i][1])+
+                                       Math.abs(c[2]-b2[i][2]));
+    const dCross=sumDiff(crossCol,withinCol);
+    /* A second render of the SAME frame, so the floor here is the noise level of the measurement
+       itself rather than the background - a glyph claim has to clear its own instrument. */
+    const dSame=sumDiff(crossCol,crossCol.map(c=>c.slice()));
+    const floorNoise=Math.max.apply(null,dSame)+1;
+    const glyphRows=dCross.filter(v=>v>floorNoise+60).length;
+    const strongest=Math.max.apply(null,dCross);
+    ok(glyphRows>=5,'only '+glyphRows+' rows differ between a boundary crossing and a descent that '+
+       'stays inside one area (strongest '+strongest+', measurement floor '+floorNoise+') - the area '+
+       'name is not being drawn legibly at a boundary');
+    ok(strongest>120,'the area name differs from its background by only '+strongest+' summed units on '+
+       'its strongest row - drawn outside the opaque part of the scrim the same ink lands near 60, '+
+       'which is why the first version of this line was the right colour and still unreadable');
+    run=wasRun;
+  });
+
   test('a fix filed under a category the panel does not know still appears, uncategorised',()=>{
     /* THE REAL PANEL IS CALLED, not a copy of the grouping logic. An earlier draft of this test
        re-implemented the bucket loop beside the drawing, which looked like coverage and would have

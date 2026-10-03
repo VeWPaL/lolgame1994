@@ -1532,7 +1532,12 @@ function drawDescent(){
      is the widest of the four and a band that tracked the widest line would still leave the narrower
      ones floating on the room at the ends. Cheap: it exists for the length of one descent and is a
      gradient built per draw while descendT is live, which is a fraction of a second. */
-  const scrimTop=H/2-74, scrimBot=H/2+50;
+  /* The band grew when the area name arrived at a boundary: five lines need more room than four, and
+     the rule under the last one is now at H/2+50, which was the old scrimBot exactly - so the rule
+     itself would have sat on the fade-out. scrimTop moves up 18px to keep the area name (H/2-42)
+     well inside the flat, and scrimBot moves down 18px to keep the rule (H/2+50) inside it too.
+     The ramps keep their 0.22/0.74 shape, so the fully-opaque region is now roughly y 249..332. */
+const scrimTop=H/2-92, scrimBot=H/2+68;
   const scrim=ctx.createLinearGradient(0,scrimTop,0,scrimBot);
   scrim.addColorStop(0,'rgba(5,4,3,0)');
   scrim.addColorStop(0.22,'rgba(5,4,3,0.90)');
@@ -1587,41 +1592,64 @@ function drawDescent(){
      number drift apart, and which would have meant four accents in one file after the next area
      was added.
 
-     NOT the area's NAME, and the reason is worth recording rather than leaving as a gap. Announcing
-     the area properly means comparing the area you left with the area you arrived in - "did this
-     descent cross a boundary" - and the only function that maps a floor to an area is core's
-     `areaForFloor()`, which takes no argument and reads `run.floor`. Deriving the boundary here
-     would mean writing the 4/8/12 thresholds out a second time in the presentation layer, and two
-     copies of a ladder boundary is a bug waiting: change one and the banner names the wrong area.
-     Temporary-swapping `run.floor` to ask the question is worse - a draw function mutating
-     simulation state is the one-way data flow this project rules out outright.
+     AND THE AREA IS NAMED AT A BOUNDARY, which this beat could not do until `areaForFloor` took the
+     floor as an argument. The question is "did this descent cross a boundary", which means comparing
+     the area being left with the area being arrived in - and the only function that maps a floor to an
+     area used to take no argument and read `run.floor`. So the three available answers were all bad:
+     write the 4/8/12 thresholds out a second time here (two copies of a ladder boundary, and change
+     one and the banner names the wrong area); temporarily assign `run.floor` to ask it (a draw
+     function mutating simulation state, which this project rules out outright); or leave the banner
+     saying only the floor and let the palette imply the area, which is what it did.
 
-     So the beat says the floor and the palette says the area, which is the whole of the identity
-     the spec asks for (enemy mix plus palette). Naming the area at a boundary is a one-line change
-     to core and is written up as a request rather than worked around. */
+     The core change was one optional parameter. Now the beat asks `areaForFloor(f)` about two floors
+     at once, touches nothing, and the thresholds live in exactly one place.
+
+     It names the area ONLY on a boundary, because that is the only time the name is news. Every
+     descent is already saying which area you are in by looking like it; repeating "Area2" on floor 6
+     through 8 would be a caption for a caption. */
+  const fromArea=areaForFloor(descendFrom||f-1), toArea=areaForFloor(f);
+  if(fromArea!==toArea){
+    const an=Content.get('area',toArea);
+    ctx.fillStyle=areaPalette().accent;
+    ctx.font='13px monospace';
+    /* INSIDE THE SCRIM, which is the whole difficulty of placing a fifth line. The band runs
+       scrimTop H/2-74 to scrimBot H/2+50 with a flat 0.90 only between 0.22 and 0.74 of its height,
+       so the opaque part is roughly y 253..318. The first draft put this line at H/2-52 = 248 -
+       five pixels ABOVE that, in the 0.50-alpha ramp - and a screenshot showed "THE KILN WORKS" in
+       near-invisible grey over the dusty floor.
+
+       Which is the argument for looking at the picture and not only at the numbers: the pixel test
+       passed, because it asked whether the ink was in the area's ACCENT and the answer was yes. It
+       never asked whether the ink was legible, and a pixel can be the right colour and still be
+       unreadable.
+
+       So the line goes at H/2-42, inside the flat, and the FLOOR numeral moves down to H/2-14 to
+       keep the gap between them even. Everything below shifts 20px to stay clear of the new line. */
+    ctx.fillText(an.name,W/2,H/2-42);
+  }
   ctx.fillStyle=areaPalette().accent;
   ctx.font='bold 44px monospace';
-  ctx.fillText('FLOOR '+f,W/2,H/2-34);
+  ctx.fillText('FLOOR '+f,W/2,H/2-14);
   ctx.fillStyle='#8a7a62';
   ctx.font='14px monospace';
   // "deeper than you have been" was here first and it is a lie on the second descent - by floor 12
   // a returning player has plainly been deeper. The transition itself is always true, always says
   // something the player did not already know, and needs no assumption about their history.
-  ctx.fillText('floor '+(descendFrom||f-1)+'  →  '+f,W/2,H/2-6);
+  ctx.fillText('floor '+(descendFrom||f-1)+'  →  '+f,W/2,H/2+14);
   // the three levers, as ratios rather than percentages. "4.3x tougher" reads at a glance where
   // "330% tougher" needs the mental arithmetic, and a banner is not the place to ask for that.
   const t1=depthTough(), r1=depthRate();
   ctx.fillStyle='#6b6152';
   ctx.font='13px monospace';
   ctx.fillText('bodies '+t1.toFixed(1)+'x tougher  ·  they answer '+r1.toFixed(1)+
-    'x faster  ·  rooms fuller',W/2,H/2+22);
+    'x faster  ·  rooms fuller',W/2,H/2+36);
   // a ruled line under it, struck like the depth plate, so the beat belongs to the same object.
   // withAlpha rather than a literal, so the rule under the number cannot be a different hue from
   // the number once there are four areas - and so Area1 still composites to the exact same string.
   ctx.strokeStyle=withAlpha(areaPalette().accent,0.45);
   ctx.lineWidth=1;
   ctx.beginPath();
-  ctx.moveTo(W/2-150,H/2+36); ctx.lineTo(W/2+150,H/2+36);
+  ctx.moveTo(W/2-150,H/2+50); ctx.lineTo(W/2+150,H/2+50);
   ctx.stroke();
   ctx.restore();
   ctx.textAlign='left';

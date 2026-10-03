@@ -861,12 +861,31 @@ const FADE_DESCEND=sec(0.9);
 function depthFloor(){ return (run&&run.floor)||1; }
 function depthSteps(){ return Math.max(0,depthFloor()-1); }
 
-/* AREA. Which themed block the current floor is in. Pure: it reads the floor number and nothing
-   else, spends no RNG, and is therefore safe to call anywhere without touching the draw order -
-   a function of the floor alone is the only shape that keeps a seeded run replayable. Endless
-   descent stays Final: the ladder is unbounded and the theme does not cycle back. */
-function areaForFloor(){
-  const f=depthFloor();
+/* AREA. Which themed block a floor is in. Pure: it reads the floor number and nothing else, spends
+   no RNG, and is therefore safe to call anywhere without touching the draw order - a function of the
+   floor alone is the only shape that keeps a seeded run replayable. Endless descent stays Final: the
+   ladder is unbounded and the theme does not cycle back.
+
+   IT TAKES THE FLOOR AS AN OPTIONAL ARGUMENT, and that is the whole point of the parameter. It used
+   to take nothing and read `depthFloor()`, which reads `run.floor` - so the presentation layer could
+   not ask "which area is floor N in?" without mutating simulation state to ask it. drawDescent wanted
+   exactly that question: "did this descent cross a boundary?", meaning compare the area you left with
+   the area you arrived in. The three ways to answer it were all bad:
+
+     - write the 4/8/12 thresholds out a second time in 70-view.js. Two copies of a ladder boundary is
+       a bug waiting: change one and the banner names the wrong area.
+     - temporarily assign `run.floor`, ask, and put it back. A draw function mutating simulation state
+       is the one-way data flow this project rules out outright.
+     - leave the banner saying only the floor, and let the palette imply the area. Which is what it
+       did, and it meant the descent beat - the one moment the game tells you where you are going -
+       could not name the place.
+
+   The C# signature always took the floor (`AreaRules.AreaForFloor(int floor)`). The JS not taking it
+   was the drift, and it is now the same shape on both sides: `areaForFloor()` still reads the current
+   floor for the hundred existing callers, and `areaForFloor(n)` answers for any floor without touching
+   anything. */
+function areaForFloor(floor){
+  const f=(floor===undefined)?depthFloor():floor;
   return f<=4?'Area1':f<=8?'Area2':f<=12?'Area3':'Final';
 }
 
