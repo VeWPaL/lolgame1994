@@ -246,6 +246,52 @@ let claimedTotal=0;
   }
 }
 
+# ---------------------------------------------------------------- 6b. the port manifest
+# PORTED.md is the list of what is ported and the rule for changing it. It is only worth having if
+# something checks it, because a manifest nobody reads is a document: the whole reason this file
+# exists is that the port boundary used to live in prose in CONVENTIONS.md, which nobody reads at the
+# moment of making a change.
+#
+# So this asserts two things a document cannot assert about itself:
+#   - every C# source file is CLAIMED by some row. A new file that nobody added to the manifest is
+#     the exact shape of the drift this is for: code exists, is compiled, and is not on the record.
+#   - the parity-table row count it quotes is the row count in the test project. That number is a
+#     maintenance cost stated in the document; if the tables grow, the cost claim is wrong.
+Note ""
+Note "6b. the port manifest"
+$manifest = Join-Path $root 'PORTED.md'
+if (-not (Test-Path $manifest)) {
+  Bad "PORTED.md is missing - the port boundary has to be written down somewhere the gate can read"
+} else {
+  $mtext = [System.IO.File]::ReadAllText($manifest)
+  $coreFiles = @(Get-ChildItem "$root\csharp\Depths.Core\*.cs" | ForEach-Object { $_.BaseName })
+  $unclaimed = @()
+  foreach ($f in $coreFiles) {
+    if ($f -eq 'Depths.Core') { continue }
+    if ($mtext -notmatch [regex]::Escape($f)) { $unclaimed += $f }
+  }
+  if ($unclaimed.Count -gt 0) {
+    Bad ("PORTED.md does not mention: " + ($unclaimed -join ', ') + " - a file in the port that the manifest does not claim is exactly the drift this file exists to catch")
+  } else {
+    Note "   all $($coreFiles.Count) files in Depths.Core are accounted for by PORTED.md"
+  }
+  $m = [regex]::Match($mtext, 'pins (\d+) `\[TestCase\]` rows')
+  if ($m.Success) {
+    $claimedRows = [int]$m.Groups[1].Value
+    $actualRows = 0
+    Get-ChildItem "$root\csharp\Depths.Tests\*.cs" | ForEach-Object {
+      $actualRows += ([regex]::Matches([System.IO.File]::ReadAllText($_.FullName), '\[TestCase\(')).Count
+    }
+    if ($claimedRows -ne $actualRows) {
+      Bad "PORTED.md says the parity tables pin $claimedRows rows; the test project has $actualRows - either the document is stale or the tables grew without the cost being recorded"
+    } else {
+      Note "   the parity-table row count agrees: $actualRows"
+    }
+  } else {
+    Note "   (PORTED.md states no parity-row count to check)"
+  }
+}
+
 # ---------------------------------------------------------------- verdict
 Note ""
 if ($failures.Count -eq 0) {

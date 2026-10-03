@@ -1813,6 +1813,13 @@ needs a canvas at page load and the script has no browser.
 
 ### The C# port, and exactly where its boundary is
 
+**`PORTED.md` is the port manifest and `verify.ps1` step 6b checks it.** Every file in `Depths.Core`
+must be claimed by a row, and the parity-row count the document quotes must match the test project.
+Both are mutation-checked: adding an unclaimed `.cs` file fails the gate by name, and changing the
+stated row count fails it as a stale claim. The boundary used to live in prose here, which is a
+document nobody reads at the moment of making a change — and `SwerveDeadzone` at 300 versus 350 for an
+unknown period is what that costs.
+
 `csharp/Depths.Core` has `Balance` (all the tuning, plus the depth ladder), `Hit` (the player hit
 test), `Intercept` (lunge and gun solutions), `Bodies`/`Body` (the body table, the spawner and the
 build-dependent traits, plus the per-area enemy-mix dials), `Frame` (`RoomBounds` and the frame
