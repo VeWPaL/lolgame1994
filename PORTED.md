@@ -99,3 +99,24 @@ port that no ported code touches, which is the shape PORTED.md exists to prevent
 one-to-six-line helpers (`falloffMult`, `alertEnemy`, `slowEnemy`, `killEnemy`), and leave the loop for
 the commit after. That is a self-contained slice, it keeps all 163 C# tests green, and it is verifiable:
 the widening can be pinned by a test that constructs a shell with every field and reads it back.
+
+### Slice 1, landed: the `Projectile` record
+
+The record is now the 23 fields the pass reads, and `ProjectileRecordTests` pins it three ways.
+
+**The seven view-only fields are asserted ABSENT**, by name: `fNear`, `fMid`, `fFar`, `from`, `it`,
+`shrink`. Shells are constructed with 29 fields across four JavaScript files and these have no ported
+reader — the falloff trio belongs with `explode`, and the rest are presentation. Asserting their absence
+is deliberate: a field in the port that nothing reads is the drift this manifest exists to prevent, and
+a test that merely omitted them would leave the decision to whoever reads the file next.
+
+**ONE MUTATION CAUGHT A CLAIM IN MY OWN TEST, and it is the reason the type assertions exist.**
+Changing `pierce` from `int` to `double` left the suite GREEN, because NUnit's `Is.EqualTo` treats 2 and
+2.0 as equal. So an assertion on the value cannot pin the type — and the comment above it claimed it did,
+which is precisely the failure mode this repo keeps warning about, committed by me. `age` and `pierce`
+are integer counts in the original (`p.age++`, `p.pierce--`, and `p.pierce>0` decides whether a bolt keeps
+going), so the test now asserts on `FieldType` rather than on value. That assertion is red under the
+mutation and green without it.
+
+This is worth more than the field it was written for: a value assertion that cannot fail is the same
+shape as a placeholder assertion, and the only reason it was caught is that the mutation was run.
