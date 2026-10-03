@@ -1566,7 +1566,25 @@ const scrimTop=H/2-92, scrimBot=H/2+68;
   {
     const fr2=player.anim>0?Math.floor(player.anim)%4:-1, frame2=fr2<0?1:fr2;
     const bob2=fr2<0?Math.round(Math.sin(frameCount*0.07/SPEEDUP)):((fr2&1)?-2:0);
-    const hop2=readyT>0?-Math.sin(readyProg*Math.PI)*7:0;
+    /* `readyProg` IS RECOMPUTED HERE, and it has to be. It is a `const` local of drawRoom() - the
+       room's own arrival hop - and drawDescent() is a different function, so reaching for it would be
+       reaching across a scope boundary into a variable that is undefined here. Reading it threw
+       ReferenceError: readyProg is not defined, which kills render() and with it the rAF loop, so
+       the game froze permanently.
+
+       It was not reachable in normal play and that is the part worth recording: `descend()` always
+       lands the player in the new floor's START room, which generateDungeon builds already spawned
+       and empty, so `enterRoom` never sets `readyT` during the 0.9s the banner is up. Measured 160,000
+       ticks of real random-walk play across 40 seeds: zero frames with both `descendT>0` and
+       `readyT>0`. Forcing the overlap by hand reproduces the throw immediately.
+
+       So it was a loaded gun rather than a live bug - and a loaded gun is still a defect, because the
+       one line that makes it live is a single `readyT=READY` added to some future path, and nothing
+       here would look wrong. The hop and the wand glow are recomputed exactly as drawRoom computes
+       them, from the same two constants, so the redraw cannot disagree with the room pass about what
+       the player is doing. */
+    const readyProg2=readyT>0?1-readyT/READY:1;
+    const hop2=readyT>0?-Math.sin(readyProg2*Math.PI)*7:0;
     const flick2=player.iframes>0&&((player.iframes/IFRAME_FLICKER)|0)%2===0;
     const oy2=player.y+bob2+hop2;
     /* The aim angle is recomputed rather than read from the room pass: `a` is a local of drawRoom()
@@ -1576,7 +1594,7 @@ const scrimTop=H/2-92, scrimBot=H/2+68;
     const aim2=mouseWorld();
     const a2=Math.atan2(aim2.y-player.y,aim2.x-player.x);
     const behind2=Math.sin(a2)<-0.35;
-    const glow2=readyT>0?0.5*readyProg:0;
+    const glow2=readyT>0?0.5*readyProg2:0;
     ctx.globalAlpha=a*(flick2?0.35:1);
     let tip2;
     if(behind2) tip2=drawWand(player.x,oy2,a2,WEAPONS[player.weaponIdx].color,glow2);

@@ -9977,6 +9977,119 @@ const BOSS_TICKS=26000;
     const pn2=document.getElementById('bugPanel'); if(pn2) pn2.remove();
   });
 
+  /* THE BANNER MUST SURVIVE THE ARRIVAL WINDOW, which is the one state that used to freeze the game.
+
+       `drawDescent` redraws the player over its own scrim, and it read `readyProg` - a `const` local
+       of `drawRoom()` - from inside a different function. That is a ReferenceError, and because
+       drawDescent is called unconditionally from render(), the throw escapes render() and the
+       requestAnimationFrame tail of loop() never runs: **the game freezes for good**.
+
+       It was not reachable by playing, and that is exactly what made it worth a test rather than a
+       shrug. `descend()` always lands the player in the new floor's START room, which
+       generateDungeon builds already spawned and empty, so `enterRoom` never sets `readyT` while the
+       0.9s banner is up. Measured 160,000 ticks of random-walk play across 40 seeds: zero frames with
+       both `descendT>0` and `readyT>0`. The one line that makes it live is a `readyT=READY` added to
+       some future path, and nothing in the code would look wrong on the day.
+
+       So this forces the overlap the game cannot currently produce and requires that a frame still
+       draws. Every other descent test in this file sets `readyT=0` on the way in - which is why they
+       all passed while this was broken. */
+  /* A CALLED WALL MUST LEAVE THE ROOM. The 14s expiry used to drop the HANDLE and leave the bodies, and
+       `bossCallWall` overwrites that handle on every call, so the timer could only ever police the most
+       recent wall. Every earlier one stayed on the floor for the rest of the fight.
+
+       This was in normal play, not a stress fixture. Measured through a real phase-3 Warden with the
+       player kept alive: 7 wall calls over 120 seconds left 35 Brunch in one room against a
+       `DEPTH_BODY_CAP` of 28 - a cap that `depthBodies()` applies per normal spawn wave and that
+       nothing here consults. The cost is superlinear in body count, so the fight degraded rather than
+       merely running heavy:
+
+           28 bodies   0.094 ms/tick    2.0% of the 4.76ms budget
+           60 bodies   0.307             6.4%
+          120 bodies   1.111            23.3%
+          240 bodies   3.512            73.7%
+
+       The claim is BOUNDED, not "the last wall went away": two walls called back to back is the case
+       that a fix which only cleaned up `wallBodies` would pass, because the handle still points at
+       the second one. So the count is required to stay under the cap across many calls, which is the
+       only version of the claim that survives the overwrite. */
+  test('a boss wall expires and does not accumulate for the rest of the fight',()=>{
+    startGame(4242);
+    const r=currentRoom(); r.enemies.length=0;
+    /* the boss flag is the FIRST argument of spawnEnemy, and the caller pushes the body itself */
+    const boss=spawnEnemy(true,r,ROOM_LEFT+200,ROOM_TOP+150); r.enemies.push(boss);
+    boss.hp=boss.maxHp*0.15;                       // phase 3: the wall is in the move bag
+    const brunch=()=>r.enemies.filter(e=>e.type==='brunch').length;
+    let peak=0, walls=0, prev='';
+    for(let t=0;t<210*90;t++){
+      if(player.hp<player.maxHp) player.hp=player.maxHp;   // survive: this is about the wall, not the fight
+      if(boss.move==='wall'&&prev!=='wall') walls++;        // count MOVES, not ticks in the move
+      prev=boss.move;
+      update();
+      peak=Math.max(peak,brunch());
+      if(state!=='playing') break;
+    }
+    /* ENOUGH WALLS TO EXCEED THE CAP. The first version of this test ran the fight and took the peak,
+       and it PASSED against the unfixed code - because the boss's own cadence only got round to two
+       wall calls in 90 seconds, and two walls of five is ten Brunch, comfortably under the cap of 28.
+       The assertion was true of the broken version, which is the failure this file exists to prevent.
+
+       So the walls are called directly, in a loop, enough times to pass the cap on their own. The
+       count of moves is still asserted separately, because otherwise the loop could be the only thing
+       under test and the fight itself would go unmeasured. */
+    startGame(4242);
+    const r2=currentRoom(); r2.enemies.length=0;
+    const b2=spawnEnemy(true,r2,ROOM_LEFT+200,ROOM_TOP+150); r2.enemies.push(b2);
+    let afterCalls=0;
+    for(let i=0;i<10;i++){ bossCallWall(b2,r2); afterCalls=r2.enemies.filter(e=>e.type==='brunch').length; }
+    const time=()=>{ for(let i=0;i<60;i++) update(); };
+    time();
+    const before=afterCalls;
+    /* fourteen seconds is the expiry, and at TICK_HZ 210 that is 2940 ticks. Run past it. */
+    for(let i=0;i<sec(15);i++) update();
+    const after=r2.enemies.filter(e=>e.type==='brunch').length;
+    ok(afterCalls>=50,'ten wall calls left only '+afterCalls+' Brunch in the room (expected 50 at five '+
+       'per call), so the fixture is not building the situation the assertion is about');
+    ok(after<afterCalls,'ten wall calls left '+after+' Brunch in the room after the 14s expiry '+
+       '('+before+' immediately after the calls) - expired walls are never removed, so they '+
+       'accumulate for the rest of the fight');
+    /* AND OVER A WHOLE FIGHT, because the direct loop above proves the expiry and this proves the
+       cadence: a real phase-3 Warden must not out-run its own cleanup. */
+    ok(peak<=DEPTH_BODY_CAP,'the Warden\'s room peaked at '+peak+' Brunch against a body cap of '+
+       DEPTH_BODY_CAP+' - called walls are never removed, so a long phase-3 fight fills the room and '+
+       'the cost climbs superlinearly with it (measured 3.512 ms/tick, 73.7% of budget, at 240 bodies)');
+    ok(walls>0,'no wall was ever called in 90 seconds ('+walls+' moves), so the peak above is '+
+       'measuring an empty room and proves nothing');
+    run=undefined;
+  });
+
+  test('the descent banner still draws while the room-arrival window is running',()=>{
+    const wasRun=run;
+    startGame();
+    player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=(ROOM_TOP+ROOM_BOTTOM)/2;
+    player.anim=0; player.iframes=0;
+    descendFrom=1; run.floor=2;
+    descendT=Math.floor(FADE_DESCEND*0.55);
+    /* the overlap: banner live AND the arrival hop in progress */
+    readyT=Math.floor(READY*0.5); fadeT=0; roomFade=0;
+    let threw='';
+    try{ render(); }catch(e){ threw=e.name+': '+e.message; }
+    ok(threw==='','drawing the descent banner during the room-arrival window threw '+threw+
+       ' - the banner redraws the player and reached for `readyProg`, which is a local of drawRoom() '+
+       'and therefore undefined here. The throw escapes render(), so the animation loop stops and '+
+       'the game freezes permanently.');
+    /* AND IT ACTUALLY DREW - not merely "did not throw". A render that returns early or draws nothing
+       satisfies a no-throw check, and this is a rendering claim. */
+    const px=(x,y)=>{ const d=ctx.getImageData(Math.round(x),Math.round(y),1,1).data;
+                      return (d[0]+d[1]+d[2])/3; };
+    let peak=0;
+    for(let x=300;x<=660;x++) for(let y=250;y<=266;y++) peak=Math.max(peak,px(x,y));
+    ok(peak>120,'the banner drew a peak of only '+peak.toFixed(0)+' over the numeral band with the '+
+       'arrival window live (the gold numeral measures about 134) - the frame returned without '+
+       'drawing, which passes a no-throw check and is still a blank screen');
+    run=wasRun;
+  });
+
   test('the descent banner does not bury the player, who stands at the centre of it',()=>{
     const wasRun=run;
     startGame();

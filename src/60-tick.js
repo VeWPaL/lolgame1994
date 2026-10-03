@@ -83,7 +83,10 @@ function bossInit(e){
   e.volleyT=0;
   e.sweepAim=0;
   e.sweepFrom=null;
-  e.wallIds=null;
+  /* `e.wallIds` used to live here and was written and never read: `bossCallWall` tracked the bodies
+     themselves in `e.wallBodies`, and the expiry sweep identifies a wall by `packId === BOSS_WALL_ID`.
+     A dead field named for a mechanism is worse than no field - the next reader assumes the wall is
+     tracked by id and cannot work out why there is nothing to search. */
   e.wallT=0;
   // the ranged kit it was missing. These are the gunner's numbers with a boss behind them, and the
   // aim is solved at the moment the tell starts rather than when the shell leaves, exactly as it is
@@ -140,9 +143,61 @@ function stepBoss(e,edx,edy,dist,sm,room){
 
   // the wall it called expires on its own, and it is the only boss resource that runs without the
   // player doing anything - a wall that never went away would end the fight for them
+  //
+  // EXPIRY REMOVES THE BODIES. It used to only drop the handle (`e.wallBodies=null`), which stopped the
+  // bookkeeping and left all five Brunch standing in the room forever - and `bossCallWall` OVERWRITES
+  // that handle each call, so the 14s timer could only ever police the most recent wall while every
+  // earlier one stayed on the floor for the rest of the fight.
+  //
+  // Measured, player kept alive through a phase-3 Warden: 7 wall calls over 120 seconds left 35 Brunch
+  // in one room and climbing, against `DEPTH_BODY_CAP=28`. That cap is applied by `depthBodies()` per
+  // normal spawn wave and is never consulted here, so the documented "the cap means the game never
+  // reaches counts where this matters" does not hold for the boss - and the cost is not linear in
+  // bodies but superlinear in everything that walks them:
+  //
+  //     28 bodies    0.094 ms/tick    2.0% of the 4.76ms budget
+  //     60 bodies    0.307            6.4%
+  //    120 bodies    1.111           23.3%
+  //    240 bodies    3.512           73.7%
+  //
+  // So a long phase-3 fight degrades into a slideshow, and it happens in normal play rather than in a
+  // stress fixture. Expiry is by AGE, so a wall the player has not dealt with yet still goes, and
+  // `BOSS_WALL_ID` is the identity that makes it findable - which is what the dead `e.wallIds` field
+  // was for.
+  /* SWEEP BY AGE, ALWAYS - not only when `wallBodies` is null. The handle-based expiry below can only
+     police the most recent wall, because `bossCallWall` overwrites `wallBodies` on every call, so a
+     wall from three moves ago is not covered by it at all. Sweeping the room each tick is what makes
+     the claim true regardless of how many walls the boss has called.
+
+     BOTH HALVES WERE NECESSARY TO TEST, and the mutations are what established it rather than an
+     assumption about which one mattered:
+
+       - delete the age sweep alone  -> suite GREEN. The handle path still cleaned up, because
+         `!wallBodies.some(b=>b.hp>0)` retires a wall as soon as its bodies die.
+       - delete the handle loop alone -> suite GREEN. The age sweep catches them at 14s regardless.
+       - delete BOTH (the original bug) -> suite RED, 50 Brunch surviving the expiry.
+
+     So either half is sufficient alone and the test cannot distinguish them, which is worth knowing:
+     it means the assertion is pinned to the OUTCOME ("the room empties") and not to a mechanism, and
+     that is deliberate - the outcome is the property, and a test that demanded one particular
+     implementation would be the `eq(FRAME,FRAME)` shape this file keeps warning about. Both are kept
+     because they are cheap and they retire a wall at different moments: the handle clears it the
+     instant its bodies die, the sweep clears it on age whether or not anything killed it. */
+  for(let i=room.enemies.length-1;i>=0;i--){
+    const b=room.enemies[i];
+    if(b.packId!==BOSS_WALL_ID) continue;
+    if(b.wallAge===undefined) b.wallAge=0; else b.wallAge++;
+    if(b.wallAge>sec(14)) room.enemies.splice(i,1);
+  }
   if(e.wallBodies){
     e.wallT++;
-    if(e.wallT>sec(14)||!e.wallBodies.some(b=>b.hp>0)) e.wallBodies=null;
+    if(e.wallT>sec(14)||!e.wallBodies.some(b=>b.hp>0)){
+      for(const b of e.wallBodies){
+        const i=room.enemies.indexOf(b);
+        if(i>=0) room.enemies.splice(i,1);
+      }
+      e.wallBodies=null;
+    }
   }
 
   // PHASE. Both thresholds fire on a transition only, so a boss that sits at 66.4% for ten seconds
