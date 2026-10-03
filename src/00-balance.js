@@ -391,16 +391,51 @@ const BRUNCH_ARC_FLOOR=9*Math.PI/180,    // the narrowest a shield may be: enoug
       BRUNCH_SHIELD_R=118,                  // the MINIMUM stand-off. Below this the wall is inside the
                                             // target's own hitbox and stops being cover; above it the
                                             // wall is placed proportionally to the player-target gap
-      BRUNCH_SHIELD_FRAC=0.34,             // where on that gap the wall sits: a third of the way from
-                                            // the TARGET, so the pack hugs the enemy it is covering.
-                                            // 0.55 was a little over half way, which is a barricade
-                                            // halfway to the player rather than a shield round a body.
+      BRUNCH_SHIELD_FRAC=0.25,             // a QUARTER of the way from the TARGET, so the pack hugs
+                                            // the enemy it is covering. 0.55 was a little over half
+                                            // way, which is a barricade halfway to the player rather
+                                            // than a shield round a body.
                                             // Close to the target also means more room between the
                                             // wall and the player for everything ELSE in the room to
                                             // get in front of you - which is the other half of why
                                             // this moved: a shield that owns the whole lane is a
                                             // shield the rest of the fight never gets to use
       BRUNCH_SHIELD_MIN=2;                  // fewer than two bodies cannot cover anything
+/* HOW OFTEN AN UNEMPLOYED PACK LOOKS FOR A SHOOTER TO PROTECT. 20 ticks is about 95ms: fast enough
+   that a shooter walking into a room full of Brunch is covered almost immediately, slow enough that a
+   room of packs is not re-deriving the same nearest-enemy answer 210 times a second. Only consulted
+   when a pack has NO target - a pack already holding one never reconsiders, which is what keeps the
+   wall from oscillating as a nearer shooter walks past. */
+const BRUNCH_SCAN_TICKS=20;
+/* A GUARDED RANGED BODY HOLDS A LONGER STANDOFF, and the reason is that its own escort is in the way.
+
+   The standoff is where a gunner wants to be: far enough that the player has to come to it, close
+   enough that the shot is worth taking. But a Brunch pack forms at BRUNCH_SHIELD_FRAC of the way from
+   the TARGET to the player, so the wall sits at a fixed fraction of whatever gap exists. At 0.25 that
+   is a quarter of the distance back toward the player - and when the body is standing at its normal
+   standoff, that puts its own bodyguard inside the gun's minimum engagement range:
+
+       measured, gap 229px, standoff unchanged: the wall formed 74px from the muzzle.
+
+   A wall 74px in front of a gunner is not cover, it is a muzzle plug. The gunner cannot shoot past it
+   - a shell aimed straight at the player now passes through, but the AIM sweep can only find a gap
+   about 21 degrees off, which at 229px misses by 91px - and it will not fire into its own escort, so it
+   holds its shot. Measured end to end: escorted, a shooter emitted 15 shells and landed 0; unguarded,
+   18 shells and 9 hits. Before the barricade moved closer the same escorted shooter landed 9. The wall
+   was making the enemy it protects harmless, which is the exact opposite of bodyguarding.
+
+   So a body with guards backs off until the wall it carries is outside its own minimum range. The
+   multiplier is on the STANDOFF, not on the wall: the wall still forms at 0.25 of the gap, it just
+   forms further out, where there is room for the escort to be beside the gun rather than in its mouth.
+   The standoff grows, so the gap grows, so the wall's absolute distance from the muzzle grows with it
+   - which is the self-correcting part, and why a single multiplier is enough.
+
+   1.45 is measured rather than guessed: in the fixture above it moves the wall from 74px to about
+   150px from the muzzle while leaving the body well inside its `far` limit, so the body is
+   repositioning rather than fleeing. A guarded body also stops closing entirely (see the movement
+   branch in the tick), because walking toward the player is exactly what shrinks the gap the wall
+   needs. */
+const GUARD_STANDOFF_MULT=1.45;
 
 /* THE ARC SOLVER: a pure function of (target, player, pack size, slot) returning a slot position, so
    it can be tested with no room, no player and no running fight.

@@ -60,6 +60,11 @@ const LAB_SPECIMENS=[
    exercised by the WIDTH, which is where the interesting scrolling is anyway. */
 const LAB_W=1680, LAB_H=760;
 const LAB_DROVE=12;
+/* Every drove of Brunch the lab builds needs its OWN pack id, for the reason documented at the spawn
+   site: the shield-target scan counts bodies that share an id, so reusing one id would merge two
+   separate drives into one 24-body pack - which is a different object from the one the lab is showing
+   off. A module counter, exactly like PACK_CURSOR in the world generator. */
+let LAB_PACK_CURSOR=1e6;
 
 const Lab=(function(){
 
@@ -293,10 +298,27 @@ const Lab=(function(){
     const r=currentRoom(), t=droverType();
     const rad=Math.min(300,Math.min(roomW(),roomH())*0.3);
     const cy=Math.max(r.bounds.t+rad+40,Math.min(r.bounds.b-rad-40,player.y+230));
+    /* A DROVE OF BRUNCH MUST BE ONE PACK, or it does not behave like the bodies the generator builds.
+
+       `spawnEnemy` never sets `packId` - the world generator does that in `fillRoom`, once per pack,
+       before the bodies (see 20-world.js). The shield-target scan skips any Brunch with no packId at
+       all: `if(e.type!=='brunch'||e.packId===undefined) continue`, because a pack is counted by the
+       bodies that share an id and a lone unlabelled body has no pack to count.
+
+       So a drove of Brunch spawned from the lab had no ids, no pack, and no way to ever acquire a
+       shield target - they defaulted to the advance-on-the-player fallback, always, which is exactly
+       what they looked like they were doing: spawn a shooter and a drove of Brunch and the Brunch
+       chased the player instead of covering the shooter. The generator-built packs all had ids, so the
+       mechanic worked in real rooms and appeared broken in the one tool built to demonstrate it.
+
+       One shared id for the whole drove, and slots in spawn order, so the lab builds the same kind of
+       object the world generator does. */
+    const packId=t.type==='brunch'?LAB_PACK_CURSOR++:undefined;
     for(let i=0;i<LAB_DROVE;i++){
       const a=(i/LAB_DROVE)*Math.PI*2+0.4;
-      const b=spawnEnemy(false,r,player.x+Math.cos(a)*rad,cy+Math.sin(a)*rad*0.8,t.type);
+      const b=spawnEnemy(false,r,player.x+Math.cos(a)*rad,cy+Math.sin(a)*0.8*rad,t.type);
       r.enemies.push(b);
+      if(packId!==undefined){ b.packId=packId; b.packSlot=i; }
       b.labDrove=true;
       /* AWAKE ON ARRIVAL. spawnEnemy hands a body up to 56 ticks of noticeTimer before it does
          anything at all, which in a real room is a grace period - you get a moment to read the room

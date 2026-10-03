@@ -151,11 +151,36 @@ function knockEnemy(e,dx,dy,force){
 // which is why a pack the gunner is standing inside does not lock it up.
 function clearShot(room,e,want){
   const tx=player.x, ty=player.y;
+  /* ITS OWN BODYGUARD IS NOT AN OBSTACLE. This is the same rule the shell-absorption test applies -
+     a shell passes through a Brunch that is guarding the shooter who fired it - and `clearShot` was
+     not applying it, so the two halves of one idea contradicted each other:
+
+       absorption says  "this shell goes through your escort"
+       clearShot said   "that escort is in the way, sweep 60 degrees to miss it"
+
+     Measured consequence, and this is the whole of the escorted-shooter problem at BRUNCH_SHIELD_FRAC
+     0.25: the pack formed 74px from the muzzle, `clearShot` could only find a genuinely clear angle
+     about 21 degrees off, and 21 degrees at that range is a 91px miss. The escorted shooter fired 15
+     shells and landed zero, against 18 shells and 9 hits with no pack in the room. It was not being
+     silenced by the pack EATING its shells - that was already fixed - it was being made to spray by
+     the sweep dodging an ally that shells pass through anyway.
+
+     So a body the shooter is guarding is skipped here exactly as it is skipped in the absorption test.
+     `shieldGuardFor` is the reverse of `shieldTarget` and is rebuilt every tick; it can be a tick
+     stale relative to a shell fired this frame, which is why the absorption test reads the forward link
+     directly, but a standoff decision does not need to be frame-exact and this one self-corrects
+     within a tick.
+
+     The result is that a shooter with an escort fires straight down its true aim, through its own
+     wall, and the pack's job reverts to what it should be: making the shooter harder to hit, not
+     making the shooter worse at shooting. */
+  const ownGuards=e.shieldGuardFor;
   const clearAt=a=>{
     const dx=Math.cos(a), dy=Math.sin(a);
     const reach=Math.hypot(tx-e.x,ty-e.y);
     for(const o of room.enemies){
       if(o===e||o===e.owner) continue;
+      if(ownGuards&&ownGuards.includes(o)) continue;
       const ox=o.x-e.x, oy=o.y-e.y;
       const along=ox*dx+oy*dy;
       if(along<=0||along>=reach) continue;
@@ -175,7 +200,37 @@ function clearShot(room,e,want){
      the width of the player's hitbox. Straight lines were being missed by exactly the margin of the
      mistake, which is the least legible way for a mechanic to be broken: the shot goes past the
      player, the player never learns why, and no amount of walking in a line looks punished. */
-  for(const off of [0,0.14,-0.14,0.3,-0.3,0.5,-0.5,0.75,-0.75,1.05,-1.05]){
+  /* THE SWEEP IS BOUNDED TIGHTLY, and it used to run to 60 degrees either side of the true aim.
+
+     The purpose is right: a gunner must not waste a shell on its own Brunch pack, and finding a few
+     degrees off is genuinely shooting THROUGH the pack at the player. But the offsets reached 1.05
+     radians, and by the time the sweep gets that far it is no longer aiming at the player at all.
+
+     MEASURED, and this is what the closer barricade exposed. With BRUNCH_SHIELD_FRAC at 0.25 the pack
+     stands so close to the shooter that `clearShot` used to find its first "clear" angle 20.6 degrees
+     one side and 21.8 the other, and the shooter committed to it:
+
+         aim error vs the true bearing to the player
+           no pack in the room      median  2.8 deg   p90  3.9
+           pack escorting it       median 26.4 deg   p90 27.1
+
+     So the escorted shooter was not being silenced by the pack eating its shells - that is fixed, and
+     a shell aimed straight at the player now passes through the wall untouched. It was firing
+     twenty-six degrees off, because a wide sweep plus a close wall means the first "clear" angle it
+     finds is a bad one. The pack did not block the shot; it broke the aim.
+
+     Both causes are now gone: the sweep no longer dodges the shooter's own escort (see the guard skip
+     above), and the sweep is bounded so it cannot wander somewhere pointless even when a genuine
+     obstacle is in the way. The bound is 0.42 radians, about 24 degrees - just past the 20.6 that was
+     measured while the escort was still being treated as an obstacle, so a real gap is still found.
+
+     Two intermediate values were measured and both were wrong, which is why the number is here rather
+     than left at the old 1.05:
+       - 1.05 rad (60 deg) overshot the answer by nearly 40 degrees and the shooter sprayed.
+       - 0.22 rad (12.6 deg) was too TIGHT and the shooter held every shot: 0 emitted in 14 seconds
+         against 18 unguarded. A gunner that never fires is a worse bug than one that fires badly, and
+         it is invisible - nothing looks wrong, the room is just quiet. */
+  for(const off of [0,0.1,-0.1,0.2,-0.2,0.3,-0.3,0.42,-0.42]){
     const a=want+off;
     if(clearAt(a)) return a;
   }

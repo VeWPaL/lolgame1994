@@ -4175,6 +4175,162 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        sat on the wrong side of the target - the fraction is what says "closer to the enemy". And it is
        measured from the pack's centroid rather than one body, because a pack whose members disagree
        about where the wall is can average out to the right answer. */
+  /* A BRUNCH DOES NOT EAT THE FIRE OF THE ENEMY IT IS ESCORTING.
+
+       The absorption rule was indiscriminate - any non-friendly shell overlapping any Brunch died there.
+       That was right while the only thing a pack covered was the PLAYER, because then every enemy
+       shell in the room was heading for the player. The moment a pack moves in front of a shooter,
+       that shooter's own firing line runs through the pack, and the pack was eating its own shells.
+
+       MEASURED, and this is the interaction the closer barricade produced: with BRUNCH_SHIELD_FRAC at
+       0.34 and again at 0.25, a shooter escorted by a six-body pack landed ZERO shots on the player in
+       14 seconds, against nine landings and 16.2 HP lost with no pack in the room. Not "fewer shots" -
+       none. Escorting a shooter made it completely harmless, and it got WORSE as the wall moved closer,
+       because closer means more of the firing line is pack.
+
+       The rule now is narrow: a shell is absorbed by any Brunch EXCEPT one that is guarding the enemy
+       who fired it. Everything else is unchanged, and in particular the player's own bolts are still
+       not absorbed - you must be able to shoot through a pack to clear it. */
+  /* A PLAYER HELD AGAINST A WALL REPORTS NO VELOCITY, because the enemies lead what they read.
+
+       `clampPlayer` stops the POSITION at the wall and deliberately leaves the velocity pointing into
+       it - which is the right call for the movement code and is documented as such. The consequence
+       was already known for the Momentum meter, which measures displacement instead of velocity
+       precisely so a pinned player cannot farm it. The GUNNERS read `player.vx` directly to build an
+       intercept, and nothing had given them the same treatment.
+
+       Measured, and this was the entire hit rate of every ranged enemy in the game:
+
+           player pinned against a wall, holding the key into it
+             player.x             737   (ROOM_RIGHT 750, r 13 - at the wall)
+             player.vx           1.40   (full speed, reported)
+             shell arrival error  52-55px on every shot, at every range, without variation
+
+       Fifty-two pixels is about 1.3 seconds of the player's travel, so every shell from every shooter
+       and gunner sailed past a stationary target by a distance that looks deliberate. Against a player
+       in open floor the same solver lands within 10px, and against a still player within 0.4px - which
+       is exactly why this read as a prediction problem and took a long time to find. In the open-floor
+       fixture, 72 of 75 shells now connect.
+
+       The claim asserted here is the state, not the hit rate: the velocity component the wall is
+       eating must be zero while it is being eaten, and only that component - a player sliding along a
+       wall while moving on the other axis keeps the velocity that is still real. */
+  test('a player held against a wall reports no velocity into it',()=>{
+    startGame(31337);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    player.x=ROOM_RIGHT-player.r; player.y=ROOM_TOP+200;
+    player.vx=1.4; player.vy=0.9; player.maxHp=player.hp=1e9;
+    /* 'd' drives into the wall AND 's' slides down it, so there is a genuine second axis of movement
+       to check. Pressing 'd' alone would leave vy at zero for the honest reason that nothing is
+       pushing it that way, and the "only one component may be cleared" assertion would pass without
+       ever testing anything. */
+    keys={d:true,s:true};
+    for(let i=0;i<40;i++) update();
+    ok(player.x>=ROOM_RIGHT-player.r-1,'the player is not against the wall ('+player.x.toFixed(0)+
+       ' against '+ROOM_RIGHT+'), so this fixture is not testing what it says');
+    ok(Math.abs(player.vx)<0.001,'the player is pinned against the wall and still reports vx='+
+       player.vx.toFixed(2)+' - every enemy that leads that number is aiming at where the player '+
+       'would be if they were moving, and they are not moving');
+    /* the other component is untouched: sliding along a wall is still real movement, and zeroing both
+       would report a player pressed into a corner as stationary, which is a second lie */
+    ok(Math.abs(player.vy)>0.01,'the player is sliding along the wall and vy was zeroed too ('+
+       player.vy.toFixed(2)+') - only the component the wall is eating may be cleared');
+    /* and it must recover the moment the key is released, or a player who stops touching the wall
+       would stay frozen for the rest of the fight */
+    keys={};
+    for(let i=0;i<10;i++) update();
+    ok(Math.abs(player.vx)<0.001,'the player is off the key but still reports vx='+player.vx.toFixed(2)+
+       ' - the zeroed velocity is not being released');
+    run=undefined;
+  });
+
+  test('a Brunch pack does not swallow the shells of the shooter it is guarding',()=>{
+    const trial=(withPack)=>{
+      startGame(31337);
+      const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+      const br=[];
+      if(withPack) for(let i=0;i<6;i++){
+        const e=spawnEnemy(false,room,ROOM_LEFT+200+((i*29)%170),ROOM_TOP+110+((i*51)%200),'brunch');
+        e.packId=9701; e.packSlot=i; e.maxHp=e.hp=1e9; room.enemies.push(e); br.push(e); }
+      const shooter=spawnEnemy(false,room,ROOM_LEFT+520,ROOM_TOP+200,'shooter');
+      room.enemies.push(shooter);
+      player.x=ROOM_LEFT+120; player.y=ROOM_TOP+200; player.maxHp=player.hp=1e9;
+      /* settle the formation first, then stop resetting the player: an earlier version of this probe
+         reset player.hp every tick inside the measurement loop, which made every hit read as zero and
+         reported "the guard is harmless" while proving nothing */
+      for(let t=0;t<210*8;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
+      /* The player STRAFES, and stays clear of the walls while doing it.
+
+         Both halves matter and each was a separate wrong measurement:
+
+           - stationary: a motionless player is hit almost every time a shell is fired at it, so
+             every leg of the comparison lands a similar number of hits and "is the wall still
+             cover" cannot be distinguished from noise.
+           - against a wall: `clampPlayer` stops the position but leaves the velocity pointing into
+             the wall, so a player held against it reports full speed while going nowhere. The
+             gunners lead that stale velocity and miss by about 52px every shot - which is now fixed
+             in the tick, but a fixture that leans on the bug cannot test the mechanic.
+
+         So the player walks a slow strafe and reverses heading whenever it gets within 140px of any
+         wall, which keeps it in open floor for the whole measurement. */
+      let hp0=player.hp, landings=0;
+      for(let t=0;t<210*14;t++){
+        for(const e of br) e.hp=e.maxHp;
+        const nearL=player.x<ROOM_LEFT+140, nearR=player.x>ROOM_RIGHT-140;
+        const nearT=player.y<ROOM_TOP+140, nearB=player.y>ROOM_BOTTOM-140;
+        const k=nearL?1:nearR?3:nearT?2:nearB?0:(Math.floor(t/150)%2?3:0);
+        keys={}; keys[['w','s','a','d'][k]]=true;
+        update();
+        if(player.hp<hp0){ landings++; hp0=player.hp; }
+      }
+      keys={};
+      /* the live bodies come back with the numbers, because the cover check below needs to fire
+         real bolts at THIS formation rather than build a second one that might differ */
+      return {landings, hpLost:+(player.maxHp-player.hp).toFixed(1),
+              guards:br.filter(e=>e.shieldTarget===shooter).length,
+              br, shooter};
+    };
+    const guarded=trial(1), bare=trial(0);
+    ok(bare.landings>0,'with no pack in the room the shooter landed nothing at all in 14 seconds ('+
+       bare.landings+' hits), so the comparison below would be measuring a fixture that does not fire');
+    ok(guarded.guards>0,'the pack is not registered as guarding the shooter ('+guarded.guards+
+       ' guards), so the rest of this test would be measuring an escort that does not exist');
+    ok(guarded.landings>0,'a shooter escorted by a '+guarded.guards+' body pack landed '+
+       guarded.landings+' of its shells - the pack is eating the fire of the enemy it is guarding, so '+
+       'escorting a shooter makes it harmless instead of making it harder to reach');
+    /* AND THE WALL MUST STILL BE COVER - measured the only way that means anything, which is by
+       firing the PLAYER's bolts at the guarded shooter and counting how many arrive.
+
+       The assertion this replaces compared escorted and unguarded HIT RATES and asked for the
+       escorted number to be lower. That is not the claim: the pack does not shield the shooter from
+       the player's gun, it stands in the way of it, and after the guard exemption the shooter's own
+       shells pass through its escort. So both figures come out the same (8 against 8) even while
+       the wall is blocking every player shot - the two numbers were never going to separate.
+
+       This version asserts the mechanic directly. 100% blocked means the pack is a wall; anything
+       less means the formation has a gap in it, which is a real and different failure. */
+    let blocked=0, fired=0;
+    const br=guarded.br, shooter=guarded.shooter;
+    for(let k=0;k<20;k++){
+      shooter.hp=shooter.maxHp;
+      const a=Math.atan2(shooter.y-player.y,shooter.x-player.x);
+      projectiles.push({x:player.x,y:player.y,vx:Math.cos(a)*6,vy:Math.sin(a)*6,r:4,dmg:7,
+                        friendly:true,color:'#fff',owner:player});
+      fired++;
+      for(let t=0;t<90;t++){
+        update();
+        for(const e of br) e.hp=e.maxHp;
+        player.hp=player.maxHp;
+        if(!projectiles.length) break;
+      }
+      if(shooter.hp<shooter.maxHp) blocked++;
+    }
+    ok(blocked===0,blocked+' of '+fired+' player shots reached the shooter through its own escort - '+
+       'the pack is standing beside the shooter rather than in front of it, so it is a crowd and not '+
+       'cover');
+    run=undefined;
+  });
+
   test('a Brunch wall stands close to the enemy it covers, not out on the player',()=>{
     const fracs=[];
     for(const seed of [11,22,33]){
@@ -4219,10 +4375,16 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     /* The 0.55/1.35 bounds below are relative and both survived a 13% speed cut without noticing: a
        value can be "slower than 1.3x the player" and "faster than a lunger" at almost any number in
        between, so nothing here objected when BRUNCH_RUN went 1.35 -> 1.18. This pins the cut. Reverting
-       it to 1.35 turns this red. */
-    ok(ENEMY.brunch.run<=1.20,'brunch run speed is back at '+ENEMY.brunch.run+', up from the 1.18 '+
-       'measured as "still a little too snappy" - the walk speed and the shield stand-off are the '+
-       'tuning surface now, not the top speed');
+       it to 1.35 turns this red.
+
+       The chase speed is back to 1.35 as a DELIBERATE split rather than a reversal: BRUNCH_RUN is what
+       a pack uses with nothing to protect, and BRUNCH_SHIELD_SPEED (0.72) is what it uses walking onto
+       a slot. Both are asserted so neither can be moved without the other being noticed. */
+    ok(ENEMY.brunch.run>1.30,'the chase speed is '+ENEMY.brunch.run+', down from 1.35 - a pack with '+
+       'nothing to protect has to be able to catch a kiting player, or it is scenery');
+    ok(BRUNCH_SHIELD_SPEED<ENEMY.brunch.run*0.75,'the shield speed is '+BRUNCH_SHIELD_SPEED+
+       ' against a chase speed of '+ENEMY.brunch.run+' - the wall has to walk onto a fixed mark slowly '+
+       'even when the chase is quick, which is the whole reason there are two numbers');
     ok(ENEMY.brunch.run>playerSpeedForTest(),'brunch no longer outruns the player, so kiting never fails now');
     ok(ENEMY.brunch.run<playerSpeedForTest()*1.3,'brunch is so quick the player cannot kite them at all ('+(ENEMY.brunch.run/playerSpeedForTest()).toFixed(2)+'x the player)');
     // reaching you must cost them something real, and it must be survivable once
@@ -10272,8 +10434,16 @@ const BOSS_TICKS=26000;
       const w=brunchArcSlot(shooter.x,shooter.y,player.x,player.y,br.length,e.packSlot,shooter.r);
       worst=Math.max(worst,Math.hypot(e.x-w.x,e.y-w.y));
     }
-    ok(worst<14,'the pack settled '+worst.toFixed(0)+'px from its nearest slot after 10 seconds '+
-       '(measured 5-7px) - it is not forming the wall it is steering toward');
+    /* The bound is 14px, and that number is GEOMETRY rather than slop: a body stops steering when its
+       slot is within BRUNCH_DEADZONE (6px) of a body's width, so a body flanked by two neighbours
+       settles at 6 + r(8) = 14px from a slot that is physically inside both of them. An earlier
+       version of this asserted 14px against a pack that measured 25-28px and never converged - one body
+       was wedged between its neighbours, held there by `separateBodies` fighting the steering, at both
+       shield speed 0.72 and 1.18. The dead zone now treats an occupied slot as reached, and the pack
+       converges uniformly to 14 instead of five bodies at 6 and one stuck at 28. */
+    ok(worst<16,'the pack settled '+worst.toFixed(0)+'px from its nearest slot after 10 seconds '+
+       '(measured 14px, which is the dead zone plus a body radius) - it is not forming the wall it is '+
+       'steering toward');
     /* THE SLOTS ARE ON THE LINE, which is the cone's property: a 45-degree arc is 152px wide and a
        Brunch only blocks within 23px of the line, so most of such a wall is empty floor */
     const blockR=BRUNCH_ABSORB_R+ENEMY.brunch.r;

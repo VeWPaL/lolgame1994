@@ -482,6 +482,42 @@ function update(){
   if(trans) return;
 
   const sp=Math.hypot(player.vx,player.vy);
+  /* VELOCITY THAT POINTS INTO A WALL IS NOT VELOCITY, and the enemies were reading it as if it were.
+
+     `clampPlayer` stops the POSITION and deliberately leaves the velocity pointing into the wall,
+     because that is what keeps the movement code simple everywhere else - and the consequence is
+     documented just below, for the Momentum meter: a player holding a key against a wall reports full
+     speed forever without covering a pixel. That was solved for the meter by measuring displacement
+     instead. The GUNNERS were never given the same treatment, and they read `player.vx` directly to
+     build an intercept, so they spent the fight leading a player who was going nowhere.
+
+     Measured, and it is the whole reason the hit rate was 4%:
+
+         player pinned against a wall, holding the key into it
+           player.x            737   (ROOM_RIGHT 750, r 13 - at the wall)
+           player.vx          1.40   (full speed, reported)
+           shell arrival err  52-55px on EVERY shot, and it never varies
+
+     Fifty-two pixels is about 1.3 seconds of travel at the player's speed, so every shell from every
+     shooter and gunner sailed past a stationary target by a distance that looks deliberate. Against a
+     player in open floor the same solver lands within 10px, and against a still player within 0.4px -
+     which is what made this look like a prediction problem rather than a stale-state one.
+
+     The fix is to zero the velocity component that the wall is eating, and only that component: a
+     player sliding along a wall while moving on the other axis keeps the velocity that is still real,
+     so a purely horizontal press zeroes vx and leaves vy alone. Zeroing both would make a player
+     pressed into a corner read as stationary, which would be a second lie in the opposite direction.
+
+     This is the same rule the meter already follows, applied to the one consumer that was still
+     reading the raw number. */
+  {
+    const r=currentRoom();
+    const inGapX=Math.abs(player.x-MIDX)<DOORW/2, inGapY=Math.abs(player.y-MIDY)<DOORW/2;
+    if(player.y<=ROOM_TOP+player.r && !(doorPassable(r,'N')&&inGapX)) player.vy=0;
+    if(player.y>=ROOM_BOTTOM-player.r && !(doorPassable(r,'S')&&inGapX)) player.vy=0;
+    if(player.x<=ROOM_LEFT+player.r && !(doorPassable(r,'W')&&inGapY)) player.vx=0;
+    if(player.x>=ROOM_RIGHT-player.r && !(doorPassable(r,'E')&&inGapY)) player.vx=0;
+  }
   /* Displacement under the player's OWN power: how far the body actually got, less whatever the
      enemy threw at it. Not velocity, and not whether a key is down.
 
@@ -612,6 +648,33 @@ function update(){
       for(let j=r.enemies.length-1;j>=0;j--){
         const b=r.enemies[j];
         if(b.type!=='brunch'||b.hp<=0) continue;
+        /* A BRUNCH DOES NOT SWALLOW ITS OWN GUNNER'S FIRE.
+
+           The absorption rule was indiscriminate - any non-friendly shell overlapping any Brunch died
+           there - and that was correct as long as the only thing being covered was the PLAYER, because
+           every enemy shell in the room was heading for the player. The moment a pack moves in front of
+           a shooter, that shooter's own line of fire runs through the pack, and it is eating its own
+           shells.
+
+           Measured with BRUNCH_SHIELD_FRAC at 0.34 and again at 0.25: a shooter escorted by a six-body
+           pack landed ZERO shots on the player in 14 seconds, against nine landings and 16.2 HP lost
+           with no pack in the room. Not "fewer" - none. The pack was not cover, it was a wall in
+           front of the enemy's own mouth, and escorting a shooter made it completely harmless. It got
+           WORSE as the wall moved closer, because closer means more of the firing line is pack.
+
+           The test is asked directly of the Brunch rather than of a precomputed reverse index, and
+           that is not a style preference. The first version of this built `shieldGuardFor` on each
+           ranged body and consulted it here - and it did nothing at all, because the reverse index is
+           built at line 756 while projectiles resolve at line 521, so the absorption test was reading
+           LAST tick's links for a shell fired THIS tick. The suite caught it (0 landings, the very
+           symptom it was written to prevent) after a hand probe that reset the player's HP every tick
+           had reported the opposite. Reading `b.shieldTarget === p.owner` needs no ordering at all:
+           the forward link already exists before anything fires, because it is assigned where the
+           pack chooses its target.
+
+           Player projectiles are NOT affected: they were never absorbed in the first place, and the
+           player must be able to shoot through a pack to clear it. */
+        if(p.owner&&b.shieldTarget===p.owner) continue;
         if(Math.hypot(p.x-b.x,p.y-b.y)<p.r+b.r){
           // the ring collapses inward rather than expanding, which is the read: something arrived
           // and was swallowed. An expanding burst would say the opposite.
@@ -700,8 +763,50 @@ function update(){
     if(e.type!=='brunch'||e.packId===undefined) continue;
     const c=packC[e.packId];
     if(!c) continue;
-    if(!e.shieldTarget||e.shieldTarget.hp<=0||!r.enemies.includes(e.shieldTarget))
+    /* THE SCAN RUNS EVERY TICK, NOT ONLY WHEN THE CURRENT TARGET DIES.
+
+       The commitment rule - hold the choice until the pack or its target dies - is right, because
+       re-picking whenever a nearer shooter walks past makes the wall oscillate. But it was implemented
+       as "only re-pick when the current target is invalid", which means a Brunch pack that spawned with
+       no ranged enemy in the room NEVER LOOKED AGAIN. It advanced on the player, the shooter you
+       spawned two seconds later appeared, and the pack kept chasing for the rest of the fight.
+
+       So the target is re-picked whenever it is gone, AND on a slow refresh while the pack has none.
+       A pack holding a live target is left alone (no oscillation); a pack with nothing to protect keeps
+       looking, and picks up a shooter within a fraction of a second of one appearing. The refresh is
+       every BRUNCH_SCAN_TICKS rather than every tick so that the choice itself is not recomputed 210
+       times a second for every pack in every room. */
+    const stale=!e.shieldTarget||e.shieldTarget.hp<=0||!r.enemies.includes(e.shieldTarget);
+    if(stale||(!e.shieldTarget&&(frameCount%BRUNCH_SCAN_TICKS===0)))
       e.shieldTarget=pickShield(c);
+  }
+  /* THE REVERSE LINK, REBUILT EVERY TICK: for each shielded enemy, the bodies guarding it.
+
+     Two consumers need "does this body have guards", and neither can afford to ask the expensive way.
+     The standoff branch needs it once per ranged body per tick; `clearShot` needs to know that the
+     bodies in the way are friendly to the shooter casting the shell. Both are O(1) reads against this
+     list and O(packs x bodies) against the forward links.
+
+     It is REBUILT rather than maintained, deliberately. A maintained version has to be repaired every
+     time a body dies, a pack splits, or a target changes - and a stale link is silent: the guarded
+     shooter's standoff stays wrong, or the aim sweep starts dodging its own escort forever, and
+     nothing reports an error. Rebuilding it from the links that were just assigned is also strictly
+     more correct than maintaining it, because the forward link is the single source of truth and this
+     is derived from it.
+
+     Cleared first across the ranged bodies in the room, so a body that just lost its escort does not
+     keep the old one - which is what would otherwise happen for the single tick between the Brunch
+     dying and this loop running.
+
+     Note this is deliberately NOT consulted by the shell-absorption test, which reads
+     `b.shieldTarget === p.owner` directly. That test runs at the top of the tick, before anything here
+     has executed this frame, and an index built at the bottom of the previous tick is the wrong answer
+     for a shell fired this tick - which is how the first version of that fix silently did nothing. */
+  for(const o of r.enemies) if(RANGED[o.type]) o.shieldGuardFor=null;
+  for(const e of r.enemies){
+    if(e.type!=='brunch'||e.packId===undefined||!e.shieldTarget) continue;
+    const g=e.shieldTarget.shieldGuardFor||(e.shieldTarget.shieldGuardFor=[]);
+    g.push(e);
   }
 
 
@@ -848,10 +953,34 @@ function update(){
              slot is 118px from the target and the player is beyond it; but when the target is closer
              than the slot radius, the pack walks the slot down onto the target, which is right -
              cover you cannot reach is not cover. */
-          const onSlot=md<=BRUNCH_DEADZONE;
-          const tx=onSlot?edx:mdx, ty=onSlot?edy:mdy;
+          /* A SLOT THAT IS PHYSICALLY OCCUPIED IS NOT A SLOT, and steering into one is how a body
+             ends up wedged forever.
+
+             Measured, and this is PRE-EXISTING rather than caused by the slower shield speed: at
+             BRUNCH_ARC_GAP=19 with bodies of r=8, a centre slot sits 19px from each of its two
+             neighbours and those two bodies are 16px across at the centre - so the slot's own position
+             is inside BOTH of them. `separateBodies` pushes the body out of each neighbour every tick
+             while the steering pulls it in, and the two balance at a standoff. It settles at 25-28px
+             from its slot and stays there indefinitely, at shield speed 0.72 AND at 1.18 - a body
+             that has arrived as far as it can and cannot go further.
+
+             The fix is not a bigger GAP. Widening the arc to clear the bodies thins the wall, and the
+             wall's job is to be dense enough to stop a shell. The fix is that the dead zone has to
+             ask whether the slot is REACHABLE, not merely close: a body within a body's width of its
+             slot is as far along the arc as its neighbours allow, and treating that as arrival is what
+             lets it settle instead of grinding against the separation force forever. So the dead zone
+             is scaled by the body size - a slot inside a neighbour counts as reached. */
+          const reachable=md<=BRUNCH_DEADZONE+ENEMY.brunch.r;
+          const tx=reachable?edx:mdx, ty=reachable?edy:mdy;
           const td=Math.hypot(tx,ty)||1;
-          const desired=e.curSpeed;
+          /* TWO SPEEDS, PICKED BY ROLE. A body walking onto a slot moves at BRUNCH_SHIELD_SPEED; a body
+             with nothing to protect chases at BRUNCH_RUN. The shield branch sets `desired` explicitly
+             and the chase branch below leaves it at the ramped run speed, so the split lives in one
+             place and cannot drift between the two paths.
+             Measured: with one speed of 1.18 for both jobs, "still a little too snappy" was really the
+             WALL being eager - 1.18 to walk onto a fixed mark, over and over, as the shooter drifts. */
+          const shielding=!!(tgt&&tgt.hp>0&&pc&&pc.n>=BRUNCH_SHIELD_MIN);
+          const desired=shielding?BRUNCH_SHIELD_SPEED:e.curSpeed;
           const dvx=tx/td*desired, dvy=ty/td*desired;
           /* Close a fixed FRACTION of the remaining gap per tick, which is the shape that eases a
              body into its slot instead of snapping at the last pixel. A fixed fraction rather than a
@@ -898,7 +1027,14 @@ function update(){
            shooter that could be stared at indefinitely: a shell from 150px has a flight short enough
            that reversing inside it is not an answer, while the same body in a room of five is content
            to hold 250px and let the count do the work. See roomPressure in 00-balance. */
-        const standoff=e.far-(e.far-e.close)*roomPress*PRESSURE_CLOSURE;
+        /* A BODY WITH GUARDS HOLDS A LONGER STANDOFF, because the wall it is carrying forms at a fixed
+           fraction of the gap and would otherwise stand inside its own minimum engagement range. See
+           GUARD_STANDOFF_MULT for the measurement: unguarded, the wall formed 74px from the muzzle and
+           the gunner landed zero of fifteen shells.
+           The guard test is the Brunch themselves rather than a flag on the body, so it cannot go
+           stale - the link is rebuilt every tick by the same code that chooses the target. */
+        const guarded=e.shieldGuardFor&&e.shieldGuardFor.length>0;
+        const standoff=(guarded?e.far*GUARD_STANDOFF_MULT:e.far)-(e.far-e.close)*roomPress*PRESSURE_CLOSURE;
 
         /* A SHOOTER KEEPS WALKING WHILE IT CHARGES, and that is a change of identity rather than a
            tweak. Holding the ground was the gunner's whole trick: the muzzle does not move, so the
@@ -912,6 +1048,13 @@ function update(){
            has to be solved from where its muzzle WILL BE rather than where it is - see below. */
         const rootsWhileCasting=e.type==='gunner';
         if(e.castT<=0||!rootsWhileCasting){
+          /* A GUARDED BODY DOES NOT CLOSE. Walking toward the player is exactly what shrinks the gap
+             its own wall forms in, so a guarded body that keeps approaching walks its escort straight
+             into its muzzle. The two existing branches already give the right behaviour without a
+             third: the body retreats if the player is inside `close`, and backs off if the player is
+             outside the longer `standoff`. Between those two distances it is already stationary, which
+             is precisely the band a guarded body should sit in. Nothing to add here - the longer
+             standoff computed above is the whole of the change. */
           if(dist<e.close){e.x-=edx/dist*e.speed*sm;e.y-=edy/dist*e.speed*sm;}
           else if(dist>standoff){e.x+=edx/dist*e.speed*sm;e.y+=edy/dist*e.speed*sm;}
         }

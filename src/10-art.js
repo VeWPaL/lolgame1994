@@ -327,19 +327,26 @@ const TEMPO={rate:1.5}, PRESSURE={rate:1.5}, PLAYER_MOVE=1.2;
 // nobody asked for. The lunger keeps its 77% of the player (the player got quicker, so the lunger
 // does too, and the matchup is unchanged).
 //
-// BRUNCH IS NOW BARELY OVER THE LINE, AT 105%, and that is the point rather than an accident. It used
-// to be 111% - deliberately over, so a pack slowly ate the gap on a kiting player without running one
-// down outright. Once the pack became a MOVABLE SHIELD rather than a thing that closes on you, a
-// 111% overtake was the wrong relationship: the pack's job is to stand in front of a shooter, so the
-// player's problem is aiming round it rather than outrunning it. It also means the pack arrives late,
-// so whatever else is in the room gets between you and it first.
+// BRUNCH HAS TWO SPEEDS, and which one a body uses depends on whether it has anything to protect. The
+// chase speed is the original 1.35, restored because a pack that cannot catch a kiting player stops
+// being a threat and becomes scenery. The shield speed is much slower, and the split is the whole
+// design rather than a concession.
 //
-// 1.18 is down from 1.35, a 12.6% cut, and it is deliberately kept just ABOVE the player rather than
-// rounded down to match them. Measured against playerSpeedForTest() = 1.122, 1.12 sits 0.2% under -
-// close enough that a later tweak to either constant silently flips a documented design invariant
-// (kiting must be able to fail), which is not a decision to make by accident. At 1.18 the pack is
-// 1.05x the player: still slower to catch you than before, still something that eventually arrives.
-const BRUNCH_WALK=0.52*PLAYER_MOVE, BRUNCH_RUN=1.18;
+// The two jobs want opposite things. A wall forming in front of a shooter is walking to a MARK:
+// overshooting is a real failure, because a body past the line stops blocking and becomes a body in
+// the wrong place. A pack chasing a player has no mark to miss - the target is moving, and the answer
+// to being slightly wrong is another tick. Running one number for both is what made them read as
+// "arithmetic": at 1.18 the wall also moved at 1.18, and 1.18 for a body walking onto a fixed point is
+// eager rather than deliberate. At 0.72 the wall takes about 2.5 seconds to cross a 200px approach -
+// long enough to read as repositioning, short enough that the fight does not stall waiting for it.
+//
+// BRUNCH_WALK is the idle speed a body falls to when it has arrived and is milling rather than
+// advancing.
+const BRUNCH_CHASE_SPEED=1.35,     // no target to protect: the original chase speed, restored
+      BRUNCH_SHIELD_SPEED=0.72,   // walking onto a slot: slow, because the slot is a fixed point
+      BRUNCH_WALK=0.52*PLAYER_MOVE;
+const BRUNCH_RUN=BRUNCH_CHASE_SPEED;
+
 /* The two gunners. The change in here is about *where they stand*, not about how hard they hit.
 
    sense is how far off they notice you at all, and ange is where they will actually open up.
