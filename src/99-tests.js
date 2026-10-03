@@ -4159,6 +4159,53 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(Math.hypot(b.x-cx,b.y-MIDY)>bd,'the blast did not push a body out');
   });
 
+  /* THE WALL SITS CLOSE TO THE ENEMY IT COVERS, not halfway to the player.
+
+       BRUNCH_SHIELD_FRAC was 0.55 - a little over half way along the player-to-target line, which is a
+       barricade halfway across the room rather than a shield around a body. At 0.34 the pack is a third
+       of the way from the TARGET, so it covers the shooter rather than the lane, and the player is left
+       with a wide apron of open floor between themselves and the wall for everything else in the room to
+       use. That was the point of the change: a shield that owns the whole lane is a shield the rest of
+       the fight never gets to use.
+
+       Measured across three seeds at a 350px gap: the pack centre moved from 0.46-0.63 of the gap to
+       0.13-0.42, and pack-to-player distance went from 62-90px to 96-143px.
+
+       The claim is asserted as the FRACTION, because a fixed pixel distance would pass while the wall
+       sat on the wrong side of the target - the fraction is what says "closer to the enemy". And it is
+       measured from the pack's centroid rather than one body, because a pack whose members disagree
+       about where the wall is can average out to the right answer. */
+  test('a Brunch wall stands close to the enemy it covers, not out on the player',()=>{
+    const fracs=[];
+    for(const seed of [11,22,33]){
+      startGame(seed);
+      const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+      const br=[];
+      for(let i=0;i<6;i++){
+        const e=spawnEnemy(false,room,ROOM_LEFT+200+((i*29)%170),ROOM_TOP+110+((i*51)%200),'brunch');
+        e.packId=9201; e.packSlot=i; e.maxHp=e.hp=1e9; room.enemies.push(e); br.push(e);
+      }
+      const shooter=spawnEnemy(false,room,ROOM_LEFT+520,ROOM_TOP+200,'shooter');
+      room.enemies.push(shooter);
+      player.x=ROOM_LEFT+120; player.y=ROOM_TOP+200;
+      for(let t=0;t<210*10;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
+      const cx=br.reduce((a,e)=>a+e.x,0)/br.length, cy=br.reduce((a,e)=>a+e.y,0)/br.length;
+      const gap=Math.hypot(player.x-shooter.x,player.y-shooter.y);
+      /* distance from the TARGET to the pack, as a share of the total gap. The shooter sits at one end
+         of that line and the player at the other, so a pack hugging the target reads LOW here. */
+      fracs.push(Math.hypot(cx-shooter.x,cy-shooter.y)/gap);
+    }
+    const worst=Math.max(...fracs), best=Math.min(...fracs);
+    ok(best<0.42,'the wall sits at '+best.toFixed(2)+'-'+worst.toFixed(2)+' of the way from the '+
+       'enemy to the player (BRUNCH_SHIELD_FRAC='+BRUNCH_SHIELD_FRAC+') - the pack is parked out on '+
+       'the player instead of sheltering the body it is meant to be covering');
+    /* it must still be a WALL though: a pack that has walked right into its own target's face is not
+       covering anything, and 0.34 with BRUNCH_SHIELD_R=118 keeps it off the target's hitbox */
+    ok(worst>0.05,'the wall is '+best.toFixed(2)+'-'+worst.toFixed(2)+' of the gap out, which puts it '+
+       'on top of the enemy it is covering - a shield inside its own target is not a shield');
+    run=undefined;
+  });
+
   test('Brunch: tiny, quick, in a knot, and the big packs are the rare ones',()=>{
     ok(ENEMY.brunch.r<ENEMY.lunger.r,'brunch is not the smallest body');
     ok(ENEMY.brunch.hp<ENEMY.shooter.hp,'brunch is not the frailest body');
@@ -4169,6 +4216,13 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(packHp/fastest<2.2,'a maximum pack is more than two seconds of work for the best gun');
     // and they are quicker than the player, which is the point of them, but only just
     ok(ENEMY.brunch.run>ENEMY.lunger.run,'brunch is not quicker than a lunger');
+    /* The 0.55/1.35 bounds below are relative and both survived a 13% speed cut without noticing: a
+       value can be "slower than 1.3x the player" and "faster than a lunger" at almost any number in
+       between, so nothing here objected when BRUNCH_RUN went 1.35 -> 1.18. This pins the cut. Reverting
+       it to 1.35 turns this red. */
+    ok(ENEMY.brunch.run<=1.20,'brunch run speed is back at '+ENEMY.brunch.run+', up from the 1.18 '+
+       'measured as "still a little too snappy" - the walk speed and the shield stand-off are the '+
+       'tuning surface now, not the top speed');
     ok(ENEMY.brunch.run>playerSpeedForTest(),'brunch no longer outruns the player, so kiting never fails now');
     ok(ENEMY.brunch.run<playerSpeedForTest()*1.3,'brunch is so quick the player cannot kite them at all ('+(ENEMY.brunch.run/playerSpeedForTest()).toFixed(2)+'x the player)');
     // reaching you must cost them something real, and it must be survivable once

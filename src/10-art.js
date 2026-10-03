@@ -312,22 +312,34 @@ const TEMPO={rate:1.5}, PRESSURE={rate:1.5}, PLAYER_MOVE=1.2;
    LUNGER_PAY takes 4% back out of the movement, and the gunner is the shooter cloned: half the
    rate of fire, double the damage per shell, a bigger frame, slower and heavier shells. It also
    carries enough HP to survive a miss or two and sidesteps incoming shots, but only so often.
-   Brunch is the anti-solo enemy: quicker than you, so a pack slowly closes on a kiting player, and
+   Brunch is the anti-solo enemy: a pack stands between you and whatever is shooting at you, and
    every body that reaches you spends half of itself doing it. That is what stops a swarm from
    spiralling into an unwinnable death loop, and it is why they are worth shooting rather than
-   simply outrunning.
+   simply outrunning - they are now barely quicker than you (105%), so kiting buys you a little room
+   but not safety, while shooting round them is the reliable answer.
    TOUGH is the whole of the difficulty budget. TEMPO makes the player deal damage half again as
    fast, and if HP did not rise to match, that alone would have quietly turned the game into an
-   easier one. At 1.35 a body outlasts the extra rate, so the fights are the same length and cost
+   easier one. At 1.18 a body outlasts the extra rate, so the fights are the same length and cost
    more health, which is what the tempo was actually spent on. */
 // A walker's closing speed is the one enemy number a player reads off the screen and reacts to, so
 // it is set directly rather than scaled by PRESSURE - PRESSURE is about how many bodies turn up and
 // how often the guns open up, and folding it in here would quietly turn every lunger into a threat
 // nobody asked for. The lunger keeps its 77% of the player (the player got quicker, so the lunger
-// does too, and the matchup is unchanged). Brunch is deliberately over that line at 111%: a pack
-// slowly eats the gap on a kiting player without ever running one down outright, which is what
-// makes it a pack problem rather than a chase problem.
-const BRUNCH_WALK=0.62*PLAYER_MOVE, BRUNCH_RUN=1.35;
+// does too, and the matchup is unchanged).
+//
+// BRUNCH IS NOW BARELY OVER THE LINE, AT 105%, and that is the point rather than an accident. It used
+// to be 111% - deliberately over, so a pack slowly ate the gap on a kiting player without running one
+// down outright. Once the pack became a MOVABLE SHIELD rather than a thing that closes on you, a
+// 111% overtake was the wrong relationship: the pack's job is to stand in front of a shooter, so the
+// player's problem is aiming round it rather than outrunning it. It also means the pack arrives late,
+// so whatever else is in the room gets between you and it first.
+//
+// 1.18 is down from 1.35, a 12.6% cut, and it is deliberately kept just ABOVE the player rather than
+// rounded down to match them. Measured against playerSpeedForTest() = 1.122, 1.12 sits 0.2% under -
+// close enough that a later tweak to either constant silently flips a documented design invariant
+// (kiting must be able to fail), which is not a decision to make by accident. At 1.18 the pack is
+// 1.05x the player: still slower to catch you than before, still something that eventually arrives.
+const BRUNCH_WALK=0.52*PLAYER_MOVE, BRUNCH_RUN=1.18;
 /* The two gunners. The change in here is about *where they stand*, not about how hard they hit.
 
    sense is how far off they notice you at all, and ange is where they will actually open up.

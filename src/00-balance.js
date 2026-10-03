@@ -391,8 +391,15 @@ const BRUNCH_ARC_FLOOR=9*Math.PI/180,    // the narrowest a shield may be: enoug
       BRUNCH_SHIELD_R=118,                  // the MINIMUM stand-off. Below this the wall is inside the
                                             // target's own hitbox and stops being cover; above it the
                                             // wall is placed proportionally to the player-target gap
-      BRUNCH_SHIELD_FRAC=0.55,             // where on that gap the wall sits. 0.55 is a little over
-                                            // half way from the target to the player
+      BRUNCH_SHIELD_FRAC=0.34,             // where on that gap the wall sits: a third of the way from
+                                            // the TARGET, so the pack hugs the enemy it is covering.
+                                            // 0.55 was a little over half way, which is a barricade
+                                            // halfway to the player rather than a shield round a body.
+                                            // Close to the target also means more room between the
+                                            // wall and the player for everything ELSE in the room to
+                                            // get in front of you - which is the other half of why
+                                            // this moved: a shield that owns the whole lane is a
+                                            // shield the rest of the fight never gets to use
       BRUNCH_SHIELD_MIN=2;                  // fewer than two bodies cannot cover anything
 
 /* THE ARC SOLVER: a pure function of (target, player, pack size, slot) returning a slot position, so
