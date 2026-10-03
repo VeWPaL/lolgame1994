@@ -252,10 +252,45 @@ function beginBoss(e,move,room){
   // spawned from a real room, so no amount of reading the code would have surfaced it.
   const hx=player.x, hy=player.y;
   if(move==='volley'){
-    // the tell is the aim being solved and held, which is exactly what a gunner does for half a
-    // second. A player who has read a gunner is already reading this.
+    /* THE TELL HAS TO EXIST BEFORE THE FIRST SHELL, and it did not.
+
+       `volleyT=0` meant the very next call to `resolveBoss` decremented it to -1, took the firing
+       branch, and pushed a shell - on the same tick the move was chosen. The `castT=CAST_TIME` set
+       here is what the DRAW reads (`if(e.castT>0) drawCastFlash(...)` at 70-view.js:442), so a
+       charge that begins and ends inside one tick is never rendered: the player is hit by a shell
+       whose tell they never saw.
+
+       Measured over a full phase-3 fight, the delay from entering the volley to each shell leaving:
+
+           first shell    1 tick      <-- no window at all
+           second shell   117 ticks
+           third shell    233 ticks
+
+       So the volley DID re-tell between shells - `castT=CAST_TIME` is set again after each one, and
+       the 116-tick gap is generous - and the first shot of every volley was the one with nothing. That
+       is the worst shape for it to have: a three-shell attack where the shell you had no warning of
+       is the one that sets up the two you did.
+
+       The fix is one tick of delay: `volleyT=1` lets `resolveBoss` decrement and find it positive, so
+       the charge runs for CAST_TIME first. Nothing else moves - the inter-shell gaps, the re-tell
+       between shells and the count are all unchanged.
+
+       1 rather than 0 is deliberate and is not equivalent to a bigger number. A volley opening with
+       the same tell as a gunner is exactly what the comment above claims the design is: a player who
+       has read a gunner is already reading this. Making the first shell's window much longer than
+       CAST_TIME would make the boss read as a different, slower creature instead. */
     e.castT=CAST_TIME; e.castReady=false; e.castAim=Math.atan2(hy-e.y,hx-e.x);
-    e.volleyLeft=BOSS_VOLLEY_N; e.volleyT=0;
+    e.volleyLeft=BOSS_VOLLEY_N;
+    /* CAST_TIME+1, NOT 1. `volleyT` is decremented and then compared `<= 0` before the shell is
+       pushed, so the delay is one more than the value: `volleyT=1` decrements to 0 and fires on the
+       entry tick, which is the original bug with one tick of dressing on it. The window the player
+       gets is therefore `volleyT - 1` ticks, and the charge has to last CAST_TIME.
+
+       The first attempt at this fix used 1 and looked correct in the trace - `volleyT` read 1 and
+       `castT` read 105 on the entry tick - while behaving exactly as before. A state field that has
+       just been assigned says nothing about what the NEXT tick does with it, and the only way to know
+       is to watch a shell leave. */
+    e.volleyT=CAST_TIME+1;
     e.moveT=CAST_TIME+1;
   } else if(move==='sweep'){
     e.castAim=Math.atan2(hy-e.y,hx-e.x);

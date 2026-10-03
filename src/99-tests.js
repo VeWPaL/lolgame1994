@@ -4473,6 +4473,70 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
            wall oscillate as bodies shuffle;
          - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  /* THE BOSS VOLLEY TELLS BEFORE EVERY SHELL, INCLUDING THE FIRST.
+
+       The volley set `castT=CAST_TIME` - which is exactly what the draw reads
+   (`if(e.castT>0) drawCastFlash(...)`, 70-view.js:442) - and set `volleyT=0` alongside it. `resolveBoss`
+       decrements `volleyT` and fires when it is `<= 0`, so the first shell left on the SAME TICK the
+       move was chosen: a charge that began and ended inside one tick, and was therefore never
+       rendered. The player was hit by a shell whose tell they had not seen.
+
+       Measured over a full phase-3 fight, the delay from entering the volley to each shell leaving:
+
+           before   first shell   1 tick      <-- no window at all
+                    second        117
+                    third         233
+
+           after    first shell   105 ticks   500ms, the same as a gunner
+                    second        221
+                    third         337
+
+       The re-tell BETWEEN shells was always there and is generous; the first shot of every volley was
+   the one with nothing. That is the worst shape for a three-shell attack to have, because the shell
+   you had no warning of is the one that sets up the two you did.
+
+       Asserted on all three shells rather than the first, because the between-shell re-tell and the
+   opening tell are different mechanisms and either can be broken alone.
+
+       The first version of the fix set `volleyT=1` and read as correct in a trace - `volleyT` 1,
+  `castT` 105 on the entry tick - while behaving exactly as before, because the decrement made it 0
+  and `<= 0` fired. A state field that has just been assigned says nothing about what the next tick
+       does with it; the only way to know is to watch a shell leave. */
+  test('the boss volley tells before every shell, the first one included',()=>{
+    startGame(31337);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    const boss=spawnEnemy(true,room,ROOM_LEFT+520,ROOM_TOP+330,'boss');
+    room.enemies.push(boss);
+    player.x=ROOM_LEFT+120; player.y=ROOM_TOP+330; player.maxHp=player.hp=1e9;
+    const delays=[]; let entry=-1;
+    for(let t=0;t<210*40 && delays.length<BOSS_VOLLEY_N*2;t++){
+      player.hp=player.maxHp;
+      const wasVolley=boss.move==='volley';
+      const n0=projectiles.length;
+      if(!wasVolley&&boss.move==='volley') entry=t;
+      update();
+      if(!wasVolley) entry=boss.move==='volley'?t:-1;
+      for(let k=n0;k<projectiles.length;k++){
+        const s=projectiles[k];
+        if(s.friendly||s.owner!==boss) continue;
+        if(entry>=0) delays.push(t-entry);
+      }
+    }
+    ok(delays.length>=BOSS_VOLLEY_N,'the boss fired '+delays.length+' shells in '+Math.round(210*40/
+       TICK_HZ)+'s of a phase-1 fight, fewer than the '+BOSS_VOLLEY_N+' of one volley, so the volley '+
+  'path is barely being exercised');
+    const firsts=delays.filter((d,i)=>i%BOSS_VOLLEY_N===0);
+    ok(Math.min(...firsts)>=CAST_TIME,'the FIRST shell of a volley left '+Math.min(...firsts)+
+ ' ticks after the move began (measured 1 tick, i.e. no tell at all; CAST_TIME is '+CAST_TIME+
+ '). The charge is set and drained inside one tick, so `drawCastFlash` never sees it and the player '+
+       'is hit by a shell they had no warning of');
+    ok(Math.min(...delays)>=CAST_TIME,'one of '+delays.length+' shells left with less than CAST_TIME '+
+       'of tell (minimum '+Math.min(...delays)+' ticks) - every shell has to be answerable on its own');
+    ok(delays.length%BOSS_VOLLEY_N===0||delays.length===BOSS_VOLLEY_N,'the shells did not arrive in '+
+       'groups of '+BOSS_VOLLEY_N+' ('+delays.length+' recorded) - the volley is not re-telling '+
+       'between shells');
+  });
+
   test('a Brunch pack holds its escort until the escorted body dies, then sprints',()=>{
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;

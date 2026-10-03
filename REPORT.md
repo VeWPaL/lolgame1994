@@ -138,18 +138,14 @@ slow is how real slowdowns get introduced.
 
 Two of these were raised after the audit above and are not in it.
 
-1. **Pitch-jitter feedback: `run.pitch` is written and never read.** The audio layer sets a pitch
-   multiplier on damage and the momentum meter; nothing consumes it. Either wire it to the SFX or
-   delete the field. Worth deciding which — a written-but-unread tuning field is the shape of thing
-   that quietly rots into a false belief about what the game does.
-
-2. **The boss volley has no tell.** `stepBoss` solves the intercept and sets `castAim` for the volley
+1. **The boss volley has no tell.** `stepBoss` solves the intercept and sets `castAim` for the volley
    exactly as a gunner does, but a boss is not a gunner: at Warden scale a shot you cannot read is a
    shot you cannot answer. The gunner's tell is the model to copy — aim committed at cast start,
    visible before the shell leaves. Measured first, like everything else here: how long the volley
    takes to arrive, and whether the player has any window at all at the range a Warden is fought at.
+   (This was item 2; it is now item 1 because item 1 turned out not to exist.)
 
-3. **Enemy mix per floor, and therefore how often an escort encounter happens.** 32.8% of generated
+2. **Enemy mix per floor, and therefore how often an escort encounter happens.** 32.8% of generated
    rooms contain both a Brunch pack and a ranged enemy, which is the shield mechanic appearing in real
    play roughly one room in three. That is a floor-1 number on the current ladder, and the ladder has
    no per-floor enemy roster to speak of — every floor draws from the same `areaMix`. When the
@@ -158,15 +154,24 @@ Two of these were raised after the audit above and are not in it.
    guarding, per floor. Higher on floors where the new types are ranged, lower where they are not —
    a pack escorting a lunger is a crowd, not a wall.
 
-4. **`saveRecords`' empty `catch`.** A failed write leaves records half-written with no report. Low
+3. **`saveRecords`' empty `catch`.** A failed write leaves records half-written with no report. Low
    severity — localStorage rarely fails — but a swallowed exception here means a lost run record
    with nothing in the log to explain it.
 
-5. **Three tests that cannot fail.** From the audit, not yet re-verified line by line.
+4. **Three tests that cannot fail.** From the audit, not yet re-verified line by line.
 
-6. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
+5. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
    code no longer uses. Several were fixed in passing during the Brunch and hit-rate work; the rest
    are unaudited.
+
+**There is no audio in this project.** Worth stating plainly, because it was nearly queued as a bug.
+An earlier version of this list carried "pitch-jitter feedback: `run.pitch` is written and never read,
+the audio layer sets a pitch multiplier on damage and the momentum meter". There is no audio layer,
+`run.pitch` has never existed in any commit in this repository's history (`git log -S"run.pitch" -- src/`
+returns nothing), and the project contains no `AudioContext`, no oscillator and no sfx table of any
+kind. The item was invented, and it was invented by this file's own author while tidying the list —
+which is the strongest argument for the rule at the bottom of this section. A queue is not a place to
+park a plausible-sounding thought. If audio is wanted it is a feature to design, not a defect to fix.
 
 **On the Brunch commitment, since it has been through three shapes in one session.** The rule is now
 the user's and it is short: a pack holds its escort until the escorted body is dead, and sprints at the
@@ -176,9 +181,11 @@ the wall conditional on the player's habits, so the mechanic was only present wh
 nearby. If a future change makes the pack conditional on anything other than target death, it is
 probably making the same mistake.
 
-**The rule for all of these: measure first.** Every one of them was found by measurement rather than
-by reading, and roughly half of what looked like a bug during this session turned out to be a fixture
-that was lying — a body in a room the tick never walks, a player teleported instead of driven through
-the real input path, a probe comparing against the sprite origin rather than the hitbox, and a
-commitment test that passed vacuously because the alternative candidate was further from the pack. A
-probe that cannot fail is worse than no probe, because it produces confident nonsense.
+**The rule for all of these: measure first, and check that the thing exists at all.** Every real item
+was found by measurement rather than by reading, and roughly half of what looked like a bug during
+this session turned out to be a fixture that was lying — a body in a room the tick never walks, a
+player teleported instead of driven through the real input path, a probe comparing against the sprite
+origin rather than the hitbox, and a commitment test that passed vacuously because the alternative
+candidate was further from the pack. A probe that cannot fail is worse than no probe, because it
+produces confident nonsense; and a queue item that was never real is worse still, because it costs a
+future session the time to disprove it.
