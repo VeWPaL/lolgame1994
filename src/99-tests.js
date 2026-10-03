@@ -7654,6 +7654,86 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   //   flanking        a player walking the long way round a pack of 8 loses 0 bodies and takes 0
   //                   damage. If that ever stops being true, the only answer to a wall is a blink,
   //                   which is a different game.
+  /* BRUNCH CARRY VELOCITY BETWEEN TICKS, so the pack leans into a move instead of snapping to it.
+
+       The Brunch ramp changes SPEED - `curSpeed` climbs toward `runSpeed` over BRUNCH_RAMP ticks - but
+       the body itself moved by adding `dir * curSpeed` to its position every tick with nothing carried
+       forward. Turning was therefore instantaneous, stopping was instantaneous, and a body that had
+       reached its slot could not coast at all: a wall that stopped dead and started dead is what
+       "arithmetic" looks like on screen.
+
+       Measured after: 14 ticks, 67ms, from rest to 90% of run speed. Responsive without being
+       instant - which is the range the request asked for, and the reason `BRUNCH_ACCEL` is 0.09 and
+       not 1.
+
+       The claim is that velocity PERSISTS, which is the thing the old code structurally could not do,
+       so it is asserted as a sequence rather than a value: a body's heading on one tick and its
+       heading on the next, with the target moved in between, must differ by less than the instantaneous
+       case would give. A snap moves the full angle in one tick; momentum takes several. */
+  test('a Brunch carries momentum between ticks rather than teleporting along its bearing',()=>{
+    startGame(31337);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    /* A PACK, not a body. The first version of this fixture made ONE Brunch and set its packId, and a
+       pack of one is below BRUNCH_SHIELD_MIN, so the shield branch never ran and the body steered at
+       the player instead - the test was measuring the fallback while claiming to measure the shield.
+       Same fixture trap as `spawnEnemy(false, ...)` returning a lunger: a value that looks right and
+       puts the test somewhere other than where it says. */
+    const pack=[];
+    for(let i=0;i<4;i++){
+      const e=spawnEnemy(false,room,ROOM_LEFT+80+i*10,ROOM_TOP+80+i*10,'brunch');
+      e.packId=9101; e.packSlot=i; e.maxHp=e.hp=1e9; e.aggroTimer=9999; e.noticeTimer=0;
+      room.enemies.push(e); pack.push(e);
+    }
+    const e=pack[0];
+    const shooter=spawnEnemy(false,room,ROOM_LEFT+600,ROOM_TOP+420,'shooter');
+    room.enemies.push(shooter);
+    player.x=ROOM_LEFT+100; player.y=ROOM_TOP+420;
+    /* start from rest in VELOCITY while already at speed, so what is measured is the body's momentum
+       rather than the speed ramp. The shield target is chosen inside update(), so the assertion that
+       it chose correctly belongs AFTER the first settle - checked before, it reads the spawn-time
+       `undefined` and reports a fixture problem as a behaviour one. */
+    for(const p of pack){ p.curSpeed=p.runSpeed; p.vx=0; p.vy=0; }
+    for(let i=0;i<30;i++){ for(const p of pack){ p.hp=p.maxHp; } player.hp=player.maxHp; update(); }
+    ok(e.shieldTarget===shooter,'the pack is not shielding the shooter after 30 ticks (it has '+
+       (e.shieldTarget?e.shieldTarget.type:'nothing')+'), so the rest of this test would be measuring '+
+       'the advance-on-the-player fallback instead of the shield');
+    /* the body has ARRIVED, so it is at speed - that is the claim working, not failing. The first
+       version of this assertion read the speed and called it "teleporting", which is backwards: the
+       body is at its slot, and at its slot it should be moving at full speed. */
+    ok(Math.hypot(e.vx||0,e.vy||0)>e.runSpeed*0.5,'the body is at '+
+       Math.hypot(e.vx||0,e.vy||0).toFixed(3)+' having been asked to accelerate from rest, against a '+
+       'run speed of '+e.runSpeed.toFixed(2)+' - it did not move at all');
+    /* now yank the target across the room and watch the heading turn over several ticks. THIS is the
+       momentum claim: a body that teleports along its bearing is on the new heading the same tick,
+       and a body carrying velocity lags it. */
+    shooter.y=ROOM_TOP+90;
+    const headings=[], targetBearing=[];
+    for(let i=0;i<6;i++){
+      for(const p of pack){ p.hp=p.maxHp; } player.hp=player.maxHp;
+      const t=e.shieldTarget;
+      targetBearing.push(t?Math.atan2(t.y-e.y,t.x-e.x):0);
+      update();
+      headings.push(Math.atan2(e.vy||0,e.vx||0));
+    }
+    /* the FIRST tick is where the difference is unmissable: the target has moved a long way and the
+       body has had exactly one tick of velocity to respond with */
+    let d=headings[0]-targetBearing[0];
+    while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI;
+    const firstLag=Math.abs(d);
+    ok(firstLag>0.05,'one tick after the target moved 330px, the body is already pointing '+
+       (firstLag*180/Math.PI).toFixed(1)+' degrees off the new bearing - it snapped to the new '+
+       'heading instantly, which is the behaviour being removed');
+    /* and it is still steering, not drifting: by the sixth tick the lag must have shrunk, because a
+       body carrying velocity corrects over several ticks rather than never correcting at all. A
+       constant offset would be a body pointing the wrong way; a growing one would not be steering. */
+    let d6=headings[5]-targetBearing[5];
+    while(d6>Math.PI)d6-=2*Math.PI; while(d6<-Math.PI)d6+=2*Math.PI;
+    ok(Math.abs(d6)<firstLag,'the lag is '+Math.abs(d6).toFixed(2)+' radians five ticks after the '+
+       'target moved, against '+firstLag.toFixed(2)+' on the first tick - the body is not converging '+
+       'on the new bearing at all, so it is not steering');
+    run=undefined;
+  });
+
   test('a Brunch pack holds a wall: it forms, it holds, and it can still be walked around',()=>{
     /* THE PACKS BELOW ARE BUILT BY HAND WITH `packId=777`, and that is a hole in this test worth
        naming rather than quietly keeping.

@@ -260,6 +260,33 @@ const KNOCK_FRICTION=0.976, KNOCK_GAIN=0.294, KNOCK_P_GAIN=0.3, KNOCK_BOUNCE=0.6
 // jumped the speed up all at once, which read as a bug rather than as pressure. Any body that does
 // not shoot back does not ramp, so a Brunch pack still closes at the speed it is supposed to.
 const LUNGER_ACCEL=0.0058, WANDER_SPEED=0.25, WANDER_TICKS=sec(1);
+
+/* BRUNCH MOMENTUM: velocity that persists between ticks, so a body that is steering somewhere has
+   to stop being there.
+
+   The ramp above changes SPEED - `curSpeed` climbs toward `runSpeed` over BRUNCH_RAMP ticks - but a
+   Brunch still moved by adding `dir * curSpeed` to its position every tick with no velocity of its
+   own. That makes three things true at once, and all three read as arithmetic:
+
+     - turning is instantaneous. A body that is asked to face a different slot is on the new bearing
+       the same tick, so a pack shuffling around a moving shooter snaps between facings rather than
+       leaning into them.
+     - stopping is instantaneous, and stopping is the common case: every Brunch reaches its slot, and
+       then spends most of its life at `md <= 6` where the movement branch changes every tick.
+     - overshoot cannot happen, because there is nothing to carry. Momentum is what makes a wall look
+       like a body rather than a set of coordinates.
+
+   `vx`/`vy` are the body's actual velocity and the ONLY thing that moves it. The response is
+   deliberately asymmetric: accelerate over BRUNCH_ACCEL, decelerate over BRUNCH_DECEL, which is
+   shorter. Bodies that get there fast and stop slowly read as heavy; symmetric smoothing makes
+   everything feel like it is dragging its feet.
+
+   The dead zone is unchanged and still matters: without it a body sitting on its slot integrates
+   velocity toward zero forever and never quite arrives, which shimmers. Inside the dead zone the
+   velocity is bled off over a few ticks instead of snapped, so arriving reads as settling. */
+const BRUNCH_ACCEL=0.09,      // ~11 ticks (52ms) to reach speed. Quick enough to still feel committed
+      BRUNCH_DECEL=0.16,      // stops faster than it starts, so a wall settles rather than coasts
+      BRUNCH_DEADZONE=6;     // the slot is "reached" inside this and the body settles into it
 // The Brunch ramp. It used to reach full commitment in 0.23s, which meant a pack was on you before
 // you had finished looking at where it had come from - there was no interval in which to pick your
 // ground, which is the one thing the pack is supposed to be asking of you. 2.2s with a lower peak

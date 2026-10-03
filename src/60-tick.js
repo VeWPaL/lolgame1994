@@ -828,13 +828,48 @@ function update(){
             mdx=sx-e.x; mdy=sy-e.y;
           }
           const md=Math.hypot(mdx,mdy);
-          if(md>6){
-            e.x+=mdx/md*e.curSpeed*sm; e.y+=mdy/md*e.curSpeed*sm;
-          } else {
-            // already on its slot: close the last few pixels toward the player, so a wall that has
-            // been reached keeps advancing instead of standing there waiting to be shot
-            e.x+=edx/dist*e.curSpeed*sm; e.y+=edy/dist*e.curSpeed*sm;
-          }
+          /* THE DEAD ZONE GOVERNS THE SLOT, NOT THE PLAYER.
+
+             `md <= BRUNCH_DEADZONE` originally meant two things at once - "the slot is reached" and
+             "stop moving" - and only the first is true. Once a wall has arrived it steers at the
+             PLAYER, and the player is by definition not at the slot, so a body within six pixels of
+             its slot was reading itself as arrived every tick, deciding it had arrived, and never
+             moving. Measured with a four-body pack: 349, 353, 319, 287px over eight seconds, drifting
+             rather than closing, and four existing tests failed - including 'a Brunch spends itself
+             on touching you', because a Brunch parked four pixels away cannot press into a player it
+             is already touching.
+
+             So the dead zone applies to the slot only. On-slot, the target is the player at full
+             speed, and the body leans forward off its own formation and keeps coming - which is the
+             behaviour the `else` branch had and the version that dropped it lost.
+
+             The consequence worth stating: a shield slot is a place to ASSEMBLE, not a place to sit.
+             A pack that reaches its arc in front of a shooter stops there and covers, because its
+             slot is 118px from the target and the player is beyond it; but when the target is closer
+             than the slot radius, the pack walks the slot down onto the target, which is right -
+             cover you cannot reach is not cover. */
+          const onSlot=md<=BRUNCH_DEADZONE;
+          const tx=onSlot?edx:mdx, ty=onSlot?edy:mdy;
+          const td=Math.hypot(tx,ty)||1;
+          const desired=e.curSpeed;
+          const dvx=tx/td*desired, dvy=ty/td*desired;
+          /* Close a fixed FRACTION of the remaining gap per tick, which is the shape that eases a
+             body into its slot instead of snapping at the last pixel. A fixed fraction rather than a
+             fixed velocity change, because a fixed change overshoots a short correction and stalls on
+             a long one.
+             Deceleration uses the larger share on purpose: a wall that gets there fast and stops
+             slowly reads as heavy, and the whole request was for less mechanical rather than for
+             faster. */
+          const share=desired>e.curSpeed?BRUNCH_ACCEL:BRUNCH_DECEL;
+          e.vx=(e.vx||0)+(dvx-(e.vx||0))*share;
+          e.vy=(e.vy||0)+(dvy-(e.vy||0))*share;
+          /* below a floor the velocity is snapped, so a body does not spend forever asymptotically
+             approaching a slot it will never quite reach - which shimmers, and shimmers read as a bug */
+          if(Math.abs(e.vx)<0.02)e.vx=0;
+          if(Math.abs(e.vy)<0.02)e.vy=0;
+          /* `sm` is the hit-stop multiplier and it scales the whole integration rather than the
+             target, so a slowed body is a slower body rather than a body aiming to be slower */
+          e.x+=e.vx*sm; e.y+=e.vy*sm;
         }
       } else { e.curSpeed=e.walkSpeed; e.pursuit=0; idleWander(e); }
     } else {
