@@ -138,12 +138,12 @@ slow is how real slowdowns get introduced.
 
 Two of these were raised after the audit above and are not in it.
 
-1. **The boss volley has no tell.** `stepBoss` solves the intercept and sets `castAim` for the volley
-   exactly as a gunner does, but a boss is not a gunner: at Warden scale a shot you cannot read is a
-   shot you cannot answer. The gunner's tell is the model to copy — aim committed at cast start,
-   visible before the shell leaves. Measured first, like everything else here: how long the volley
-   takes to arrive, and whether the player has any window at all at the range a Warden is fought at.
-   (This was item 2; it is now item 1 because item 1 turned out not to exist.)
+1. ~~**The boss volley has no tell.**~~ **CLOSED — verified, not assumed.** Already implemented:
+   `volleyT=CAST_TIME+1` in `stepBoss` delays the first shell by a full cast, and `castT/castAim` are
+   set at move-entry so `drawCastFlash` (70-view.js:442) has something to draw. Mutation-checked this
+   session: reverting `volleyT` to the original `1` turns the suite red with *"the FIRST shell of a
+   volley left 1 ticks after the move began (CAST_TIME is 105)"*. The inter-shell gaps re-tell at
+   ~116 ticks. The item was stale in the queue, not open in the code.
 
 2. **Enemy mix per floor, and therefore how often an escort encounter happens.** 32.8% of generated
    rooms contain both a Brunch pack and a ranged enemy, which is the shield mechanic appearing in real
@@ -154,15 +154,26 @@ Two of these were raised after the audit above and are not in it.
    guarding, per floor. Higher on floors where the new types are ranged, lower where they are not —
    a pack escorting a lunger is a crowd, not a wall.
 
-3. **Three tests that cannot fail.** From the audit, not yet re-verified line by line. This is the
-   highest-value item left: every fix in this session landed with a mutation check proving the test
-   goes red without the fix, and three tests that cannot fail are three places where that guarantee is
-   silently absent. Worth auditing specifically for `ok(...)` calls whose condition is a literal, a
-   comparison of a value to itself, or an assertion made before the code under test has run.
+3. ~~**Three tests that cannot fail.**~~ **CLOSED — and they were worse than "cannot fail".** Three of
+   the gunner's parked 400px assertions were `ok(true, ...)` — *passing* placeholders standing in for a
+   guard whose condition was permanently false. Un-skipping them exposed a real design bug rather than
+   a broken test: `swerveDeadzone()`=300px to `swerveFull()`=430px left a 130px notch in which distance
+   did anything, with `reach` pinned at 1.0 beyond it. Now `roomW()*0.25` to `+roomW()*0.55` — a
+   window that never saturates inside a room. A sixth bare `ok(true,'')` (the intelligence-inertness
+   hook) was padding beside a real `eq()` and has been removed. Zero bare placeholders remain; the four
+   surviving `ok(true,...)` calls are documented summaries and a no-timer guard, each sitting behind a
+   real assertion.
 
-4. **Stale comment/code mismatches.** Approximately eight sites where a comment quotes a number the
-   code no longer uses. Several were fixed in passing during the Brunch and hit-rate work; the rest
-   are unaudited.
+4. ~~**Stale comment/code mismatches.**~~ **CLOSED.** Audited every comment in `src/` that quotes a
+   decimal with no matching literal in the following 40 lines: 45 sites, and almost all are deliberate
+   historical narration (*"at 1.18 the wall also moved at 1.18"*, *"used to be 0.35"*) which reads as
+   history on purpose. The one that mattered was the momentum meter's paragraph, which was wrong in a
+   way rather than merely stale: it claimed a **5% share** and named **0.05** beside a constant of
+   **0.18**. The unit was the bug — `moveSpeedBonus()` is consumed as `(1+x)`, so it is a multiplier
+   factor, not a fraction of the speed stat (a naive read makes 0.18 look like 72% of the character).
+   Measured effect at the starting build: 283.8px/s empty, 294.5px/s full. Three assertions now pin it,
+   including `(1+full)/(1+base)` in 1.10–1.25 and the `MOMENTUM_ACCEL > 2×MOMENTUM_SPEED` margin that
+   makes "the reward is acceleration" true rather than aspirational.
 
 **There is no audio in this project.** Worth stating plainly, because it was nearly queued as a bug.
 An earlier version of this list carried "pitch-jitter feedback: `run.pitch` is written and never read,
