@@ -9142,6 +9142,116 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     run=undefined;
   });
 
+  test('a pack with nothing to shield walks at the player and does not build a wall',()=>{
+    /* THE SHIELD AND THE RUSH ARE DIFFERENT MOVEMENTS, AND ONLY ONE OF THEM IS A WALL.
+
+       A Brunch pack steers at a SLOT in the pack's own frame when it is guarding a live ranged body -
+       a rigid line that turns to face you as one thing, which is what makes it dense enough to stop
+       a shell. With nothing to guard there is nothing to hide behind, and the slots produced a
+       SAWTOOTH rather than an approach: gap 450, 499, 458, 408, 357, 305, 253, 201, 153, 108, 78,
+       then 227, 218, 201. The bodies converged on slots laid perpendicular to the line to the player,
+       the outer two arrived, shoved each other, and the pack was thrown backwards. That reads on
+       screen as circling, and the request was for a direct rush.
+
+       Measured steering votes before the change: 36 toward the player, 3 toward the formation. So they
+       were never orbiting - they were colliding, and the fix is to remove the formation rather than
+       to tune the orbit.
+
+       The assertion is that the gap DECREASES MONOTONICALLY to contact, rather than merely reaching a
+       small number eventually: the sawtooth passed "got close" and failed this. */
+    startGame(); const r=goTo('normal');
+    r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
+    readyT=0; fadeT=0;
+    r.bounds=roomBounds(9000,2600); r.cx=r.bounds.l+r.bounds.w/2; r.cy=r.bounds.t+r.bounds.h/2;
+    r.doors={}; r.spawned=true; r.cleared=true; syncRoomBounds();
+    player.x=r.cx; player.y=r.cy; player.lagX=r.cx; player.lagY=r.cy;
+    player.maxHp=player.hp=1e9;
+    const pack=[];
+    for(let i=0;i<4;i++){
+      const b=spawnEnemy(false,r,r.cx-450,r.cy+(i-1)*22,'brunch');
+      r.enemies.push(b); b.packId=777; b.packSlot=i; b.noticeTimer=0; b.aggroTimer=9999;
+      pack.push(b);
+    }
+    for(const k of Object.keys(keys)) delete keys[k];
+    keys={d:1};
+    const gaps=[]; let contactSec=null, closest=1e9;
+    const wrap=()=>{
+      const lim=r.bounds.l+r.bounds.w-300;
+      if(player.x>lim){ const d=player.x-lim; player.x-=d; for(const g of pack) g.x-=d; }
+    };
+    for(let t=0;t<210*20;t++){
+      wrap();
+      player.hp=player.maxHp; player.iframes=0;
+      for(const g of pack) g.hp=g.maxHp;     // measure the APPROACH, not the trade
+      /* CONTACT IS CHECKED BEFORE THE TICK, not after. A Brunch spends half its health on the touch
+         and dies on the second one, so by the time `update()` returns the body that reached the player
+         has been REMOVED from the room - and a check that iterates `r.enemies` afterwards is looking
+         at the survivors. Measured that way, contactFrames came out 0 on a run that dealt 6 damage,
+         which reads as "the rush never lands" and is the opposite of what happened. */
+      const preGap=(()=>{ let mg=1e9;
+        for(const g of pack){ if(r.enemies.indexOf(g)<0) continue;
+          const d=Math.hypot(g.x-player.x,g.y-(player.y-PLAYER_HIT_DY)); if(d<mg) mg=d; }
+        return mg; })();
+      if(preGap<ENEMY.brunch.r+PLAYER_HIT_R&&contactSec===null) contactSec=+(t/TICK_HZ).toFixed(2);
+      if(preGap<closest) closest=preGap;
+      update();
+      wrap();
+      if(t%(210)===0||t===210*12-1){
+        let mg=1e9;
+        for(const g of pack){ const d=Math.hypot(g.x-player.x,g.y-(player.y-PLAYER_HIT_DY)); if(d<mg) mg=d; }
+        gaps.push(Math.round(mg));
+      }
+    }
+    keys={};
+    /* ALLOW the swap that cannot close a gap: the pack is four bodies in a line all aiming at one
+       point, so the separation force legitimately pushes the rear ones wider for a few ticks. The
+       bound is on the REARTHMOST body, which is the one that used to be thrown backwards. */
+    /* The gap is NOT monotonic and should not be asserted as if it were. Four bodies walking at one
+       point legitimately jam and spread: measured lateral spread goes 44, 33, 22, 15, 8, 2 and the
+       pack's own x-spread goes 0 to 49px as the rear bodies slide around the front ones. That is
+       `separateBodies` doing its job - bodies must not occupy one pixel - and it costs the pack a
+       second or so on the way in.
+
+       So the assertion is that the pack CLOSES - closest approach under the contact distance, and
+       contact actually lands - rather than that it closes on a curve. What used to break this is the
+       shape of the curve: it arrived at 58px and was then thrown to 135, 142, 130, 117, 102, 87, 58
+       and out again, for ever. That sawtooth was contact knockback, and it is what read as orbiting. */
+    ok(contactSec!==null,'the pack never touched the player in 20 seconds (per second: '
+      +gaps.join(', ')+') - a bomb rush that does not land is scenery, not a threat');
+    ok(closest<ENEMY.brunch.r+PLAYER_HIT_R,'the closest the pack got was '+closest.toFixed(1)
+      +'px against a contact distance of '+(ENEMY.brunch.r+PLAYER_HIT_R)+'px (per second: '
+      +gaps.join(', ')+')');
+    /* And with an escort present the wall must STILL form, or this change has cost the mechanic. */
+    startGame(); const r2=goTo('normal');
+    r2.enemies.length=0; r2.spawnPlan=null; r2.pickups.length=0; projectiles.length=0; readyT=0; fadeT=0;
+    player.x=ROOM_LEFT+60; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
+    player.hp=player.maxHp=999;
+    const gun=spawnEnemy(false,r2,ROOM_RIGHT-190,MIDY,'gunner'); r2.enemies.push(gun);
+    gun.maxHp=gun.hp=1e9; gun.noticeTimer=0; gun.aggroTimer=1e9;
+    const wall=[];
+    for(let i=0;i<8;i++){
+      const b=spawnEnemy(false,r2,ROOM_RIGHT-120,ROOM_TOP+90,'brunch');
+      r2.enemies.push(b); b.packId=777; b.packSlot=i; b.noticeTimer=0; b.aggroTimer=1e9; wall.push(b);
+    }
+    for(let i=0;i<150;i++){ keys={}; update(); player.hp=999; }
+    /* THE RUN IS PUT BACK, because a test that leaves the world changed poisons the ones after it.
+       `player.maxHp=1e9` was set at the top of this test and never restored, and a later shield test
+       that runs ten seconds of real play then finds a player with a billion health - which does not
+       sound like a cause for "the pack settled 28px from its nearest slot", and was not: the
+       separation force and the arc geometry are unaffected by health. What it did do is make this
+       test a landmine for anything that reads maxHp, and the failure it produced pointed at the
+       shield rather than at itself, which cost more time than the bug was worth. */
+    player.maxHp=8; player.hp=8; player.iframes=0;
+    const live=wall.filter(b=>r2.enemies.indexOf(b)>=0);
+    let cx=0,cy=0; for(const b of live){cx+=b.x;cy+=b.y;} cx/=live.length||1; cy/=live.length||1;
+    const nd=Math.hypot(player.x-cx,player.y-cy)||1;
+    const ux=(player.x-cx)/nd, uy=(player.y-cy)/nd;
+    const width=live.length>1?Math.max(...live.map(b=>Math.abs(-uy*(b.x-cx)+ux*(b.y-cy))))*2:0;
+    ok(width>40,'with an escort present the wall collapsed to '+width.toFixed(0)+'px across, so '
+      +'making the unshielded rush direct has cost the shield the mechanic - the two paths share '
+      +'the same bodies and only the target differs');
+  });
+
   test('a Brunch pack holds a wall: it forms, it holds, and it can still be walked around',()=>{
     /* THE PACKS BELOW ARE BUILT BY HAND WITH `packId=777`, and that is a hole in this test worth
        naming rather than quietly keeping.
@@ -9157,12 +9267,25 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        So the generation of packs is asserted separately, below, against rooms the GENERATOR built. This
        test still builds its own - it needs an exact size and an exact position to measure a formation
        against - but it is no longer the only place the wall is claimed to work. */
+    /* AN ESCORT, BECAUSE A WALL NEEDS SOMETHING TO STAND IN FRONT OF.
+
+       This fixture built a pack of 8 with no ranged body in the room, so `shielding` was false and
+       it measured the ADVANCE. It went green when a wall formed and red when the advance was made
+       direct - which is the correct reading of a fixture with no wall in it, and the same mistake
+       twice in this file (the walk-around test above has its own copy of it).
+
+       A wall of Brunch with nothing to shield is not a wall; it is a queue walking at you. So there
+       is a gunner now, and the pack guards it. The assertions below are unchanged, which is the
+       point: they were always about the wall, and now they are. */
     const build=(n,atX)=>{
       startGame(); const r=goTo('normal');
       r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
       readyT=0; fadeT=0;
       player.x=ROOM_LEFT+60; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
       player.hp=999; player.maxHp=999; player.iframes=0; player.blinkCharges=2;
+      // the escorted body, between the pack and the player, so the wall forms in front of it
+      const gun=spawnEnemy(false,r,atX===undefined?ROOM_RIGHT-190:atX-70,MIDY,'gunner');
+      r.enemies.push(gun); gun.maxHp=gun.hp=1e9; gun.noticeTimer=0; gun.aggroTimer=1e9;
       const all=[];
       for(let i=0;i<n;i++){
         const b=spawnEnemy(false,r,atX===undefined?ROOM_RIGHT-120:atX,ROOM_TOP+90,'brunch');
@@ -9170,7 +9293,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         b.packId=777; b.packSlot=i; b.noticeTimer=0; b.aggroTimer=1e9;
         all.push(b);
       }
-      return {r:r, all:all};
+      return {r:r, all:all, gun:gun};
     };
     // width measured ACROSS the approach vector, which is the direction the wall actually presents
     const widthOf=(s,r)=>{

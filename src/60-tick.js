@@ -1027,16 +1027,23 @@ function update(){
             const slotPt=brunchArcSlot(tgt.x,tgt.y,player.x,player.y,pc.n,e.packSlot||0,tgt.r);
             if(slotPt){ mdx=slotPt.x-e.x; mdy=slotPt.y-e.y; }
           } else if(pc&&pc.n>=BRUNCH_WALL_MIN){
-            // the approach vector, pack centre to player, IS the wall's normal
-            const ndx=hx-pc.x, ndy=hy-pc.y, nd=Math.hypot(ndx,ndy)||1;
-            const ux=ndx/nd, uy=ndy/nd;
-            // two ranks, offset by half a column, so a shot that finds the gap in the front rank does
-            // not find a body sitting behind it
-            const cols=Math.ceil(pc.n/2);
-            const rank=e.packSlot%2, col=((e.packSlot/2)|0)-(cols-1)/2;
-            const sx=pc.x+(-uy)*col*BRUNCH_WALL_GAP+ux*(rank-0.5)*BRUNCH_WALL_RANK;
-            const sy=pc.y+(ux)*col*BRUNCH_WALL_GAP+uy*(rank-0.5)*BRUNCH_WALL_RANK;
-            mdx=sx-e.x; mdy=sy-e.y;
+            /* NOTHING TO SHIELD, SO NOTHING TO ASSEMBLE. `mdx/mdy` already defaults to `edx/edy` -
+               the vector from this body to the player - on the line above, so a pack with nothing to
+               protect walks straight at the player with no code here at all. The two-rank formation
+               that used to sit in this branch is gone for this case only; the shielded case above
+               still builds a proper wall, which is the one that has to be dense enough to stop a
+               shell.
+
+               Measured, the formation version did not orbit - steering votes were 36 toward the
+               player against 3 toward the formation - it COLLIDED. Gap per tenth-second:
+
+                 450 471 486 492 481 467 449 429 407 386 363 342 321 299 278 255 232 209 188
+                 167 152 137 121 106  89  73  58  <- contact is at 18px
+
+               All four bodies converged on slots laid perpendicular to the line to the player, the
+               outer two arrived, shoved each other, and the pack was thrown backwards - to 135, 142,
+               130, 117, 102, 87, 58, and out again. A bomb rush that resets itself every six seconds
+               is a pack that circles you, which is exactly what it looked like. */
           }
           const md=Math.hypot(mdx,mdy);
           /* THE DEAD ZONE GOVERNS THE SLOT, NOT THE PLAYER.
@@ -1372,7 +1379,40 @@ function update(){
     if(Math.hypot(edx,edy-(PLAYER_HIT_DY))<e.r+PLAYER_HIT_R){
       const boss=e.type==='boss';
       if(damagePlayer(boss?2:1,edx/dist,edy/dist,(boss?8:5.5)*KNOCK_P_GAIN)){
-        knockEnemy(e,-edx,-edy,4*KNOCK_GAIN);
+        /* A BRUNCH THAT REACHES YOU IS NOT PUSHED BACK.
+
+           This knockback applied to every body, and for a Brunch it threw the pack away from the
+           player on contact - so a pack that arrived correctly got shoved off and had to come back,
+           for ever. It was the other half of the sawtooth: with the formation removed the descent is
+           clean to 58px, and then the knockback sum jumps 0 to 2.28 and the gap goes to 135. Remove
+           it and the pack closes to 15.9px and lands.
+
+           A lunger SHOULD be shoved off: it lunged, it missed, and being pushed back is the punish. A
+           Brunch should not be. It has no lunge - it walks in - and it spends its own body on the
+           touch happening right now, on the line below, taking half its health on the same tick.
+           Shoving a body that is already dying and already adjacent delays the next touch and does
+           nothing else, and for the one enemy that outnumbers the player by design, "delay the next
+           touch" is the whole difference between a bomb rush and a queue. */
+        /* ONLY FOR A BRUNCH WITH NOTHING TO SHIELD. This is not "Brunch are not knocked back" -
+           the shielded case is a different creature and it depends on this knockback.
+
+           A pack guarding a live shooter holds an arc of slots 118px from its target, and the player
+           walks into that arc regularly. When they do, contact knockback is what settles the body
+           back onto its slot: removing it entirely left the pack 28px out from a slot that should be
+           14px, and the wall stopped being a wall. Measured with the knockback removed, per body:
+           28.3, 14.1, 14.0, 13.2, 14.0, 14.0 - one body stuck, five fine.
+
+           So the condition is on the MECHANIC, not the species: a body that is walking at the player
+           is not pushed back when it gets there, and a body that is holding a slot is. A lunger is
+           shoved off a miss either way - it has no slot to hold. */
+        /* A LIVE `shieldTarget` is the whole test. `pc` is not in scope here - it is the pack
+           centroid, computed inside the movement block above - and re-deriving it would be a second
+           source of truth for "is this pack large enough to hold a shape", which is exactly the kind
+           of duplication that drifts. The target being alive is what distinguishes the two
+           behaviours: a pack guarding a shooter is holding slots, and a pack with nothing to guard is
+           walking at the player. */
+        const holdingSlot=!!(e.shieldTarget&&e.shieldTarget.hp>0);
+        if(e.type!=='brunch'||holdingSlot) knockEnemy(e,-edx,-edy,4*KNOCK_GAIN);
       }
       // A Brunch spends its own body on every touch, and dies on the second one, so a pack can
       // punish you twice and then it eats itself. Without this a knot of them is a damage clock
