@@ -28,6 +28,37 @@ function Bad($msg) {
   Write-Host ("  FAIL  " + $msg) -ForegroundColor Red
 }
 
+# ---------------------------------------------------------------- 0. the session start
+# WRITTEN HERE, ONCE, WHEN IT IS STALE. It is not written by a person and it is not written by me:
+# .gitignore documents it as "written here at the beginning of a working session so that a report can
+# state how long it took WITHOUT relying on remembering to note the time", and NOTHING WROTE IT. It sat
+# at 2026-10-01 through a session that ran to 2026-10-04, and the report that asked for a duration got a
+# two-day-old answer that was wrong by roughly a day and a half.
+#
+# The rule this encodes: the file exists so a duration can be stated without remembering. Anything that
+# must be remembered is not a record, it is a hope. So the gate - which runs before every commit, and
+# therefore on the first commit of every session - refreshes it whenever it is more than a few hours old,
+# and never rewrites a fresh one. A session start is when the FIRST COMMIT happens, not when the clock
+# was last read, so this is the earliest moment at which the answer can be known to be right.
+$sessionFile = "$root\.session-start"
+$sessionAgeH = [double]::PositiveInfinity
+if (Test-Path $sessionFile) {
+  $sessionAgeH = ((Get-Date) - (Get-Item $sessionFile).LastWriteTime).TotalHours
+} else {
+  $sessionAgeH = [double]::PositiveInfinity   # absent: treat as maximally stale, so the first commit writes it
+}
+if ($sessionAgeH -gt 6) {
+  [System.IO.File]::WriteAllText($sessionFile, (Get-Date).ToString('yyyy-MM-ddTHH:mm:ss') + "`n")
+  Note ("0. session start")
+  if (Test-Path $sessionFile) {
+    Note ("   stale by {0:N1}h - rewritten, so a report can state a real duration" -f $sessionAgeH)
+  } else {
+    Note "   written"
+  }
+} elseif (-not $Quiet) {
+  Note ("0. session start: {0:N1}h old, left alone (a fresh one is not rewritten)" -f $sessionAgeH)
+}
+
 # ---------------------------------------------------------------- 1. hygiene
 # LF only, no BOM, no U+00C2, no U+FFFD. A CRLF pass would rewrite the bytes the canary depends on.
 Note ""
