@@ -38,7 +38,16 @@ the view.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 
-`csharp/Depths.Tests` pins 51 `[TestCase]` rows of numbers **read out of the running JavaScript**.
+`csharp/Depths.Tests` pins 54 `[TestCase]` rows of numbers **read out of the running JavaScript**.
+
+Three of those rows are `RoomScaledParityTests`, and they are a different KIND of row from the rest.
+Every other table pins a constant or a function of a seed, so a drift is caught by comparing names.
+Those three pin functions of the ROOM — `room.W * 0.25` and friends — which no grep can find, and
+which are right in one room and wrong in another. The third row is a room **half** the standard width
+on purpose: a value captured once at load reads correctly in the room that existed at load, so only a
+room that disagrees can see it. That bug shipped twice on 2026-10-03 — once in the port lagging the
+game, and once in the game's own fix, where one half of a single expression followed the room and
+the other half was frozen at load.
 They go stale silently, and `GeneratorParityTests` says so about itself: *"a parity table of STALE
 values is worse than none, because it agrees with a game that no longer exists."*
 

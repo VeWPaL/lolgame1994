@@ -139,6 +139,47 @@ if(new URLSearchParams(location.search).has('parity')) (function(){
     restore();
   }
 
+  /* --- the ROOM-SCALED numbers, at three room sizes, and the small one is the point ---
+
+     This section exists because of a bug the other sections could not see. Every number above is a
+     constant or a function of a SEED, so a name-comparison catches a drift in one. The room-scaled
+     numbers are neither: `swerveDeadzone()` reads `roomW()*0.25` and no amount of grepping finds it.
+
+     And the fix for a frozen room number REPRODUCED the bug it was fixing. `SWERVE_FULL_BASE` was
+     written as `roomW()*0.55` in the same declaration as `swerveDeadzone()=()=>roomW()*0.25` - one a
+     function, one a value captured once at load. In a 1680-wide room the deadzone correctly read 420
+     and the ramp silently stayed at the standard room's 385px, because that is what was in scope when
+     the file loaded. Measured:
+
+         700x450   deadzone 175   full 560
+        1680x760   deadzone 420   full  805     <- wanted 1344
+         350x225   deadzone  88   full  281
+
+     The assertion in the suite was `swerveFull()>swerveDeadzone()`, and it passed: 805 > 420 is true
+     and so is 1344 > 420. A check that a quantity is non-empty cannot tell a quantity that follows its
+     input from one that is constant. So the page emits THREE sizes, and the third is SMALLER than
+     standard on purpose - a constant captured at load reads correctly in the room that existed at load
+     and nowhere else, so only a room that disagrees can see it. */
+  say('// ---- RoomScaledParityTests ----');
+  say('// [TestCase(w, h, aggroRange, swerveDeadzone, swerveFullBase, swerveFull)]');
+  {
+    const restore=atFloor(run.floor);
+    for(const [w,h] of [[700,450],[1680,760],[350,225]]){
+      const r=currentRoom();
+      r.bounds=roomBounds(w,h);
+      r.cx=r.bounds.l+r.bounds.w/2; r.cy=r.bounds.t+r.bounds.h/2;
+      syncRoomBounds();
+      say(`//   ${w}x${h}  aggro ${aggroRange()}  deadzone ${swerveDeadzone()}`+
+          `  rampBase ${swerveFullBase()}  full ${swerveFull()}`);
+    }
+    /* and the spawn dials, which must NOT move with the room. They are offsets, not fractions, and
+       printing them here is what makes that visible: if one of these ever starts tracking the room,
+       the row above it is where it shows. */
+    say('//   spawn offsets are room-independent by design: '+
+        [SPAWN_MARGIN,SPAWN_MID,SPAWN_SEP,SPAWN_DOOR,SPAWN_FAR].join(', '));
+    restore();
+  }
+
   /* PUT THE GAME BACK, before rendering anything. Everything above is a question about the simulation
      and none of it should survive the page: a run, and the seed that run was on. Without this the
      page leaves a started run and a rewritten RNG behind it, which is invisible (the title screen
