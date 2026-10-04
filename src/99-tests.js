@@ -4746,6 +4746,59 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
            wall oscillate as bodies shuffle;
          - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  test('every ranged body telegraphs for CAST_TIME before its shell leaves',()=>{
+    /* THE SAME TELL ON EVERY RANGED BODY, PINNED TO THE MEASURED NUMBER.
+
+       The boss volley tell was already fixed and has its own test above. The GUNNER and SHOOTER use
+       the identical mechanism - `60-tick.js:1363` sets `castT=CAST_TIME` and `fireCommittedShot`
+       counts it down before pushing the shell - and nothing pinned it. Two probes in this session
+       measured it as 1 tick and then as 0 ticks, both times wrongly:
+
+         - sampling `castReady` transitions conflates the first shot with every later one;
+         - sampling `castT` on the tick the shell leaves always reads 0, because
+           `fireCommittedShot` does `if(--e.castT<=0) e.castReady=true` and then pushes - so the
+           value on screen for the whole countdown is invisible to a sample taken at the muzzle.
+
+       Measured, tracing one shot tick by tick: `castT` is set to CAST_TIME=105 on tick 169 and
+       counts down 104, 103, ... 1, and the shell leaves when it reaches 0. That is 0.5 seconds of
+       warning at 210Hz, and it is the number this asserts. A gunner whose tell collapsed to a
+       single tick would be unhittable-by-reading, which is the same failure the boss had. */
+    startGame(); const r=goTo('normal');
+    r.enemies.length=0; projectiles.length=0; r.pickups.length=0; readyT=0; fadeT=0;
+    player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+    const out={};
+    for(const type of ['gunner','shooter']){
+      startGame(); const rm=goTo('normal');
+      rm.enemies.length=0; projectiles.length=0; readyT=0; fadeT=0;
+      player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.hp=player.maxHp;
+      const g=spawnEnemy(false,rm,ROOM_RIGHT-160,MIDY,type); rm.enemies.push(g);
+      /* `shootCd` is LEFT ALONE. It is the cooldown that gates the cast - `60-tick.js:1186` reads
+         `else if(e.shootCd<=0)` and only then starts one - so pinning it to 1e9 stops the gunner
+         ever arming, and the test measured a tell of 0 for a body that telegraphs perfectly well.
+         A probe that silences the thing it is measuring reports the silence, not the behaviour. */
+      g.noticeTimer=0; g.aggroTimer=0; g.maxHp=g.hp=1e9;
+      let peak=0, armedTick=-1, firstShellTick=-1;
+      for(let t=0;t<210*20 && firstShellTick<0;t++){
+        player.hp=player.maxHp; g.hp=g.maxHp;
+        const n0=projectiles.length;
+        const before=g.castT;
+        if(before>0){ if(armedTick<0) armedTick=t; if(before>peak) peak=before; }
+        update();
+        if(projectiles.length>n0) firstShellTick=t;
+      }
+      out[type]={peakCastT:peak, armedTick:armedTick, shellTick:firstShellTick,
+        tellTicks:(armedTick<0||firstShellTick<0)?-1:(firstShellTick-armedTick)};
+    }
+    for(const type of ['gunner','shooter']){
+      const o=out[type];
+      ok(o&&o.peakCastT>=CAST_TIME-1,type+' reached a castT of '+(o?o.peakCastT:'never')
+         +', which is not CAST_TIME='+CAST_TIME+' - so the tell either never armed or armed short, '
+         +'and a shell the player cannot read is a shell they cannot answer');
+      ok(o&&o.tellTicks>=CAST_TIME*0.9,type+' told for '+o.tellTicks+' ticks and the shell left on '
+         +'tick '+o.shellTick+'; a tell shorter than 0.9x CAST_TIME is not the number this is tuned on');
+    }
+  });
+
   /* THE BOSS VOLLEY TELLS BEFORE EVERY SHELL, INCLUDING THE FIRST.
 
        The volley set `castT=CAST_TIME` - which is exactly what the draw reads
