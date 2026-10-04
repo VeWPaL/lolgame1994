@@ -77,7 +77,15 @@ namespace Depths.Tests
             var big = new Balance.Room(50, 130, 50 + 1680, 130 + 760);
             Assert.That(big.W, Is.EqualTo(1680));
             Assert.That(Balance.SwerveDeadzone(big), Is.EqualTo(420), "a quarter of 1680");
-            Assert.That(Balance.SwerveFull(big), Is.EqualTo(1344), "175 more, which is 0.55 of 1680");
+            Assert.That(Balance.SwerveFull(big), Is.EqualTo(1344), "420 + 924, which is 0.25 and 0.55 of 1680");
+            // and a SMALLER room, because "follows the room" has to mean both directions. A constant
+            // captured at load reads correctly in the room that existed at load and nowhere else, so
+            // only the big room can catch it - a check in the standard room alone cannot.
+            var small = new Balance.Room(50, 130, 50 + 350, 130 + 225);
+            Assert.That(Balance.SwerveDeadzone(small), Is.EqualTo(88), "0.25 of 350");
+            Assert.That(Balance.SwerveFull(small), Is.EqualTo(281), "88 + 193, which is 0.25 and 0.55 of 350");
+            Assert.That(Balance.SwerveFullBase(small), Is.LessThan(Balance.SwerveFullBase(Balance.Room.Standard)),
+                "the ramp in a room half as wide is not narrower than the standard room's");
             // and the standard room still reads what it always read, which is what makes this a fix
             // rather than a retune of a port whose balance tests were all taken in that room
             Assert.That(Balance.SwerveDeadzone(Balance.Room.Standard), Is.EqualTo(175));

@@ -1698,6 +1698,9 @@ The port is where the hand-duplication of numbers bites, and it had already bitt
 | `SwerveDeadzone` | 300 | **350** |
 | `SwerveFull` | 430 | **570** |
 
+Both sides have since moved again, to `roomW()*0.25` and `+roomW()*0.55` — 175/560 standard, and a
+ramp that now scales. The port briefly lagged that second move too; see the fourth instance below.
+
 `Intercept.SwerveReach` reads both, so the port's gunners read a reversing player differently from
 the game's, in every build, silently. It survived because there was a test called
 **`TheDeadzoneIsHalfTheRoomWidth`** asserting 350 and 570 — the name states the *rule*, the game's rule
@@ -1707,6 +1710,49 @@ then re-derived the same prose and passed.
 **A test that re-derives the rule it is auditing cannot find the rule being wrong, and will defend
 the wrongness for ever.** That is the same shape as the cursor bug (fixture and game agreeing on a
 frame) and the separation grid (candidate order). Three instances, one cause.
+
+### The fourth instance, and the sharper form of the rule (2026-10-03)
+
+`SwerveDeadzone` drifted to 300/430 in the game and 175/560 in the port, in the same commit, and both
+sides' tests were green. That was this failure a second time — and then the fix **reproduced it inside
+the fix**, which is the part worth generalising.
+
+Fixing the game meant writing `swerveDeadzone()=roomW()*0.25, SWERVE_FULL_BASE=roomW()*0.55`. One of
+those two is a function and one is a **value computed once at load**, so the ramp silently stayed at
+the standard room's 385px while the deadzone followed the room to 420 in a 1680-wide room. Measured:
+
+| room | `swerveDeadzone` | `swerveFull` |
+|---|---|---|
+| 700×450 | 175 | 560 |
+| 1680×760 | 420 | **805** — wanted 1344 |
+| 900×600 | 225 | **610** — wanted 720 |
+
+The assertion that should have caught it was `ok(swerveFull()>swerveDeadzone())`. It passed, because
+805 > 420 is true and so is 1344 > 420. **A check that a quantity is non-empty cannot distinguish a
+quantity that follows its input from one that is constant** — both are non-empty. Same weakness as the
+relative brass-speed bounds that let a 13% cut through unnoticed.
+
+So the sharper rule, which is the one to apply:
+
+> **A property must be able to distinguish the thing from its opposite.** "Is positive", "is greater
+> than zero", "exists", "is non-empty" and "is in range" are satisfied by both a correct
+> implementation and a broken one, so they are not checks — they are decoration. Ask instead for the
+> **value the input implies**, in an input where the two disagree.
+
+Concretely, that means: a room-scaled number is asserted at **three** room sizes, and specifically at
+one **smaller** than standard. A constant captured at load reads correctly in the room that existed at
+load and nowhere else, so a check in the standard room alone cannot see it — only an input that
+disagrees can. Both sides now assert 700×450, 1680×760 and 350×225.
+
+And the mutation that proves it has to reproduce the *original* shape, not an approximation:
+
+```js
+swerveFullBase=((f)=>()=>Math.round(0.55*f))(700);   // closes over a fixed 700
+```
+
+Writing `swerveFullBase=385` instead does not test the claim — it makes the call site throw, and 19
+tests fail with `swerveFullBase is not a function`, which is loud and says nothing about the property.
+The faithful mutation produces exactly one failure, carrying the diagnosis in its message.
 
 `Balance.Room` is now a struct (`l/t/r/b`, `W`, `H`, `Cx`, `Cy`, `Standard`), and `SwerveDeadzone`,
 `SwerveFull` and the new `AggroRange` are **functions of a room** — methods, not properties, because

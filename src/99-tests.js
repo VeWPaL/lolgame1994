@@ -10272,9 +10272,32 @@ const BOSS_TICKS=26000;
     eq(swerveDeadzone(),Math.round(1680*0.25),'the swerve deadzone did not follow the room: '+
        swerveDeadzone()+' vs '+Math.round(1680*0.25));
     ok(aggroRange()>707,'a bigger room did not widen the aggro range, so the number is still frozen');
-    // and the RAMP is still a ramp: the top must stay above the bottom or the division is a divide by
-    // something silly and reach jumps rather than ramps
-    ok(swerveFull()>swerveDeadzone(),'the swerve ramp has no width in a big room');
+    /* THE RAMP MUST FOLLOW THE ROOM, and asserting only that it is NON-ZERO is what hid this.
+
+       `SWERVE_FULL_BASE` was a module constant computed once at load from whatever room existed then,
+       so it never followed the room at all: measured, a 1680-wide room asked for a 920px ramp and got
+       385 - the standard room's value, frozen - while `swerveDeadzone`, one line above it, correctly
+       read 420. The two were silently inconsistent inside the same expression.
+
+       The old assertion here was `swerveFull()>swerveDeadzone()`, and it passed: 805 > 420 is true,
+       and so is 1344 > 420. A check that the ramp is non-empty cannot tell a ramp that follows the
+       room from one that is a constant, because both are non-empty. That is the same shape as the
+       relative-brass-speed bounds that let a 13% cut through unnoticed - a property too weak to fail
+       on the defect it was written for.
+
+       So the ramp is now asked to be the room's own fraction, in a room four times as wide. */
+    eq(swerveFull(),Math.round(1680*0.25)+Math.round(1680*0.55),'the swerve ramp did not follow the '+
+       'room: a 1680-wide room wants a '+(Math.round(1680*0.25)+Math.round(1680*0.55))+'px ramp and got '+
+       (swerveFull()-swerveDeadzone())+'px - a constant computed from the room at load time is the '+
+       'exact bug this file keeps warning about, and a "> 0" check cannot see it');
+    // and the ramp WIDENS with the room, which is the property a frozen constant cannot have
+    ok(swerveFull()-swerveDeadzone()>385,'the ramp in a room four times as wide is '+
+       (swerveFull()-swerveDeadzone())+'px, which is not wider than the 385px of the standard room');
+    // and in a SMALLER room it narrows, so this is a fraction of the room and not a scale factor
+    Lab.leave();
+    const small=bigRoom(350,225);
+    ok(swerveFull()-swerveDeadzone()<385,'the ramp in a room half as wide is '+
+       (swerveFull()-swerveDeadzone())+'px, which is not narrower than the 385px of the standard room');
     Lab.leave();
   });
 
