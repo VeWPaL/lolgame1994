@@ -4746,6 +4746,141 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
            wall oscillate as bodies shuffle;
          - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  test('the sound system is complete, bounded, and cannot break a tick',()=>{
+    /* AUDIO IS TESTED BY ITS PLAN AND ITS LIMITS, NOT BY ITS SOUND. A headless browser hears
+       nothing, so what is asserted here is everything that is observable: that every voice builds,
+       that the pool is bounded, that mute is honoured before synthesis rather than after, that the
+       four weapons have four distinct pitches, that panning follows the body, and that a real fight
+       runs 4200 ticks without audio throwing into it.
+
+       The last of those is the one that matters. A sound that throws while the player is fighting is
+       a crash, and a crash caused by audio is indefensible - so every entry point in Sound wraps
+       itself, and `failed` is a counter that must stay at zero across a whole room. */
+    ok(typeof Sound!=='undefined'&&typeof Sfx!=='undefined',
+      'the sound system is not loaded - Sound and Sfx are undefined, so the game has no audio at all');
+    const names=Sound.names();
+    ok(names.length>=10,'the sound system has '+names.length+' voices, which is too few to cover a '
+      +'fight: a shot, a hit, a kill, a hurt, a touch, a blink, a tell, a boss, a door, a pickup and a '
+      +'run ending are eleven distinct events and each one that is missing is an event the player '
+      +'experiences silently');
+    /* EVERY VOICE HAS A PLAN AND BUILDS. `plan()` is the observable: the envelope level and the
+       jitter, which is where placeholder shapes live and therefore what the timing is judged from. */
+    let unplanned=[], zeroLevel=[];
+    for(const n of names){
+      const pl=Sound.plan(n,{});
+      if(!pl) unplanned.push(n);
+      else if(!(pl.gain>0)) zeroLevel.push(n+' at '+pl.gain);
+      Sound.play(n,{});
+    }
+    eq(unplanned.join(','),'','these voices have no plan, so calling them does nothing at all: '+unplanned.join(', '));
+    eq(zeroLevel.join(','),'','these voices are silent by construction, so they are wired to events '
+      +'and cannot be heard: '+zeroLevel.join(', '));
+    /* THE POOL IS BOUNDED, and it leaked once: measured at 162 simultaneous voices against a
+       declared cap of 24, after twenty seconds of a five-body fight. `onended` does not fire until
+       the audio thread reaches the scheduled end, so a count that waits for it only ever climbs. The
+       pool now prunes against the audio clock and steals the oldest.
+
+       THE BOUND IS PROVED BY OVERRUNNING IT, NOT BY READING IT. Two earlier versions of this
+       assertion checked `voices <= cap` and passed while the leak was present, for a reason worth
+       recording: in a headless browser the context never leaves `suspended`, nothing is ever
+       actually scheduled, and `track()` is never reached - so the count stays at zero and the
+       assertion is true for the wrong reason. Reading a counter that a disabled subsystem never
+       increments cannot test that subsystem.
+
+       So the cap is tested by putting MORE than `cap` voices through `play` and checking the pool
+       does not grow past it. That needs the voices to be tracked, and tracking is what a live
+       context does - so this test counts them through the same path a browser takes, and the count
+       is asserted either way: if the browser refuses the sounds entirely, the bound is trivially
+       satisfied and that is stated rather than passed off as a result. */
+    /* THE BOUND, EXERCISED THROUGH THE POOL'S OWN BOOKKEEPING. `exercisePool` calls the same
+       `reserve`/`steal` that `play` calls - it is not a parallel copy - and takes no AudioContext, so
+       it works in a browser that will never make a sound. Every path to the bound otherwise goes
+       through `ctx.state==='running'`, which in headless is never true, so `reserved` stays at 0 and
+       the count reads zero for the wrong reason. Two earlier assertions passed against the leak
+       that way. */
+    Sound.releasePool();
+    const over=Sound.exercisePool(200);
+    ok(over.voices<=over.cap,'the pool took 200 reservations and reports '+over.voices+' voices '
+      +'against a cap of '+over.cap+' - audio nodes that are never reclaimed are a leak, and this '
+      +'game can fire hundreds of shots a second');
+    ok(over.voices>0,'the pool reports '+over.voices+' voices after 200 reservations, so either '
+      +'nothing was reserved or everything was released at once, and neither tests the bound');
+    Sound.releasePool();
+    const one=Sound.exercisePool(1);
+    eq(one.voices,1,'a single reservation does not register as one outstanding voice ('+one.voices
+      +') - the counter is not tracking what it claims to track');
+    Sound.releasePool();
+    /* MUTE IS HONOURED BEFORE SYNTHESIS. A player who muted must not pay for the synthesis, and must
+       not get a sound out of a voice that was already sounding. */
+    const playedBefore=Sound.stats().played;
+    Sound.setMuted(true);
+    const whileMuted=Sound.play('shot',{});
+    const mutedSkipped=Sound.stats().skippedMuted;
+    Sound.setMuted(false);
+    ok(whileMuted===false,'Sound.play returned true while muted, so a sound the player turned off '
+      +'still played');
+    ok(mutedSkipped>=1,'muting did not register as a skip ('+mutedSkipped+' skipped) - the check has '
+      +'to happen before anything is built, or a muted player pays for audio they cannot hear');
+    ok(Sound.stats().played>playedBefore,'nothing played at all, which means the system is wired up '
+      +'and cannot make a sound - check whether the browser is blocking it');
+    /* FOUR WEAPONS, FOUR PITCHES. This is the queued pitch-jitter item, and it failed twice on a
+       lookup key that does not exist - once on `w.id` (weapons have no id) and once on `w.name`
+       ('Beam' is not a name any weapon has; it is 'Arcane Beam'). The key is derived through the
+       game's own `Content.idOf` now, so a rename cannot silently mute the difference. */
+    const tones={};
+    for(let i=0;i<WEAPONS.length;i++){ player.weaponIdx=i; tones[Content.idOf(WEAPONS[i])]=weaponDetuneCents(); }
+    const vals=Object.values(tones);
+    eq(vals.length,WEAPONS.length,'the tone table covers '+vals.length+' weapons and the roster has '
+      +WEAPONS.length+', so at least one gun is silent in the pitch sense - identical to another');
+    eq(new Set(vals).size,vals.length,'two weapons share a pitch: '+JSON.stringify(tones)+' - the '
+      +'player cannot tell them apart by ear, which was the whole point');
+    ok(vals.every(v=>Math.abs(v)>=40),'a weapon tone of '+Math.min(...vals.map(Math.abs))+' cents is '
+      +'under the ~40 that reads as the same shot - a semitone is 100, so this is a fraction of one');
+    /* PANNING FOLLOWS THE BODY AND IS CLAMPED. A hit on the far side of the room should sound like
+       it, and an unclamped pan node throws on some browsers rather than failing quietly. */
+    ok(panFor({x:player.x-600,y:player.y})<=-0.99,'a body 600px to the left pans to '
+      +panFor({x:player.x-600,y:player.y})+' rather than hard left - the field should reach the edge');
+    ok(panFor({x:player.x+99999,y:player.y})<=1&&panFor({x:player.x+99999,y:player.y})>=-1,
+      'an absurd distance pans to '+panFor({x:player.x+99999,y:player.y})+', and a StereoPanner '
+      +'throws on a value outside -1..1 in some browsers - which would be a crash inside a tick');
+    eq(panFor(null),0,'a missing body pans somewhere other than centre');
+    /* AND IT SURVIVES A FIGHT. 4200 ticks of a real five-body room with the weapon firing. */
+    startGame(); const r=goTo('normal');
+    r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0; readyT=0; fadeT=0;
+    spawnWave(r);
+    const f0=Sound.stats().failed, played0=Sound.stats().played;
+    let frames=0, threw=null;
+    for(let t=0;t<210*20;t++){
+      const tgt=r.enemies.find(g=>g.hp>0);
+      if(tgt){ updateCamera(); mouse.x=tgt.x-cam.x; mouse.y=tgt.y-cam.y; mouseDown=true; }
+      else mouseDown=false;
+      player.hp=player.maxHp;
+      for(const g of r.enemies) g.hp=g.maxHp;
+      try{ update(); frames++; }catch(e){ threw=String(e).slice(0,160); break; }
+    }
+    mouseDown=false;
+    eq(threw,null,'the tick threw while sound was playing: '+threw);
+    ok(frames===210*20,'the fight ended after '+frames+' of '+(210*20)+' ticks');
+    eq(Sound.stats().failed-f0,0,Sound.stats().failed-f0+' sounds failed to build during a fight - '
+      +'every entry point must swallow its own errors, because an audio failure in a tick is a crash');
+    ok(Sound.stats().played>played0+50,'only '+(Sound.stats().played-played0)+' sounds played in '
+      +'twenty seconds of a five-body fight with a gun firing, so the call sites are not reaching the '
+      +'system - the wiring is as much a part of it as the voices');
+    ok(Sound.stats().voices<=Sound.stats().cap,'the pool ended the fight at '
+      +Sound.stats().voices+' voices against a cap of '+Sound.stats().cap);
+    /* AUDIO MUST NOT TOUCH THE GAME'S RNG. The noise buffer and the pitch jitter use a private
+       xorshift precisely so that a sound cannot shift a seeded run - which would make audio the first
+       thing to break parity, and the first thing to break a save. */
+    const signature=(withSound)=>{
+      startGame(7);
+      const rm=currentRoom(); spawnWave(rm);
+      if(withSound) for(let i=0;i<5;i++) Sound.play('shot',{});
+      return rm.enemies.map(g=>g.type+':'+Math.round(g.x*100)+':'+Math.round(g.y*100)).join('|');
+    };
+    eq(signature(true),signature(false),'playing sounds changed a seeded room - audio is reaching '
+      +'the game RNG, which makes a run unreproducible and breaks the parity tables');
+  });
+
   test('every panel that is drawn OVER a live run still lets the player walk',()=>{
     /* THE BENCH IS NOT A PAUSE, AND IT WAS EATING THE WHOLE KEYBOARD.
 

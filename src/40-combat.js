@@ -61,6 +61,11 @@ function damagePlayer(amount,kx,ky,force){
     return false;
   }
   run.dmgTaken+=amount;
+  /* SOUND, AT THE POINT THE HIT IS CONFIRMED. Not at the call sites: there are several ways to hurt
+     the player - contact, a shell, a boss body - and a sound wired to each of them is a sound that
+     is missing from the way somebody found to hurt them. This is the first line after the i-frame
+     and grace checks, so it fires for every hit that actually lands and for none that is forgiven. */
+  Sfx.hurt();
   let rem=amount;
   if(player.armor>0){const used=Math.min(player.armor,rem);player.armor-=used;rem-=used;}
   if(rem>0) player.hp-=rem;
@@ -595,6 +600,11 @@ function fireWeapon(){
       dx:Math.cos(a), dy:Math.sin(a)});
   }
   run.shots+=w.count;
+  /* SOUND, AT THE ONE PLACE A SHOT IS COUNTED. Not at the call site and not in the tick: `run.shots`
+     is incremented exactly once per trigger pull, so a sound here cannot double-fire on a multi-pellet
+     weapon or miss a pellet. `Sfx.shot` reads the weapon for its pitch, so the four guns are told
+     apart by ear. */
+  Sfx.shot();
   player.cooldown=w.cooldown/TEMPO.rate; player.cooldownMax=player.cooldown;
   player.muzzleTimer=MUZZLE_TICKS;
   player.shootSlow=Math.min(SHOOT_SLOW_MAX,player.shootSlow+SHOOT_SLOW_MAIN);

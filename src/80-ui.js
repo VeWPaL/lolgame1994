@@ -902,6 +902,21 @@ function toggleBugPanel(){
   if(p.style.display==='block') uiTakeInput();
 }
 
+/* THE SOUND SYSTEM'S ONE GESTURE HOOK. Every browser suspends an AudioContext created before a real
+   interaction, so the context cannot be built at load - it would be a game that is silent for ever
+   with nothing in the code to explain it. This is called from the FIRST keydown and the first
+   pointerdown and removes itself, so it costs one comparison per key after that. Deliberately
+   BEFORE the suppressor above: a panel that is open still needs audio, and `uiHoldsInput` returning
+   true must not be the reason a game has no sound. */
+/* REGISTER THE UNLOCK LISTENERS, DO NOT CALL THE UNLOCK. `Sound.autoUnlock()` both registers itself
+   on a gesture AND unlocks if one has already happened, so calling it at load time installs the two
+   listeners and does nothing else - which is what is wanted, and what a first version got wrong by
+   registering nothing at all. Measured with it missing: a real keypress and a real click both left
+   `ctxState` at 'suspended' and `unlocked` false, and all twelve voices reported `skippedLocked` -
+   a game with a complete sound system that is silent for ever, with the only symptom being a counter
+   nobody reads. */
+Sound.autoUnlock();
+
 window.addEventListener('keydown',e=>{
   if(uiHoldsInput()&&!uiAllows(e.key)) return;
   const k=e.key.toLowerCase(), first=!e.repeat&&!keys[k];
@@ -1046,6 +1061,9 @@ window.addEventListener('keydown',e=>{
   if((k==='shift'||k===' ')&&inRoom&&!paused&&!trans&&readyT<=0&&player.blinkCharges>0) doBlink();
 });
 window.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+/* The mouse half of the unlock, for a player who only ever clicks. Without it a game played entirely
+   with the pointer never creates its context and is silent. */
+window.addEventListener('pointerdown',()=>Sound.autoUnlock(),true);
 window.addEventListener('blur',autoPause);
 document.addEventListener('visibilitychange',()=>{if(document.hidden) autoPause();});
 // clicking the dim area around the card closes the sheet, and a click ON the card does not. Both are

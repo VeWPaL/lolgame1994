@@ -75,6 +75,7 @@ function tickMomentum(moved){
    nothing takes all of it. That gap is the fight. */
 
 function bossInit(e){
+  Sfx.boss();   // the phase change, not an event: the one sound allowed to run long
   e.phase=1;
   e.move='idle';
   e.moveT=0;
@@ -651,6 +652,7 @@ function update(){
         const j=best;
         if(p.alt){ explode(r,p.x,p.y,p.mode); projectiles.splice(i,1); break; }   // the blast detonates on contact
         e.hp-=p.dmg*falloffMult(p)*e.armour*p.scale; e.hitFlash=HIT_FLASH; run.hits++;
+        Sfx.hit(e);   // panned by where the body is, so a hit on the far side of the room says so
         alertEnemy(e); slowEnemy(e);
         if(e.hp<=0) killEnemy(r,j);
         if(p.pierce>0){
@@ -1368,6 +1370,11 @@ function update(){
           const shot=clearShot(r,e,want);
           if(shot!==null){
             e.castAim=shot; e.castT=CAST_TIME;
+        /* THE TELL IS THE SOUND. The flash is drawn for half a second and a player looking at a
+           four-body fight may not be looking at that body; a rising tone is the one cue that arrives
+           wherever they are looking. Deliberately mixed quiet (`VOICES.tell.gain` 0.34) - it has to
+           sit UNDER a fight, not compete with it. */
+        Sfx.tell(e);
           } else e.shootCd=e.cdMin*0.25;
         }
 
@@ -1413,6 +1420,11 @@ function update(){
            walking at the player. */
         const holdingSlot=!!(e.shieldTarget&&e.shieldTarget.hp>0);
         if(e.type!=='brunch'||holdingSlot) knockEnemy(e,-edx,-edy,4*KNOCK_GAIN);
+        /* The Brunch's own sound, and it is HERE rather than with the knockback it is not doing:
+           this is the moment the bomb rush is made of. A player who cannot hear the pack arriving has
+           no warning of it at all, and it is the loudest thing a Brunch should ever do - the whole
+           threat is that it reaches you. */
+        if(e.type==='brunch'&&!holdingSlot) Sfx.touch(e);
       }
       // A Brunch spends its own body on every touch, and dies on the second one, so a pack can
       // punish you twice and then it eats itself. Without this a knot of them is a damage clock
@@ -1516,6 +1528,7 @@ function update(){
       if(got.dropped)
         r.pickups.push({x:pk.x,y:pk.y,r:16,kind:'item',id:got.dropped,hold:true,charges:got.droppedCharges});
     }
+    Sfx.pickup();   // only after `got.taken`, so a refused duplicate is silent
     r.pickups.splice(i,1);
   }
 

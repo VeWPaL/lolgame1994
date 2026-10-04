@@ -89,6 +89,9 @@ function doBlink(){
      reaction window at all, and a gunner that was already tracking you gets a free intercept shot the
      instant you vanish. That is the whole point of the lag, and there is a test pinning it.
      The trail block above is the only thing that needed the move to happen first. */
+  /* The blink's sound goes HERE, with the i-frames below it, because the i-frames ARE the action:
+     the player needs to know they have committed before they can see where it ended. */
+  Sfx.blink();
   player.lagX=fromX; player.lagY=fromY;
   checkDoorTransition();
   // Invulnerable for the whole travel, not just the first frame of it. BLINK_IFRAMES used to be a
@@ -397,6 +400,9 @@ function endRun(won){
      It returns `false` rather than silently no-oping so a caller that cared could tell - none does
      yet, and the comment is here for whoever writes the fifth one. */
   if(state==='dev') return false;
+  /* The run's last sound, AFTER the lab guard above: the lab cannot end a run, so it must
+     not make the sound of one either - the same reason, one line later. */
+  Sfx.over();
   state=won?'win':'gameover';
   const all=Object.values(rooms), explored=all.filter(x=>x.visited).length;
   const s={won,ticks:run.ticks,floor:run.floor,floorTicks:run.floorTicks,explored,total:all.length,
@@ -469,6 +475,10 @@ function tickBlink(){
   if(player.blinkRegen>=BLINK_RECHARGE){player.blinkCharges++;player.blinkRegen=0;}
 }
 function killEnemy(r,j){
+  /* SOUND, IN killEnemy AND NOWHERE ELSE. Every way a body leaves a room - projectile, contact,
+     sweep, the Brunch spending itself - goes through this function, so a sound here is a sound for
+     every death rather than one for the deaths somebody remembered to add it to. */
+  Sfx.kill(r.enemies[j]);
   const e=r.enemies[j];
   r.enemies.splice(j,1);
   run.kills++;

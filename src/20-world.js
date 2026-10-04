@@ -400,6 +400,7 @@ function passDoor(r,d){
   if(leadsToItem(r,d)&&!itemUnlocked){itemUnlocked=true;player.hasSilver=false;}
   const [nx,ny]=neighbor(cur.x,cur.y,d);
   trans={t:0,nx,ny,from:OPP[d]};
+  Sfx.door();   // the room's punctuation: it tells the player the floor moved on
 }
 // the lock works on whichever sealed door you touched. once started it runs to completion on its
 // own, so stepping away is a choice rather than a cancel
