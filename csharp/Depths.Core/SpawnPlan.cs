@@ -302,7 +302,30 @@ namespace Depths
             {
                 if (s.Pack <= 0)
                 {
-                    plan.Bodies.Add(new PlannedBody { X = s.X, Y = s.Y, Kind = s.Kind });
+                    /* THE TRAIT ROLL IS PART OF SPAWNING A BODY, and the port left it out, so every gunner cost
+               two draws fewer than the game's and the whole spawn-plan draw count was out by exactly
+               that per gunner - measured: the page read 649 where the port read 647 for a four-body
+               wave with one gunner, and 653 against 650 on another seed. A CONSTANT gap, which is the
+               signature of a missing step rather than of divergent randomness.
+
+               In the game the trait is rolled INSIDE spawnEnemy -> applyTrait -> rollTrait, so the
+               stream moves when the body is created. Here the body is a value in a list, and
+               `Bodies.ApplyTrait(Body, Trait)` deliberately takes the trait as an argument and spends
+               no draw - the trait belongs to whoever is assembling the body. So the roll has to happen
+               here, in the same place and the same order, or the port's stream drifts from the game's
+               on any room containing a gunner.
+
+               It is drawn only for a body that can TAKE one: `applyTrait` returns early for a walker
+               (no stand-off band to move) and for anything without a far/close kit, so the roll is for
+               the RANGED kinds only. Rolling it unconditionally would spend draws the game does not,
+               and the count would then be wrong in the other direction - which is the trap in fixing a
+               parity gap by adding a call rather than by finding where the call belongs.
+
+               `Bodies.TraitFor(kind, rng)` consumes the draw and picks the trait from the same weights
+               the game uses, so the two draws are spent here exactly as they are spent there. */
+            if (s.Kind == BodyKind.Shooter || s.Kind == BodyKind.Gunner)
+                Bodies.TraitFor(s.Kind, _rng);
+            plan.Bodies.Add(new PlannedBody { X = s.X, Y = s.Y, Kind = s.Kind });
                     continue;
                 }
 

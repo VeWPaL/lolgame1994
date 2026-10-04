@@ -35,34 +35,34 @@ namespace Depths.Tests
         // same commands, which is finding #8 restated in the spawn planner's own terms: a planner that
         // shared state between runs would produce a different second wave, and the row would be green
         // forever after.
-        [TestCase(1u, 1, Dir.N, 647,
+        [TestCase(1u, 1, Dir.N, 649,
             "g142,499 l666,458 l405,497 s163,215",
             "g142,499 l666,458 l405,497 s163,215")]
-        [TestCase(1u, 1, Dir.S, 647,
+        [TestCase(1u, 1, Dir.S, 649,
             "g662,210 l128,261 l392,207 s652,496",
             "g662,210 l128,261 l392,207 s652,496")]
-        [TestCase(12345u, 1, Dir.N, 650,
+        [TestCase(12345u, 1, Dir.N, 653,
             "g134,498 l665,452 b394,477pk6 s131,238 s668,213",
             "g134,498 l665,452 b407,477 b406,499 b387,488 b369,477 b387,466 b406,455 s131,238 s668,213")]
-        [TestCase(12345u, 1, Dir.N, 650,
+        [TestCase(12345u, 1, Dir.N, 653,
             "g134,498 l665,452 b394,477pk6 s131,238 s668,213",
             "g134,498 l665,452 b407,477 b406,499 b387,488 b369,477 b387,466 b406,455 s131,238 s668,213")]
-        [TestCase(12345u, 5, Dir.E, 650,
+        [TestCase(12345u, 5, Dir.E, 652,
             "g134,498 l131,238 b391,239pk6 s473,498 l668,213",
             "g134,498 l131,238 b404,239 b403,261 b384,250 b366,239 b384,228 b403,217 s473,498 l668,213")]
-        [TestCase(99999u, 12, Dir.W, 648,
+        [TestCase(99999u, 12, Dir.W, 649,
             "g674,223 b655,503pk5 l128,503",
             "g674,223 b668,503 b663,527 b644,511 b635,488 b659,491 l128,503")]
-        [TestCase(99999u, 1, Dir.N, 648,
+        [TestCase(99999u, 1, Dir.N, 649,
             "g128,503 b671,466pk5 l405,502",
             "g128,503 b684,466 b679,489 b661,473 b651,451 b675,453 l405,502")]
         [TestCase(777u, 1, Dir.S, 644,
             "l170,207 l669,279",
             "l170,207 l669,279")]
-        [TestCase(31337u, 3, Dir.N, 648,
+        [TestCase(31337u, 3, Dir.N, 650,
             "g650,498 l140,486 l408,496 l131,224 s664,215",
             "g650,498 l140,486 l408,496 l131,224 s664,215")]
-        [TestCase(42u, 1, Dir.W, 646,
+        [TestCase(42u, 1, Dir.W, 647,
             "s670,216 b665,498pk4",
             "s670,216 b678,498 b665,523 b652,498 b665,473")]
         public void APlanMatchesTheJavaScriptExactly(

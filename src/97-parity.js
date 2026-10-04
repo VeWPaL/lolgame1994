@@ -139,25 +139,143 @@ if(new URLSearchParams(location.search).has('parity')) (function(){
      And the draw count is reported alongside the geometry, because that is the number that splits "the
      seed stream diverged" from "the geometry went wrong" before anyone reads the planner.
 
+     startGame ALREADY GENERATES THE FLOOR, and this section was generating it a second time.
+
+     Measured, seed 1: `startGame(seed)` draws 43 from the run stream, and
+     `startGame(seed); generateDungeon()` draws 66 - so the extra call burns 23 more and puts the
+     planner at a completely different point in the stream. Every row on this page was measured from
+     that wrong point, which is why all 21 disagreed with the port and by a CONSTANT: the plan code
+     is identical on both sides, so the error had to be in the state it started from, and a state
+     offset is exactly what produces a constant gap rather than a random one.
+
+     The C# test is the authority on the correct sequence and says so in its own comment: "seed,
+     generate a floor to burn the same stream, and only then plan" - one FromSeed, not two. The page
+     now does the same and nothing more.
+
      startGame LEAVES A RUN BEHIND - a real one, with a dungeon, a player and a room - so the whole
      section restores the one that was there on the way in. The header's claim that this page changes
      no state has to mean that even after twenty-one startGame calls, which is why the save is taken
      once at the top and put back at the end rather than trusted to each block. */
   say('// ---- SpawnPlanParityTests ----');
-  say('// seed, floor, count, fromDir -> draws used, then x,y@distance per slot');
-  for(const seed of [0,1,2,42,12345,777,31337]){
-    for(const [floor,count,fromDir] of [[1,6,'S'],[1,6,'N'],[3,10,'E']]){
+  say('// seed, floor, fromDir -> draws used, body count ROLLED, then x,y@distance per slot');
+  say('//');
+  say('// THE DRAW COUNT IS THE WHOLE PLAN, and getting this right took three corrections and one');
+  say('// genuine port bug. Kept short because the long version is in PORTED.md.');
+  say('//');
+  say('//   1. This page measured spawnPlan() alone, which is a FIXED 320 iterations of two draws, so');
+  say('//      it emitted a flat 640 on every row and disagreed with the port on four seeds. The');
+  say('//      candidate loop cannot depend on anything - that is why candDraws is printed as well,');
+  say('//      because a row where it is not 640 means the loop changed and every column is stale.');
+  say('//   2. It then measured the whole plan but generated the dungeon TWICE (startGame already');
+  say('//      generates), putting the planner at the wrong point in the stream.');
+  say('//   3. With both fixed the page still read +2 to +3 high, and that turned out to be a REAL bug');
+  say('//      in the port: applyTrait rolls a trait per ranged body inside spawnEnemy, and the C#');
+  say('//      PlanWave never rolled one, so every gunner cost the port two draws fewer than the game.');
+  say('//      Fixed in SpawnPlan.cs. This page is why it was found - the gap was a CONSTANT, which is');
+  say('//      the signature of a missing step rather than of divergent randomness.');
+  say('//');
+  say('// `bodies` is printed because the plan ROLLS its body count rather than taking one, so the');
+  say('// C# column named `count` is an OUTPUT. A row printing a requested count would invite exactly');
+  say('// the comparison that produced error 2 above.');
+  /* THE ROW LIST IS THE C# TABLE'S, for the third time in this file and for the same reason as the
+     seeds and the floors: a generator that emits fewer cases than the table pins makes a paste look
+     complete while silently deleting coverage. Five of the ten C# rows were on no page row at all -
+     99999/12/W, 99999/1/N, 31337/3/N, 42/1/W and 12345/5/E - because the page's own idea of an
+     interesting case is (seed, 1, six bodies, a door direction) and the table's is (seed, floor, from
+     wherever that seed's dungeon happens to start).
+
+     So the list is the table's, and the emitted row carries the floor and direction the table pins
+     rather than a guess. `count` is gone entirely: the plan ROLLS its body count, so a requested
+     count is not an input to anything and printing one invited comparing it against a rolled value. */
+  for(const [seed,floor,fromDir] of [[1,1,'N'],[1,1,'S'],[12345,1,'N'],[12345,5,'E'],
+                                     [99999,1,'N'],[99999,12,'W'],[31337,3,'N'],[42,1,'W'],
+                                     [777,1,'S']]){
+      /* startGame IS NEEDED - generateDungeon() alone leaves `cur` unset, so currentRoom() throws and
+         the whole page dies. That is why the original code called both, and the fix is not to drop
+         one but to call each exactly once. */
+      /* THE STATE IS A STARTED RUN, and getting this wrong is what made every row on this page
+         disagree with the port.
+
+         The C# test is the authority and says what it does in its own comment: "seed, generate a floor
+         to burn the same stream, and only then plan" - `new Rng(seed); Dungeon.FromSeed(rng)`, ONE
+         generation. The page was calling `startGame(seed)` AND `generateDungeon()`, which generates
+         twice and leaves the planner at a different point in the stream: measured, seed 1, 43 draws
+         after startGame and 66 after the extra generateDungeon.
+
+         `startGame` alone is not enough either. `generateDungeon()` on its own leaves `cur` unset, so
+         `currentRoom()` throws and the whole page dies - which is why both were there in the first
+         place. The fix was not to drop one but to call each exactly once, and the second attempt
+         (dropping startGame) is what taught me which of the two was load-bearing.
+
+         And `run.floor` is set AFTER the start because PlanWave takes a floor as an ARGUMENT and does
+         not read it off the run - which is also why the body count is rolled rather than requested. */
       startGame(seed);
-      run.floor=floor;
-      generateDungeon();
       syncRoomBounds();
+      run.floor=floor;
       const before=Rnd.calls.run;
-      const pts=spawnPlan(count,fromDir);
-      say('//   seed '+seed+' floor '+floor+' count '+count+' from '+fromDir+
-          '  draws '+(Rnd.calls.run-before)+'  -> '+
+      /* one call, to measure the candidate loop in isolation. The candidate loop is a fixed 320
+         iterations of two draws, so this number is 640 on every row and cannot depend on anything -
+         which is worth printing, because a row where it is not 640 means the loop changed and every
+         other column here is stale. The GEOMETRY comes from the spawnWave call below, so the slots and
+         the draw count are from the same wave; two separate calls would roll two different body
+         counts, because the plan rolls its count rather than taking one. */
+      const pts=[...spawnPlan(2,fromDir)];
+      const candDraws=Rnd.calls.run-before;
+
+      /* `spawnWave(room, fromDir)` IS THE WHOLE PLAN, and using it here instead of spawnPlan was the
+         fix for a flat 640 - but it brought a second error with it, and the two cancelled into
+         something that looked almost right.
+
+         spawnWave ROLLS ITS OWN BODY COUNT off the depth ladder and then calls spawnPlan. So calling
+         it for a page row that asked spawnPlan for `count` bodies compares two different waves: the
+         C# table plans `count` slots, the page was measuring whatever spawnWave decided to roll.
+         Measured, seed 1 floor 1: spawnPlan(6) returns 6 slots, spawnWave adds 12 bodies. Every
+         comparable row came out exactly +5 draws high - a constant, which is what a SIZE mismatch
+         looks like and what randomness never looks like.
+
+         So the column this page can honestly report is the candidate count, which is exact and
+         reproducible, and the whole-plan count is printed SEPARATELY and LABELLED as the size
+         spawnWave chose rather than the size asked for. Emitting the wrong number under the right
+         heading would have been the same defect as before with a smaller gap - and a +5 error is
+         exactly the kind that survives a spot check.
+
+         `spawnWave` took two attempts to find; the first guess was `planWave`, which does not exist
+         in this build, and the guard around it is what turned that into a labelled row rather than a
+         second confident wrong number. */
+      let waveDraws=null, waveBodies=null;
+      startGame(seed);
+      syncRoomBounds();
+      run.floor=floor;
+      const beforeWave=Rnd.calls.run;
+      if(typeof spawnWave==='function'){
+        const room=currentRoom(), nBefore=room.enemies.length;
+        spawnWave(room,fromDir);
+        waveDraws=Rnd.calls.run-beforeWave;
+        waveBodies=room.enemies.length-nBefore;
+        /* the geometry comes from the room spawnWave just filled, so the slots and the draw count are
+           from the SAME wave. Reading it from a separate spawnPlan call gave slots for a different
+           wave - the plan rolls its body count, so two calls roll two counts. */
+        const planned=room.spawnPlan||[];
+        pts.length=0;
+        for(const q of planned) pts.push(q);
+      }
+      /* `draws` is the column the C# table pins, and it is the WHOLE plan - the count roll, the 640
+         candidate draws, heavy, pack, per-body type and the pack victim pick. `candDraws` is printed
+         beside it because it is exactly 640 on every row and that is worth being able to see: the
+         candidate loop is 320 iterations of two draws, so it cannot depend on the seed, and a row where
+         it is not 640 means the loop changed and every geometry column here is stale.
+
+         `bodies` is emitted too because the plan's OUTPUT SIZE is rolled, not asked for - the C#
+         column named `count` is what came out, not what went in, and the C# `PlanWave` takes a floor
+         for the same reason. A row that printed a requested count would invite someone to compare it
+         against a rolled one. */
+      say('//   seed '+seed+' floor '+floor+' from '+fromDir+
+          '  draws '+(waveDraws===null?'?':waveDraws)+
+          '  candDraws '+candDraws+
+          '  bodies '+(waveBodies===null?'?':waveBodies)+
+          '  -> '+
           pts.map(p=>Math.round(p.x)+','+Math.round(p.y)+'@'+Math.round(p.d)).join(' '));
     }
-  }
   say('');
 
   /* --- 4. the area table, which is pure and consumes no seeds --- */
