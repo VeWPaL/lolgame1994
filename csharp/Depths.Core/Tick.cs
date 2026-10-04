@@ -32,8 +32,10 @@ namespace Depths
     ///  * the trans / ready / fade early returns, with the fade bookkeeping placed above them for
     ///    the same reason it is in the original: presentation that must keep running through
     ///    states where the simulation has stopped lives above the returns,
-    ///  * the order gate itself - projectiles, then bodies, then the player, then the room -
-    ///    recorded in <see cref="RunState.phaseLog"/> until the passes carry real state.
+    ///  * the order gate itself - the PLAYER first, then projectiles, then bodies, then the room -
+    ///    recorded in <see cref="RunState.phaseLog"/> until the passes carry real state. The order was
+    ///    wrong here (it said projectiles first) until the game's was measured from a live tick; see
+    ///    the comment on the gate below, because the player-first order is load-bearing twice over.
     ///
     /// <para>
     /// RNG discipline is the same split the original's suite insists on: the boss move pick is a
@@ -190,13 +192,39 @@ namespace Depths
             }
             if (run.readyT > 0) { run.readyT--; return; }
 
-            // THE ORDER GATE. Projectiles resolve, then bodies, then the player, then the room.
-            // Each pass is a stub that records it ran; an appended name is the observable the
-            // mutation test leans on until the passes carry real state.
+            /* THE ORDER GATE, AND THE ORDER WAS WRONG.
+
+               This logged projectiles, bodies, player, room. The game runs PLAYER, projectiles, bodies,
+               room - measured, not read, by putting a probe inside `update()` on each pass and
+               recording the sequence from one live tick:
+
+                   player -> projectiles -> bodies -> room
+
+               The player integration is at src/60-tick.js:432-517 and the projectile loop does not
+               begin until 594. So the player is integrated, walks, can open a door, and only THEN are
+               shells advanced and bodies stepped.
+
+               WHY IT MATTERS, and it is not cosmetic ordering. Two of the four passes read state the
+               player pass writes on the same tick:
+
+                 - `checkDoorTransition` inside the player pass can set `trans`, and src/60-tick.js:517
+                   is `if(trans) return;` - a WHOLE-TICK abort. On a tick where the player walks through
+                   a door, projectiles and bodies do not run at all. Run the projectile pass first and
+                   that shell advances on a tick it must not, in the tick the player leaves the room.
+
+                 - The gunner's aim is solved against the player's position, and the swerve meter is
+                   computed from the player's TARGET velocity BEFORE integration (the comment at
+                   src/60-tick.js:466 says so). A gunner that steps before the player has moved leads
+                   the position the player is about to be at, not the one they were at.
+
+               So this was not a stale label on a stub. When the passes carry real state, this order
+               would make the port play a different fight from the game in every room containing a
+               shell and a body. Each pass is still a stub that records it ran; what changed is the
+               order they are recorded in, which is the thing the passes will have to honour. */
             run.phaseLog.Clear();
+            run.phaseLog.Add("player");
             run.phaseLog.Add("projectiles");
             run.phaseLog.Add("bodies");
-            run.phaseLog.Add("player");
             run.phaseLog.Add("room");
         }
     }

@@ -95,6 +95,29 @@ At `update()` in `60-tick.js` — 868 of its 1123 lines, and the tick order is a
 it is not tangled with rendering. Slice it in tick order (projectiles → bodies → player → room) with
 a parity test per slice.
 
+### The pass ORDER, measured — and it was wrong here before it was right in the manifest
+
+**The game runs `player → projectiles → bodies → room`.** The port pinned
+`projectiles → bodies → player → room`, in the code, in the class doc, and in the *name of its own
+test* — `TheTickOrderIsProjectilesThenBodiesThenPlayerThenRoom`.
+
+Measured by putting a probe inside `update()` on each pass and reading the recorded sequence out of
+one live tick. The reason reading the source does not settle it: `update()` is a single function with
+the loops inline, so scanning for the loops in order finds the projectile loop at 594 and the bodies
+loops after it, and the player integration is at **432–517** — *above* all of them. "Projectiles then
+bodies" is only true from line 594 onward.
+
+It is load-bearing twice, so this was not a stale label on a stub:
+
+- The player pass calls `checkDoorTransition`, which can set `trans`, and `src/60-tick.js:517` is
+  `if(trans) return;` — a **whole-tick abort**. On a tick where the player walks through a door,
+  projectiles and bodies must not run at all. Resolve projectiles first and that shell advances on a
+  tick it must not, on the tick the player leaves the room.
+- A gunner steps *after* the player has moved, so its aim is solved against where the player **is**,
+  not where they were. The swerve meter is computed from the player's *target* velocity before
+  integration (comment at `src/60-tick.js:466`), so a body stepped first leads a position the player
+  has not reached.
+
 ### The slice boundaries, measured rather than estimated
 
 `update()` is one function from line 346 to end of file, and its four passes are inline inside it. The

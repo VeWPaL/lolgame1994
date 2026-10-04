@@ -118,14 +118,32 @@ namespace Depths.Tests
         // ------------------------------------------------- the order gate
 
         [Test]
-        public void TheTickOrderIsProjectilesThenBodiesThenPlayerThenRoom()
+        public void TheTickOrderIsPlayerThenProjectilesThenBodiesThenRoom()
         {
             // Several bugs in update() were ORDER bugs - a hit landing after the body it hit had
             // already moved. Until the passes carry real state, the recorded sequence is the pin;
             // a swap of two of them must fail this, not change a number nobody reads.
+            //
+            // AND THIS ORDER WAS MEASURED, because it was wrong here first. The test asserted
+            // projectiles, bodies, player, room and named itself after that. The game runs PLAYER
+            // FIRST: the integration is at src/60-tick.js:432-517 and the projectile loop does not
+            // begin until 594. Found by putting a probe inside update() on each pass and reading the
+            // sequence out of one live tick.
+            //
+            // Reading the source does not settle it, because the four passes are not four named blocks
+            // - `update()` is one function with the loops inline, so "projectiles then bodies" looks
+            // true to anyone scanning for the loops in order and is only true from line 594 onward.
+            // The player pass is above them all.
+            //
+            // It is load-bearing twice over, which is why a wrong order here is not a cosmetic label:
+            //   - the player pass can set `trans` and src/60-tick.js:517 is `if(trans) return;`, a
+            //     WHOLE-TICK abort, so on a tick the player walks through a door the other three passes
+            //     must not run at all;
+            //   - a gunner steps after the player has moved, so its aim is solved against where the
+            //     player IS rather than where they were.
             var run = PlayingRun();
             TickOrder.Update(run, Input.None);
-            Assert.That(run.phaseLog, Is.EqualTo(new[] { "projectiles", "bodies", "player", "room" }));
+            Assert.That(run.phaseLog, Is.EqualTo(new[] { "player", "projectiles", "bodies", "room" }));
         }
 
         [Test]
