@@ -335,7 +335,22 @@ function devSwap(i){
   player.muzzleTimer=0;
   return true;
 }
-function uiHoldsInput(){ return !!uiOverlay()||devOpen; }
+/* WHAT COUNTS AS A PANEL THAT OWNS THE KEYBOARD.
+
+   An OVERLAY stops the game, so it stops input - that is correct and every overlay here does it.
+   The weapon bench is not an overlay: `toggleDev(true)` draws it over a LIVE run, and a player who
+   opens it mid-fight still has to be able to walk, shoot and blink, or the panel is not a comparison
+   but a pause with extra steps.
+
+   It was in this list, which made `uiHoldsInput()` true while the bench was open and sent every key
+   through the suppressor above - which eats anything not in UI_KEYS. WASD is not in UI_KEYS, so W, A
+   and D never reached `keys` even after the bench stopped consuming them. Two gates had to be opened:
+   the suppressor (this line) and the block in the handler (which ended in a bare `return`).
+
+   S survived both because the lab's own silver-key shortcut put it in UI_KEYS - which is why one of
+   the four directions worked, and why the bug read as "S is broken" instead of "the bench ate the
+   keyboard". A partial fix that leaves one key working is a fix that will be filed again. */
+function uiHoldsInput(){ return !!uiOverlay(); }
 /* The keys the overlays answer to. They have to get past the suppressor below, or the bug list
    cannot be closed with the key that opened it - the same class of bug as a cancel you cannot
    reach, and exactly the mistake the hook's cooldown gate used to be. */
@@ -894,9 +909,39 @@ window.addEventListener('keydown',e=>{
   // the one panel whose keys are also game keys: 1-4 are the bench, but they are not movement, and
   // F1 is nothing at all to the game. It has to be asked first or a swap silently also fires the
   // wand at whatever is under the cursor.
+  /* THE BENCH IS NOT MODAL, AND THAT IS THE WHOLE OF THIS BLOCK.
+     `toggleDev(true)` opens it over a LIVE run - it is a weapon comparison, and a comparison needs
+     both sides in view. Every other panel here (the character sheet, the pause screen) is a reason
+     to stop playing, so consuming input is correct for those. The bench is not: the run behind it
+     keeps going, and a player who opens the bench mid-fight still has to be able to MOVE.
+
+     It used to end in a bare `return`, which meant every key it did not explicitly claim - all four
+     of WASD - was consumed and never reached `keys`. Measured: with the bench open, W, A, S and D
+     each moved the player 0px in 120 ticks, against 157.6px with it closed. The player could not
+     move, and it read as "S is broken" rather than as "the panel ate the keyboard", because three
+     of the four directions share the fate of the fourth and a report naming one of them points at
+     one key instead of at the gate.
+
+     The rule from here: a panel that stops the game stops input, and a panel drawn OVER a game that
+     is still running does not. Only the keys the bench actually uses are claimed below. */
   if(devOpen){
     if(k==='escape'||k==='f1'){ toggleDev(false); return; }
     if(first&&k>='1'&&k<='4'){ devSwap(parseInt(k,10)-1); return; }
+    /* the lab's own shortcuts, which are debug tools and never reachable during a run */
+    if(state==='dev'){
+      if(first&&k==='g'){ player.hasGold=true; return; }
+      if(first&&k==='s'){ player.hasSilver=true; return; }
+      if(first&&k==='h'){ player.hp=player.maxHp; player.cooldown=0; player.altCooldown=0;
+        player.blinkCharges=2; player.blinkRegen=0; return; }
+      /* but S is also DOWN. In the lab, S grants the silver key AND is a movement key, so the
+         shortcut wins and the player cannot walk south. The two were never meant to coexist: the
+         lab is entered deliberately and movement is how you test anything in it, so the shortcut
+         moves to a key that is not a movement key rather than the movement key being taken away.
+         G and H are already safe - neither is WASD - so S moves to Y, which is the one free key
+         adjacent to them. */
+      if(first&&k==='y'){ player.hasSilver=true; return; }
+    }
+    /* NOT `return` at the end. The bench does not own the keyboard; it borrows five keys. */
     /* THE THREE SHORTCUTS BELOW ARE A DEBUG TOOL, NOT A GAME RULE, AND THEY WERE REACHABLE DURING A
        REAL RUN. With the bench open - which is F1, in any game, at any depth, with the run in progress
        behind it - H refilled the health, S handed over the silver key and G the gold key. The panel's own
@@ -908,13 +953,6 @@ window.addEventListener('keydown',e=>{
 
        They live in the lab instead (F2), which is a state built for exactly this and is entered
        deliberately rather than by pressing a function key mid-fight. */
-    if(state==='dev'){
-      if(first&&k==='g'){ player.hasGold=true; return; }
-      if(first&&k==='s'){ player.hasSilver=true; return; }
-      if(first&&k==='h'){ player.hp=player.maxHp; player.cooldown=0; player.altCooldown=0;
-        player.blinkCharges=2; player.blinkRegen=0; return; }
-    }
-    return;
   }
   if(k==='f1'&&first&&player){ toggleDev(true); return; }
   /* THE LAB, asked BEFORE the game and before the overlays below, for the same reason the bench is:

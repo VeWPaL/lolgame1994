@@ -1972,13 +1972,16 @@ function drawDevMenu(){
   if(state==='dev'){
     x=cap('G',x,player.hasGold);ctx.fillStyle=player.hasGold?'#ffd23d':INK_SOFT;
     ctx.fillText(player.hasGold?'gold key held':'give gold key',x,fy+17);x+=130;
-    x=cap('S',x,player.hasSilver);ctx.fillStyle=player.hasSilver?'#d8dee9':INK_SOFT;
+    /* Y, NOT S. The silver key was on S, and S is DOWN - so in the lab the shortcut won and the
+       player could not walk south, which is the bug this footer used to advertise as a feature. G
+       and H are safe because neither is a movement key; S never was. */
+    x=cap('Y',x,player.hasSilver);ctx.fillStyle=player.hasSilver?'#d8dee9':INK_SOFT;
     ctx.fillText(player.hasSilver?'silver key held':'give silver key',x,fy+17);x+=140;
     x=cap('H',x,false);ctx.fillStyle=INK_SOFT;
     ctx.fillText('refill heart and cooldowns',x,fy+17);
   } else {
     ctx.fillStyle=INK_SOFT;
-    ctx.fillText('1-4 swap wand  ·  ESC or F1 close  ·  F2 for the lab, where keys and hearts are free',x,fy+17);
+    ctx.fillText('1-4 swap wand  ·  ESC or F1 close  ·  WASD still moves, the run is live  ·  F2 for the lab',x,fy+17);
   }
 
   ctx.textAlign='right';ctx.fillStyle=INK_SOFT;ctx.font='10px monospace';

@@ -4746,6 +4746,84 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
            wall oscillate as bodies shuffle;
          - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  test('every panel that is drawn OVER a live run still lets the player walk',()=>{
+    /* THE BENCH IS NOT A PAUSE, AND IT WAS EATING THE WHOLE KEYBOARD.
+
+       Two INDEPENDENT gates had to be opened, and fixing one left the bug looking smaller rather
+       than smaller-and-fixed - which is how it survived: after the handler stopped consuming
+       unclaimed keys, W, A and D were STILL dead while S worked.
+
+       1. The handler's `if(devOpen)` block ended in a bare `return`, so every key it did not
+          explicitly claim never reached `keys[k]=true` at 80-ui.js:987.
+       2. `uiHoldsInput()` returned `!!uiOverlay()||devOpen`, so the suppressor on 80-ui.js:891 sent
+          every key through `uiAllows()`, and WASD is not in UI_KEYS.
+
+       S worked after gate 1 because the lab's silver-key shortcut had put 's' in UI_KEYS - so one
+       of the four directions got through and the report said "S is broken" rather than "the bench
+       ate the keyboard". A fix that leaves one key alive is a fix that gets filed again.
+
+       Measured before, on the bench: W/A/S/D each moved the player 0px in 120 ticks, against 157.6
+       px with no panel open. The assertion below is that every direction moves the same amount with
+       the bench and the lab open as with neither - not merely that it moves, because a panel that
+       halved your speed would pass the weaker version. */
+    const walk=(label,setup)=>{
+      const out={};
+      for(const [key,dx,dy] of [['w',0,-1],['a',-1,0],['s',0,1],['d',1,0]]){
+        startGame();
+        const r=goTo('normal');
+        r.enemies.length=0; r.pickups.length=0; projectiles.length=0; readyT=0; fadeT=0;
+        player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
+        player.hp=player.maxHp; player.hasSilver=false; player.hasGold=false;
+        setup&&setup();
+        for(const k of Object.keys(keys)) delete keys[k];
+        // a real keydown through the real listener, because the bug is in the input layer and a
+        // test that assigns `keys` directly would pass while the game stayed broken
+        window.dispatchEvent(new KeyboardEvent('keydown',{key:key,bubbles:true}));
+        const reached=!!keys[key];
+        for(let t=0;t<120;t++){ player.hp=player.maxHp; update(); }
+        keys={};
+        window.dispatchEvent(new KeyboardEvent('keyup',{key:key,bubbles:true}));
+        out[key]={reached, moved:+Math.hypot(player.x-MIDX,player.y-MIDY).toFixed(1),
+          dx:+((player.x-MIDX)*dx).toFixed(1), dy:+((player.y-MIDY)*dy).toFixed(1)};
+      }
+      return {label, out};
+    };
+    const none=walk('none',null);
+    const bench=walk('bench (F1)',()=>toggleDev(true));
+    toggleDev(false);
+    const lab=walk('lab (F2)',()=>{ if(state!=='dev') state='dev'; });
+    for(const set of [bench,lab]){
+      for(const key of ['w','a','s','d']){
+        const got=set.out[key], base=none.out[key];
+        ok(got.reached,'with the '+set.label+' open, '+key.toUpperCase()+' never reached the '
+          +'movement keys at all, so a panel drawn over a live run has taken the keyboard');
+        ok(Math.abs(got.moved-base.moved)<=2,'with the '+set.label+' open, '+key.toUpperCase()
+          +' moved the player '+got.moved+'px against '+base.moved+'px with no panel - a panel '
+          +'that halves or stalls your movement is the same bug wearing a different hat');
+        ok(got.dx>0||got.dy>0,'with the '+set.label+' open, '+key.toUpperCase()
+          +' did not move the player in its own direction (dx '+got.dx+', dy '+got.dy+')');
+      }
+    }
+    /* And the lab's own shortcuts still work, on keys that are not movement keys - which is the
+       whole reason S moved to Y rather than the movement key being taken away. */
+    /* The lab shortcuts are gated on BOTH the bench being open and `state==='dev'` - the block is
+       `if(devOpen){ ... if(state==='dev'){ ... } }` (80-ui.js). Setting `state` alone leaves the
+       outer gate shut, so the shortcuts cannot fire and the test reports them broken, which is the
+       fixture being wrong rather than the code. `toggleDev(true)` opens the bench. */
+    startGame(); const rr=goTo('normal');
+    rr.enemies.length=0; readyT=0; fadeT=0;
+    const wasState=state;
+    state='dev'; toggleDev(true);
+    player.hasSilver=false; player.hasGold=false;
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'y',bubbles:true}));
+    const gotY=player.hasSilver;
+    window.dispatchEvent(new KeyboardEvent('keydown',{key:'g',bubbles:true}));
+    const gotG=player.hasGold;
+    toggleDev(false); state=wasState;
+    ok(gotY&&gotG,'the lab shortcuts are broken by the movement fix: Y granted silver='+gotY
+      +', G granted gold='+gotG+' - the shortcut has to move to a free key, not take a movement one');
+  });
+
   test('a blink puff never lands outside the room, from any wall, at any distance',()=>{
     /* THE PLAYER IS ALLOWED 40px PAST A WALL LINE AND THE PUFF IS NOT.
 
