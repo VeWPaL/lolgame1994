@@ -117,6 +117,25 @@ namespace Depths.Tests
 
         // ------------------------------------------------- the order gate
 
+        /// <summary>
+        /// The pass order, and WHY IT IS THIS ORDER - re-measured from the running game on
+        /// 2026-10-04 rather than taken from the comment that states it.
+        /// <para>
+        /// The order is player, projectiles, bodies, room. The reason it matters is not tidiness:
+        /// on a tick where the player walks through a door, <c>trans</c> is set inside the player
+        /// pass and the tick returns immediately - so the projectile and body passes do not run at
+        /// all on that tick. Measured, in the live game, with a body and a projectile placed in the
+        /// room and the transition forced exactly as a player opening a door would set it:
+        /// <para>
+        ///     body moved       0.00
+        ///     projectile moved 0.00
+        /// <para>
+        /// So the shell a player would have dodged does not advance on the tick they leave through
+        /// the door, and a body does not step. Port the passes in any other order and that shell
+        /// moves on a tick it must not - which is a different fight from the game's in every room
+        /// containing both a shooter and a body.
+        /// </para>
+        /// </summary>
         [Test]
         public void TheTickOrderIsPlayerThenProjectilesThenBodiesThenRoom()
         {
