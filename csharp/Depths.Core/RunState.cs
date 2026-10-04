@@ -59,6 +59,30 @@ namespace Depths
         public int floorTicks;
         public int hits;
 
+        /// <summary>
+        /// Kills this run. Written by <c>killEnemy</c> and read by the clear condition, which is why
+        /// it lives on the run rather than on the room: a body that dies belongs to no room once it is
+        /// spliced out, and the tally has to outlive the splice.
+        /// </summary>
+        public int kills;
+
+        /// <summary>
+        /// The bodies in the room being fought, and the pickups on its floor. Both are needed by
+        /// <c>killEnemy</c> (which splices a body out and pushes a drop) and neither existed on the
+        /// port before it - <c>Room</c> carried geometry and doors but no occupants, because nothing
+        /// that has been ported so far creates anything.
+        ///
+        /// <para>
+        /// They are LISTS, not sets, and that is load-bearing rather than incidental: the projectile
+        /// pass walks bodies backwards so a concurrent splice cannot corrupt the iteration, and
+        /// <c>killEnemy</c> takes an INDEX. A dictionary keyed by identity would make the index
+        /// meaningless, and the tie-break the piercing hit order depends on is arrival order along the
+        /// flight line, not array order.
+        /// </para>
+        /// </summary>
+        public readonly List<Body> enemies = new List<Body>();
+        public readonly List<Pickup> pickups = new List<Pickup>();
+
         public string state;
 
         // transient, matching the JavaScript's module-level trans / readyT / roomFade / fadeT /

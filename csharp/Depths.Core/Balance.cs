@@ -201,6 +201,34 @@ namespace Depths
         public const double HitboxLagEase = 0.05;
 
         /// <summary>
+        /// How long a body stays noticed after something hits it. A DURATION, so it is a constant and
+        /// not a function of the room - the same reasoning <c>RoomW()</c> carries in the other
+        /// direction, and the reason these two are not in the same family of numbers.
+        ///
+        /// <para>
+        /// src/00-balance.js:214, <c>AGGRO_TIME=sec(2.5)</c>. Read by <c>alertEnemy</c>, which only
+        /// ever RAISES a body to this - it never lowers one, because a body that has seen you should
+        /// not lose interest because the next shell took longer to arrive.
+        /// </para>
+        /// </summary>
+        public static readonly int AggroTime = Sec(2.5);
+
+        /// <summary>
+        /// The slow a landed shell applies, in ticks, and what fraction of speed it leaves behind.
+        /// src/00-balance.js:657, <c>HIT_SLOW_MULT=0.62, HIT_SLOW_TICKS=sec(0.55)</c>.
+        ///
+        /// <para>
+        /// Both are here because <c>slowEnemy</c> is one line and needs both, and a one-line helper
+        /// with two constants is where a port ends up hard-coding 0.62 inline "just for now".
+        /// <c>HitSlowMult</c> has no reader yet: nothing that reduces speed is ported, so it is
+        /// declared rather than used, and PORTED.md's rule is that a constant in the port must be one
+        /// the game has - not that it must already have a caller here.
+        /// </para>
+        /// </summary>
+        public static readonly int HitSlowTicks = Sec(0.55);
+        public const double HitSlowMult = 0.62;
+
+        /// <summary>
         /// The blink was 140px on an 8s recharge, and together those two made it a teleport with a
         /// long wait rather than an escape with a cost: nothing about a 140px jump reads as
         /// movement, so the move is only ever "get me out of here", and an 8s wait means the correct

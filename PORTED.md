@@ -27,6 +27,7 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | `World.cs` | `20-world.js` — `Dir`, `RoomKind`, `Room`, `Map`, `Dungeon` | Signature must match byte for byte |
 | `SpawnPlan.cs` | `spawnPlan()` in `20-world.js` | Position, distance, and the **draw count** |
 | `Area.cs` | `areaForFloor()` in `00-balance.js` | Same thresholds. Takes a floor argument on both sides |
+| `Combat.cs` | `40-combat.js` + `50-run.js` — `falloffMult`, `alertEnemy`, `slowEnemy`, `killEnemy` | The projectile pass's leaf helpers. `killEnemy` drops nothing yet, asserted as partial |
 | `RunState.cs` / `Actors.cs` / `Tick.cs` | the run holder and the `update()` gates in `50-run.js`/`60-tick.js` | Tick order and RNG discipline. **`Tick.Update` is a skeleton** |
 
 ## Deliberately NOT ported
@@ -38,7 +39,7 @@ the view.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 
-`csharp/Depths.Tests` pins 54 `[TestCase]` rows of numbers **read out of the running JavaScript**.
+`csharp/Depths.Tests` pins 62 `[TestCase]` rows of numbers **read out of the running JavaScript**.
 
 Three of those rows are `RoomScaledParityTests`, and they are a different KIND of row from the rest.
 Every other table pins a constant or a function of a seed, so a drift is caught by comparing names.
@@ -137,6 +138,37 @@ port that no ported code touches, which is the shape PORTED.md exists to prevent
 one-to-six-line helpers (`falloffMult`, `alertEnemy`, `slowEnemy`, `killEnemy`), and leave the loop for
 the commit after. That is a self-contained slice, it keeps all 163 C# tests green, and it is verifiable:
 the widening can be pinned by a test that constructs a shell with every field and reads it back.
+
+### Slices 1 and 2, landed
+
+**Slice 1** widened `Projectile` to the 23 fields the pass reads and pinned it three ways. One mutation
+caught a claim in my own test: changing `pierce` from `int` to `double` left the suite green, because
+NUnit's `Is.EqualTo` treats 2 and 2.0 as equal — so a value assertion cannot pin a type, and the test
+now asserts on `FieldType`. See `ProjectileRecordTests`.
+
+**Slice 2** is `Combat.cs`: `falloffMult`, `alertEnemy`, `slowEnemy` and `killEnemy`, plus the
+`RunState` fields they need (`kills`, `enemies`, `pickups`) and three constants. What is left for slice 3
+is the 150-line loop itself plus `explode` (38) and `damagePlayer` (70).
+
+Three things in it are worth stating rather than leaving to the next reader:
+
+- **`killEnemy` drops nothing.** `dropLoot` is not ported and `Loot.Drop` always returns null. That is a
+  deliberately partial function, so it is asserted as one (`Kills.DropsLoot`) — a partial function is
+  the shape that gets mistaken for a complete one. When the loot table lands, the drop must draw from
+  `run.rng.run` in the same place the original does, because the spawn-plan draw counts are asserted and
+  a drop that spent a draw would move every one of them.
+- **`DropsLoot` is `static readonly`, not `const`.** As a `const` the compiler proved the drop branch
+  unreachable and refused to build (CS0162), which is a louder signal than a silent omission would have
+  been.
+- **`alertEnemy` only ever RAISES the aggro timer.** Mutation-checked both ways: turning the `Max` into an
+  assignment, and dropping `slowEnemy`'s `pursuit` reset, each turn exactly one test red. The second is
+  the one a transcription loses — a body that is slowed should restart its approach ramp, not resume at
+  the speed it had built.
+
+**Expected values are read out of the browser**, including the degenerate falloff bands: a zero-width band
+and a band whose far edge is *before* its near edge both land on the floor, 0.4. That is not obvious
+from reading `Math.max(1, fFar-fNear)` and is obvious from measuring it — a naive transcription would
+divide by zero or invert the ramp into a damage bonus for shooting from further away.
 
 ### Slice 1, landed: the `Projectile` record
 
