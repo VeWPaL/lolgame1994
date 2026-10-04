@@ -302,6 +302,52 @@ if (-not (Test-Path $manifest)) {
   } else {
     Note "   (PORTED.md states no parity-row count to check)"
   }
+
+  # 6c. THE PARITY AUDIT, and this is the check that earns the row count above its keep.
+  #
+  # The row count only proves the tables are the SIZE PORTED.md says. It cannot tell whether the
+  # numbers in them still agree with the game, because both sides could be equally wrong - which is
+  # exactly the state this repo sat in for a session: the port lagged the game by 130px of swerve
+  # ramp, both sides' tests were green, and the row count agreed throughout.
+  #
+  # tools/parity-audit.js reads the live `depths.html?parity` output and diffs all five tables against
+  # the C# test files. It REPORTS rather than regenerating, because a gate that writes its own
+  # expectations asserts nothing. Any difference is a FAILURE, and the reason a difference matters is
+  # that the documented workflow is "paste the page over the C# file" - so a difference means either
+  # the generator is wrong or the table is stale, and both have happened.
+  #
+  # It needs the same two things step 6 already needs: a static server on 8791 and Edge via Playwright.
+  # Skipped, loudly, when either is absent - a check that silently does not run is the one thing this
+  # file exists to prevent.
+  Note ""
+  Note "6c. the parity audit: the live page against the C# tables"
+  $auditScript = "$root\tools\parity-audit.js"
+  if (-not (Test-Path $auditScript)) {
+    Note "   tools/parity-audit.js is missing, so the tables were NOT compared against the game"
+  } elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    # step 6 calls `node` bare, so testing for a $node VARIABLE here would always be false and the
+    # audit would skip silently on every machine - which is the exact failure this file exists to
+    # prevent, introduced by the check for it.
+    Note "   node is unavailable, so the parity audit did NOT run and the tables are UNVERIFIED"
+  } else {
+    $auditOut = & node $auditScript 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+      Bad ("the parity audit could not run (exit $LASTEXITCODE): " +
+           ($auditOut -replace "`r?`n", " " ).Trim())
+    } elseif ($auditOut -match '(\d+) difference\(s\)') {
+      $diffCount = [int]$Matches[1]
+      if ($diffCount -ne 0) {
+        foreach ($line in ($auditOut -split "`r?`n")) {
+          if ($line -match '^\s{6}\S') { Note ("   " + $line.Trim()) }
+        }
+        Bad "$diffCount parity difference(s) between depths.html?parity and the C# tables. Either the generator is wrong or the table is stale - the documented workflow pastes the page over the C# file, so a difference here is either a broken paste waiting to happen or a table that has drifted from the game"
+      } else {
+        Note "   all five tables agree with the running game"
+      }
+    } else {
+      Bad "the parity audit printed no verdict; treat the tables as UNVERIFIED rather than as passing"
+    }
+  }
 }
 
 # ---------------------------------------------------------------- verdict

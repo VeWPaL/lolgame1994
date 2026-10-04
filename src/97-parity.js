@@ -280,7 +280,12 @@ if(new URLSearchParams(location.search).has('parity')) (function(){
 
   /* --- 4. the area table, which is pure and consumes no seeds --- */
   say('// ---- AreaTests ----');
-  for(const f of [1,4,5,8,9,12,13,14,20,100]){
+  /* The C# table's floors, for the same reason as every other list in this file: it pins 15, and this
+     page was sampling 20. Neither number is wrong - both are past the last Area3 boundary and both are
+     Final - but they are DIFFERENT rows, and a paste of the page would have replaced a real boundary
+     case with one that tests nothing new. 15 is the floor immediately after Area3 ends, which is the
+     interesting one; 100 tests the same branch with a bigger number. */
+  for(const f of [1,4,5,8,9,12,13,14,15,100]){
     const restore=atFloor(f);
     say('//   floor '+String(f).padStart(3)+'  '+areaForFloor()+
         '  mix '+JSON.stringify(AREA_MIX[areaForFloor()]));

@@ -57,6 +57,35 @@ unless a test was already red — which is exactly how the density column came t
 It asserts nothing on purpose: a page that regenerated its own expectations would be a test that
 checks itself.
 
+## The audit is automated now, because the workflow was wrong three times
+
+`node tools/parity-audit.js` reads the live `depths.html?parity` output and diffs all five tables
+against the C# test files. It **reports** and never writes the C# side — a gate that regenerates its own
+expectations asserts nothing. `verify.ps1` step **6c** runs it and fails on any difference.
+
+It exists because the workflow this file describes — *load the page, paste the rows over the C# file* —
+had been assumed correct for the life of the project and was wrong three times in one session:
+
+| the generator said | the truth | what a paste would have done |
+|---|---|---|
+| `Area1` for floors 5, 8, 9, 12 | `Area2`, `Area2`, `Area3`, `Area3` | **broken a correct port** |
+| a flat `640` draws on all 21 spawn rows | 644–653, varying by seed and floor | replaced 4 correct rows with 21 identical wrong ones |
+| 11 depth-ladder floors | the table pins 18 | silently deleted 7 rows of coverage |
+
+In every case **the game and the port were both right and the generator was wrong**, which is the worst
+of the three outcomes available: the page's whole purpose is to be pasted.
+
+The underlying rule, and the reason every list on that page is now the C# table's rather than the page's
+own idea of an interesting case:
+
+> **A generator that emits less than the truth is worse than no generator**, because its output is
+> designed to be pasted over something real, and a partial paste is indistinguishable from a whole one.
+
+The spawn-plan table also caught a genuine **port** bug while this was being built: `applyTrait` rolls a
+trait per ranged body inside `spawnEnemy`, and `WavePlanner.PlanWave` never rolled one, so every gunner
+cost the port two draws fewer than the game. The gap was a constant, which is what a missing step looks
+like and what divergent randomness never looks like.
+
 ## Where the port resumes
 
 At `update()` in `60-tick.js` — 868 of its 1123 lines, and the tick order is already pinned by

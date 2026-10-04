@@ -42,6 +42,14 @@ obj/
 # repo after CONVENTIONS.md and it was invisible to `git status` for its entire life.
 !PORTED.md
 
+# Maintenance scripts. Tracked, because the parity audit is the check that catches a generator
+# disagreeing with the tables it generates - a script nobody can see is a check nobody runs.
+# order matters under a blanket `*`: the DIRECTORY has to be un-ignored before the file inside it
+# is, or the file is still filtered on its own path. `!tools/` alone does nothing - measured.
+!tools/
+tools/*
+!tools/*.js
+
 # Scratch state for a session in progress. The start timestamp is written here at the beginning of
 # a working session so that a report can state how long it took WITHOUT relying on remembering to
 # note the time - an unattended session that ends in a power cut otherwise has no start time at all,
