@@ -4746,6 +4746,56 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
            wall oscillate as bodies shuffle;
          - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  test('a blink puff never lands outside the room, from any wall, at any distance',()=>{
+    /* THE PLAYER IS ALLOWED 40px PAST A WALL LINE AND THE PUFF IS NOT.
+
+       `clampPlayer` ends with a deliberately loose outer bound so a player can stand in a doorway
+       overshoot for the sake of transitions, which means a puff placed at the player's own clamped
+       position is drawn over the wall. That was measured - a blink into the left or bottom wall left
+       two puffs 40px outside the room - and it is fixed by clamping the TRAIL to the room box rather
+       than to the player's bounds (src/50-run.js:60-84).
+
+       Measured across all four walls at 15 starting distances each: 0 violations, 0px outside. This
+       asserts that, because the fix is a clamp on two numbers and a clamp is exactly the kind of
+       thing that gets tidied away by someone who did not know why it was not the player's bounds. */
+    startGame();
+    let violations=0, worst=0, checked=0;
+    const where=[];
+    for(const [wall,dx,dy] of [['left',-1,0],['right',1,0],['up',0,-1],['down',0,1]]){
+      for(let dist=20;dist<=300;dist+=20){
+        startGame(); const r=goTo('normal');
+        r.enemies.length=0; r.pickups.length=0; projectiles.length=0; readyT=0; fadeT=0;
+        dashFX.length=0;
+        player.x= dx<0?ROOM_LEFT+dist : dx>0?ROOM_RIGHT-dist : MIDX;
+        player.y= dy<0?ROOM_TOP+dist  : dy>0?ROOM_BOTTOM-dist : MIDY;
+        player.lagX=player.x; player.lagY=player.y;
+        player.hp=player.maxHp; player.blinkCharges=2; player.blinkRestore=null;
+        // doBlink takes no arguments - it reads getBlinkDir(), which reads the CURSOR, in SCREEN
+        // space. Aiming `mouse` in world coordinates is the same trap that made six fuzzers report
+        // clean runs, and it silently blinks in an unrelated direction.
+        updateCamera();
+        mouse.x=player.x-cam.x+dx*80; mouse.y=player.y-cam.y+dy*80;
+        mouseDown=false;
+        doBlink();
+        for(const f of dashFX){
+          if(!f.mine) continue;
+          checked++;
+          const ox=Math.max(ROOM_LEFT-f.x,f.x-ROOM_RIGHT,0), oy=Math.max(ROOM_TOP-f.y,f.y-ROOM_BOTTOM,0);
+          const outside=Math.max(ox,oy);
+          if(outside>worst) worst=outside;
+          if(outside>0.5){ violations++;
+            if(where.length<4) where.push(wall+' from '+dist+'px: puff at '
+              +Math.round(f.x)+','+Math.round(f.y)+' is '+outside.toFixed(1)+'px outside'); }
+        }
+      }
+    }
+    ok(checked>0,'no blink puffs were produced at all, so the clamp was never exercised and this '
+      +'assertion is measuring nothing ('+checked+' puffs over 60 blinks)');
+    ok(violations===0,violations+' of '+checked+' blink puffs landed outside the room, worst '
+      +worst.toFixed(1)+'px  ('+where.join('; ')+')  - the puff trail is being clamped to the '
+      +'player bounds rather than to the room box, so a blink into a wall draws over it');
+  });
+
   test('every ranged body telegraphs for CAST_TIME before its shell leaves',()=>{
     /* THE SAME TELL ON EVERY RANGED BODY, PINNED TO THE MEASURED NUMBER.
 
