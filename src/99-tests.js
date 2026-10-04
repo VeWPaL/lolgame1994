@@ -146,30 +146,72 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const clearRecords=()=>{for(const k of REC_KEYS){try{localStorage.removeItem(k);}catch(e){}} loadRecords();};
   const playerSpeedForTest=()=>0.935*PLAYER_MOVE;
 
-/* THE PLAYER'S TOP SPEED, MEASURED, AND THE TWO NUMBERS A CHASE HAS TO BE COMPARED AGAINST.
+/* THE PLAYER'S TOP SPEED, MEASURED AT RUN TIME - NOT WRITTEN DOWN.
 
-   `playerSpeedForTest()` above is 0.935*PLAYER_MOVE = 1.122, which is the player's BASE speed - it is
+   `playerSpeedForTest()` above is 0.935*PLAYER_MOVE = 1.122, which is the player's BASE speed. It is
    the right denominator for "can the player still move" and the wrong one for "can a pack catch them",
-   because the tick's actual top speed is `player.speed * (1 + moveSpeedBonus())`:
+   because the tick's real top speed is `player.speed * (1 + moveSpeedBonus())` and against a pack
+   the player is FASTER still, because the momentum meter fills from being chased and being shot at.
 
-       measured, holding one direction at steady state, in an empty room    1.4025
+   These were hard-coded numbers - 1.4025 and 1.6045 - and the first one was wrong: measured, the
+   empty-room top speed is 1.4041. It was 0.1% off, which is why nobody caught it, and it is wrong in
+   the direction that matters, because a bound written against it is 14% optimistic on top of the 43%
+   it is optimistic about by quoting 1.122. A number written in a comment cannot disagree with the
+   game; a number written in an array can, and this one did, for as long as it was there.
 
-   And against a pack specifically, the player is FASTER, because the momentum meter fills from being
-   chased and being shot at, and the meter is exactly what makes them faster:
+   So both are MEASURED here, by the same probe `tools/perf-baseline.js` uses, and the literals that
+   follow are checks on the measurement rather than substitutes for it. Every Brunch bound in this
+   file is a multiple of the chased figure - which is why 1.35 read as "1.20x the player, decisive"
+   while the pack could not close a gap at all, and why it had to be raised twice before it worked. */
+let _TOP_SPEED_CACHE=null;
+const measuredTopSpeed=(meterFull)=>{
+  if(_TOP_SPEED_CACHE){
+    return meterFull?_TOP_SPEED_CACHE.full:_TOP_SPEED_CACHE.empty;
+  }
+  _TOP_SPEED_CACHE={empty:probeTopSpeed(false), full:probeTopSpeed(true)};
+  return meterFull?_TOP_SPEED_CACHE.full:_TOP_SPEED_CACHE.empty;
+};
+const probeTopSpeed=(meterFull)=>{
+  startGame(7);
+  const rm=currentRoom(); rm.enemies.length=0; rm.pickups.length=0; projectiles.length=0;
+  readyT=0; fadeT=0;
+  /* IN A ROOM BIG ENOUGH FOR THE RUN. This probe holds one direction for three seconds and the
+     standard room is 700px wide, so at 1.6px/tick the player crosses it in 0.44s - hits the east
+     wall and stops, and then measures a wall, not a top speed. That is what made the numbers read
+     1.1734 and 0.2832: both are the player pressed against a wall with the velocity zeroed. The
+     same shape of error as the Brunch fixture that measured a wall-pinned pack. */
+  rm.bounds=roomBounds(60000,4000); rm.cx=rm.bounds.l+rm.bounds.w/2; rm.cy=rm.bounds.t+rm.bounds.h/2;
+  rm.doors={}; rm.spawned=true; rm.cleared=true;
+  syncRoomBounds();
+  player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.hp=player.maxHp;
+  for(const k of Object.keys(keys)) delete keys[k];
+  keys={d:1};
+  /* HOLD THE METER, WITH THE INSTRUMENT THAT EXISTS FOR IT.
+     `Momentum.hold(v)` (06-stats.js:270) pins the meter and is honoured by `Momentum.level()`,
+     which is the only reader. Writing `player.momentum` directly does nothing to the reading,
+     because the level comes from `Stats.value('momentum')` - so this probe measured an empty room
+     twice and reported 1.4025 for both.
 
-       measured, same test, with the meter full                                  1.6045
-
-   So a chase is against 1.6045. Quoting a Brunch speed as a multiple of 1.122 - which is what every
-   Brunch bound in this file used to do - overstates the pack by 43%. That is not a rounding quibble:
-   it is why 1.35 measured as 1.20x the player and read as "decisive" while the pack could not close a
-   gap at all, and why the number had to be raised twice before it worked.
-
-   Measured, not derived: a player holding one direction for three seconds, velocity sampled over the
-   last second, momentum topped up so the meter is full in the second case. */
-const EMPTY_ROOM_TOP_SPEED=1.4025, CHASED_PLAYER_SPEED=1.6045;
-ok(Math.abs(CHASED_PLAYER_SPEED-EMPTY_ROOM_TOP_SPEED-0.202)<0.02,
-  'the two top speeds are '+(CHASED_PLAYER_SPEED-EMPTY_ROOM_TOP_SPEED).toFixed(3)+
-  ' apart, which is not the momentum contribution - one of these two numbers has drifted');
+     Its own comment records this exact failure: "the measurement reported an identical number for
+     momentum 0 and momentum 1 without anybody noticing that both columns were the same column."
+     The instrument was built, documented, and then bypassed by the probe written after it. Hold is
+     released in a finally so a failing assertion cannot leave the meter pinned for the next test. */
+  Momentum.hold(meterFull?1:0);
+  try{
+    for(let t=0;t<210*3;t++) update();
+    let v=0;
+    for(let t=0;t<60;t++){ const x0=player.x; update(); v=player.x-x0; }
+    keys={};
+    return Math.abs(v);
+  } finally {
+    Momentum.release();
+  }
+};
+/* Measured LAZILY, on first use inside a test. Measuring at module scope calls startGame() while
+   the ?test harness is still being parsed, which left the suite hanging for its full 240s timeout
+   instead of failing - the most expensive possible way to report a wrong number. */
+const EMPTY_ROOM_TOP_SPEED=()=>measuredTopSpeed(false), CHASED_PLAYER_SPEED=()=>measuredTopSpeed(true);
+const TOP_SPEED_BAND=0.05;
 
   /* AIM AT A WORLD POINT. Every fixture in this file used to say `mouse.x=e.x; mouse.y=e.y`, which
      reads as obvious and is the reason a real bug survived 163 checks.
@@ -225,6 +267,29 @@ ok(Math.abs(CHASED_PLAYER_SPEED-EMPTY_ROOM_TOP_SPEED-0.202)<0.02,
       if(b) Stats.flat(k,-b);
     }
   };
+
+  test('the player top speeds a chase is measured against are measured, not written down',()=>{
+    /* These three live in a TEST and not at module scope on purpose. At module scope they ran
+       while this file was being parsed, before the ?test harness existed - so a mutation
+       anywhere near them hung the loader for the full 240s instead of failing an
+       assertion, which is the most expensive way there is to report a wrong number. */
+ok(Math.abs(EMPTY_ROOM_TOP_SPEED()-1.4041)<TOP_SPEED_BAND,
+  'the player empty-room top speed measures '+EMPTY_ROOM_TOP_SPEED().toFixed(4)+' against the '
+  +'1.4041 this block was written against - outside 0.05, so either the tick acceleration changed '
+  +'or this probe stopped reaching steady state, and both mean every Brunch bound below is being '
+  +'read against a denominator that no longer exists');
+ok(CHASED_PLAYER_SPEED()>EMPTY_ROOM_TOP_SPEED()+0.15,
+  'the chased-player speed '+CHASED_PLAYER_SPEED().toFixed(4)+' is not clearly above the empty-room '
+  +'speed '+EMPTY_ROOM_TOP_SPEED().toFixed(4)+'. If the momentum meter stopped contributing then a '
+  +'pack chasing you no longer makes you faster, and every chase bound written against the gap '
+  +'between the two figures is measuring the wrong thing');
+ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED_BAND,
+  'the measured chased speed '+CHASED_PLAYER_SPEED().toFixed(4)+' does not equal player.speed times '
+  +'(1 plus moveSpeedBonus()) = '+(player.speed*(1+moveSpeedBonus())).toFixed(4)+'. The probe and '
+  +'the formula disagree, so one of them is wrong and a Brunch ratio built on it is optimistic or '
+  +'pessimistic by an unknown amount');
+  });
+
 
   test('the content registry is the single place content is enumerated',()=>{
     // The registry exists so that adding an enemy, a weapon or an item stops being a code change.
@@ -5085,7 +5150,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       const gap=Math.hypot(pack[0].x-player.x,pack[0].y-player.y);
       { const px0c=player.x, py0c=player.y-PLAYER_HIT_DY;
         for(const g of pack) closestApproach=Math.min(closestApproach,Math.hypot(g.x-px0c,g.y-py0c)); }
-      if(beatsChasedSec===null&&pack[0].curSpeed>CHASED_PLAYER_SPEED) beatsChasedSec=+(t/TICK_HZ).toFixed(2);
+      if(beatsChasedSec===null&&pack[0].curSpeed>CHASED_PLAYER_SPEED()) beatsChasedSec=+(t/TICK_HZ).toFixed(2);
       /* AFTER the update, and with the offset SUBTRACTED. Both halves were wrong the first time and
          they cancelled into "the pack never arrived" at a gap of 50px.
 
@@ -5205,10 +5270,10 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        Both figures are asserted below, because a ceiling written against the wrong denominator is the
        same error as a chase speed tuned against the wrong one - and that error is what made 1.35 look
        adequate for an entire session. */
-    ok(ENEMY.brunch.run<CHASED_PLAYER_SPEED*1.9,'brunch is so quick the player cannot kite them at all ('+
-       (ENEMY.brunch.run/CHASED_PLAYER_SPEED).toFixed(2)+'x a CHASED player)');
-    ok(CHASED_PLAYER_SPEED>playerSpeedForTest(),'the chased-player speed used by the Brunch bounds ('+
-       CHASED_PLAYER_SPEED+') is not above the empty-room speed ('+playerSpeedForTest()+'), so the '+
+    ok(ENEMY.brunch.run<CHASED_PLAYER_SPEED()*1.9,'brunch is so quick the player cannot kite them at all ('+
+       (ENEMY.brunch.run/CHASED_PLAYER_SPEED()).toFixed(2)+'x a CHASED player)');
+    ok(CHASED_PLAYER_SPEED()>playerSpeedForTest(),'the chased-player speed used by the Brunch bounds ('+
+       CHASED_PLAYER_SPEED()+') is not above the empty-room speed ('+playerSpeedForTest()+'), so the '+
        'denominator has been measured wrong and every Brunch ratio here is optimistic');
     // reaching you must cost them something real, and it must be survivable once
     ok(ENEMY.brunch.hp>=2,'a brunch dies on its first touch, so the mechanic is invisible');
@@ -5472,8 +5537,10 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     /* THE RAMP IS 1.5s, down from 2.2s, and the floor moves from 1.8s to 1.2s with it.
 
        The 2.2s was tuned against `PLAYER_MOVE`=1.2. The player a pack is actually chasing moves at
-       1.6045 once the meter is full - which it is, because the meter fills from being chased - and at
-       1.4025 even empty. At 2.2s the pack was ALREADY faster than a chased player by 0.74s, so the
+       the measured CHASED_PLAYER_SPEED() above once the meter is full - which it is, because the meter
+       fills from being chased - and at the measured EMPTY_ROOM_TOP_SPEED() even empty. Both are
+       measured at run time by that block rather than written down here, so this reasoning cannot rot.
+       At 2.2s the pack was ALREADY faster than a chased player by 0.74s, so the
        ramp was no longer buying an interval to choose ground in; it was dead time at a speed the
        player cannot act on. Measured: the pack passes the chased player's speed at 0.64s.
 
