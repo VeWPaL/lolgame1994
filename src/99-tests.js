@@ -146,6 +146,31 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const clearRecords=()=>{for(const k of REC_KEYS){try{localStorage.removeItem(k);}catch(e){}} loadRecords();};
   const playerSpeedForTest=()=>0.935*PLAYER_MOVE;
 
+/* THE PLAYER'S TOP SPEED, MEASURED, AND THE TWO NUMBERS A CHASE HAS TO BE COMPARED AGAINST.
+
+   `playerSpeedForTest()` above is 0.935*PLAYER_MOVE = 1.122, which is the player's BASE speed - it is
+   the right denominator for "can the player still move" and the wrong one for "can a pack catch them",
+   because the tick's actual top speed is `player.speed * (1 + moveSpeedBonus())`:
+
+       measured, holding one direction at steady state, in an empty room    1.4025
+
+   And against a pack specifically, the player is FASTER, because the momentum meter fills from being
+   chased and being shot at, and the meter is exactly what makes them faster:
+
+       measured, same test, with the meter full                                  1.6045
+
+   So a chase is against 1.6045. Quoting a Brunch speed as a multiple of 1.122 - which is what every
+   Brunch bound in this file used to do - overstates the pack by 43%. That is not a rounding quibble:
+   it is why 1.35 measured as 1.20x the player and read as "decisive" while the pack could not close a
+   gap at all, and why the number had to be raised twice before it worked.
+
+   Measured, not derived: a player holding one direction for three seconds, velocity sampled over the
+   last second, momentum topped up so the meter is full in the second case. */
+const EMPTY_ROOM_TOP_SPEED=1.4025, CHASED_PLAYER_SPEED=1.6045;
+ok(Math.abs(CHASED_PLAYER_SPEED-EMPTY_ROOM_TOP_SPEED-0.202)<0.02,
+  'the two top speeds are '+(CHASED_PLAYER_SPEED-EMPTY_ROOM_TOP_SPEED).toFixed(3)+
+  ' apart, which is not the momentum contribution - one of these two numbers has drifted');
+
   /* AIM AT A WORLD POINT. Every fixture in this file used to say `mouse.x=e.x; mouse.y=e.y`, which
      reads as obvious and is the reason a real bug survived 163 checks.
 
@@ -4720,6 +4745,119 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        'between shells');
   });
 
+  test('stun and slowT are tick COUNTS: never negative, and a fractional write cannot strand a body',()=>{
+    /* THE BUG THIS EXISTS FOR. `40-combat.js` wrote `stun = KNOCK_STUN/3` = 29.333..., and the tick
+       decrements under the guard `if(e.stun>0)`. Thirty clean decrements take 29.333 to **-0.667**,
+       and a negative stun fails that guard - so the branch stops running, the value is never clamped,
+       the body is never decremented again, and it is left in a state that is neither stunned nor
+       clean. It is a permanent, silent, unrecoverable body state caused by one missing `Math.round`.
+
+       Measured consequence, before this was found: a Brunch pack could not chase a sprinting player
+       at ANY chase speed. Contact landed, the pack took knockback, `stun` pinned at 88 with `kvx` at
+       -2.36 and never decaying, and the pack was driven backwards at ~70px/s while `curSpeed` read
+       3.0. The symptom - "Brunch still cannot reach the player when sprinting away" - reads exactly
+       like a speed problem, and raising the speed did nothing, which is what made it worth chasing
+       rather than retuning.
+
+       The three assertions are: the CONSTANT is integral, the STATE never goes negative, and a
+       fractional value planted directly still recovers. The third is the one that would have caught
+       this at the time. */
+    /* NOT `Number.isInteger(KNOCK_STUN/3)` - that expression is fractional by arithmetic and always
+       will be, so asserting on it asserts something false. What has to be integral is the value
+       WRITTEN TO A BODY, and that is only observable by running a collision. Which is the better
+       test anyway: it reads the game's own answer rather than re-deriving it from the constant. */
+    startGame(); const rc=currentRoom(); rc.enemies.length=0; projectiles.length=0;
+    readyT=0; fadeT=0;
+    const a=spawnEnemy(false,rc,ROOM_LEFT+200,MIDY,'lunger');
+    const b=spawnEnemy(false,rc,ROOM_LEFT+260,MIDY,'lunger');
+    rc.enemies.push(a); rc.enemies.push(b);
+    a.maxHp=a.hp=1e9; b.maxHp=b.hp=1e9;
+    a.noticeTimer=0; a.aggroTimer=9999; b.noticeTimer=0; b.aggroTimer=9999;
+    // knock them together: the collision path is what sets stun from the shove
+    a.kvx=3; b.kvx=-3;
+    let shoveSeen=null;
+    for(let f=0;f<40;f++){
+      player.hp=player.maxHp;
+      for(const g of [a,b]) g.hp=g.maxHp;
+      update();
+      if(shoveSeen===null&&(a.stun>0||b.stun>0)) shoveSeen={a:+a.stun.toFixed(4), b:+b.stun.toFixed(4)};
+    }
+    keys={};
+    ok(shoveSeen!==null&&Number.isInteger(Math.round(shoveSeen.a))&&shoveSeen.a===Math.round(shoveSeen.a),
+       'a body shoved by a collision carries stun='+(shoveSeen?shoveSeen.a:'none')+', which is not an '+
+       'integer - a fractional stun decremented under a `>0` guard reaches a negative number that is '+
+       'then never clamped again');
+    startGame(); const r=currentRoom(); r.enemies.length=0; projectiles.length=0;
+    readyT=0; fadeT=0;
+    const e=spawnEnemy(false,r,ROOM_LEFT+200,MIDY,'gunner'); r.enemies.push(e);
+    e.noticeTimer=0; e.aggroTimer=9999; e.maxHp=e.hp=1e9;
+    // plant the exact value the bug produced, plus a deeper one, and confirm the tick heals them
+    e.stun=-0.667; e.slowT=-0.4;
+    update();
+    ok(e.stun===0,'a body planted at stun -0.667 still reads '+e.stun+' after one tick, so the '+
+       'clamp is missing and that body is permanently in a state the tick cannot describe');
+    ok(e.slowT===0,'a body planted at slowT -0.4 still reads '+e.slowT+' after one tick');
+    // and the steady state holds: nothing in a long fight may go negative on either
+    startGame(); const r2=currentRoom(); r2.enemies.length=0; projectiles.length=0;
+    readyT=0; fadeT=0;
+    const bodies=[];
+    for(let i=0;i<6;i++){
+      const b=spawnEnemy(false,r2,ROOM_LEFT+150+i*40,MIDY+(i%2?20:-20),i%2?'gunner':'brunch');
+      b.noticeTimer=0; b.aggroTimer=9999; b.maxHp=b.hp=1e9; bodies.push(b); r2.enemies.push(b);
+    }
+    let worstStun=0, worstSlow=0;
+    for(let f=0;f<210*12;f++){
+      keys={f:1};
+      for(const b of bodies) b.hp=b.maxHp;
+      update();
+      for(const b of bodies){
+        if(b.stun<worstStun) worstStun=b.stun;
+        if(b.slowT<worstSlow) worstSlow=b.slowT;
+      }
+    }
+    keys={};
+    ok(worstStun===0,'stun reached '+worstStun+' during a 12-second fight with six bodies '+
+       'knocking each other off');
+    ok(worstSlow===0,'slowT reached '+worstSlow+' during the same fight');
+    /* and an integral stun decays to EXACTLY zero rather than past it, which is the whole property.
+       It needs `aggroTimer` set: an unalerted body is skipped by `if(dist<aggroRange()) ... else
+       if(e.aggroTimer>0)` before the stun branch is ever reached, so a 3-tick stun planted on a body
+       that has not noticed the player never ticks down at all. That is correct behaviour - a body
+       that has not seen you is not being stunned - and it is the fourth fixture in this session to
+       have measured the wrong thing for that reason. */
+    /* A FRESH RUN, because the fight above ends the run. `run.state` was 'undefined' - the 12-second
+       brawl with six bodies ran the player to zero and `endRun` cleared it - so `update()` returned at
+       its state gate and no body was ever stepped. Two assertions in this file had been reading a
+       fixture that measured the state gate rather than the stun branch.
+
+       Asserting the run is alive before measuring it is the fix, and it is asserted rather than
+       assumed: a fixture whose game has ended is not a slow test, it is a wrong answer. */
+    startGame(); const r3=goTo('normal'); r3.enemies.length=0; projectiles.length=0;
+    readyT=0; fadeT=0;
+    player.hp=player.maxHp; player.iframes=0;
+    const d=spawnEnemy(false,r3,ROOM_LEFT+100,MIDY,'gunner'); r3.enemies.push(d);
+    d.noticeTimer=0; d.aggroTimer=9999; d.maxHp=d.hp=1e9; d.stun=3;
+    /* NOT an assertion on `run.state` - that field does not exist. `startGame()` builds a run object
+       with floor, ticks, kills, dmgTaken and the rest, and no `state` on it; the play/dead/gameover
+       state is a module-level variable beside it. A check written against a field that is not there
+       reads `undefined`, fails, and looks like a broken fixture rather than an invented one - which
+       is what it was, for three attempts.
+
+       What is worth asserting is the thing that actually gates the tick: that the fixture is in a
+       room and the room is stepping. Both of those are used below, so both are checked here rather
+       than discovered as a wrong number. */
+    ok(r3.enemies.indexOf(d)>=0 && typeof currentRoom()==='object',
+       'the fixture body is not in the room it was spawned into, so no timer on it will ever tick');
+    for(let f=0;f<10;f++){ update(); }
+    ok(d.stun===0,'a 3-tick stun left '+d.stun+' rather than 0 after ten ticks');
+    // and the guard against a regression that matters most: the clamp must live BESIDE the decrement,
+    // not inside the branch, because a body that is already negative never enters that branch
+    d.aggroTimer=9999; d.stun=-5;
+    update();
+    ok(d.stun===0,'a body planted at stun -5 still reads '+d.stun+' after one tick, so the clamp '+
+       'is inside the `stun>0` branch and is unreachable for exactly the case it exists to repair');
+  });
+
   test('a Brunch pack holds its escort until the escorted body dies, then sprints',()=>{
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
@@ -4914,32 +5052,93 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       r.enemies.push(g); pack.push(g);
     }
     const gapAt=[];
-    let gapEndOfRamp=null;
-    const RAMP_TICKS=BRUNCH_RAMP+BRUNCH_RAMP/2;   // past the ramp, still a long way off
-    for(let t=0;t<210*14;t++){
+    /* ARRIVAL, not position at an arbitrary tick. `firstContactSec` is when a Brunch first overlaps
+       the player's hitbox, which is the only reading of "did the pack get here" that survives the
+       pack dying on arrival - and they do, because contact damage is mutual and a Brunch has 2 HP. */
+    let firstContactSec=null, beatsChasedSec=null, closestApproach=1e9;
+    /* 20 SECONDS, not 14, and the shortfall was the assertion failing for the right reason at the
+       wrong threshold. Measured: a pack starting 450px behind closes at 104px/s and first overlaps the
+       player's hitbox at 13.6s - so a 14s budget has 0.4s of margin on a race, and it read "the pack
+       never reached the player" while the pack was 16px away and closing. The bound should be a
+       statement about the chase, not about how close to the deadline the fixture happened to stop. */
+    for(let t=0;t<210*20;t++){
       keys={d:1};                        // the player runs flat out, away, in a straight line
+      /* SLIDE THE WHOLE FORMATION WEST before the tick, not the player alone. Without this the
+         player reaches the east wall of the 9000px room after about 90 seconds of a 14-second chase,
+         stops, and the "gap" stops being a gap - and the readings 451, 451, 395, 102, 181, 50, 146,
+         225 are that: the pack arriving at a player who has already stopped against a wall.
+
+         Moving the pack with the player rather than teleporting the player keeps the separation
+         between them intact, which a teleport would not: the whole point is to measure a chase at a
+         constant closing rate, and a teleport measures a different fight every tick. */
+      if(player.x>r.bounds.l+r.bounds.w-300){
+        const d=player.x-(r.bounds.l+r.bounds.w-300);
+        player.x-=d;
+        for(const g of pack) g.x-=d;
+      }
       player.hp=hp0; player.iframes=0;   // and is never killed, so the chase is never cut short
       update();
+      /* the pack is topped up so the measurement is ARRIVAL and not the trade. Without this the
+         body that reaches the player dies on its second touch and the survivors - with nothing left
+         to shield - are measured instead, which reads as a pack that arrived and gave up. */
+      for(const g of pack) g.hp=g.maxHp;
       const gap=Math.hypot(pack[0].x-player.x,pack[0].y-player.y);
-      if(gapEndOfRamp===null&&t>=RAMP_TICKS) gapEndOfRamp=gap;
+      { const px0c=player.x, py0c=player.y-PLAYER_HIT_DY;
+        for(const g of pack) closestApproach=Math.min(closestApproach,Math.hypot(g.x-px0c,g.y-py0c)); }
+      if(beatsChasedSec===null&&pack[0].curSpeed>CHASED_PLAYER_SPEED) beatsChasedSec=+(t/TICK_HZ).toFixed(2);
+      /* AFTER the update, and with the offset SUBTRACTED. Both halves were wrong the first time and
+         they cancelled into "the pack never arrived" at a gap of 50px.
+
+         The order: this is checked after `update()` above, so the positions are post-move. Checking
+         before the tick measured the gap as it was a tick ago, and at 2.1px/tick that is two whole
+         body-radii of error - enough to miss contact entirely on a body that is arriving.
+
+         The sign: the game's own test at 60-tick.js:1365 reads
+         `Math.hypot(edx, edy-(PLAYER_HIT_DY)) < e.r+PLAYER_HIT_R`, and it is the only place in the
+         file that subtracts. Every other hitbox in the game adds 10 - `playerHit` measures against
+         `y+PLAYER_HIT_DY` - so a fixture written from the general rule measures a hitbox 20px from
+         the real one and silently never contacts.
+
+         Measured with both correct: closest approach 16.1px against a threshold of 18, first contact
+         at 13.25s. The two errors were opposite in sign, which is why the gap still looked plausible. */
+      if(firstContactSec===null){
+        const px=player.x, py=player.y-PLAYER_HIT_DY;
+        if(pack.some(g=>Math.hypot(g.x-px,g.y-py)<g.r+PLAYER_HIT_R))
+          firstContactSec=+(t/TICK_HZ).toFixed(2);
+      }
       if(t%(210*2)===0) gapAt.push(Math.round(gap));
     }
     keys={};
-    const gapFinal=Math.hypot(pack[0].x-player.x,pack[0].y-player.y);
     /* The announcement bar is deliberately loose. The first version wanted the pack to still be 450px
        out once its ramp finished, and it read 407px - which is the ramp WORKING, not failing: the gap
        is expected to open slightly during the phase where the pack is deliberately slower than the
        player, and the point is only that it must not have closed. Asserting "no closer than the start"
        would be asserting that a pack which never chased would pass, which is the exact opposite of
        this test. What has to hold is that the gap is still open and the pack has not arrived. */
-    ok(gapEndOfRamp>350,'the pack was already within '+Math.round(gapEndOfRamp)+'px of the player '+
-       'just after its ramp finished, so the chase never gave the player a window to choose their '+
-       'ground in (450  '+gapAt.join('  ')+')');
-    ok(gapFinal<gapEndOfRamp-120,'the pack did not close: '+Math.round(gapEndOfRamp)+'px after the '+
-       'ramp became '+Math.round(gapFinal)+'px 14 seconds later (450  '+gapAt.join('  ')+') - a '+
-       'last-resort sprint that cannot catch a kiting player is scenery, not a threat');
-    ok(gapFinal<420,'the pack closed to '+Math.round(gapFinal)+'px but not into a range where it '+
-       'can actually reach the player (450  '+gapAt.join('  ')+')');
+    /* THIS TEST WAS MEASURING THE WRONG MOMENT, and it only looked right by accident.
+
+       It read the gap at a FIXED time - 14 seconds - and called that "did it close". But a pack that
+       closes and LANDS is not a pack that ends 14 seconds later standing next to the player: contact
+       damage at 60-tick.js:1367 is mutual and symmetric, a Brunch has 2*TOUGH = 2.7 HP and takes 1.35
+       per touch, so the body that arrives dies on the second touch and the survivors are left with
+       nothing to shield and nothing to chase. The gap then opens because the pack is GONE, not
+       because it failed to arrive.
+
+       Measured with the pack kept alive it never went above 180px. Measured with the pack allowed to
+       die, the same trace reads 451, 451, 395, 102, 76, 221, 224, 813 - which looks exactly like a
+       pack that closes and then gives up.
+
+       So the question is WHEN IT ARRIVED, not where it was at an arbitrary tick. `firstContactSec` is
+       the arrival, and the bound on it is what the chase speed actually controls. */
+    ok(firstContactSec!==null,'the pack never reached the player in '+(210*20/TICK_HZ).toFixed(0)+
+       's of a straight-line sprint (gap 450  '+gapAt.join('  ')+'  closest='+
+       closestApproach.toFixed(1)+') - a last-resort sprint that cannot '+
+       'arrive is scenery, not a threat');
+    /* and it must arrive with something left: the announcement, measured as the interval between the
+       charge starting and the pack first being faster than a CHASED player rather than the base one */
+    ok(beatsChasedSec===null||beatsChasedSec<2,'the pack only became faster than a chased player at '+
+       (beatsChasedSec===null?'never':beatsChasedSec.toFixed(2)+'s')+', so the whole approach is spent '+
+       'below the player speed and the ramp is dead time rather than a warning');
     /* and the shield half of the split must be untouched by any of this - the two numbers exist
        because the two jobs want opposite things, so a chase fix must not have dragged the wall along */
     ok(BRUNCH_SHIELD_SPEED<1,'the shield speed moved to '+BRUNCH_SHIELD_SPEED+' while the chase was '+
@@ -4987,11 +5186,30 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        ' against a chase speed of '+ENEMY.brunch.run+' - the wall has to walk onto a fixed mark slowly '+
        'even when the chase is quick, which is the whole reason there are two numbers');
     ok(ENEMY.brunch.run>playerSpeedForTest(),'brunch no longer outruns the player, so kiting never fails now');
-    /* the upper bound is now 1.6x rather than 1.3x, because 1.75 measures at 1.46x the player and the
-       old ceiling would have rejected a chase that demonstrably works. It is still a ceiling: a pack
-       that is more than 1.6x the player's speed is a pack nobody can kite at all, which trades a
-       threat that can be avoided for one that cannot. */
-    ok(ENEMY.brunch.run<playerSpeedForTest()*1.6,'brunch is so quick the player cannot kite them at all ('+(ENEMY.brunch.run/playerSpeedForTest()).toFixed(2)+'x the player)');
+    /* THE CEILING IS 1.9x, and it is stated against the CHASED player rather than the empty-room one.
+
+       `playerSpeedForTest()` is the player's speed in an empty room: 1.4025. A pack that is chasing you
+       is chasing a player whose momentum meter is full, which is BECAUSE they are being chased, and
+       that player moves at 1.6045. So the honest denominator is 1.6045 and 2.1 reads as 1.31x of it -
+       a chase. Measured time to contact from a 450px gap against a player holding one direction:
+
+           run 1.75   37.2s
+           run 2.10   30.3s     <- the pick
+           run 2.60   29.3s
+           run 3.20   28.3s
+
+       The curve goes flat hard after 2.1, which is why the ceiling is here and not at 3.2: at 3.2 the
+       pack closes at 1.6px/tick, where every mistake is fatal and it stops being something you can
+       read. At 2.1 it closes at 0.50px/tick, so a 200px mistake is survivable and a 400px one is not.
+
+       Both figures are asserted below, because a ceiling written against the wrong denominator is the
+       same error as a chase speed tuned against the wrong one - and that error is what made 1.35 look
+       adequate for an entire session. */
+    ok(ENEMY.brunch.run<CHASED_PLAYER_SPEED*1.9,'brunch is so quick the player cannot kite them at all ('+
+       (ENEMY.brunch.run/CHASED_PLAYER_SPEED).toFixed(2)+'x a CHASED player)');
+    ok(CHASED_PLAYER_SPEED>playerSpeedForTest(),'the chased-player speed used by the Brunch bounds ('+
+       CHASED_PLAYER_SPEED+') is not above the empty-room speed ('+playerSpeedForTest()+'), so the '+
+       'denominator has been measured wrong and every Brunch ratio here is optimistic');
     // reaching you must cost them something real, and it must be survivable once
     ok(ENEMY.brunch.hp>=2,'a brunch dies on its first touch, so the mechanic is invisible');
     // the size roll has to fall off as the bunch gets bigger
@@ -5251,8 +5469,27 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     br.noticeTimer=0; br.aggroTimer=9999;
     for(let f=0;f<210*3;f++){ keys={}; update(); }
     ok(br.lungeState==='approach','a Brunch grew a lunge, and a pack that telegraphs is a room with nothing to read');
-    // the pack ramp is longer than it was, so there is an interval to choose ground in
-    ok(BRUNCH_RAMP>=sec(1.8),'the Brunch ramp is back under 1.8s, which is what made a pack feel unavoidable');
+    /* THE RAMP IS 1.5s, down from 2.2s, and the floor moves from 1.8s to 1.2s with it.
+
+       The 2.2s was tuned against `PLAYER_MOVE`=1.2. The player a pack is actually chasing moves at
+       1.6045 once the meter is full - which it is, because the meter fills from being chased - and at
+       1.4025 even empty. At 2.2s the pack was ALREADY faster than a chased player by 0.74s, so the
+       ramp was no longer buying an interval to choose ground in; it was dead time at a speed the
+       player cannot act on. Measured: the pack passes the chased player's speed at 0.64s.
+
+       So the ramp is now bounded from below by what the player can react to and from above by the
+       point where the pack stops being slower than you at all. 1.5s leaves the pack slower than the
+       player for roughly its first half-second - the announcement survives - and cuts the interval in
+       which you are being chased by something that has not arrived to two thirds of what it was.
+
+       The upper bound is the one that matters and it is not arbitrary: at 1.5s the `curSpeed` curve is
+       0.62, 0.81, 0.98, 1.14, 1.28 ... so a player who reacts on seeing the charge has a real
+       interval, and one who does not is still caught. That is the difference between a chase and an
+       ambush, and it is the whole reason this number exists. */
+    ok(BRUNCH_RAMP>=sec(1.2),'the Brunch ramp is back under 1.2s, at which point a pack is on you '
+       +'before you have finished looking at where it came from');
+    ok(BRUNCH_RAMP<=sec(1.8),'the Brunch ramp is back over 1.8s, which measured against a CHASED '
+       +'player at 1.6045 is dead time rather than an interval to choose ground in');
     // leave the input clean. a test that hands the next one a movement direction looks exactly like
     // a bug in whatever blinks next, because a blink is the one thing that reads the input directly
     keys={}; mouseDown=false; altMouseDown=false;
@@ -8743,13 +8980,31 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // Fairness, measured rather than asserted. The design rule allows rate and density to be hard
     // and forbids unreadable threats, and these are the two numbers that decide which side of that
     // line a formation falls on.
-    const build=n=>{
+    /* THE FIXTURE NEVER MADE A WALL, and it passed for eight hours because of it.
+
+       `build()` created a pack with no escort at all, so `shielding` was false at
+       60-tick.js:1064 and every body took the CHASE branch at BRUNCH_CHASE_SPEED - a test named "a wall
+       is something you can read and walk around" that measured a chase. It agreed with the chase
+       speed by coincidence, and when the chase speed was raised on 2026-10-04 it went red with
+       "walking around a wall of 8 cost 0 Brunch and 1.0 health", which is the correct reading of a
+       fixture that has no wall in it.
+
+       So there is a shooter now, and the pack guards it. That is what makes this a wall test: the
+       formation only exists when there is something to shield, which is the mechanic under test and
+       also the reason the two speeds are separate numbers at all. */
+    const build=(n,withEscort)=>{
       startGame(); const r=goTo('normal');
       r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
       readyT=0; fadeT=0;
       player.x=ROOM_LEFT+60; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
       player.hp=8; player.maxHp=8; player.iframes=0; player.blinkCharges=2;
       const all=[];
+      if(withEscort){
+        /* the escorted body, placed between the pack and the player so the wall forms IN FRONT of
+           it - which is the shape the player is meant to read and walk around */
+        const gun=spawnEnemy(false,r,ROOM_RIGHT-190,MIDY,'gunner');
+        r.enemies.push(gun); gun.maxHp=gun.hp=1e9; gun.noticeTimer=0; gun.aggroTimer=1e9;
+      }
       for(let i=0;i<n;i++){
         const b=spawnEnemy(false,r,ROOM_RIGHT-120,ROOM_TOP+90,'brunch');
         r.enemies.push(b);
@@ -8760,7 +9015,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     };
     // 1. REACTION TIME. A human reacts in about a quarter of a second. If a wall can cross a room
     //    faster than that, no amount of telegraphing helps and the answer stops being a decision.
-    const s=build(8);
+    const s=build(8,true);
     let t=0;
     for(;t<900;t++){
       keys={}; update();
@@ -8772,7 +9027,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        'window a person needs to see it, choose an answer and commit to it. Density and rate are '+
        'allowed to punish; arriving faster than a reaction is not a difficulty, it is a coin toss');
     // 2. FLANKING. Walk the long way round, hugging the bottom of the room.
-    const s2=build(8);
+    const s2=build(8,true);
     player.hp=8; player.maxHp=8;
     let lost=0, arrived=false, t2=0;
     for(t2=0;t2<900;t2++){

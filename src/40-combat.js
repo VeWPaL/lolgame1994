@@ -329,13 +329,43 @@ function bounceEnemies(a,b){
   const tot=a.mass+b.mass,push=min-d;
   a.x-=nx*push*b.mass/tot; a.y-=ny*push*b.mass/tot;
   b.x+=nx*push*a.mass/tot; b.y+=ny*push*a.mass/tot;
+  /* STUN IS A TICK COUNT, and a FRACTIONAL one corrupts it permanently.
+
+   `KNOCK_STUN/3` is 29.333..., not 29. The tick decrements with `e.stun--` under the guard
+   `if(e.stun>0)`, so thirty clean decrements take 29.333 to -0.667 — and a negative stun is not > 0,
+   so the branch stops running, the value is never clamped back to zero, and the body is left in a
+   state that is neither stunned nor clean.
+
+   MEASURED, and the consequence was not cosmetic. A Brunch pack chasing a player who sprints in a
+   straight line:
+
+       sec 4    gap  -43px   stun -0.667   the pack is ON the player
+       sec 5    gap  -85px   stun  88      a collision re-set it, then it decays again
+       sec 8    gap -1145px  stun  88      knocked west, 2.35px/tick, forever
+
+   `curSpeed` was 3.0 and `vx` was 3.0 the whole time — the pack was at full sprint and still losing
+   100px a second, because the stun branch at 60-tick.js:907 does `e.stun--; ...; continue;` and skips
+   the entire body pass. A stunned body cannot walk onto its slot and cannot chase. So the pack closed
+   to contact, took the hit, and was then held and driven away, which is precisely the reported
+   symptom: a last-resort sprint that cannot land a single bomb rush.
+
+   The fix is `Math.round`, which is what "a third of 88 ticks" has to mean for a value that is
+   decremented one at a time. Flooring to 29 would be equally integral and one tick shorter; rounding
+   is the honest reading of "a third of".
+
+   The defensive half matters more than the arithmetic, though: `slowT` and `stun` are both decremented
+   under a `> 0` guard and both are written from non-integral sources elsewhere
+   (`40-combat.js:391` uses `mode.hold`, `443` uses `3*power`). So the tick clamps as well, and a stun
+   that arrives negative from any future source costs one tick of stun instead of the rest of the
+   fight. */
   if(Math.hypot(a.kvx,a.kvy)<KNOCK_TRADE&&Math.hypot(b.kvx,b.kvy)<KNOCK_TRADE) return;
   const rel=(a.kvx-b.kvx)*nx+(a.kvy-b.kvy)*ny;
   if(rel>0){
     const j=(1+KNOCK_BOUNCE)*rel/(1/a.mass+1/b.mass);
     a.kvx-=j*nx/a.mass; a.kvy-=j*ny/a.mass;
     b.kvx+=j*nx/b.mass; b.kvy+=j*ny/b.mass;
-    a.stun=Math.max(a.stun,KNOCK_STUN/3); b.stun=Math.max(b.stun,KNOCK_STUN/3);
+    const shove=Math.round(KNOCK_STUN/3);
+    a.stun=Math.max(a.stun,shove); b.stun=Math.max(b.stun,shove);
   }
 }
 /* `mode.pool` is not per-enemy damage: it is one budget shared out between everyone caught, so a

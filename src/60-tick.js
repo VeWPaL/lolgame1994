@@ -902,7 +902,30 @@ function update(){
       if(Math.abs(e.kvx)<KNOCK_CUT)e.kvx=0;
       if(Math.abs(e.kvy)<KNOCK_CUT)e.kvy=0;
     }
+    /* `stun` AND `slowT` ARE TICK COUNTS, SO THEY ARE CLAMPED BESIDE THEIR DECREMENT - not inside
+       the branch that decrements them.
+
+       The first attempt put the clamp at the bottom of `if(e.stun>0){ ... e.stun--; ... }`, which is
+       where the decrement is, and it does not work: a body that is ALREADY negative never enters the
+       branch, so the clamp is unreachable for exactly the case it exists to repair. The suite caught
+       it by planting `stun = -0.667` - the precise value the old fractional bug produced - and
+       watching it survive a whole tick untouched.
+
+       The value that made this worth fixing: `40-combat.js` wrote `stun = KNOCK_STUN/3` = 29.333..., so
+       thirty decrements landed exactly on -0.667, and from there the guard `stun>0` is false for ever.
+       The body is neither stunned nor clean, cannot walk onto its slot, cannot chase, and nothing in
+       the game can put it back. Measured consequence: a Brunch pack could not reach a player
+       sprinting in a straight line at ANY chase speed - contact landed, the pack took knockback, and
+       the pack was then driven away while `curSpeed` read 3.0.
+
+       So both are clamped HERE, where every value passes, and `Math.max(0, ...)` costs one tick of a
+       timer and makes the state space honest: a timer is a positive number of ticks remaining, or
+       zero, and never anything else. `slowT` matters for the same reason and one more: `sm` reads
+       `e.slowT>0?HIT_SLOW_MULT:1`, so a negative `slowT` reads as NOT slowed - the body would be
+       neither slowed nor clean, which is a state the rest of the tick cannot express. */
     if(e.slowT>0)e.slowT--;
+    if(e.slowT<0)e.slowT=0;
+    if(e.stun<0)e.stun=0;
     const sm=e.slowT>0?HIT_SLOW_MULT:1;
     if(e.stun>0){
       // A stunned lunger is not a lunger mid-lunge, it is a lunger with its feet stuck. Letting the
@@ -919,7 +942,8 @@ function update(){
       // A cast that has already finished still fires, or the tell the player was reading would be a
       // lie told by the game to the player. See fireCommittedShot.
       if(e.walkSpeed===undefined&&e.type!=='boss') fireCommittedShot(e,roomPress);
-      e.stun--;e.anim=0;clampEnemy(e);continue;
+      e.stun--;
+      e.anim=0;clampEnemy(e);continue;
     }
     if(e.noticeTimer>0){e.noticeTimer--;e.anim=0;continue;}
     const ox=e.x,oy=e.y;

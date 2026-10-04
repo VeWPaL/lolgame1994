@@ -287,13 +287,24 @@ const LUNGER_ACCEL=0.0058, WANDER_SPEED=0.25, WANDER_TICKS=sec(1);
 const BRUNCH_ACCEL=0.09,      // ~11 ticks (52ms) to reach speed. Quick enough to still feel committed
       BRUNCH_DECEL=0.16,      // stops faster than it starts, so a wall settles rather than coasts
       BRUNCH_DEADZONE=6;     // the slot is "reached" inside this and the body settles into it
-// The Brunch ramp. It used to reach full commitment in 0.23s, which meant a pack was on you before
-// you had finished looking at where it had come from - there was no interval in which to pick your
-// ground, which is the one thing the pack is supposed to be asking of you. 2.2s with a lower peak
-// gain is a pack that announces itself and then arrives, instead of one that is simply on top of
-// you from the moment it was noticed. A Brunch is still faster than you once it commits - that is
-// the whole reason it is frightening - it just commits in front of you now.
-const BRUNCH_RAMP=sec(2.2), BRUNCH_RAMP_GAIN=1.9;
+/* BRUNCH RAMP IS 1.5s, down from 2.2s, and the reason is that 2.2s was measured against the wrong
+   number.
+
+   The player this pack is chasing runs at 1.6045 with the momentum meter full, not `PLAYER_MOVE`=1.2 -
+   and the meter fills because it is being chased. At 2.2s the pack was ALREADY faster than a chased
+   player by 0.74s, so the ramp was no longer buying the thing it exists for: an interval in which to
+   pick your ground before it arrives. It was just dead time at a speed you cannot act on.
+
+   Shortening it does not change whether the pack catches you - `BRUNCH_CHASE_SPEED` does that - it
+   changes how long you are being chased by something that has not arrived. The pack is still slower
+   than the player for its first half-second, so the announcement survives; the interval is two thirds
+   of what it was, which is what "bomb rush" has to mean if it is to be different from "walk slowly
+   toward you".
+
+   The 0.23s this replaced is worth remembering: a pack that reached full commitment in a fifth of a
+   second was on you before you had finished looking at where it came from. 2.2s fixed that. 1.5s fixes
+   it against the right number. */
+const BRUNCH_RAMP=sec(1.5), BRUNCH_RAMP_GAIN=1.9;
 
 /* BRUNCH AS COVER: an incoming shell that touches a Brunch stops there and dies, and the Brunch is
    untouched. Impervious, not armoured - there is no HP to grind down and no counterplay to work out,

@@ -342,36 +342,45 @@ const TEMPO={rate:1.5}, PRESSURE={rate:1.5}, PLAYER_MOVE=1.2;
 //
 // BRUNCH_WALK is the idle speed a body falls to when it has arrived and is milling rather than
 // advancing.
-/* BRUNCH_CHASE_SPEED IS 1.75, and 1.35 was not enough - it was a number that LOOKED right.
+/* BRUNCH_CHASE_SPEED IS 2.1 and the ramp is 1.5s, and BOTH numbers were wrong for the same reason:
+   they were being compared against the wrong player.
 
-   The chase speed is only ever compared against one thing, the player's 1.2, and 1.35 is a ratio of
-   1.13. That looks decisive on paper. Measured in a room big enough that a 14-second chase never
-   reaches a wall, with the player running flat out in a straight line and the pack starting 450px
-   behind, the gap every two seconds:
+   THE PLAYER'S TOP SPEED IS NOT `PLAYER_MOVE`. Measured, holding one direction at steady state:
 
-       run 1.35   451  682  790  898  1005  1112  1219    grows ~107px per 2s
-       run 1.50   451  643  688  733   777   822   866    slows, still grows
-       run 1.62   451  609  604  599   594   589   583    holds, never closes
-       run 1.75   451  572  513  445   383   322   261    closes ~62px per 2s
-       run 1.90   451  538  423  300   176   197   156    closes ~110px per 2s
+       empty room                1.4025      player.speed 1.122 * (1 + moveSpeedBonus 0.25)
+       momentum meter full       1.6045      the same, plus Momentum.level()*MOMENTUM_SPEED
 
-   So 1.35 was the worst of the available numbers: the pack could not run you down, which is the one
-   job the last-resort sprint exists for. 1.62 is the interesting one - it is where the gap stops
-   growing, which sounds like parity and is not, because a chase held at 450px is a chase the player
-   is never caught by and can therefore walk away from indefinitely. 1.75 is the first value on the
-   sweep that closes, and it closes steadily rather than snapping: the pack gets within 200px at 13.5s
-   from 450px, which is a fight, not an ambush.
+   And the meter fills BECAUSE you are being chased - being shot at and being chased are what charge
+   it. So a chase is against 1.6045, not 1.2, and every ratio quoted against `PLAYER_MOVE` overstates
+   the pack by about a third. At 1.75 the pack was 1.09x a chased player and closed at 30px/s.
 
-   The ramp is UNCHANGED and still does its job, which was the thing most likely to break here. The
-   `curSpeed` curve at 1.75 is 0.62, 0.73, 0.92, 1.08, 1.22, 1.35, 1.45 ... 1.75 over about 2.6s -
-   a pack that is slower than the player for its first two seconds and crosses the player's speed
-   around the 1.2 mark at roughly 1.1s. The announcement still happens. A higher peak reached through
-   the same ramp is a faster arrival, not a faster appearance.
+   TIME TO CONTACT from a 450px gap, player holding one direction, pack alive throughout:
+
+       run 1.75   37.2s
+       run 2.10   30.3s     <- the pick
+       run 2.60   29.3s
+       run 3.20   28.3s
+
+   The curve goes flat hard after 2.1: +83% of speed for 9s more. So the peak is 2.1 and the rest of
+   the work is in the ramp, because the peak only sets how fast the pack closes once it is committed,
+   and most of the wait happens BEFORE that.
+
+   THE RAMP IS 1.5s, down from 2.2s, and it is the part that matches "bomb rush". At the old 2.2s the
+   pack was already faster than a chased player by 0.74s, so shortening the ramp does not change
+   whether it catches you - it changes how long you are being chased by something that has not arrived
+   yet. The `curSpeed` curve is 0.62, 0.81, 0.98, 1.14, 1.28 ... reaching 2.1 over about 1.6s. The
+   announcement still exists - a pack is still slower than you for its first half-second - but the
+   interval in which you have to decide what to do about it is two thirds of what it was.
+
+   Both together, measured: contact at 30.3s from 450px, and the pack closes at 0.50px/tick against a
+   chased player, so a 200px mistake is survivable and a 400px one is not. That is the difference
+   between a chase and a wall, and it is why 3.2 was not taken: it closes at 1.6px/tick, where every
+   mistake is fatal and the pack stops being something you can read.
 
    The shield speed is untouched at 0.72. That one is a body walking onto a FIXED point, where
    overshooting is a real failure, and the two jobs want opposite things - which is the whole reason
    there are two numbers rather than one compromise between them. */
-const BRUNCH_CHASE_SPEED=1.75,     // no target to protect: the speed at which a pack actually catches you
+const BRUNCH_CHASE_SPEED=2.1,      // no target to protect: 1.31x a chased player, which is a chase
       BRUNCH_SHIELD_SPEED=0.72,   // walking onto a slot: slow, because the slot is a fixed point
       BRUNCH_WALK=0.52*PLAYER_MOVE;
 const BRUNCH_RUN=BRUNCH_CHASE_SPEED;
