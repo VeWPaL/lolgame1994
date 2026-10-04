@@ -84,7 +84,7 @@ namespace Depths
 
         /// <summary>How far away a gunner has to be before counterstrafing buys it anything.</summary>
         /// <remarks>
-        /// HALF THE ROOM'S WIDTH, LESS A MARGIN. It is not half the width.
+        /// A QUARTER OF THE ROOM'S WIDTH. It was half the width less a margin, which was wrong.
         /// <para>
         /// This port said 350 and the JavaScript said 300, and there was a test here called
         /// <c>TheDeadzoneIsHalfTheRoomWidth</c> that asserted 350 - so the drift was not merely
@@ -94,20 +94,32 @@ namespace Depths
         /// that shape has cost something.
         /// </para>
         /// <para>
-        /// The margin is 50 and the ramp is 130 past the deadzone. Both are functions of the room
-        /// because "how far away is far" is a property of the room, and a constant computed from a
-        /// room once is a number that quietly stops describing what it names the moment a second room
-        /// exists - which is exactly what happened on the JavaScript side, where it froze at 707.
+        /// BOTH BOUNDS ARE FRACTIONS OF THE ROOM, and the port was 130px of ramp behind the game until
+        /// 2026-10-03 - a parity break committed by me, in the same commit that changed the
+        /// JavaScript, which is the one rule this manifest states twice.
+        /// </para>
+        /// <para>
+        /// The JavaScript measured at 300px of deadzone and 130px of ramp, in a 700px room. That is a
+        /// 130px NOTCH: `reach` saturates at 1.0 above it, so beyond 430px the spread stopped growing
+        /// and "further is worse" could not be expressed at all. It is now a quarter of the room to
+        /// four fifths - 175px to 560px, a 385px ramp that never saturates inside a room. The port read
+        /// 300/430 and its tests asserted 300/430, so both sides were self-consistent and wrong.
+        /// </para>
+        /// <para>
+        /// The margin constant is gone rather than renamed. There is no "margin off half the width"
+        /// any more, because half the width is no longer where the deadzone starts; leaving a constant
+        /// named SwerveMargin at 50 next to a formula that does not use it would be a number that
+        /// looks load-bearing and is not.
         /// </para>
         /// </remarks>
-        public const int SwerveMargin = 50, SwerveFullBase = 130;
+        public static int SwerveDeadzone(Room room) => (int)System.Math.Round(room.W * 0.25);
+        public static int SwerveFullBase(Room room) => (int)System.Math.Round(room.W * 0.55);
 
         // Methods rather than a property plus an overload, because C# will not let a property and a
         // method share a name - CS0102 - and a property here would also have been the wrong shape.
         // The JavaScript has one function taking an optional room, so this is the closest honest
         // mirror of that available in the language: two methods, one of which forwards.
-        public static int SwerveDeadzone(Room room) => (int)System.Math.Round(room.W / 2.0) - SwerveMargin;
-        public static int SwerveFull(Room room) => SwerveDeadzone(room) + SwerveFullBase;
+        public static int SwerveFull(Room room) => SwerveDeadzone(room) + SwerveFullBase(room);
         public static int SwerveDeadzone() => SwerveDeadzone(Room.Standard);
         public static int SwerveFull() => SwerveFull(Room.Standard);
 

@@ -33,7 +33,7 @@ namespace Depths.Tests
         }
 
         [Test]
-        public void TheDeadzoneIsHalfTheRoomWidthLessAMargin()
+        public void TheDeadzoneIsAQuarterOfTheRoomWidth()
         {
             // "How far away a gunner has to be before counterstrafing buys anything. Half the width
             // of the room, less a margin, is the line."
@@ -48,10 +48,23 @@ namespace Depths.Tests
             // stating the number as well as the rule is that a parity port cannot be written from a
             // description: half of every number in this file has to come from the other file.
             Assert.That(Balance.RoomRight - Balance.RoomLeft, Is.EqualTo(700));
-            Assert.That(Balance.SwerveMargin, Is.EqualTo(50), "the margin off half the width");
-            Assert.That(Balance.SwerveFullBase, Is.EqualTo(130), "the width of the ramp past it");
-            Assert.That(Balance.SwerveDeadzone(), Is.EqualTo(300), "350 is half the width; 300 is what the game does");
-            Assert.That(Balance.SwerveFull(), Is.EqualTo(430), "the ramp runs 130 past the deadzone, not 220");
+            // QUARTER AND FOUR-FIFTHS OF THE WIDTH. These were 300 and 430, and they were the port
+            // being 130px of ramp behind a JavaScript change made on 2026-10-03 - in the same commit
+            // that made it, which is the one rule PORTED.md states twice. What made it possible is the
+            // subject of this very test: 300 was described in prose as "half the width less a margin"
+            // and this file asserted 300 by re-deriving that same sentence, so it agreed with itself.
+            Assert.That(Balance.SwerveDeadzone(Balance.Room.Standard), Is.EqualTo(175),
+                "a quarter of 700 - it was 300, which with a 130px ramp left distance doing nothing "
+                + "outside a 130px notch");
+            Assert.That(Balance.SwerveFull(Balance.Room.Standard), Is.EqualTo(560),
+                "four fifths of 700 - it was 430, and `reach` saturated at 1.0 above that, so 'further "
+                + "is worse' could not be expressed beyond it");
+            // the margin constant is GONE rather than renamed. A constant named SwerveMargin sitting
+            // at 50 next to a formula that no longer uses it is a number that looks load-bearing and
+            // is not, so its absence is the assertion.
+            Assert.That(typeof(Balance).GetField("SwerveMargin"), Is.Null,
+                "SwerveMargin described an offset from half the room width, and the deadzone no longer "
+                + "starts there - if it is being brought back, it has to come back with a reader");
         }
 
         [Test]
@@ -63,12 +76,12 @@ namespace Depths.Tests
             // 1680-wide room wants 1567, so a body 900px away stood still.
             var big = new Balance.Room(50, 130, 50 + 1680, 130 + 760);
             Assert.That(big.W, Is.EqualTo(1680));
-            Assert.That(Balance.SwerveDeadzone(big), Is.EqualTo(790), "half of 1680 less the margin");
-            Assert.That(Balance.SwerveFull(big), Is.EqualTo(920));
+            Assert.That(Balance.SwerveDeadzone(big), Is.EqualTo(420), "a quarter of 1680");
+            Assert.That(Balance.SwerveFull(big), Is.EqualTo(1344), "175 more, which is 0.55 of 1680");
             // and the standard room still reads what it always read, which is what makes this a fix
             // rather than a retune of a port whose balance tests were all taken in that room
-            Assert.That(Balance.SwerveDeadzone(Balance.Room.Standard), Is.EqualTo(300));
-            Assert.That(Balance.SwerveFull(Balance.Room.Standard), Is.EqualTo(430));            // 0.85 of the diagonal: 707 for the standard room, and it must not still be 707 for a big one
+            Assert.That(Balance.SwerveDeadzone(Balance.Room.Standard), Is.EqualTo(175));
+            Assert.That(Balance.SwerveFull(Balance.Room.Standard), Is.EqualTo(560));            // 0.85 of the diagonal: 707 for the standard room, and it must not still be 707 for a big one
             Assert.That(Balance.AggroRange(Balance.Room.Standard), Is.EqualTo(707));
             Assert.That(Balance.AggroRange(big), Is.EqualTo(1567));
             Assert.That(Balance.AggroRange(big), Is.Not.EqualTo(Balance.AggroRange(Balance.Room.Standard)));
@@ -78,23 +91,47 @@ namespace Depths.Tests
         public void ASwerveRampInABigRoomOpensUpFurtherOut()
         {
             // The consequence, not the constant: a number can follow the room and still not be read
-            // anywhere, and only a reach asked at a distance can tell the difference. At 700px the
-            // standard room has the ramp fully open and a 1680-wide room has barely started it - so
-            // a gunner in the big room reads a reversing player at full strength where it used to
-            // get no allowance at all, and that is the bug the two constants were causing.
-            const double d = 700.0;
-            Assert.That(InterceptSolver.SwerveReach(d), Is.EqualTo(1.0).Within(1e-9),
-                "700px is past the top of a 700-wide room's ramp");
+            // anywhere, and only a reach asked at a distance can tell the difference.
+            //
+            // THESE EXPECTATIONS CHANGED on 2026-10-03, and the old ones were not a retune - they
+            // were describing a deadzone of 790 in a 1680-wide room, so 700px read as ZERO. That was
+            // the frozen-constant bug this test was written to catch, and it was catching it in the
+            // only direction it could: a big room gave a reversing player nothing at 700px because
+            // 700 happened to be under its deadzone, and the fix moved the deadzone to 420 so the
+            // same 700px is now 30% of a 924px ramp.
+            //
+            // The property worth keeping is the one both rooms share: the ramp is a FRACTION of the
+            // room, so a distance that is "far" in one room is "mid-ramp" in a larger one, and no
+            // distance inside either room can be past the top.
+            var std = Balance.Room.Standard;
             var big = new Balance.Room(50, 130, 50 + 1680, 130 + 760);
-            // 700px against a deadzone of 790 is INSIDE it, so the honest answer is zero - and zero
-            // is the whole point. The same 700px is the maximum allowance in one room and none at all
-            // in the other, which is precisely what the two frozen constants were causing: a gunner
-            // in a big room reading a reversing player at full strength from across the room.
-            Assert.That(InterceptSolver.SwerveReach(d, big), Is.EqualTo(0.0).Within(1e-12),
-                "700px is inside a 1680-wide room's deadzone, so the allowance must be nothing");
-            // and past both, the ramp opens: 850 is 60 of the way up a 130-wide ramp
-            Assert.That(InterceptSolver.SwerveReach(850, big), Is.EqualTo(60.0 / 130.0).Within(1e-12),
-                "read from the rule: (850-790)/130");
+            Assert.That(std.W, Is.EqualTo(700));
+            Assert.That(big.W, Is.EqualTo(1680));
+
+            // 700px in the standard room: past the top (175 + 385 = 560), so fully open.
+            Assert.That(InterceptSolver.SwerveReach(700, std), Is.EqualTo(1.0).Within(1e-9),
+                "700px is past the top of a 700-wide room's ramp, which ends at 560");
+
+            // the SAME 700px in a big room: 280 of the way up a 924px ramp, so 280/924.
+            Assert.That(InterceptSolver.SwerveReach(700, big), Is.EqualTo(280.0 / 924.0).Within(1e-12),
+                "read from the rule: (700 - 420) / (1344 - 420)");
+
+            // and the deadzone is still real: 400px is inside a big room's 420px deadzone, so nothing.
+            Assert.That(InterceptSolver.SwerveReach(400, big), Is.EqualTo(0.0).Within(1e-12),
+                "400px is inside a 1680-wide room's deadzone, so the allowance must be nothing");
+            // ...while the same 400px is 58% of the way up the standard room's ramp, which is the
+            // asymmetry the whole room-scaling rule exists to produce.
+            Assert.That(InterceptSolver.SwerveReach(400, std), Is.EqualTo(225.0 / 385.0).Within(1e-12),
+                "(400 - 175) / (560 - 175)");
+
+            // THE PROPERTY: the ramp can never saturate inside the room it is scaled to. Under the
+            // old fixed 130px ramp, every room more than 430px wide had a stretch beyond which
+            // 'further is worse' stopped being expressible - which is the bug this whole area is
+            // about. Both rooms must still be opening at four fifths of their own width.
+            Assert.That(InterceptSolver.SwerveReach(std.W * 0.5, std), Is.LessThan(1.0),
+                "the standard room's ramp saturates before its own halfway mark");
+            Assert.That(InterceptSolver.SwerveReach(big.W * 0.5, big), Is.LessThan(1.0),
+                "the big room's ramp saturates before its own halfway mark, so distance stops mattering");
         }
 
         // ------------------------------------------------------------- the hitbox
@@ -267,22 +304,40 @@ namespace Depths.Tests
         [Test]
         public void TheSpreadIsAFloorPlusADistanceRamp()
         {
-            // Inside the deadzone, counterstrafing buys nothing: only the floor.
-            Assert.That(InterceptSolver.GunSpread(1.0, 200), Is.EqualTo(Balance.GunSpreadFloor).Within(1e-12));
+            // EVERY NUMBER IN THIS BLOCK WAS RE-READ from the running JavaScript on 2026-10-03,
+            // because the deadzone moved that day from 300 to 175 and the ramp from 130 to 385. These
+            // are literals, not formulas: the spread is an inline expression at 60-tick.js:1327
+            // (`0.02 + SWERVE_AIM*player.swerve*reach`) rather than a named function, so there is
+            // nothing to call on the JS side - the values were produced by evaluating that expression
+            // against the LIVE swerveDeadzone()/swerveFull() in a browser.
+            //
+            // Hand-computing them is how this test came to assert 350 against a deadzone of 300.
+            // Read the deadzone, read the ramp, divide, and every one of those is a chance to be
+            // wrong in a way that still looks plausible. Live constants and an arithmetic expression
+            // between them is the only legitimate way to acquire a parity value.
+            var std = Balance.Room.Standard;
+            var dz = Balance.SwerveDeadzone(std);
+            var full = Balance.SwerveFull(std);
 
-            // 350px was ALSO asserted to be inside the deadzone, and it is not. The deadzone is 300
-            // and the ramp is 130 wide, so 350 is halfway up it. That assertion was passing for the
-            // same reason the other one was: the deadzone was 350 here and 300 in the game, and the
-            // test was written to describe the rule rather than to read the number. The expected
-            // value below was READ OUT OF THE RUNNING JAVASCRIPT, which is the only way a parity
-            // port is allowed to acquire an expected value - hand-computing one produced three wrong
-            // numbers out of nine once already, and the test was what failed each time.
-            Assert.That(InterceptSolver.GunSpread(1.0, 350), Is.EqualTo(0.13538461538461538).Within(1e-15),
-                "read from the browser: 0.02 + 0.30 * (350-300)/130");
-            // and the top of the ramp, which in the drifted port was 220 past the deadzone
-            Assert.That(InterceptSolver.GunSpread(1.0, 430), Is.EqualTo(0.32).Within(1e-12),
-                "read from the browser: 0.02 + 0.30, the ramp fully open at 430px");
+            // 200px is inside the deadzone, so a reversing player gets the floor and nothing more.
+            Assert.That(dz, Is.EqualTo(175));
+            Assert.That(InterceptSolver.GunSpread(1.0, 200), Is.EqualTo(0.03948051948051948).Within(1e-15),
+                "read from the browser: 25/385 of the ramp is open at 200px, so 0.02 + 0.30*0.0649");
 
+            // and the ramp, sampled across its whole width rather than at one lucky distance
+            Assert.That(InterceptSolver.GunSpread(1.0, 300), Is.EqualTo(0.1174025974025974).Within(1e-15),
+                "read from the browser at 300px");
+            Assert.That(InterceptSolver.GunSpread(1.0, 350), Is.EqualTo(0.15636363636363634).Within(1e-15),
+                "read from the browser at 350px");
+            Assert.That(InterceptSolver.GunSpread(1.0, 450), Is.EqualTo(0.23428571428571426).Within(1e-15),
+                "read from the browser at 450px");
+            Assert.That(InterceptSolver.GunSpread(1.0, 500), Is.EqualTo(0.27324675324675324).Within(1e-15),
+                "read from the browser at 500px");
+
+            // and the top of the ramp, which in the drifted port was 430 and is now 560
+            Assert.That(full, Is.EqualTo(560));
+            Assert.That(InterceptSolver.GunSpread(1.0, 560), Is.EqualTo(0.32).Within(1e-12),
+                "read from the browser: 0.02 + 0.30, the ramp fully open at 560px");
             // Past the full-spread distance it is the whole allowance.
             Assert.That(InterceptSolver.GunSpread(1.0, 700), Is.EqualTo(0.32).Within(1e-9));
 
