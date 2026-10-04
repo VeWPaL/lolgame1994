@@ -35,32 +35,43 @@ namespace Depths.Tests
         //
         // The density column saturates at 28 from floor 30 on. That is a cap, not a coincidence, and
         // TheLadderIsPlayableAtEveryFloor is the test that says why.
-        [TestCase(1, 1.0000, 1.0000, 0.0000)]
-        [TestCase(2, 1.0510, 1.0273, 0.0192)]
-        [TestCase(3, 1.1085, 1.0564, 0.0428)]
-        [TestCase(4, 1.1733, 1.0876, 0.0717)]
-        [TestCase(5, 1.2464, 1.1209, 0.1072)]
-        [TestCase(6, 1.3288, 1.1564, 0.1507)]
-        [TestCase(7, 1.4218, 1.1943, 0.2041)]
-        [TestCase(8, 1.5265, 1.2349, 0.2695)]
-        [TestCase(9, 1.6447, 1.2782, 0.3497)]
-        [TestCase(10, 1.7779, 1.3245, 0.4481)]
-        [TestCase(11, 1.9280, 1.3400, 0.5687)]
-        [TestCase(12, 2.0974, 1.3400, 0.7166)]
-        [TestCase(13, 2.2883, 1.3400, 0.8980)]
-        [TestCase(14, 2.5035, 1.3400, 1.1205)]
-        [TestCase(20, 4.5107, 1.3400, 4.0146)]
-        [TestCase(30, 13.5839, 1.3400, 28.0000)]
-        [TestCase(50, 143.7237, 1.3400, 28.0000)]
-        [TestCase(100, 57740.8203, 1.3400, 28.0000)]
-        public void TheLadderMatchesTheMeasuredJavaScriptValues(int floor, double tough, double rate, double bodies)
+[TestCase(1, 1.0000, 1.0000, 0.4500, 0.0000, Area.Area1)]
+        [TestCase(2, 1.0510, 1.0273, 0.4850, 0.0192, Area.Area1)]
+        [TestCase(3, 1.1085, 1.0564, 0.5200, 0.0428, Area.Area1)]
+        [TestCase(4, 1.1733, 1.0876, 0.5550, 0.0717, Area.Area1)]
+        [TestCase(5, 1.2464, 1.1209, 0.6400, 0.1072, Area.Area2)]
+        [TestCase(6, 1.3288, 1.1564, 0.6750, 0.1507, Area.Area2)]
+        [TestCase(7, 1.4218, 1.1943, 0.7100, 0.2041, Area.Area2)]
+        [TestCase(8, 1.5265, 1.2349, 0.7450, 0.2695, Area.Area2)]
+        [TestCase(9, 1.6447, 1.2782, 0.8500, 0.3497, Area.Area3)]
+        [TestCase(10, 1.7779, 1.3245, 0.8500, 0.4481, Area.Area3)]
+        [TestCase(11, 1.9280, 1.3400, 0.8500, 0.5687, Area.Area3)]
+        [TestCase(12, 2.0974, 1.3400, 0.8500, 0.7166, Area.Area3)]
+        [TestCase(13, 2.2883, 1.3400, 0.8500, 0.8980, Area.Final)]
+        [TestCase(14, 2.5035, 1.3400, 0.8500, 1.1205, Area.Final)]
+        [TestCase(20, 4.5107, 1.3400, 0.8500, 4.0146, Area.Final)]
+        [TestCase(30, 13.5839, 1.3400, 0.8500, 28.0000, Area.Final)]
+        [TestCase(50, 143.7237, 1.3400, 0.8500, 28.0000, Area.Final)]
+        [TestCase(100, 57740.8203, 1.3400, 0.8500, 28.0000, Area.Final)]
+        public void TheLadderMatchesTheMeasuredJavaScriptValues(
+            int floor, double tough, double rate, double pack, double bodies, Area area)
         {
             Assert.That(Balance.DepthTough(floor), Is.EqualTo(tough).Within(0.005),
                 "health scaling at floor " + floor);
             Assert.That(Balance.DepthRate(floor), Is.EqualTo(rate).Within(0.005),
                 "rate scaling at floor " + floor);
+            /* The pack chance is not a pure function of the floor on the JS side: `depthPack()` takes
+               no argument and reads `areaMix().brunch`, so the AREA decides the base and the floor
+               only decides the step. The port says the same thing from the other end -
+               `DepthPack(int floor, double brunchChance)` - and this assertion passes the area's own
+               brunch figure in, which is what makes the two descriptions comparable. */
+            Assert.That(Balance.DepthPack(floor, Bodies.MixFor(area).Brunch),
+                Is.EqualTo(pack).Within(0.0005),
+                "pack chance at floor " + floor + " - the base comes from the area, the step from the floor");
             Assert.That(Balance.DepthBodies(floor, 0), Is.EqualTo(bodies).Within(0.001),
                 "density at floor " + floor + " - the JS figure is depthBodies(0), not the whole room");
+            Assert.That(AreaRules.AreaForFloor(floor), Is.EqualTo(area),
+                "area at floor " + floor + " - the theme block, which decides the enemy mix");
         }
 
         [Test]
