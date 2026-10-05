@@ -39,7 +39,7 @@ the view.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 
-`csharp/Depths.Tests` pins 73 `[TestCase]` rows of numbers **read out of the running JavaScript**.
+`csharp/Depths.Tests` pins 78 `[TestCase]` rows of numbers **read out of the running JavaScript**.
 
 Three of those rows are `RoomScaledParityTests`, and they are a different KIND of row from the rest.
 Every other table pins a constant or a function of a seed, so a drift is caught by comparing names.
@@ -102,7 +102,7 @@ gunner intercept solves against the position the player is visually leaving.
     update()              93   gates + dispatch, all four called in order
     tickPlayer()         169   PORTED - TickOrder.TickPlayer (movement core)
     tickProjectiles()    160   stub
-    tickBodies()         697   stub
+    tickBodies()         697   PARTIAL - AssemblePacks ported; the movement is a stub
     tickRoom()           109   PORTED - TickOrder.TickRoom
 
 `TickPlayer` is the second, and porting it found a **pre-existing defect in `TickMomentum`**: the C# had
@@ -114,6 +114,25 @@ that fourth-decimal difference is a momentum of 0.0017.
 Not ported inside the player phase: the boss warning, the blink, firing, the on-use field effects and
 the hook resistance. `CheckDoorTransition` is the geometry half only and returns false rather than
 guessing, so a player at a wall is never teleported into the next room by a stub.
+
+`AssemblePacks` is the first third of the body phase and it is PORTED: pack centroids, target
+selection, and the guard lists. Its expectations in `PackAssemblyParityTests.cs` are generated from
+the running game by `tools/pack-parity.js`, and both load-bearing rules are mutation-checked - removing
+the `!shieldTarget` guard fails two tests, and letting the guard list accumulate fails three.
+
+**Two structural corrections the pack port forced, neither of which a test could have found:**
+
+  - `RunState.enemies` was `List<Body>` and is now `List<Enemy>`. `Body` is the ARCHETYPE - the
+    build-dependent stats for a kind - and `Enemy` is the live instance: position, health, cooldowns,
+    pack, shield target. The archetype was where the instance belonged, and it was invisible because
+    archetypes are never asked where they are. It surfaced the moment the pack pass asked.
+  - `Enemy.packId` was a plain `int` and is now `int?`, because the JavaScript tests
+    `packId === undefined` and a sentinel makes "pack zero" and "no pack" indistinguishable.
+
+**And a design property, measured rather than read: a pack COMMITS to its target.** The scan is
+`!shieldTarget && (frameCount % BrunchScanTicks === 0)`, and the guard means a pack with a living
+target never re-picks - measured as no switch across 400 frames with a nearer ranged body 20px from
+the centroid. My probe expected a switch and got none; the game was right.
 
 `TickRoom` is the first pass with real behaviour. Its expectations in `RoomPhaseParityTests.cs` were
 **generated from the running game** by `tools/room-parity.js`, not written by hand - the same
@@ -254,3 +273,33 @@ mutation and green without it.
 
 This is worth more than the field it was written for: a value assertion that cannot fail is the same
 shape as a placeholder assertion, and the only reason it was caught is that the mutation was run.
+
+---
+
+## The constant audit, and why it is in the gate
+
+`Balance.cs` is the single place the game's tuning lives, and two constants in it have been found
+WRONG by value while the C# suite was green through both:
+
+    SwerveDecay   0.011 against the game's 0.0035    the gunners forgot a reversal three times too fast
+    BrunchRamp    Sec(2.2) against the game's 1.5s   the PRE-TUNING value, kept through a deliberate
+                                                  change, so the port still carried a ramp the game
+                                                  had replaced
+
+Both were found by hand, and only because something finally happened to read them. An unpinned
+constant in that file is indistinguishable from a correct one until a caller exists - and most of the
+tick is still unported, so most of them have no caller.
+
+`tools/constant-audit.js` therefore compares them all, whether or not anything reads them yet:
+
+    47 constants compared, 0 mismatches, 0 missing
+
+It is step **6d** of `verify.ps1`, and it is REPORT-ONLY: an audit that fixes what it finds cannot tell
+you how much was wrong. Verified by putting `SwerveDecay` back to 0.011 and watching the gate fail
+with the constant named and both values printed.
+
+Three parser false positives were fixed while building it, all the same mistake - a declaration can
+name several constants (`public const int A = 1, B = 2;`) or resolve through `Sec()`, and reading
+only the first made eight correct constants look absent. That is the false-positive twin of the bug
+the audit exists to find, and it is recorded because "the audit says eight are missing" and "the audit
+says eight are wrong" are very different findings wearing identical output.

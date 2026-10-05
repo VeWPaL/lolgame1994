@@ -1684,7 +1684,7 @@ having is the one that says what happens when the content outgrows the code.
   the other, so they drift apart when either is edited — read both, trust neither alone. The panel
   prints both and names each, because they are genuinely different: the table is bugs found and
   pinned, the suite is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` - **245 checks**, parity-verified against the JavaScript.
+- `csharp/Depths.Core` + `Depths.Tests` - **261 checks**, parity-verified against the JavaScript.
   The generator (`Dungeon`), the spawn planner (`WavePlanner`), and the run holder + tick skeleton
   (`RunState`, `TickOrder`) are ported; the ~870-line `update()` body is still stubs. See the section
   on the port boundary below.
@@ -1878,7 +1878,7 @@ three streams, the floor seed, the base36 codec), `World` (`Dir`, `RoomKind`, `R
 `Dungeon` generator) and `SpawnPlan` (`SpawnSlot`, `PlannedBody`, `WavePlan` and the `WavePlanner`),
 plus `RunState` (run-scoped holder), `Tick` (`TickOrder` skeleton) and `Area` (`AreaRules`, the
 pure floor-to-area mapping - floors 1-4 Area1, 5-8 Area2, 9-12 Area3, 13+ Final).
-`csharp/Depths.Tests` has **245 checks**, all parity-verified against numbers read out of the running
+`csharp/Depths.Tests` has **261 checks**, all parity-verified against numbers read out of the running
 JavaScript.
 
 **The `update()` body is still stubs.** The gates, counters, tick order, and RNG discipline are in,

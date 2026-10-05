@@ -129,7 +129,17 @@ namespace Depths
         public BodyKind kind;
         public double x, y;
         public double hp, maxHp;
-        public int packId, packSlot;
+        /// <summary>
+        /// Which pack this body belongs to, and its slot within it.
+        /// <para>
+        /// <c>null</c> for a body that is not part of a pack - which is every non-Brunch body, and the
+        /// Brunch that spawns alone. It is nullable rather than a sentinel int because the JavaScript
+        /// tests <c>packId === undefined</c>, and a sentinel would make "pack zero" and "no pack"
+        /// indistinguishable - a pack with id 0 is a real pack and must not be skipped.
+        /// </para>
+        /// </summary>
+        public int? packId;
+        public int packSlot;
         public int castT;
         public bool castReady;
         public int phase, moveT;
@@ -145,7 +155,50 @@ namespace Depths
 
         // --- boss move cadence: StepBoss's bag pick and cooldown (src/60-tick.js:159-180)
         public double bossCd;
-    }
+    
+        /* ---- the pack and shield fields, added for the body-phase port ---- */
+
+        /// <summary>
+        /// Which pack this body belongs to, and its slot within it. <c>null</c> for a body that is not
+        /// part of a pack.
+        /// <para>
+        /// The pair is what makes the Brunch a SHIELD rather than a crowd: a pack is a set of bodies
+        /// that agree on a centroid and take slots around it, and the slot index is what decides which
+        /// arc position a body holds. Two bodies with the same <c>packId</c> and the same
+        /// <c>packSlot</c> would fight for the same place, which is why the generator hands out both.
+        /// </para>
+        /// </summary>
+        /// <summary>
+        /// The body this one is shielding. Set by the pack's scan, held until that body dies or leaves
+        /// the room.
+        /// <para>
+        /// <b>A PACK COMMITS.</b> The scan condition is
+        /// <c>!shieldTarget &amp;&amp; (frameCount % BrunchScanTicks === 0)</c> - the
+        /// <c>!shieldTarget</c> guard means a pack that already has a LIVING target never re-picks, even
+        /// if a much nearer ranged body walks in. Measured in the running game: a pack guarding a
+        /// distant gunner does not switch to a shooter that arrives 20px away.
+        /// </para>
+        /// <para>
+        /// That is a deliberate property rather than an oversight. The pack's behaviour is a function
+        /// of the target it has, and re-deciding every 20 ticks would make a Brunch's escort visibly
+        /// indecisive in a room with several ranged bodies - and would let the player pull a pack off
+        /// its charge by walking a rival into range, which turns a threat into a switch.
+        /// </para>
+        /// </summary>
+        public Enemy? shieldTarget;
+
+        /// <summary>
+        /// The Brunch bodies currently guarding THIS body, rebuilt every tick by the body phase.
+        /// <para>
+        /// It lives on the guarded body rather than on the Brunch because the question it answers is
+        /// asked of the guarded body: "am I being escorted?" The answer changes a ranged body's
+        /// standoff from <c>far</c> to <c>far * GuardStandoffMult</c>, so a pack pulls its charge back
+        /// and gives the player room to reach it. That is the whole point of a shield - it protects,
+        /// and protection that leaves no opening is not an invitation.
+        /// </para>
+        /// </summary>
+        public List<Enemy>? shieldGuardFor;
+}
 
     /// <summary>
     /// A shell in flight. Widened from seven fields to the 23 the projectile pass in

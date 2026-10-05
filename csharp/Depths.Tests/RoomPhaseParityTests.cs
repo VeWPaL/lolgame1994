@@ -296,7 +296,7 @@ namespace Depths.Tests
             var run = Room();
             run.player.x = 120; run.player.y = 200;
             run.CurrentRoom!.KeyReward = true;
-            run.enemies.Add(new Body { Kind = BodyKind.Lunger });
+            run.enemies.Add(new Enemy { kind = BodyKind.Lunger });
 
             TickOrder.TickRoom(run);
 
@@ -316,7 +316,7 @@ namespace Depths.Tests
             run.player.x = 120; run.player.y = 200;
             run.CurrentRoom!.Type = RoomKind.Boss;
 
-            run.enemies.Add(new Body { Kind = BodyKind.Boss });
+            run.enemies.Add(new Enemy { kind = BodyKind.Boss });
             TickOrder.TickRoom(run);
             Assert.That(Exits(run), Is.EqualTo(0), "nothing opens while the boss lives");
 

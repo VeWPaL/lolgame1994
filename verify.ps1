@@ -387,6 +387,59 @@ if (-not (Test-Path $manifest)) {
   }
 }
 
+  # 6d. THE CONSTANT AUDIT - Balance.cs by value, against the running game.
+  #
+  # Two constants in Balance.cs have now been found WRONG by value, and both were found by hand
+  # because something finally happened to read them:
+  #
+  #   SwerveDecay   0.011 against the game's 0.0035 - the gunners forgot a reversal 3x too fast
+  #   BrunchRamp    Sec(2.2) against the game's 1.5s    - the PRE-TUNING value, kept through a
+  #                 deliberate change, so the port still carried the ramp the game had replaced
+  #
+  # The C# suite was green through both. That is the whole problem: Balance.cs is the single place
+  # the game's tuning lives, so an unpinned constant there is indistinguishable from a correct one
+  # until something reads it - and most of them are still unread, because most of the tick is not
+  # ported.
+  #
+  # So this compares them all, whether or not anything reads them yet. It is the check that stops the
+  # NEXT stale constant from waiting for a caller.
+  #
+  # tools/constant-audit.js REPORTS and never edits: an audit that fixes what it finds cannot tell
+  # you how much was wrong.
+  Note ""
+  Note "6d. the constant audit: Balance.cs by value against the running game"
+  $constScript = "$root\tools\constant-audit.js"
+  if (-not (Test-Path $constScript)) {
+    Note "   tools/constant-audit.js is missing, so every tuning constant in the port is UNVERIFIED against the game"
+  } elseif (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    # Bare `node`, tested with Get-Command, for the reason the comment on step 6c gives: testing for
+    # a $node VARIABLE is always false, and an audit that skips silently on every machine is the one
+    # outcome this file exists to prevent. I wrote the variable version first and it skipped itself.
+    Note "   node is unavailable, so the constant audit did NOT run and every tuning constant is UNVERIFIED"
+  } elseif (-not $serverUp) {
+    Note "   SKIPPED - no static server, so the game's values cannot be read. The constants are UNVERIFIED, not passing."
+  } else {
+    $constOut = & node $constScript 2>&1 | Out-String
+    $verdict = [regex]::Match($constOut, '(\d+) compared, (\d+) mismatch, (\d+) missing')
+    if ($verdict.Success) {
+      $cmp = [int]$verdict.Groups[1].Value
+      $mis = [int]$verdict.Groups[2].Value
+      $miss = [int]$verdict.Groups[3].Value
+      if ($mis -gt 0) {
+        foreach ($line in ($constOut -split "`n")) {
+          if ($line -match 'MISMATCH' -and $line -notmatch 'not ported') {
+            Note ("      " + $line.Trim())
+          }
+        }
+        Bad "$mis constant(s) in the port disagree with the running game. A tuning constant that is wrong is worse than one that is missing: it compiles, it reads as deliberate, and nothing catches it until a caller does."
+      } else {
+        Note "   $cmp constants agree with the running game ($miss not yet ported)"
+      }
+    } else {
+      Bad "the constant audit printed no verdict; treat every tuning constant as UNVERIFIED rather than as passing"
+    }
+  }
+
 # ---------------------------------------------------------------- verdict
 Note ""
 if ($failures.Count -eq 0) {

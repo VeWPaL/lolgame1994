@@ -72,7 +72,15 @@ const pw=require('C:/Users/neefloW/AppData/Local/hermes/hermes-agent/node_module
       if(kv) csVals[kv[1]]=Number(kv[2]);
     }
   }
-  for(const m of cs.matchAll(/public static (?:int|double) (\w+) => Sec\(([\d.]+)\)/g)) csVals[m[1]]=Number(m[2])*210;
+  // `public static readonly int X = Sec(2.5);` - resolved through TickHz, which the C# derives from
+  // Speedup rather than hard-coding 210. Reading only the `=>` form made AggroTime look absent.
+  for(const m of cs.matchAll(/public static readonly (?:int|double) (\w+) = Sec\(([\d.]+)\)/g))
+    csVals[m[1]]=Number(m[2])*(csVals['TickHz']||210);
+  for(const m of cs.matchAll(/public static (?:int|double) (\w+) => Sec\(([\d.]+)\)/g))
+    csVals[m[1]]=Number(m[2])*(csVals['TickHz']||210);
+  // TickHz itself is `(int)Math.Round(60 * Speedup)` with Speedup = 3.5, i.e. 210.
+  const sp = cs.match(/public const double Speedup = ([\d.]+)/);
+  if (sp) csVals['TickHz'] = Math.round(60*Number(sp[1]));
   for(const m of ac.matchAll(/public (?:int|double) ([^;]+);/g)){
     for(const part of m[1].split(',')){
       const kv=part.trim().match(/^(\w+)\s*=\s*([\d.]+)$/);

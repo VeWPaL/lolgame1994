@@ -80,7 +80,28 @@ namespace Depths
         /// flight line, not array order.
         /// </para>
         /// </summary>
-        public readonly List<Body> enemies = new List<Body>();
+        /// <summary>
+        /// The living bodies in the current room.
+        /// <para>
+        /// <b>THIS IS <c>List&lt;Enemy&gt;</c> AND IT USED TO BE <c>List&lt;Body&gt;</c>.</b> The port
+        /// had the archetype where the instance belongs: <c>Body</c> holds the build-dependent STATS
+        /// for a kind - radius, health, speed, senses - and <c>Enemy</c> holds the mutable state of
+        /// one that exists right now: position, health, cooldowns, pack, shield target.
+        /// </para>
+        /// <para>
+        /// The distinction matters the moment the body phase lands, and it is the same shape of
+        /// mistake as the pickup list: two bodies of the same kind would share their position. It was
+        /// invisible while the list held archetypes, because archetypes are never asked where they
+        /// are. Porting the pack pass asked, and every field it needs - <c>shieldTarget</c>,
+        /// <c>shieldGuardFor</c> - lives on <c>Enemy</c> already, because the boss work had put them
+        /// there.
+        /// </para>
+        /// <para>
+        /// So the archetype stays where it belongs: a wave planner reads <c>Body</c> rows to decide
+        /// WHAT to spawn, and a spawn turns one into an <c>Enemy</c>. The list holds the second.
+        /// </para>
+        /// </summary>
+        public readonly List<Enemy> enemies = new List<Enemy>();
         public readonly List<Pickup> pickups = new List<Pickup>();
 
         public string state;
@@ -286,5 +307,12 @@ namespace Depths
 
         /// <summary>Ticks of post-blink invulnerability left. Cleared on a descent.</summary>
         public int blinkGrace;
+
+        /// <summary>
+        /// Frames elapsed. Read by the pack scan, which fires on
+        /// <c>frameCount % BrunchScanTicks == 0</c> - so it counts FRAMES rather than ticks, and the
+        /// distinction matters only if the two ever diverge.
+        /// </summary>
+        public int frameCount;
 }
 }

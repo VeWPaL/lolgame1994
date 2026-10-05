@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Depths
 {
     /// <summary>
@@ -693,6 +695,131 @@ namespace Depths
         {
             return false;
         }
+
+
+        /// <summary>
+        /// A pack's centroid, computed once per tick and shared by every body in it.
+        /// <para>
+        /// The centroid is what makes a Brunch a SHIELD rather than a crowd: bodies do not steer at
+        /// the player, they steer at slots around a shared point, and the point is where the pack
+        /// actually is. Averaging positions rather than picking a leader also means a pack survives
+        /// losing any single member - there is no body whose death changes where the others go.
+        /// </para>
+        /// </summary>
+        private sealed class PackCentroid
+        {
+            public double X, Y;
+            public int Count;
+        }
+
+        /// <summary>
+        /// The pack assembly pass: centroids, target selection, and the guard lists. Ported from the
+        /// first three sections of <c>tickBodies</c> in <c>src/60-tick.js</c>.
+        ///
+        /// <para>
+        /// This is the part of the body phase that decides what a Brunch IS rather than how it moves,
+        /// and it is where the session's Brunch work lives: the bomb-rush when there is nothing to
+        /// shield, the shield arc when there is, and the commitment that makes a pack predictable.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>Measured behaviour, all from the running game:</b>
+        /// </para>
+        /// <list type="bullet">
+        /// <item>a pack with no ranged body in the room has NO target, and walks at the player</item>
+        /// <item>a pack guarding a living body sets that body's guard list to the whole pack
+        /// (measured: 6 of 6)</item>
+        /// <item>when the guarded body dies the pack re-targets, and all 6 stop guarding the corpse</item>
+        /// <item><b>a pack COMMITS.</b> A pack that already has a living target never re-picks, even
+        /// with a nearer ranged body 20px away. The scan is <c>!shieldTarget &amp;&amp;
+        /// (frameCount % BrunchScanTicks === 0)</c>, and the guard means it. Measured: no switch in
+        /// 400 ticks with a shooter standing 20px from the pack centroid.</item>
+        /// </list>
+        /// </summary>
+        public static void AssemblePacks(RunState run)
+        {
+            var room = run.CurrentRoom;
+            if (room == null) return;
+
+            // --- centroids. One pass to sum, one to divide, which is what the original does and is
+            // cheaper than carrying a running mean through the second loop.
+            var packs = new Dictionary<int, PackCentroid>();
+            foreach (var b in run.enemies)
+            {
+                if (b.kind != BodyKind.Brunch || !b.packId.HasValue) continue;
+                if (!packs.TryGetValue(b.packId.Value, out var c))
+                {
+                    c = new PackCentroid();
+                    packs[b.packId.Value] = c;
+                }
+                c.X += b.x; c.Y += b.y; c.Count++;
+            }
+            foreach (var c in packs.Values) { c.X /= c.Count; c.Y /= c.Count; }
+
+            // --- target selection, per pack centroid.
+            foreach (var e in run.enemies)
+            {
+                if (e.kind != BodyKind.Brunch || !e.packId.HasValue) continue;
+                if (!packs.TryGetValue(e.packId.Value, out var c)) continue;
+
+                var tgt = e.shieldTarget;
+                /* STALE MEANS GONE, DEAD, OR NOT IN THIS ROOM. All three have to be checked: a target
+                   that died, a target that was spliced out by the room's own bookkeeping, and a target
+                   that was never here at all - `null` is the ordinary case on the first tick. */
+                bool stale = tgt == null || tgt.hp <= 0 || !run.enemies.Contains(tgt);
+
+                if (stale || (e.shieldTarget == null && run.frameCount % Balance.BrunchScanTicks == 0))
+                    e.shieldTarget = PickShield(run.enemies, c);
+            }
+
+            // --- guard lists, rebuilt from scratch every tick. They are a derived view: a body that
+            // died must not still appear to be escorted, and rebuilding is cheaper than proving that
+            // last tick's list is still correct.
+            foreach (var o in run.enemies)
+                if (IsRanged(o.kind)) o.shieldGuardFor = null;
+
+            foreach (var e in run.enemies)
+            {
+                if (e.kind != BodyKind.Brunch || !e.packId.HasValue || e.shieldTarget == null) continue;
+                var g = e.shieldTarget.shieldGuardFor ?? (e.shieldTarget.shieldGuardFor = new List<Enemy>());
+                g.Add(e);
+            }
+        }
+
+        /// <summary>
+        /// The nearest living ranged body to a pack centroid, or null if there is none.
+        /// <para>
+        /// NEAREST, not best, and not first: the original walks every enemy and keeps the smallest
+        /// squared distance. Squared, not actual, so the comparison never takes a square root - and
+        /// it is squared rather than by straight-line distance for a second reason, which is that the
+        /// test the projectile phase uses is also squared, and the two agree about what "near" means.
+        /// </para>
+        /// <para>
+        /// A pack will therefore shield a shooter it is standing next to rather than a distant gunner,
+        /// which is the intended reading: the pack protects what is closest, because that is what it
+        /// can reach.
+        /// </para>
+        /// </summary>
+        private static Enemy? PickShield(List<Enemy> enemies, PackCentroid c)
+        {
+            Enemy? best = null;
+            double bestD = double.MaxValue;
+            foreach (var o in enemies)
+            {
+                if (o.hp <= 0 || !IsRanged(o.kind)) continue;
+                double dx = o.x - c.X, dy = o.y - c.Y;
+                double d = dx * dx + dy * dy;
+                if (d < bestD) { bestD = d; best = o; }
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// The three body kinds that shoot from range, and therefore the three worth shielding. A
+        /// melee body is not shielded because nothing can reach it from outside the pack.
+        /// </summary>
+        public static bool IsRanged(BodyKind k) =>
+            k == BodyKind.Shooter || k == BodyKind.Gunner || k == BodyKind.Boss;
 
     }
 }

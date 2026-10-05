@@ -196,7 +196,7 @@ namespace Depths.Tests
         public void TickMomentumChargesOnPressurisedMovementAndDecaysWhenStalled()
         {
             var run = PlayingRun();
-            run.enemies.Add(new Body { Kind = BodyKind.Lunger });   // pressure, or no charge
+            run.enemies.Add(new Enemy { kind = BodyKind.Lunger });   // pressure, or no charge
             TickOrder.TickMomentum(run, 2.0);
             Assert.That(run.player.momentum, Is.EqualTo(Balance.MomentumGain * 2.0).Within(1e-12));
             TickOrder.TickMomentum(run, 0.0);
