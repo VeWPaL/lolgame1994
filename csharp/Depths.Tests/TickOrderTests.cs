@@ -177,10 +177,26 @@ namespace Depths.Tests
 
         // ------------------------------------------------- the pass skelotons
 
+        /// <summary>
+        /// Momentum charges on movement UNDER PRESSURE and bleeds away when stalled.
+        /// <para>
+        /// The "under pressure" part is load-bearing and this test used to leave it out. The original
+        /// returns from <c>tickMomentum</c> immediately when the room has no bodies - the meter is a
+        /// reward for being chased, not for walking - and this port had lost that guard. It was found
+        /// by porting the player phase and comparing its acceleration curve against the game's, which
+        /// disagreed in the fourth decimal place: the C# player was quietly charging momentum in an
+        /// empty room, which is a free speed bonus with no counterweight.
+        /// </para>
+        /// <para>
+        /// The room is populated below, and the empty-room case is asserted separately, because the
+        /// guard is the whole point of the test.
+        /// </para>
+        /// </summary>
         [Test]
         public void TickMomentumChargesOnPressurisedMovementAndDecaysWhenStalled()
         {
             var run = PlayingRun();
+            run.enemies.Add(new Body { Kind = BodyKind.Lunger });   // pressure, or no charge
             TickOrder.TickMomentum(run, 2.0);
             Assert.That(run.player.momentum, Is.EqualTo(Balance.MomentumGain * 2.0).Within(1e-12));
             TickOrder.TickMomentum(run, 0.0);
@@ -192,6 +208,21 @@ namespace Depths.Tests
             TickOrder.TickMomentum(run, 0.0); TickOrder.TickMomentum(run, 0.0);
             for (int i = 0; i < 200; i++) TickOrder.TickMomentum(run, 0.0);
             Assert.That(run.player.momentum, Is.EqualTo(0.0), "a stalled body bleeds the meter to zero");
+        }
+
+        /// <summary>
+        /// No bodies in the room means no momentum at all, however far the player walks. Measured in
+        /// the running game: 400 ticks running east in an empty room leave the meter at exactly 0,
+        /// and the terminal speed is 1.4025 rather than something higher.
+        /// </summary>
+        [Test]
+        public void TickMomentumChargesNothingInAnEmptyRoom()
+        {
+            var run = PlayingRun();
+            run.enemies.Clear();
+            TickOrder.TickMomentum(run, 500.0);
+            Assert.That(run.player.momentum, Is.EqualTo(0.0),
+                "momentum is a pressure reward; in an empty room it is a free speed bonus");
         }
 
         [Test]

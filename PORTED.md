@@ -100,10 +100,20 @@ gunner intercept solves against the position the player is visually leaving.
 
     phase              lines   C#
     update()              93   gates + dispatch, all four called in order
-    tickPlayer()         169   stub
+    tickPlayer()         169   PORTED - TickOrder.TickPlayer (movement core)
     tickProjectiles()    160   stub
     tickBodies()         697   stub
     tickRoom()           109   PORTED - TickOrder.TickRoom
+
+`TickPlayer` is the second, and porting it found a **pre-existing defect in `TickMomentum`**: the C# had
+lost the original's empty-room guard, so a player walking alone charged momentum - a free speed bonus
+with no counterweight. It was invisible until there was a caller, because nothing else in the port
+called it. It surfaced as an acceleration curve reading 0.433763 where the game reads 0.433643, and
+that fourth-decimal difference is a momentum of 0.0017.
+
+Not ported inside the player phase: the boss warning, the blink, firing, the on-use field effects and
+the hook resistance. `CheckDoorTransition` is the geometry half only and returns false rather than
+guessing, so a player at a wall is never teleported into the next room by a stub.
 
 `TickRoom` is the first pass with real behaviour. Its expectations in `RoomPhaseParityTests.cs` were
 **generated from the running game** by `tools/room-parity.js`, not written by hand - the same

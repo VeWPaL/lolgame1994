@@ -241,6 +241,33 @@ namespace Depths
     public const double MoveAccel = 0.116;
 
     /// <summary>
+    /// The hard ceiling on the movement bonus. Read out of the running game: 0.44.
+    /// <para>
+    /// The bonus is <c>min(cap, stats.speed + momentum * MomentumSpeed)</c>, so an empty run at
+    /// 0.25 plus a full meter at 0.18 reaches 0.43 - just under the cap, which means the cap is not
+    /// currently the binding constraint and the ceiling exists for a build that has not been designed
+    /// yet rather than for the one that has. Pinned anyway, because "not currently binding" is a
+    /// property of two other numbers and changes the moment either does.
+    /// </para>
+    /// </summary>
+    public const double MoveSpeedHardCap = 0.44;
+
+    /// <summary>What a full Momentum meter adds to the movement bonus. Read out: 0.18.</summary>
+    public const double MomentumSpeed = 0.18;
+
+    /// <summary>
+    /// The movement bonus a run starts with, before any item and before any momentum. Read out of
+    /// the running game: 0.25, and it is the whole of <c>Stats.value('speed')</c> on an empty sheet.
+    /// <para>
+    /// A constant rather than a call into a stats system, because the C# port has no
+    /// <c>Stats</c> yet. It is therefore correct for an empty run and WRONG for any run carrying a
+    /// speed item - which is stated here rather than left to be discovered, and it is the reason
+    /// <c>TickPlayer</c> takes the bonus as a parameter instead of reading a constant internally.
+    /// </para>
+    /// </summary>
+    public const double MoveSpeedBonusBase = 0.25;
+
+    /// <summary>
     /// Below this speed the player's direction-of-travel estimate stops updating, so a
     /// player standing still is not read as jittering by the enemies that aim at them.
     /// </summary>

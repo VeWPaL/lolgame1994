@@ -54,6 +54,72 @@ namespace Depths
         /// the refund is <c>BlinkRecharge * 0.5</c> = 367.5 and the original keeps the fraction.
         /// </summary>
         public double blinkRegen;
+
+        /* ---- the movement fields, added for the tickPlayer port ----
+           Every default below was READ OUT OF THE RUNNING GAME on a fresh run with seed 4242, not
+           reasoned about. `speed` is the important one: it is 1.122, which is 0.935 * PLAYER_MOVE,
+           and it is the BASE speed - the tick's real top speed is speed * (1 + MoveSpeedBonus) and
+           comes to 1.4025 in an empty room. Anything that quotes 1.4025 as "the player's speed" is
+           quoting the post-bonus figure and will be wrong for any calculation about acceleration. */
+
+        /// <summary>
+        /// Base movement speed, before the momentum bonus and before firing slow-motion. Read out of
+        /// the running game: 1.122. The tick's terminal speed is this times (1 + MoveSpeedBonus),
+        /// which is 1.4025 in an empty room and 1.6045 against a pack with the meter full.
+        /// </summary>
+        public double speed = 1.122;
+
+        /// <summary>
+        /// The firing slow-motion multiplier, eased toward 1 every tick. Starts at 1 - full speed -
+        /// and is pulled DOWN toward <c>1 - shootSlow</c> while the player is firing on the move.
+        /// </summary>
+        public double slowMult = 1;
+
+        /// <summary>How much the current shot slows the player, 0 to 1. Recovers every tick.</summary>
+        public double shootSlow;
+
+        /// <summary>Ticks of walk-cycle phase. Scaled by distance travelled, not by time.</summary>
+        public double anim;
+
+        /// <summary>
+        /// The direction the player is actually travelling, smoothed. The LUNGERS aim at this.
+        /// <para>
+        /// It is a DIRECTION and not a velocity: it is renormalised after smoothing, so its magnitude
+        /// is not a measure of speed and a player pressing against a wall still reports the direction
+        /// they are trying to go.
+        /// </para>
+        /// </summary>
+        public double trendVx, trendVy;
+
+        /// <summary>
+        /// The player's direction as a slower, noisier estimate - what the player BELIEVES they are
+        /// doing. The GUNNERS read this, not <see cref="trendVx"/>, and the difference is the whole
+        /// counterstrafe mechanic: they lead a noisier picture of the player than the lungers do, so
+        /// a clean reversal fools them and not the lungers.
+        /// </summary>
+        public double beliefVx, beliefVy;
+
+        /// <summary>
+        /// The last committed movement direction, as a unit vector. The swerve meter compares the new
+        /// direction against this, so it only rises while the player is already moving - standing
+        /// still and starting is not a reversal.
+        /// </summary>
+        public double dirX, dirY;
+
+        /// <summary>
+        /// How much the player is currently swerving, 0 to 1. Rises on a reversal and decays every
+        /// tick; the gunners trust their intercept less the higher it is. See
+        /// <see cref="Balance.SwerveDecay"/> for the rate, which was wrong in this port until a
+        /// measurement caught it.
+        /// </summary>
+        public double swerve;
+
+        /// <summary>Ticks of post-blink speed boost left, and the direction it was thrown in.</summary>
+        public int boost;
+        public double boostX, boostY;
+
+        /// <summary>Ticks of muzzle-flash left. Decremented here so the flash can outlive the shot.</summary>
+        public int muzzleTimer;
 }
 
     /// <summary>One enemy. The contract's fields first, then the cast and cooldown state the

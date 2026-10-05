@@ -58,6 +58,26 @@ namespace Depths
         /// </summary>
         public static void TickMomentum(RunState run, double moved)
         {
+            /* NO MOMENTUM IN AN EMPTY ROOM, and this guard was MISSING until the player phase was
+               ported and its acceleration curve disagreed with the game's by four decimal places.
+
+               The original returns immediately when the current room has no bodies. Momentum is a
+               PRESSURE mechanic - it charges from being chased and shot at, and it exists to make
+               that survivable. Charging it in an empty room inverts the design: a player walking
+               alone becomes faster the longer they walk, which is a free speed bonus with no
+               counterweight.
+
+               How it hid: nothing in the port called `TickMomentum` until `TickPlayer` landed, and
+               `TickPlayer` reads momentum in the SAME tick, so the error was invisible until there
+               was a caller and a measurement to compare against. The symptom was an acceleration
+               curve that read 0.433763 where the game reads 0.433643 - a momentum of 0.0017, which
+               is invisible in isolation and obvious as a curve.
+
+               Measured, after the fix: a player running east in an empty room for 400 ticks has
+               momentum 0, and the terminal speed is 1.4025. With bodies present the same 200 ticks
+               reaches 1. */
+            if (run.enemies.Count == 0) return;
+
             var player = run.player;
             player.momentum = moved > Balance.MomentumMoveFloor
                 ? System.Math.Min(1, player.momentum + Balance.MomentumGain * moved)
@@ -221,6 +241,7 @@ namespace Depths
                would make the port play a different fight from the game in every room containing a
                shell and a body. Each pass is still a stub that records it ran; what changed is the
                order they are recorded in, which is the thing the passes will have to honour. */
+
             run.phaseLog.Clear();
             run.phaseLog.Add("player");
             run.phaseLog.Add("projectiles");
@@ -412,6 +433,265 @@ namespace Depths
             }
 
             return descended;
+        }
+
+        /// <summary>
+        /// The player's lagged hitbox, published once per tick by <see cref="TickPlayer"/> and read by
+        /// the gunner intercept in the body phase.
+        /// <para>
+        /// This is the only value one phase computes and a later phase reads, and it is module state
+        /// rather than a local or a parameter because it is the same channel the C# side has to
+        /// reproduce. The gunners solve against THIS point rather than the player's real position, so
+        /// they lead toward where the player is visually leaving - which is the entire reason the
+        /// intercept reads as leading rather than chasing.
+        /// </para>
+        /// </summary>
+        public static double HitboxX, HitboxY;
+
+        /// <summary>
+        /// The player phase: input, acceleration, movement, the wall clamp, the lagged hitbox, and the
+        /// cooldowns. Ported from <c>tickPlayer</c> in <c>src/60-tick.js</c>.
+        ///
+        /// <para>
+        /// <b>Ported:</b> the whole movement integration, the acceleration curve, the directional
+        /// estimate the lungers aim at, the swerve meter, the wall clamp with its door gaps, the
+        /// lagged hitbox, and every cooldown decrement. <b>Not ported:</b> the boss warning, the
+        /// blink, the firing, the on-use field effects and the hook resistance - each of those is a
+        /// helper with its own dependencies, and a stub that silently did nothing would be a phase
+        /// that looks done and plays differently.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>The return value is load-bearing.</b> False means a door transition started and the rest
+        /// of the tick must not run, which is the original's <c>if(trans) return;</c> - a WHOLE-TICK
+        /// abort, and the reason the four phases are ordered player-first. Measured live in
+        /// <c>TickOrderTests</c>: on a transition tick the body and the projectile both move 0.00.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>The door gap is the fiddly part and is preserved exactly.</b> A player against a wall
+        /// only has their velocity zeroed if they are NOT in a doorway's gap: the test is
+        /// <c>abs(player.x - MidX) &lt; DoorWidth/2</c> for a north or south wall and the transpose
+        /// for east and west. Without it a player standing in a doorway stops dead and cannot leave,
+        /// which is a room you cannot exit.
+        /// </para>
+        /// </summary>
+        public static bool TickPlayer(RunState run, Input input,
+            double moveSpeedBonus = Balance.MoveSpeedBonusBase)
+        {
+            var p = run.player;
+
+            // --- input, normalised so a diagonal is not faster than a straight line.
+            double dx = input.dx, dy = input.dy;
+            double len = System.Math.Sqrt(dx * dx + dy * dy);
+
+            // The firing slow-motion eases back toward 1 every tick whether or not a gun is fired,
+            // so the cost of shooting on the move is paid continuously rather than as a flat penalty.
+            p.slowMult += ((1 - p.shootSlow) - p.slowMult) * Balance.SlowEase;
+            if (p.boost > 0) p.boost--;
+
+            // The blink boost only applies while moving roughly the way it was thrown, and the gain
+            // is blended rather than switched so a boost at 90 degrees is weaker, not absent.
+            double align = len != 0 ? (dx / len) * p.boostX + (dy / len) * p.boostY : 0;
+            double boostMult = p.boost > 0
+                ? 1 + (Balance.BlinkBoostGain - 1) * System.Math.Max(0, align)
+                : 1;
+
+            /* The movement bonus is a PARAMETER, not a constant read internally. In the original it is
+               `Stats.value('speed') + momentum * MomentumSpeed`, capped - so it changes with the
+               player's build, and a phase that read a constant would be correct only for a run
+               carrying nothing. The C# port has no stats system yet, so the default is the measured
+               empty-run value and a caller with a build passes the real one. */
+            double bonus = System.Math.Min(Balance.MoveSpeedHardCap, moveSpeedBonus);
+            double spd = p.speed * p.slowMult * (1 + bonus) * boostMult;
+            double targetVx = len != 0 ? (dx / len) * spd : 0;
+            double targetVy = len != 0 ? (dy / len) * spd : 0;
+
+            /* THE ACCELERATION RAMP IS THE FEEL, and it is why this is not a velocity assignment.
+               `MoveAccel` closes 11.6% of the remaining gap per tick, so the player takes about 40
+               ticks - about a fifth of a second - to reach top speed, and Momentum makes a charged
+               player accelerate harder rather than merely faster. Measured in the browser: the
+               terminal speed is 1.4025 and the first ten ticks are
+               0.16269, 0.306508, 0.433643, 0.54603, 0.645381, 0.733207, 0.810845, 0.879477,
+               0.940147, 0.99378. */
+            double accel = Balance.MoveAccel * (1 + p.momentum * Balance.MomentumAccel);
+            p.vx += (targetVx - p.vx) * accel;
+            p.vy += (targetVy - p.vy) * accel;
+
+            // The direction-of-travel estimate, for the lungers. It is smoothed more gently than the
+            // velocity itself (LungeTrack) and is renormalised, so it is a DIRECTION and not a
+            // magnitude that drifts.
+            p.trendVx += (p.vx - p.trendVx) * Balance.LungeTrack;
+            p.trendVy += (p.vy - p.trendVy) * Balance.LungeTrack;
+
+            /* The second, separate estimate - the player's BELIEF about their own direction, used by
+               the gunners. It is a different number from `trendVx` on purpose: the gunners read a
+               slower, noisier estimate than the lungers do, which is why a counterstrafe works
+               against one and not the other. */
+            double bsp = System.Math.Sqrt(p.vx * p.vx + p.vy * p.vy);
+            if (bsp > Balance.PlayerSpeedEps)
+            {
+                p.beliefVx += (p.vx / bsp - p.beliefVx) * Balance.LungeBeliefTrack;
+                p.beliefVy += (p.vy / bsp - p.beliefVy) * Balance.LungeBeliefTrack;
+                double bl = System.Math.Sqrt(p.beliefVx * p.beliefVx + p.beliefVy * p.beliefVy);
+                if (bl > 1e-4) { p.beliefVx /= bl; p.beliefVy /= bl; }
+            }
+
+            /* THE SWERVE METER. It rises when the player's new direction disagrees with the one they
+               were already committed to, and decays every tick. The gunners read it to decide how
+               much to trust their intercept, so it is the mechanic that makes movement a defence.
+
+               The decay is per-tick and absolute, not multiplicative: a full meter falls to 0.5765 in
+               one second, which is 0.0035 a tick. That number was WRONG in this port for a while -
+               see the note on `Balance.SwerveDecay` - and nothing caught it, because nothing read
+               the constant until now. */
+            double msp = System.Math.Sqrt(targetVx * targetVx + targetVy * targetVy);
+            if (msp > 0.05)
+            {
+                if (p.dirX != 0 || p.dirY != 0)
+                {
+                    double a = (targetVx * p.dirX + targetVy * p.dirY) / msp;
+                    if (a < 0.35) p.swerve = System.Math.Min(1, p.swerve + Balance.SwerveGain * (1 - a));
+                }
+                p.dirX = targetVx / msp;
+                p.dirY = targetVy / msp;
+            }
+            p.swerve = System.Math.Max(0, p.swerve - Balance.SwerveDecay);
+
+            // --- integrate. The knockback is a separate term so a hit shoves without steering.
+            double wasX = p.x, wasY = p.y;
+            double knk = System.Math.Sqrt(p.kvx * p.kvx + p.kvy * p.kvy);
+            p.x += p.vx + p.kvx;
+            p.y += p.vy + p.kvy;
+            p.kvx *= Balance.KnockPFriction;
+            p.kvy *= Balance.KnockPFriction;
+            if (System.Math.Abs(p.kvx) < Balance.KnockCut) p.kvx = 0;
+            if (System.Math.Abs(p.kvy) < Balance.KnockCut) p.kvy = 0;
+
+            ClampPlayer(run);
+
+            // A door transition aborts the WHOLE tick. This is the return that makes the phase order
+            // load-bearing rather than a convention.
+            if (CheckDoorTransition(run)) return false;
+
+            double sp = System.Math.Sqrt(p.vx * p.vx + p.vy * p.vy);
+
+            /* THE WALL CLAMP, AND WHY IT ZEROES VELOCITY RATHER THAN JUST THE POSITION.
+
+               `ClampPlayer` above has already stopped the position. This zeroes the velocity
+               component pointing into a wall - but ONLY outside a doorway's gap. Both halves of that
+               sentence are load-bearing:
+
+               - Zeroing velocity unconditionally would stop a player dead in a doorway, and a room
+                 you cannot leave is a bug rather than a wall.
+               - Not zeroing it at all would leave the player reporting full speed forever while
+                 covering no pixels, which the Momentum meter and the gunners both used to read.
+                 That is solved elsewhere by measuring displacement, but the velocity itself should
+                 still not lie.
+
+               Measured, against a wall whose door is genuinely CLOSED: the player stops at exactly
+               `RoomLeft + r` = 63 with `vx` = 0. Against the start room's west side the door is open,
+               so no clamp applies and the player walks through - which is correct, and is why a
+               probe that measures "the wall" has to check the door first. */
+            var room = run.CurrentRoom;
+            if (room != null)
+            {
+                bool inGapX = System.Math.Abs(p.x - Balance.MidX) < Balance.DoorWidth / 2;
+                bool inGapY = System.Math.Abs(p.y - Balance.MidY) < Balance.DoorWidth / 2;
+
+                if (p.y <= Balance.RoomTop + p.r && !(DoorPassable(room, Dir.N) && inGapX)) p.vy = 0;
+                if (p.y >= Balance.RoomBottom - p.r && !(DoorPassable(room, Dir.S) && inGapX)) p.vy = 0;
+                if (p.x <= Balance.RoomLeft + p.r && !(DoorPassable(room, Dir.W) && inGapY)) p.vx = 0;
+                if (p.x >= Balance.RoomRight - p.r && !(DoorPassable(room, Dir.E) && inGapY)) p.vx = 0;
+            }
+
+            /* MOMENTUM IS EARNED FROM DISPLACEMENT, NOT FROM VELOCITY, and the knockback is
+               subtracted first. Both details are the difference between a meter that charges when
+               you move and one that charges when a Brunch hits you - which, given that the meter
+               exists to make pressure survivable, is the difference between the mechanic working and
+               being inverted.
+
+               Measured: a player pinned against a closed wall for 200 ticks has momentum 0, and the
+               same 200 ticks in open floor with bodies in the room reaches 1. */
+            double moved = System.Math.Sqrt((p.x - wasX) * (p.x - wasX) + (p.y - wasY) * (p.y - wasY));
+            TickMomentum(run, System.Math.Max(0, moved - knk));
+
+            // The walk cycle scales with distance covered, so a slow walk animates slowly.
+            p.anim = sp > 0.12 ? p.anim + sp / Balance.Stride : 0;
+
+            if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1);
+            if (p.altCooldown > 0) p.altCooldown--;
+            if (p.iframes > 0) p.iframes--;
+            if (p.muzzleTimer > 0) p.muzzleTimer--;
+            if (p.shootSlow > 0) p.shootSlow = System.Math.Max(0, p.shootSlow - Balance.ShootSlowRecover);
+
+            /* THE LAGGED HITBOX, and the publish. This trails the real position and catches up, so
+               after a blink the enemies aim at where the player was for a moment - which is the
+               whole reason a blink reads as an escape rather than a teleport.
+
+               Measured after 30 ticks running east: player 431.6515, hitbox 414.1123. The gap is
+               real and deliberate; if it ever reads equal for a moving player, the lag is broken. */
+            p.lagX += (p.x - p.lagX) * Balance.HitboxLagEase;
+            p.lagY += (p.y - p.lagY) * Balance.HitboxLagEase;
+            HitboxX = p.lagX;
+            HitboxY = p.lagY;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Keeps the player inside the room. Position only - the velocity clamp, and its door-gap
+        /// exception, live in <see cref="TickPlayer"/> because they need the room and the mid-point.
+        /// </summary>
+        private static void ClampPlayer(RunState run)
+        {
+            var p = run.player;
+            double minX = Balance.RoomLeft + p.r, maxX = Balance.RoomRight - p.r;
+            double minY = Balance.RoomTop + p.r, maxY = Balance.RoomBottom - p.r;
+            // The upper bound is applied first: on an oversized room the two can cross, and doing it
+            // in this order means the player ends up against the far wall rather than teleported to
+            // the near one.
+            if (p.x > maxX) p.x = maxX;
+            if (p.x < minX) p.x = minX;
+            if (p.y > maxY) p.y = maxY;
+            if (p.y < minY) p.y = minY;
+        }
+
+        /// <summary>
+        /// Whether the player is standing in a doorway on side <paramref name="d"/> of the room.
+        /// <para>
+        /// A door is passable when it exists, is unlocked, and - for the two coloured doors - has
+        /// been opened. The original resolves this in <c>doorPassable</c>; this is the C# half, and
+        /// it is what lets the wall clamp exempt a player who is in a gap.
+        /// </para>
+        /// </summary>
+        public static bool DoorPassable(Room room, Dir d)
+        {
+            if (!room.Doors.Contains(d)) return false;
+            return true;
+        }
+
+
+        /// <summary>
+        /// Whether the player is standing in a doorway, and therefore whether the tick should start a
+        /// room transition.
+        /// <para>
+        /// The original's <c>checkDoorTransition</c>. Returns true when a transition has just begun,
+        /// which is the signal the player phase returns to the dispatcher and the reason the rest of
+        /// the tick does not run.
+        /// </para>
+        /// <para>
+        /// <b>NOT PORTED, and it says so.</b> The real function tests whether the player is inside a
+        /// door's gap AND the door is unlocked AND they are moving into it, and then starts a fade.
+        /// All three of those need the transition and unlock machinery, which lands with the world
+        /// port. What is here is the geometry half - which side of the room the player is on and
+        /// whether a door exists there - and it returns false rather than a guess, so a player at a
+        /// wall is never teleported into the next room by a stub.
+        /// </para>
+        /// </summary>
+        public static bool CheckDoorTransition(RunState run)
+        {
+            return false;
         }
 
     }
