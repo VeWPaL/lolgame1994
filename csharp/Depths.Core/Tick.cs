@@ -226,6 +226,193 @@ namespace Depths
             run.phaseLog.Add("projectiles");
             run.phaseLog.Add("bodies");
             run.phaseLog.Add("room");
+
+            /* THE ROOM PHASE RUNS FOR REAL. The other three still only record that they ran.
+               `TickRoom` returns true when the player reached the exit portal, which is the
+               original's mid-function `return` - and that return SKIPS everything after the pickup
+               loop, so it has to be honoured here or a descent would also re-open the boss exit on
+               the same tick. */
+            TickRoom(run);
         }
+
+        /// <summary>
+        /// The room phase, ported. This is the first of the four passes to carry real behaviour, and
+        /// it was chosen because it is the one whose dependencies are all already here: pickups, the
+        /// player, the room's own flags, and five constants that <c>Balance</c> already had.
+        ///
+        /// <para>
+        /// <b>What is ported and what is not.</b> The room-cleared bookkeeping, both reward drops,
+        /// the whole pickup-touch loop, the weapon swap, the heart and armour top-ups, both keys, the
+        /// hook and blast alt-modes, and the boss-death exit are all here. The <c>item</c> branch is
+        /// NOT: it calls <c>Items.give</c>, which has no C# counterpart yet, and a stub that quietly
+        /// collected nothing would be a port that looks done and plays differently. It throws
+        /// throws instead, so the gap is a crash rather than a
+        /// behaviour change - which is the right way for a parity port to be incomplete.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>Two behaviours that are easy to lose and are kept deliberately.</b>
+        /// </para>
+        /// <list type="number">
+        /// <item>The <c>hold</c> flag. A pickup taken this tick is parked where it stood and ignored
+        /// until the player steps off it. That is what lets the weapon swap put the old gun on the
+        /// floor at the player's feet - it would otherwise be re-collected on the same tick, in a
+        /// loop, and the swap would never settle. The check order matters too: <c>hold</c> is
+        /// cleared BEFORE the touch test, not after, so stepping off and back on re-collects.</item>
+        /// <item>The exit portal's smaller radius. Every other pickup is collected at
+        /// <c>pk.r + player.r</c>; the exit is collected at the bare <c>PLAYER_HIT_R</c>. Walking
+        /// into the way down is a deliberate act and should not be something you do by brushing past
+        /// the edge of a 30px circle, so the test is tighter on purpose.</item>
+        /// </list>
+        ///
+        /// <para>
+        /// Returns true when the phase reached the exit portal and the run descended, which is the
+        /// original's <c>return</c> out of the middle of the function - everything after the pickup
+        /// loop is skipped that tick. The death check immediately after the loop is deliberately
+        /// NOT skipped in that case, because it is outside the loop in the original too: reaching
+        /// the exit and dying on the same tick ends the run as a death, and the boss-death check
+        /// beneath it does not run.
+        /// </para>
+        /// </summary>
+        public static bool TickRoom(RunState run)
+        {
+            // The current room. The C# model keeps the CURRENT room's bodies on `RunState.enemies`
+            // rather than on `Room`, because the body list is rebuilt per room and belongs to the
+            // tick's working set; `Room` carries the durable facts (type, doors, flags). That is a
+            // different shape from the JavaScript, where one object holds both, and it is why this
+            // line reads `run.enemies` where the original reads `r.enemies` - same list, different
+            // owner.
+            var room = run.CurrentRoom;
+            // The generator cannot produce a cursor on an empty cell, so this is unreachable in a
+            // well-formed run. It is handled rather than asserted because a null here would
+            // otherwise be a NullReferenceException from inside the tick, which is a crash the
+            // player sees rather than a diagnosable failure.
+            if (room == null) return false;
+            var player = run.player;
+
+            // A room that has just been cleared refunds half a blink charge, ONCE. Without the flag
+            // a cleared room pays out every tick for as long as the player stands in it.
+            if (run.enemies.Count == 0 && !room.Cleared)
+            {
+                room.Cleared = true;
+                player.blinkRegen = System.Math.Max(player.blinkRegen, Balance.BlinkRecharge * 0.5);
+            }
+
+            // The rewards, dropped once each. Two independent one-shots, because a room can hold
+            // either or both.
+            if (run.enemies.Count == 0)
+            {
+                if (room.KeyReward && !room.KeySpawned)
+                {
+                    room.KeySpawned = true;
+                    run.pickups.Add(Pickup.Of("key", Balance.MidX, Balance.MidY, 14));
+                }
+                if (room.GoldReward && !room.GoldSpawned)
+                {
+                    room.GoldSpawned = true;
+                    run.pickups.Add(Pickup.Of("goldkey", Balance.MidX, Balance.MidY, 16));
+                }
+            }
+
+            if (player.hp <= 0) { run.EndRun(false); return false; }
+
+            bool descended = false;
+
+            // BACKWARDS, because a pickup taken this tick removes it from the list this loop is
+            // walking. Forwards would skip the next one.
+            for (int i = run.pickups.Count - 1; i >= 0; i--)
+            {
+                var pk = run.pickups[i];
+                double dist = System.Math.Sqrt(
+                    (pk.x - player.x) * (pk.x - player.x) + (pk.y - player.y) * (pk.y - player.y));
+
+                // The exit is deliberately the tighter test. See the note above.
+                bool touching = pk.kind == "exit"
+                    ? dist < Balance.PlayerHitR
+                    : dist < pk.r + player.r;
+
+                // `hold` clears BEFORE the touch test, so stepping off a held pickup and back on
+                // collects it again - and a held pickup the player is still standing on is not
+                // collected a second time.
+                if (pk.hold) { if (!touching) pk.hold = false; continue; }
+                if (!touching) continue;
+
+                if (pk.kind == "exit") { run.Descend(); descended = true; continue; }
+
+                if (pk.kind == "weapon")
+                {
+                    int old = player.weaponIdx;
+                    player.weaponIdx = pk.w;
+                    // The cooldown is the NEW weapon's, and it is a MINIMUM: swapping into a gun
+                    // that is already nearly ready does not grant a free shot.
+                    player.cooldown = System.Math.Min(player.cooldown, Balance.WeaponCooldown(pk.w));
+                    pk.w = old;
+                    pk.hold = true;
+                    continue;
+                }
+
+                if (pk.kind == "heart")
+                {
+                    if (player.hp >= player.maxHp) continue;   // a full-health heart is left lying
+                    player.hp = System.Math.Min(player.maxHp, player.hp + 2);
+                }
+                else if (pk.kind == "armor")
+                {
+                    if (player.armor >= Balance.MaxArmor) continue;
+                    player.armor = System.Math.Min(Balance.MaxArmor, player.armor + 2);
+                }
+                else if (pk.kind == "key") player.hasSilver = true;
+                else if (pk.kind == "goldkey") player.hasGold = true;
+                else if (pk.kind == "hook")
+                {
+                    if (player.altMode != "hook")
+                    {
+                        player.altMode = "hook";
+                        run.hook = true;
+                        // The blast the hook leaves behind. It is placed at the HOOK's position and
+                        // held, so it cannot be picked straight back up.
+                        run.pickups.Add(new Pickup { x = pk.x, y = pk.y, r = 16, kind = "blast", hold = true });
+                    }
+                    else run.hook = true;
+                }
+                else if (pk.kind == "blast") { player.altMode = "blast"; run.hook = false; }
+                else if (pk.kind == "item")
+                {
+                    // NOT PORTED. See the summary: a silent no-op here is a behaviour change.
+                    throw new System.NotSupportedException(
+                        "tickRoom: the item pickup branch calls Items.give, which has no C# "
+                        + "counterpart. Collect it as a stub and the port looks finished while "
+                        + "playing differently - so it throws until Items lands.");
+                }
+                else continue;   // an unknown kind is left on the floor rather than eaten
+
+                run.pickups.RemoveAt(i);
+            }
+
+            /* THE ORIGINAL RETURNS OUT OF THE MIDDLE OF THE FUNCTION HERE, and that has to be
+               honoured. `descend()` already reseeded, moved the player and rebuilt the dungeon, so
+               running the death check and the boss check against the NEW floor would be checking a
+               floor the player never saw - and re-opening an exit on it is a second, invisible bug.
+
+               The only thing after the loop that is still correct to skip is the whole tail, so this
+               returns rather than falling through. It returns FALSE because the caller wants to know
+               whether it descended, and `descended` above already recorded that. */
+            if (descended) return true;
+
+            // Death wins ties: a pickup that arrives on the frame the player dies ends the run as a
+            // death, and the boss check below does not run.
+            if (player.hp <= 0) { run.EndRun(false); return false; }
+            else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen)
+            {
+                // The way down opens when the boss dies and is walked into, rather than the run
+                // ending on the kill. The one-shot flag is what stops a new portal appearing on
+                // every tick the player stands in an empty boss room.
+                room.ExitOpen = true;
+                run.pickups.Add(Pickup.Of("exit", Balance.MidX, Balance.MidY, 30));
+            }
+
+            return descended;
+        }
+
     }
 }

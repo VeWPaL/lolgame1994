@@ -21,13 +21,40 @@ namespace Depths
         public double x, y, vx, vy, kvx, kvy;
         public double hp, maxHp;
         public int armor;
-        public int cooldown, altCooldown, iframes;
+        /// <summary>
+        /// Weapon cooldowns in ticks, and iframes in ticks.
+        /// <para>
+        /// <c>cooldown</c> is a <c>double</c> on purpose. Read out of the running game, the Arcane
+        /// Beam's cadence is 18.2 ticks - not 18 - and the room phase does
+        /// <c>Math.min(cooldown, WEAPONS[w].cooldown)</c> on it. An <c>int</c> field would either
+        /// truncate the table to 18 (a silent balance change no whole-number test would catch) or
+        /// force a rounding decision at every call site. <c>altCooldown</c> and <c>iframes</c> are
+        /// genuinely whole and stay <c>int</c>.
+        /// </para>
+        /// </summary>
+        public double cooldown;
+        public int altCooldown, iframes;
         public double momentum;
         public int weaponIdx;
         public string altMode = "blast";
         public bool hasSilver, hasGold;
         public double lagX, lagY;
-    }
+    
+        /// <summary>
+        /// The player's collision radius, and the second term in a pickup's touch test
+        /// (<c>pk.r + player.r</c>). Read out of the running game as 13. It is separate from
+        /// <c>Balance.PlayerHitR</c> (10), which is the SHELL hit radius - the pickup is easier to
+        /// walk into than a shell is to be hit by, and folding the two together would shrink every
+        /// pickup's reach.
+        /// </summary>
+        public double r = 13;
+
+        /// <summary>
+        /// Ticks of blink charge owed, granted as a fraction by a cleared room. A double, because
+        /// the refund is <c>BlinkRecharge * 0.5</c> = 367.5 and the original keeps the fraction.
+        /// </summary>
+        public double blinkRegen;
+}
 
     /// <summary>One enemy. The contract's fields first, then the cast and cooldown state the
     /// committed-shot bookkeeping reads and writes.</summary>
@@ -138,14 +165,48 @@ namespace Depths
     }
 
     /// <summary>
-    /// A transient pickup in the current room. The contract names the collection
-    /// (<c>RunState.transients</c>) without a type, so this is the placeholder record the list
-    /// holds until the item port lands. Kept here rather than widening <c>Body</c>, because a
-    /// pickup is not a body - nothing moves it and nothing shoots it.
+    /// A pickup in the current room, widened for the <c>tickRoom</c> port.
+    /// <para>
+    /// The first version of this record carried only a position and a kind, which was enough to
+    /// name the collection and not enough to run it. Four fields had to be added because the room
+    /// phase reads all of them and two of them change behaviour rather than merely position:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><c>r</c> - the collection radius. The original tests
+    /// <c>dist &lt; pk.r + player.r</c>, so a heart at r=16 and a key at r=14 are picked up at
+    /// genuinely different distances. Carrying one constant here would quietly change which
+    /// pickups are reachable at the edge of a room.</item>
+    /// <item><c>hold</c> - set the tick after a pickup is taken, and cleared the tick after the
+    /// player steps off it. This is what stops a just-collected item being re-collected on the
+    /// same tick, and it is the reason the weapon swap parks the old gun rather than deleting it.</item>
+    /// <item><c>w</c>, <c>id</c>, <c>charges</c> - the payload. A weapon pickup carries the index
+    /// it grants, an item carries its id and how many charges came with it.</item>
+    /// </list>
+    /// <para>
+    /// A pickup is still not a body: nothing moves it and nothing shoots it.
+    /// </para>
     /// </summary>
     public sealed class Pickup
     {
         public double x, y;
+        /// <summary>Collection radius, in the original's units. See the note above.</summary>
+        public double r = 16;
         public string kind = "";
+        /// <summary>Weapon index for a <c>weapon</c> pickup; the previous index once swapped.</summary>
+        public int w;
+        /// <summary>Item id for an <c>item</c> pickup.</summary>
+        public string id = "";
+        /// <summary>Charges for an <c>item</c> pickup.</summary>
+        public int charges;
+        /// <summary>Suppress re-collection until the player steps off. See the note above.</summary>
+        public bool hold;
+
+        /// <summary>The weapon pickup: grants <paramref name="index"/> and parks the old one here.</summary>
+        public static Pickup Weapon(double x, double y, int index, double r = 16) =>
+            new Pickup { x = x, y = y, kind = "weapon", w = index, r = r };
+
+        /// <summary>A plain pickup with a radius, for the rewards the room phase spawns.</summary>
+        public static Pickup Of(string kind, double x, double y, double r) =>
+            new Pickup { x = x, y = y, kind = kind, r = r };
     }
 }

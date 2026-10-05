@@ -35,6 +35,8 @@ namespace Depths
         public const int RoomLeft = 50, RoomRight = 750, RoomTop = 130, RoomBottom = 580;
         public const int MidX = (RoomLeft + RoomRight) / 2, MidY = (RoomTop + RoomBottom) / 2;
 
+
+
         // ------------------------------------------------------------- spawning
 
         /// <summary>
@@ -192,6 +194,40 @@ namespace Depths
         /// </para>
         /// </summary>
         public const int PlayerHitDy = 10, PlayerHitR = 10;
+
+    /// <summary>
+    /// Ticks for one blink charge, and the divisor behind the half-charge a cleared room refunds.
+    /// <para>
+    /// Read out of the running game: <c>BLINK_RECHARGE</c> is 735 there. The refund is
+    /// <c>BlinkRecharge * 0.5</c> = 367.5, which is a fractional tick count on purpose - the
+    /// original stores it in a float field and the counter applies the ceiling, so rounding it here
+    /// to 368 would make the refund half a tick larger on every cleared room.
+    /// </para>
+    /// </summary>
+    public const int BlinkRecharge = 735;
+
+    /// <summary>
+    /// Per-weapon cooldowns in ticks, in roster order: Bolt, Scatter, Arcane Beam, Voidball.
+    /// <para>
+    /// Read out of the running game rather than transcribed. The third value is 18.2, not 18 - the
+    /// Arcane Beam is a continuous weapon and its cadence is genuinely fractional, so this table is
+    /// <c>double</c> rather than <c>int</c>. Rounding it to 18 would be a silent balance change that
+    /// no test comparing a whole number would catch.
+    /// </para>
+    /// </summary>
+    public static readonly double[] WeaponCooldowns = { 133, 231, 18.2, 84 };
+
+    /// <summary>
+    /// The cooldown of weapon <paramref name="index"/>. Out-of-range indices clamp to the last
+    /// entry rather than throwing: the room phase calls this with whatever a pickup carried, and a
+    /// malformed pickup should not be able to end a run with an exception from the tick.
+    /// </summary>
+    public static double WeaponCooldown(int index)
+    {
+        if (index < 0) index = 0;
+        if (index >= WeaponCooldowns.Length) index = WeaponCooldowns.Length - 1;
+        return WeaponCooldowns[index];
+    }
 
         /// <summary>
         /// The hitbox the enemies aim at trails the real position and converges over roughly 0.4s -

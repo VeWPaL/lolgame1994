@@ -39,7 +39,7 @@ the view.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 
-`csharp/Depths.Tests` pins 62 `[TestCase]` rows of numbers **read out of the running JavaScript**.
+`csharp/Depths.Tests` pins 73 `[TestCase]` rows of numbers **read out of the running JavaScript**.
 
 Three of those rows are `RoomScaledParityTests`, and they are a different KIND of row from the rest.
 Every other table pins a constant or a function of a seed, so a drift is caught by comparing names.
@@ -89,10 +89,41 @@ like and what divergent randomness never looks like.
 
 ## Where the port resumes
 
+### the four phases — ONE PORTED
+
+`update()` was 1,212 lines and has been split into four named phases: `tickPlayer`,
+`tickProjectiles`, `tickBodies`, `tickRoom`. The boundaries are where the data stops flowing, and a
+static scope check over comment-stripped code confirms **no phase reads a local of the phase before
+it**. Two shared values are named rather than left to chance: `r` (each phase takes its own from
+`currentRoom()`) and the player's **lagged hitbox**, which goes through module state because the
+gunner intercept solves against the position the player is visually leaving.
+
+    phase              lines   C#
+    update()              93   gates + dispatch, all four called in order
+    tickPlayer()         169   stub
+    tickProjectiles()    160   stub
+    tickBodies()         697   stub
+    tickRoom()           109   PORTED - TickOrder.TickRoom
+
+`TickRoom` is the first pass with real behaviour. Its expectations in `RoomPhaseParityTests.cs` were
+**generated from the running game** by `tools/room-parity.js`, not written by hand - the same
+discipline as the five parity tables. `Descend` came with it, and its expectations in
+`DescendParityTests.cs` were measured by dirtying every field the function touches and reading what
+came out.
+
+**The item branch is not ported and throws.** `Items.give` has no C# counterpart; a silent no-op
+would be a port that looks finished and plays differently.
+
+**One structural difference worth naming:** in JavaScript a pickup lives on the ROOM, so descending
+builds a new dungeon and the old room keeps its contents. This port keeps the current room's pickups
+on the RUN, so `Descend` cannot express that directly - `enterRoom` is where the original empties a
+room, and it is the remaining gap on this path. It is named in the code rather than papered over.
+
 At `update()` in `60-tick.js` — 868 of its 1123 lines, and the tick order is already pinned by
 `TickOrderTests`. **Measured fact worth keeping:** `update()` contains zero references to `ctx`,
 `document`, `performance.now` or `Date.now` — the simulation is already free of the host, so porting
-it is not tangled with rendering. Slice it in tick order (projectiles → bodies → player → room) with
+it is not tangled with rendering. Slice it in tick order. **The measured order is player → projectiles → bodies → room**, not
+projectiles first as this file once claimed; see the note below. Wire it with
 a parity test per slice.
 
 ### The pass ORDER, measured — and it was wrong here before it was right in the manifest

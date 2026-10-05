@@ -62,6 +62,31 @@ namespace Depths
 
         public bool Visited, Spawned;
 
+        /// <summary>
+        /// The room has been fought to empty, at least once. Set by <c>tickRoom</c>, and read only
+        /// to make the half-blink charge a one-off rather than a per-tick top-up: without the flag a
+        /// cleared room would hand back a blink charge every tick for as long as the player stood
+        /// in it, which is a different resource economy from the one the original has.
+        /// </summary>
+        public bool Cleared;
+
+        /// <summary>
+        /// The silver key has been dropped here, so it must not be dropped twice. One-shot, like
+        /// <see cref="Cleared"/>, and for the same reason: the spawn is inside the room phase and
+        /// would otherwise re-run every tick the room is empty.
+        /// </summary>
+        public bool KeySpawned;
+
+        /// <summary>The gold key has been dropped here. One-shot, like <see cref="KeySpawned"/>.</summary>
+        public bool GoldSpawned;
+
+        /// <summary>
+        /// The way down is open. Set when a boss dies, and it is what makes the exit portal appear
+        /// exactly once rather than on every tick the boss room stays empty - which would stack a
+        /// new portal per tick for as long as the player stood there.
+        /// </summary>
+        public bool ExitOpen;
+
         /// <summary>Holds the silver key. Exactly one room per floor.</summary>
         public bool KeyReward;
 
@@ -180,6 +205,17 @@ namespace Depths
 
         private bool Occupied(int x, int y) =>
             InGrid(x, y) && _rooms.ContainsKey(Cell(x, y));
+
+        /// <summary>
+        /// The room at a grid position, or null if nothing was generated there.
+        /// <para>
+        /// The JavaScript reads the current room as <c>rooms[key(cur.x, cur.y)]</c> - a lookup on
+        /// every access, several times a tick. This is the same dictionary and the same key function,
+        /// exposed, so the tick does not have to carry a cached <c>Room</c> that could go stale when
+        /// the seed changes underneath it.
+        /// </para>
+        /// </summary>
+        public Room? RoomAt(int x, int y) => _rooms.TryGetValue(Cell(x, y), out var r) ? r : null;
 
         private static int Cell(int x, int y) => x * Map.Grid + y;
 

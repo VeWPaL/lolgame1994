@@ -277,5 +277,6 @@ namespace Depths
             ulong wrapped = (ulong)acc % 4294967296UL;
             return (uint)wrapped;
         }
-    }
+    
+}
 }
