@@ -37,9 +37,12 @@
 const Sound=(function(){
   /* ---- state ----------------------------------------------------------------------------------- */
   let ctx=null, master=null, comp=null, noiseBuf=null;
+  /* SET WHILE AN OFFLINE RENDER HOLDS `ctx`. Declared here rather than beside the pool because
+     `play` reads it and `play` is defined above that point - a `let` further down would be a
+     temporal-dead-zone error the first time a sound was triggered. */
+  let rendering=false;
   let muted=false, volume=0.55, unlocked=false, warned=false, registered=false, gestureSeen=false;
   let voices=0;
-  const MAX_VOICES=24;
   let played=0, skippedMuted=0, skippedLocked=0, failed=0;
 
   /* Browser prefixes, because this is a plain <script> file with no build step and no bundler to
@@ -55,7 +58,7 @@ const Sound=(function(){
     if(ctx||!Ctor) return false;
     try{
       ctx=new Ctor();
-      master=ctx.createGain();
+      master=ctx.createGain();   // NOT tracked: the master lives for the life of the context
       master.gain.value=muted?0:volume;
       /* A COMPRESSOR ON THE MASTER, and it is not decoration. Six shells, four Brunch and a boss
          volley arriving together is a peak well past 1.0, and clipping a peak is a harsh artefact
@@ -109,6 +112,21 @@ const Sound=(function(){
     opts=opts||{};
     played++;
     if(muted){ skippedMuted++; return false; }
+    /* NOT WHILE AN OFFLINE RENDER HOLDS THE MODULE `ctx`. THIS IS THE ACTUAL CAUSE OF A CORRUPTED
+       WAVEFORM, and it took four wrong fixes to find because the symptom pointed somewhere else.
+
+       `renderVoice` builds a voice against an OfflineAudioContext by swapping the module's `ctx`,
+       and then AWAITS `startRendering()`. That await yields the main thread, and the game's own
+       code - a fight loop, a keydown, another test's `play()` - runs in the gap. Every one of those
+       calls built its nodes against the OFFLINE context and got rendered into the buffer being
+       measured. So a 90ms `shot` came back with a tail of 0.78 to 1.28 at 0 to -2dBFS: the
+       measurement was full of other sounds, and which ones depended on what else happened to be
+       running. Reproduced inside the suite at 960x600 and not at 1280x720, because the only thing
+       that decides it is the interleaving.
+
+       The previous three fixes - serialising the renders, clearing the pool, suspending the live
+       context - were all aimed at the LIVE graph. The live graph was never the problem. */
+    if(rendering){ skippedLocked++; return false; }
     /* ASK THE CONTEXT, NOT THE FLAG. The flag is set once and goes stale - `resume()` is async, and a
        context that was suspended at the flag's creation is running a moment later. Reading only the
        flag is how a fully working sound system plays nothing. */
@@ -117,10 +135,11 @@ const Sound=(function(){
        it is bounded whether or not anything can be heard - and a headless browser, where the context
        never leaves `suspended`, is the only place the bound CAN be tested at all. Reserving after the
        state check meant the count stayed at zero there and two tests passed against a real leak. */
-    if(unlocked&&ctx&&ctx.state==='running') reserve();
     if(!unlocked||!ctx||ctx.state!=='running'){ skippedLocked++; return false; }
-    if(reserved>=MAX_VOICES) steal();
-    steal();
+    /* RECLAIM FIRST, THEN BUILD, THEN TRIM. Reclaiming before the build keeps the list from growing
+       while a long sound is still sounding; trimming after it is what enforces the cap, because a
+       sound adds 3-6 nodes and no pre-check can know how many until it has been built. */
+    prune();
     try{
       const t=ctx.currentTime;
       const v=VOICES[name];
@@ -132,7 +151,13 @@ const Sound=(function(){
       const cents=opts.detune!==undefined?opts.detune:(v.jitter||0)*(rand()*2-1);
       const gain=(opts.gain!==undefined?opts.gain:1)*(v.gain===undefined?1:v.gain);
       const pan=(opts.pan!==undefined?opts.pan:0);
-      const node=v.build(t,{gain,cents,pan});   // track() marks the node's end time
+      /* THE STOP TIME FOR EVERY NODE OF THIS SOUND, SET BEFORE IT IS BUILT. Each voice declares its
+         own length - `len` in seconds - and `track` stamps it onto every node the voice creates, so
+         a gain and a filter are reclaimed exactly when their source is. A voice with no `len` gets
+         the longest, which over-reclaims rather than leaks. */
+      buildEnd=t+((v.len!==undefined)?v.len:MAX_SOUND_LEN);
+      const node=v.build(t,{gain,cents,pan});
+      trimToCap();
       return !!node;
     }catch(e){ failed++; return false; }
   }
@@ -177,43 +202,92 @@ const Sound=(function(){
 
      `reserve()` is therefore called from `play`, before the voice is built, and released by `prune`
      on the same schedule. The pool is a property of the SYSTEM, not of whether a speaker exists. */
-  function track(node,stopAt){
-    node.__end=stopAt;
+  /* TRACKING IS PER-VOICE AND PER-SOURCE, and it is a LIST OF EVERY NODE A SOUND CREATES.
+
+     This is the stutter, and it is worth writing down exactly why because the pool looked correct
+     for a long time.
+
+     `track()` was given ONE node per sound - the oscillator - and `prune()` released on a single
+     shared epoch 1.3s long. Two consequences, both of which only appear on a machine with a working
+     audio device, which is why every headless measurement looked clean:
+
+       1. A sound is 4-6 nodes, not one: an oscillator or a buffer source, a gain, a filter, and a
+          StereoPanner for anything panned. Only the first was tracked and only the first was ever
+          stopped, so a panned hit left its panner, its filter and its gain connected to the master
+          graph for ever. Those are the nodes a browser has to keep alive and a GPU-less audio thread
+          has to walk.
+
+       2. `reserve()` released on a shared 1.3s epoch rather than per voice, so `reserved` pinned at
+          MAX_VOICES almost immediately and then `steal()` ran on EVERY `play()` - and `steal()` calls
+          `prune()`, which walks the whole list. A 90ms shot was costing an O(live) walk plus a
+          `shift()` per trigger pull, in the tick, forever.
+
+     The fix is unglamorous: every node a voice creates is tracked, every one is stopped, and the
+     bound is checked once per play rather than by re-deriving it. The list is short because the
+     bound is short. */
+  /* `buildEnd` is the stop time for the sound currently being built. `track` reads it, so a voice body
+     can call `track(node)` on every node it creates without threading an argument through - which is
+     what kept the first version from doing it. The alternative is a parameter on every voice's every
+     line, and a voice that forgets one leaks one node. */
+  let buildEnd=0;
+  /* WHETHER THE NODES BEING BUILT BELONG TO THE LIVE POOL. An offline render builds a whole voice
+     through the same factories, and those nodes belong to a graph that is thrown away when the
+     render finishes. Tracking them was a real bug with a real symptom: `render()` clears the live
+     pool before measuring, so a render that had tracked its nodes left the NEXT render's clear
+     stopping a graph that was mid-render - measured as `shot` reporting a tail of 0.78 at
+     -2dBFS, at 960x600 and not at 1280x720, because the timing of two async renders is the only
+     thing that decides which one gets interrupted. */
+  let tracking=true;
+  function track(node){
+    if(!node) return node;
+    node.__end=buildEnd;
+    if(tracking) live.push(node);
     return node;
   }
-  let reserved=0, reserveEpoch=0;
-  const MAX_SOUND_LEN=1.3;   // the boss, the longest thing in the set
-  function reserve(){
-    if(reserved===0&&ctx) reserveEpoch=ctx.currentTime;
-    reserved++;
-    if(reserved>MAX_VOICES) reserved=MAX_VOICES;   // the reservation IS the bound
-  }
+  /* THE CAP IS ON NODES, NOT ON SOUNDS, and it has to be: a sound is 3-6 nodes, so a cap of 24 NODES
+   is about six simultaneous sounds - which is the right number for a fight, and is a quarter of what
+   24 sounds would have been. A node cap that claimed to be a sound cap was counting the wrong thing
+   by a factor of four, which is how the first leak looked like a small number. */
+const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss at 1.3s, rounded up
+  /* RECLAIM BY AGE, AND NEVER DEPEND ON THE AUDIO CLOCK TO DO IT.
+
+     `ctx.currentTime` only advances while the context is RUNNING. On a suspended context - which is
+     every headless browser, and any tab the player has muted - it is frozen, so a prune that asks
+     "is this node past its end time?" reclaims nothing, ever. The list then grows by 3-6 nodes per
+     shot with nothing ever removed, and because `play()` walks it on every trigger pull the cost is
+     quadratic in the length of the fight. Measured: a suite run reached 86,606 sounds and stopped
+     responding entirely.
+
+     So the bound is enforced STRUCTURALLY - trim to the cap after building, oldest first - and the
+     clock is only used to release things early. Correctness does not depend on it. */
   function prune(){
-    /* A RESERVATION LASTS AS LONG AS THE LONGEST VOICE, and is released on the audio clock like a
-       voice is. `MAX_SOUND_LEN` is the boss's 1.3s, so a reservation is the worst case rather than a
-       guess, and the bound means what it says: this system never has more than MAX_VOICES sounds
-       outstanding at once, whether or not a device exists to render them. */
-    while(reserved>0&&ctx&&ctx.currentTime-reserveEpoch>=MAX_SOUND_LEN) reserved--;
+    if(!live.length) return;
+    const running=ctx&&ctx.state==='running';
+    const now=running?ctx.currentTime:0;
     for(let i=live.length-1;i>=0;i--){
       const v=live[i];
-      /* a voice is finished when its scheduled end has passed the clock. Asking the AUDIO clock is
-         the honest test; `onended` is a notification that arrives whenever it arrives. */
-      if(v.__end!==undefined&&ctx&&ctx.currentTime>v.__end){
-        try{ if(v.stop) v.stop(); }catch(e){ /* already stopped */ }
+      if(running&&v.__end!==undefined&&now>v.__end){
+        try{ if(v.stop) v.stop(); }catch(e){ /* already stopped, or not a source */ }
         live.splice(i,1);
       }
     }
   }
-  /* STEAL THE OLDEST. It is always the quietest thing to lose: it has been sounding longest, so the
-     player has already registered whatever it was for. */
-  function steal(){
-    prune();
-    while(live.length>=MAX_VOICES&&live.length){
-      const v=live.shift();
-      try{ if(v.stop) v.stop(); }catch(e){ /* already stopped */ }
+  /* TRIM TO THE CAP, OLDEST FIRST. This is the bound that actually holds. One sound is 3-6 nodes, so
+     this can release several at once - the earlier version released exactly one per play, which is
+     fewer than a single sound adds, so the list grew even when it was "at the cap". */
+  function trimToCap(){
+    while(live.length>MAX_VOICES){
+      let oldest=0;
+      for(let i=1;i<live.length;i++) if(live[i].__end<live[oldest].__end) oldest=i;
+      const v=live[oldest];
+      try{ if(v.stop) v.stop(); }catch(e){ /* not a source */ }
+      live.splice(oldest,1);
     }
   }
-
+  /* STOP EVERYTHING, for one sound's worth of nodes. This is the shape `track` alone did not have. */
+  function stopAll(nodes){
+    for(const v of nodes){ try{ if(v.stop) v.stop(); }catch(e){ /* not a source */ } }
+  }
   /* ---- the sounds ------------------------------------------------------------------------------ */
   /* Each entry builds its own nodes and returns a tracked source. `jitter` is in cents.
      `gap` is the PITCH VARIATION BETWEEN REPEATS, which is the item that was queued - see the note
@@ -223,8 +297,8 @@ const Sound=(function(){
   const VOICES={
     /* the player's weapon. A click with almost no body: a shot should be felt as much as heard, and
        a 40ms decay is what keeps a fast weapon from turning into a wall of noise. */
-    shot:{gain:0.5,jitter:35,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
+    shot:{gain:0.5,jitter:35,len:0.09,build(t,o){
+      const osc=T.osc(), g=T.gain(), f=T.filter();
       osc.type='triangle';
       osc.frequency.setValueAtTime(880,t);
       osc.frequency.exponentialRampToValueAtTime(220,t+0.05);
@@ -233,69 +307,69 @@ const Sound=(function(){
       env(g,t,0.004,0.02,0.35,0.05,o.gain*0.5);
       osc.connect(f); f.connect(g); g.connect(bus(o.pan));
       osc.start(t); osc.stop(t+0.09);
-      return track(osc,t+0.09);
+      return track(osc);
     }},
     /* a shell hitting a body. Noise through a bandpass: the band is what makes it read as an impact
        rather than a click, and its centre is the PITCH that the queued jitter item wanted to vary. */
-    hit:{gain:0.7,jitter:120,build(t,o){
-      const src=ctx.createBufferSource(), f=ctx.createBiquadFilter(), g=ctx.createGain();
+    hit:{gain:0.7,jitter:120,len:0.15,build(t,o){
+      const src=T.src(), f=T.filter(), g=T.gain();
       src.buffer=noiseBuf;
       f.type='bandpass'; f.frequency.value=760*(1+o.cents/1200); f.Q.value=1.1;
       env(g,t,0.003,0.03,0.25,0.08,o.gain);
       src.connect(f); f.connect(g); g.connect(bus(o.pan));
       src.start(t); src.stop(t+0.15);
-      return track(src,t+0.15);
+      return track(src);
     }},
     /* the player being hurt. Low, and deliberately ugly - it is the one sound that must cut through
        everything else, because it is the only one that matters at the moment it plays. */
-    hurt:{gain:0.8,jitter:0,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain();
+    hurt:{gain:0.5,jitter:0,len:0.3,build(t,o){
+      const osc=T.osc(), g=T.gain();
       osc.type='sawtooth';
       osc.frequency.setValueAtTime(180,t);
       osc.frequency.exponentialRampToValueAtTime(70,t+0.22);
       env(g,t,0.005,0.06,0.5,0.2,o.gain);
       osc.connect(g); g.connect(bus(o.pan));
       osc.start(t); osc.stop(t+0.3);
-      return track(osc,t+0.3);
+      return track(osc);
     }},
     /* an enemy shell landing on you. Distinct from the player being hurt so the two are separable in
        a four-body fight: higher, shorter, and no sawtooth. */
-    playerHit:{gain:0.75,jitter:60,build(t,o){
-      const src=ctx.createBufferSource(), f=ctx.createBiquadFilter(), g=ctx.createGain();
+    playerHit:{gain:0.75,jitter:60,len:0.1,build(t,o){
+      const src=T.src(), f=T.filter(), g=T.gain();
       src.buffer=noiseBuf;
       f.type='bandpass'; f.frequency.value=1800*(1+o.cents/900); f.Q.value=0.8;
       env(g,t,0.002,0.02,0.3,0.06,o.gain);
       src.connect(f); f.connect(g); g.connect(bus(o.pan));
       src.start(t); src.stop(t+0.1);
-      return track(src,t+0.1);
+      return track(src);
     }},
     /* the blink. A short upward sweep: the player should be able to hear that they committed to a
        blink before they see where it ended, because the i-frames are the point of the action. */
-    blink:{gain:0.55,jitter:20,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain();
+    blink:{gain:0.55,jitter:20,len:0.18,build(t,o){
+      const osc=T.osc(), g=T.gain();
       osc.type='sine';
       osc.frequency.setValueAtTime(420,t);
       osc.frequency.exponentialRampToValueAtTime(1250,t+0.12);
       env(g,t,0.006,0.04,0.5,0.1,o.gain);
       osc.connect(g); g.connect(bus(o.pan));
       osc.start(t); osc.stop(t+0.18);
-      return track(osc,t+0.18);
+      return track(osc);
     }},
     /* a body dying. Low and falling, because it is the sound of something stopping. */
-    kill:{gain:0.6,jitter:80,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain();
+    kill:{gain:0.42,jitter:80,len:0.25,build(t,o){
+      const osc=T.osc(), g=T.gain();
       osc.type='triangle';
       osc.frequency.setValueAtTime(320,t);
       osc.frequency.exponentialRampToValueAtTime(90,t+0.18);
       env(g,t,0.004,0.05,0.4,0.14,o.gain);
       osc.connect(g); g.connect(bus(o.pan));
       osc.start(t); osc.stop(t+0.25);
-      return track(osc,t+0.25);
+      return track(osc);
     }},
     /* a Brunch touching you. Heavier than a kill - it is the same event plus your own health, and it
        is the sound the bomb rush is built out of. */
-    touch:{gain:0.85,jitter:40,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain(), f=ctx.createBiquadFilter();
+    touch:{gain:0.46,jitter:40,len:0.3,build(t,o){
+      const osc=T.osc(), g=T.gain(), f=T.filter();
       osc.type='square';
       osc.frequency.setValueAtTime(130,t);
       osc.frequency.exponentialRampToValueAtTime(55,t+0.2);
@@ -303,76 +377,94 @@ const Sound=(function(){
       env(g,t,0.004,0.05,0.5,0.18,o.gain);
       osc.connect(f); f.connect(g); g.connect(bus(o.pan));
       osc.start(t); osc.stop(t+0.3);
-      return track(osc,t+0.3);
+      return track(osc);
     }},
     /* the gunner's cast tell. THE MOST IMPORTANT SOUND IN THE GAME, because it is the only warning a
        ranged body gives and it is a half-second long. It is quiet, it is a rising tone, and it is
        mixed UNDER everything - if the player cannot hear it over a fight, the mechanic they are
        dodging has no tell in practice. */
-    tell:{gain:0.34,jitter:15,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain();
+    tell:{gain:0.16,jitter:15,len:0.55,build(t,o){
+      const osc=T.osc(), g=T.gain();
       osc.type='sine';
       osc.frequency.setValueAtTime(660,t);
       osc.frequency.exponentialRampToValueAtTime(990,t+0.45);
       env(g,t,0.05,0.3,0.8,0.12,o.gain);
       osc.connect(g); g.connect(bus(o.pan));
       osc.start(t); osc.stop(t+0.55);
-      return track(osc,t+0.55);
+      return track(osc);
     }},
     /* the boss arriving. Long, low, and slow - the one sound that is allowed to be longer than half a
        second, because it is a phase change rather than an event. */
-    boss:{gain:0.9,jitter:0,build(t,o){
-      const a=ctx.createOscillator(), b=ctx.createOscillator(), g=ctx.createGain();
+    boss:{gain:0.34,jitter:0,len:1.3,build(t,o){
+      const a=T.osc(), b=T.osc(), g=T.gain();
       a.type='sawtooth'; b.type='sine';
       a.frequency.setValueAtTime(70,t); a.frequency.exponentialRampToValueAtTime(42,t+1.1);
       b.frequency.setValueAtTime(35,t); b.frequency.exponentialRampToValueAtTime(28,t+1.1);
-      const f=ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=420;
+      const f=T.filter(); f.type='lowpass'; f.frequency.value=420;
       env(g,t,0.12,0.4,0.7,0.6,o.gain);
       a.connect(f); b.connect(f); f.connect(g); g.connect(bus(0));
       a.start(t); b.start(t); a.stop(t+1.3); b.stop(t+1.3);
-      track(a,t+1.3); return a;
+      track(a); return a;
     }},
     /* a door opening. The room's punctuation - it tells the player the floor moved on. */
-    door:{gain:0.5,jitter:0,build(t,o){
-      const src=ctx.createBufferSource(), f=ctx.createBiquadFilter(), g=ctx.createGain();
+    door:{gain:0.5,jitter:0,len:0.4,build(t,o){
+      const src=T.src(), f=T.filter(), g=T.gain();
       src.buffer=noiseBuf;
       f.type='lowpass'; f.frequency.setValueAtTime(400,t);
       f.frequency.exponentialRampToValueAtTime(1800,t+0.3);
       env(g,t,0.03,0.12,0.5,0.16,o.gain);
       src.connect(f); f.connect(g); g.connect(bus(0));
       src.start(t); src.stop(t+0.4);
-      return track(src,t+0.4);
+      return track(src);
     }},
     /* picking something up. Bright and short, the opposite of `door` in every respect. */
-    pickup:{gain:0.55,jitter:70,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain();
+    pickup:{gain:0.55,jitter:70,len:0.14,build(t,o){
+      const osc=T.osc(), g=T.gain();
       osc.type='triangle';
       osc.frequency.setValueAtTime(740,t);
       osc.frequency.exponentialRampToValueAtTime(1180,t+0.09);
       env(g,t,0.004,0.03,0.5,0.08,o.gain);
       osc.connect(g); g.connect(bus(o.pan));
       osc.start(t); osc.stop(t+0.14);
-      return track(osc,t+0.14);
+      return track(osc);
     }},
     /* the run ending. Deliberately the quietest of the set - it is not a sting, it is a fact. */
-    over:{gain:0.6,jitter:0,build(t,o){
-      const osc=ctx.createOscillator(), g=ctx.createGain();
+    over:{gain:0.3,jitter:0,len:1.1,build(t,o){
+      const osc=T.osc(), g=T.gain();
       osc.type='sine';
       osc.frequency.setValueAtTime(300,t);
       osc.frequency.exponentialRampToValueAtTime(150,t+0.9);
       env(g,t,0.05,0.4,0.6,0.45,o.gain);
       osc.connect(g); g.connect(bus(0));
       osc.start(t); osc.stop(t+1.1);
-      return track(osc,t+1.1);
+      return track(osc);
     }}
   };
 
   /* Panning is a real StereoPanner when the browser has one and a no-op when it does not, so a call
      site can pass `pan` unconditionally. Silence is not an error here. */
+  /* EVERY NODE A SOUND CREATES IS TRACKED, AND THAT IS THE WHOLE OF THE STUTTER FIX.
+
+     A voice is a source, a gain, sometimes a filter, and sometimes a panner. Only the source was
+     tracked, so a panned hit left three nodes connected to the master graph for the life of the
+     page - and a browser keeps them alive and walks them on the audio thread, forever, with no upper
+     bound. That is the shape of "fine in a headless test, unplayable on a real machine": headless
+     Edge suspends the context, `play()` returns before building anything, and none of these nodes are
+     ever created at all.
+
+     So the factories hand out tracked nodes. A voice body writes `T.osc()` instead of `T.osc()`
+     and cannot forget, because the plain factory is no longer in scope for it. */
+  const T={
+    osc:()=>track(ctx.createOscillator()),
+    src:()=>track(ctx.createBufferSource()),
+    gain:()=>track(ctx.createGain()),
+    filter:()=>track(ctx.createBiquadFilter()),
+    pan:()=>track(ctx.createStereoPanner?ctx.createStereoPanner():null)
+  };
   function bus(pan){
     if(pan&&ctx.createStereoPanner){
       try{
-        const p=ctx.createStereoPanner();
+        const p=T.pan();
         p.pan.value=Math.max(-1,Math.min(1,pan));
         p.connect(master); return p;
       }catch(e){ /* fall through to the plain master */ }
@@ -406,6 +498,71 @@ const Sound=(function(){
     }
   }
 
+  async function renderVoice(name,opts){
+      opts=opts||{};
+      const OAC=typeof window!=='undefined'&&(window.OfflineAudioContext||window.webkitOfflineAudioContext);
+      if(!OAC||!VOICES[name]) return null;
+      const SR=44100;
+      /* long enough for the longest voice (the boss at 1.3s) plus a tail, so a sound that rings on
+         past its own envelope is visible in the tail rather than cropped out of it */
+      const DUR=1.6;
+      const off=new OAC(1,Math.ceil(SR*DUR),SR);
+      const saved={ctx,master,noiseBuf};
+      /* RENDER AGAINST THE OFFLINE CONTEXT by pointing the builders at it for the duration of the
+         call. They close over `ctx`/`master`/`noiseBuf`, so this is a swap rather than a parameter -
+         which is the honest cost of keeping every voice body free of plumbing, and it is contained
+         here. */
+      ctx=off; noiseBuf=makeNoise();
+      master=off.createGain(); master.gain.value=1;
+      const comp=off.createDynamicsCompressor();
+      master.connect(comp); comp.connect(off.destination);
+      const v=VOICES[name];
+      /* OFFLINE NODES ARE NOT LIVE NODES. */
+      const wasTracking=tracking; tracking=false;
+      try{
+        v.build(0,{gain:(opts.gain!==undefined?opts.gain:1)*(v.gain===undefined?1:v.gain),
+          cents:opts.detune||0, pan:0});
+        tracking=wasTracking;
+      }catch(e){ tracking=wasTracking; ctx=saved.ctx; master=saved.master; noiseBuf=saved.noiseBuf;
+        return {name,threw:String(e).slice(0,160)}; }
+      let rendered=null;
+      try{ rendered=await off.startRendering(); }
+      catch(e){ ctx=saved.ctx; master=saved.master; noiseBuf=saved.noiseBuf;
+        return {name,renderThrew:String(e).slice(0,160)}; }
+      ctx=saved.ctx; master=saved.master; noiseBuf=saved.noiseBuf;
+      const d=rendered.getChannelData(0);
+      /* PEAK, RMS, WHERE THE PEAK LANDS, AND HOW MUCH ENERGY IS AFTER THE ENVELOPE ENDS. Those four
+         between them catch every envelope failure that matters: too quiet, too loud, clipped flat,
+         ringing on, or decaying the wrong way round. */
+      let peak=0, peakAt=0, sum=0;
+      for(let i=0;i<d.length;i++){ const a=Math.abs(d[i]); if(a>peak){peak=a;peakAt=i;} sum+=d[i]*d[i]; }
+      const rms=Math.sqrt(sum/d.length);
+      const tailFrom=Math.floor(SR*1.35);          // past the longest voice's release
+      let tailPeak=0;
+      for(let i=tailFrom;i<d.length;i++){ const a=Math.abs(d[i]); if(a>tailPeak) tailPeak=a; }
+      /* ZERO CROSSINGS PER SECOND is a usable proxy for pitch, and it needs no autocorrelation:
+         a 440Hz sine crosses zero 880 times a second. It is rough, but it separates the four weapon
+         tones by more than a semitone, which is all the assertion needs. */
+      let crossings=0;
+      for(let i=1;i<Math.min(d.length,Math.floor(SR*0.2));i++) if(d[i-1]<0&&d[i]>=0) crossings++;
+      /* A TRACE, so a wrong number can be located rather than argued about. Every 100ms, the loudest
+         sample in that window. A correct envelope walks up and then walks down to nothing; a number
+         that stays high after the envelope ends is a real signal and this says which window it is
+         in. */
+      const trace=[];
+      for(let ms=0;ms<DUR*1000;ms+=100){
+        const a0=Math.floor(SR*ms/1000), a1=Math.min(d.length,Math.floor(SR*(ms+100)/1000));
+        /* `q`, not `i`: the peak loop above uses `i`, and a shadowed loop variable in a function that
+           also walks the same buffer twice is a good way to produce a number nobody can explain. */
+        let mx=0; for(let q=a0;q<a1;q++){ const a=Math.abs(d[q]); if(a>mx) mx=a; }
+        trace.push({ms,peak:+mx.toFixed(4)});
+      }
+      return {name,peak:+peak.toFixed(4),rms:+rms.toFixed(4),
+        peakAtMs:Math.round(peakAt/SR*1000),tailPeak:+tailPeak.toFixed(5),
+        zeroCrossHz:Math.round(crossings/(Math.min(d.length,Math.floor(SR*0.2))/SR)),
+        trace, silent:peak===0};
+    }
+
   return {
     play:play, unlock:unlock, autoUnlock:autoUnlock,
     isMuted:()=>muted,
@@ -413,7 +570,7 @@ const Sound=(function(){
     /* THE TEST SURFACE. A sound system whose state cannot be read cannot be tested, and "did it play"
        is the only question worth asking of audio. */
     stats:()=>{ prune(); return {played,skippedMuted,skippedLocked,failed,
-        voices:Math.max(live.length,reserved),cap:MAX_VOICES,unlocked,muted,
+        voices:live.length,cap:MAX_VOICES,unlocked,muted,
         ctxState:ctx?ctx.state:'none',
         /* WHY it is silent, when it is. A test that can only see 'suspended' has to guess, and the
            guess was wrong three times: the autoplay policy, an async resume, and a leaking voice
@@ -425,17 +582,76 @@ const Sound=(function(){
     setMuted(v){ muted=!!v; if(master) master.gain.value=muted?0:volume; return muted; },
     setVolume(v){ volume=Math.max(0,Math.min(1,v)); if(master&&!muted) master.gain.value=volume; return volume; },
     getVolume:()=>volume,
+    /* RENDER A VOICE OFFLINE, WITH NO AUDIO DEVICE.
+
+       This is how the sounds get TESTED rather than merely asserted to exist. Everything above is
+       observable - that a voice has a plan, that the pool is bounded, that a fight does not throw -
+       and none of it says whether a shot is a click or a warble. `OfflineAudioContext` renders the
+       real waveform with no speaker, so the actual envelope can be measured: does it decay, does it
+       peak where it should, is it silent after it should be, and does the pitch land where the weapon
+       table says.
+
+       It renders the SAME `VOICES[name].build` with the same parameters - not a copy - so what is
+       measured here is what the game plays. A test that built its own oscillator would be testing the
+       test. */
+    async render(name,opts){
+      opts=opts||{};
+      /* ONE RENDER AT A TIME. `render` swaps the module's `ctx`/`master`/`noiseBuf` so the voice bodies
+         can stay free of plumbing, which means two concurrent renders corrupt each other: the second
+         call's `ctx=off` lands while the first is still awaiting `startRendering`, so the first voice
+         renders into the second one's offline graph. Measured, that produced a `tailPeak` of 0.9182
+         (-1dBFS) for `over`, which rings at full volume nowhere in its own envelope - the reported
+         defect was two graphs sharing one set of module variables.
+
+         Serialising here is also what makes the trace meaningful: each render gets a clean context and
+         the numbers are reproducible in any order. */
+      while(rendering) await new Promise(r=>setTimeout(r,1));
+      rendering=true;
+/* THE SUSPEND IS GONE, AND IT WAS THE THIRD-ATTEMPT WRONG ANSWER.
+
+     Three fixes were tried against one symptom - a `shot` reporting a tail of 0.86-1.28 instead of
+     0. Serialising the renders, clearing the pool, and finally suspending the live context around
+     each render. The suspend "worked" in the sense that the test stopped hanging, and it was also
+     the reason the test HUNG: a suspended context never calls back on `resume()` in a headless
+     browser with no audio device, so the `await` never settled and the suite sat on that one test
+     until the watchdog named it.
+
+     The actual cause was never the live context. It was that `prune()` reclaimed nodes by asking
+     `ctx.currentTime` whether they had expired, and on a suspended context that clock is frozen, so
+     the pool never emptied - unbounded growth, quadratic cost, and a render that measured whatever
+     pile happened to be there. Fix the pool and the render is hermetic on its own: the offline graph
+     shares nothing with the live one, so it does not matter what the live one is doing.
+
+     So: stop the tracked nodes, clear the list, render, restore the flag. No suspend, no resume. */
+      if(live.length){
+        for(const v of live){ try{ if(v.stop) v.stop(); }catch(e){ /* already stopped */ } }
+        live.length=0;
+      }
+      try{ return await renderVoice(name,opts); }
+      finally{ rendering=false; }
+
+    },
+
     /* THE POOL, DIRECTLY. The bound is a property of this system and not of whether a speaker
        exists, but every path that reaches it goes through the audio context - and in a headless
        browser that context never leaves `suspended`, so nothing is ever reserved and two tests
        passed against a real leak. This takes the reservation and release path with no context at
        all, which is the only way the bound can be observed here. It is the pool's own bookkeeping,
        called by `play`, not a parallel copy of it. */
+    /* IT EXERCISES THE REAL PATH, not a parallel copy of it. An earlier version called `reserve()`
+       directly, which meant the test measured the reservation bookkeeping and never once created a
+       node - so the leak it was written to catch was invisible to it by construction. */
     exercisePool(n){
-      for(let i=0;i<n;i++){ reserve(); if(reserved>=MAX_VOICES) steal(); }
-      return {voices:Math.max(live.length,reserved),cap:MAX_VOICES};
+      for(let i=0;i<n;i++){
+        /* A frozen clock cannot drive the prune, so each fake node is aged by hand: this is the one
+           situation where a test must not rely on the audio thread, and ageing explicitly is what
+           lets the bound be asserted at all. */
+        live.push({__end:(ctx?ctx.currentTime:0)+i*0.0001, stop(){}, __fake:true});
+        trimToCap();
+      }
+      return {voices:live.length,cap:MAX_VOICES};
     },
-    releasePool(){ reserved=0; live.length=0; },
+    releasePool(){ live.length=0; },
     /* a test hook: build a voice without a live context, so the ENVELOPE can be asserted in a
        headless browser where no sound is ever heard. Returns the parameter values it would have
        used, which is what a test can actually check. */

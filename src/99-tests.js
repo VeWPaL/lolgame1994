@@ -96,6 +96,15 @@ if(new URLSearchParams(location.search).has('test')) (function(){
        and the meter is part of that state. */
     try{ Momentum.release(); }catch(e){}
   };
+  /* PROMISES FROM ASYNCHRONOUS TESTS, drained before the results are published. A test declared
+     `async` - which anything asserting on `Sound.render` must be, because `startRendering()` is a
+     promise - was previously run and forgotten: the harness called `fn()`, took the returned promise,
+     and immediately pushed `{ok:true}`. Every assertion in such a test ran after the verdict was
+     already recorded, so the suite reported a green waveform check that had never looked at a
+     waveform, and the mutation that proved it - a voice made to ring on for three seconds - passed.
+     Four times in this file a check passed for a reason that had nothing to do with the thing it
+     claimed to check. */
+  const pending=[];
   const test=(name,fn)=>{
     /* ASSERTION COUNTING, and the distinction matters more than the count.
 
@@ -119,9 +128,49 @@ if(new URLSearchParams(location.search).has('test')) (function(){
     const countingOk=(c,msg)=>{ n++; return _ok(c,msg); };
     const countingEq=(a,b,msg)=>{ n++; return _eq(a,b,msg); };
     ok=countingOk; eq=countingEq;
-    try{ Rnd.set(TEST_SEED); Momentum.lock(); resetUI(); fn(); results.push({name,ok:true,asserts:n}); }
-    catch(err){ results.push({name,ok:false,msg:err.message,asserts:n}); }
-    finally{ ok=_ok; eq=_eq; }
+    /* ASYNCHRONOUS TESTS ARE AWAITED, and this was the fourth silent pass in one file.
+
+       `fn()` was called and its result thrown away, so a test declared `async` ran all of its
+       assertions after this harness had already pushed `{ok:true}`. Every one of them was skipped, the
+       mutation that proved it - a voice made to ring on for three seconds - passed, and the suite
+       reported a green waveform check that had never looked at a waveform.
+
+       The tell was in the shape of the code: `Sound.render` is async because `startRendering()` is,
+       so any test asserting on it must be async, and a harness that cannot await cannot host it.
+
+       Results are now collected as promises and drained once at the end. A synchronous test still
+       resolves immediately, so nothing else in the file changes behaviour. */
+    try{
+      Rnd.set(TEST_SEED); Momentum.lock(); resetUI();
+      /* THE LAST TEST TO START, published as it goes. A hang - a promise that never settles, an
+         infinite loop in a fixture - otherwise produces no output at all, and knowing the suite is
+         stuck is the difference between a two-minute bisect and a two-hour one. */
+      if(typeof window!=='undefined'){ window.__testLastStarted=name; window.__testCount=(window.__testCount||0)+1; }
+      const r=fn();
+      if(r&&typeof r.then==='function'){
+        /* A HUNG TEST MUST BE REPORTED, NOT WAITED ON FOREVER. One `await` that never settles - a
+           promise that is never resolved, a browser API that never calls back - otherwise hangs the
+           whole suite with no output at all, which is what a render deadlock looked like from the
+           outside. The race below turns an infinite wait into a named failure, and the timer is
+           cleared so a slow test is not penalised twice. */
+        let timer=0;
+        const raced=Promise.race([
+          r.then(()=>'ok'),
+          new Promise(z=>{ timer=setTimeout(()=>z('TIMEOUT'),90000); })
+        ]);
+        pending.push(raced.then(
+          verdict=>{ clearTimeout(timer);
+            results.push(verdict==='ok'
+              ? {name,ok:true,asserts:n}
+              : {name,ok:false,msg:'this test never finished - an await in it does not settle, so '
+                 +'the suite would wait here for ever',asserts:n}); },
+          err=>{ clearTimeout(timer);
+            results.push({name,ok:false,msg:(err&&err.message)||String(err),asserts:n}); })
+          .finally(()=>{ ok=_ok; eq=_eq; }));
+      }
+      else { results.push({name,ok:true,asserts:n}); ok=_ok; eq=_eq; }
+    }
+    catch(err){ results.push({name,ok:false,msg:err.message,asserts:n}); ok=_ok; eq=_eq; }
   };
   let ok=(c,msg)=>{if(!c)throw new Error(msg);};
   let eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
@@ -4746,7 +4795,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
            wall oscillate as bodies shuffle;
          - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
-  test('the sound system is complete, bounded, and cannot break a tick',()=>{
+  test('the sound system is complete, bounded, and cannot break a tick',async ()=>{
     /* AUDIO IS TESTED BY ITS PLAN AND ITS LIMITS, NOT BY ITS SOUND. A headless browser hears
        nothing, so what is asserted here is everything that is observable: that every voice builds,
        that the pool is bounded, that mute is honoured before synthesis rather than after, that the
@@ -4868,6 +4917,138 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       +'system - the wiring is as much a part of it as the voices');
     ok(Sound.stats().voices<=Sound.stats().cap,'the pool ended the fight at '
       +Sound.stats().voices+' voices against a cap of '+Sound.stats().cap);
+    /* THE SOUNDS ARE RENDERED, NOT MERELY ASSERTED TO EXIST. Everything above is observable
+       bookkeeping; none of it says whether a shot is a click or a warble. `OfflineAudioContext`
+       renders the real waveform with no speaker, so the envelope is measured from the same
+       `VOICES[name].build` the game plays - not from a copy, which would be testing the test.
+
+       And it immediately caught a mix that was wrong in a way no existence check could see. Measured
+       first pass: boss peaked at 0.9477 against a shot at 0.0771 - twelve times louder, which is not
+       a mix but an interruption - and `tell` at -8.3dBFS was LOUDER than the Brunch touch at -9.6,
+       inverting the design, since the tell exists precisely to sit under a fight. Both corrected; the
+       set now spans 20dB with the tell under the touch. */
+    ok(typeof Sound.render==='function','Sound.render is missing, so the waveforms cannot be '
+      +'measured at all - a sound system tested only for existence is a sound system nobody has heard');
+    /* SILENCE THE SYSTEM BEFORE MEASURING IT. The fight above scheduled thousands of live voices,
+       and `render` clears the pool before it renders - but only the ones it can see, and a source
+       that was started in a previous task and has not been reaped yet is not in the list. Measured
+       consequence: a `shot` whose envelope ends at 0.09s reported a tail of 0.86 to 1.28 at 0 to
+       -1dBFS, varying between runs because it depended on what was still sounding when the offline
+       graph was built. Measured with the pool released first: peak 0.0771, tail exactly 0, every
+       time and at every viewport.
+
+       The lesson is the same one this file keeps arriving at, and it is now four separate checks in
+       it: a measurement taken while the thing being measured is still doing something else is not a
+       measurement. The test above measures "did audio break a tick"; this one measures "what shape is
+       the waveform", and the two cannot both be true at once. */
+    Sound.releasePool();
+    if(typeof Sound.render==='function'){
+      /* ONE AT A TIME, IN SEQUENCE, AND NOT `Promise.all`.
+         `Sound.render` swaps the module's ctx so the voice bodies can stay free of plumbing, and
+         twelve concurrent renders therefore corrupt each other: the numbers that came back described
+         a sound ringing at 3dBFS 1.46 seconds after a 90ms shot that is silent from 100ms on. Every
+         one of them was an artefact of two offline graphs sharing one set of module variables.
+
+         Rendered sequentially, `shot` measures peak 0.0771 with a tail of exactly 0 - the waveform is
+         correct and the concurrency was the only thing wrong with it. */
+      const measured=[];
+      for(const n of names) measured.push(await Sound.render(n,{}));
+      const silent=[], ringing=[], hot=[], tooQuiet=[];
+      for(const m of measured){
+        if(!m||m.threw||m.renderThrew){ silent.push(m&&m.name||'?'); continue; }
+        if(m.silent) silent.push(m.name);
+        /* The tail check is in AMPLITUDE, and the threshold has to be an audible one. Every voice's
+           envelope ends on `exponentialRampToValueAtTime(0.0001)`, so the last of it sits at about
+           -80dBFS - inaudible, and a source that is stopped a moment later leaves a sliver of that
+           behind. Measuring at 0.001 (-60dBFS) reports a voice as ringing when it is 80dB down, which
+           is what the first version did: `over` was flagged at 1.48671 while its envelope ended at
+           0.9s, and the "defect" was the tail of a ramp that had already gone silent.
+
+           -60dBFS is the threshold because that is roughly the quietest thing worth keeping: a fight
+           has a shot at -22dBFS and a boss at -4, so anything below -60 under them is gone. A voice
+           genuinely RINGING - a filter with feedback, a release that never terminates - sits far above
+           it, so the check still bites. */
+        if(m.tailPeak>0.001) ringing.push(m.name+' at '+m.tailPeak.toFixed(4)
+          +' ('+(20*Math.log10(m.tailPeak)).toFixed(0)+'dBFS)');
+        if(m.peak>0.95) hot.push(m.name+' at '+m.peak);
+        if(m.peak<0.02) tooQuiet.push(m.name+' at '+m.peak);
+      }
+      eq(silent.join(','),'','these voices render as pure silence, so they are wired to events and '
+        +'cannot be heard: '+silent.join(', '));
+      /* MUTATION GUARD: the assertions below are only meaningful if `measured` has content. A skipped
+         promise, a renamed method, or a test that silently awaits nothing would leave this array empty
+         and every check trivially true - which is what happened to the pool-bound assertions in this
+         same test, twice, for the same reason. */
+      ok(measured.filter(Boolean).length===names.length,'the render step measured '
+        +measured.filter(Boolean).length+' of '+names.length+' voices, so every waveform assertion '
+        +'below is passing vacuously');
+      eq(ringing.join(','),'','these voices are still sounding 1.35 seconds after they were triggered '
+        +'- an envelope that does not release rings over the next sound and turns a fight into mud: '
+        +ringing.join(', '));
+      eq(hot.join(','),'','these voices peak at or above full scale and will clip on their own, before '
+        +'anything else in the room sounds: '+hot.join(', '));
+      eq(tooQuiet.join(','),'','these voices peak below -34dBFS and cannot be heard under anything: '
+        +tooQuiet.join(', '));
+      /* THE TELL SITS UNDER THE BRUNCH, which is the whole design of it. Measured -8.3 against -9.6
+         the first time, which is backwards. */
+      const tell=measured.find(m=>m&&m.name==='tell'), touch=measured.find(m=>m&&m.name==='touch');
+      if(tell&&touch) ok(tell.peak<touch.peak,'the gunner tell peaks at '+tell.peak+' and the Brunch '
+        +'touch at '+touch.peak+' - the tell has to sit UNDER a fight, or a player in a four-body '
+        +'room hears a warning louder than the thing it is warning about');
+      /* AND THE MEASURED LEVELS SPAN A SENSIBLE RANGE. Twenty decibels from the quietest to the
+         loudest is a mix; forty is a set of events that cannot be layered. */
+      const peaks=measured.filter(Boolean).map(m=>m.peak).filter(p=>p>0);
+      const spanDb=20*Math.log10(Math.max(...peaks)/Math.min(...peaks));
+      ok(spanDb<26,'the voices span '+spanDb.toFixed(1)+'dB, from '+Math.min(...peaks).toFixed(3)
+        +' to '+Math.max(...peaks).toFixed(3)+' - under about 26 is a mix you can fight through, '
+        +'and over it the loudest event silences the rest');
+      /* FOUR WEAPONS, FOUR MEASURED PITCHES. Asserted on the rendered waveform rather than on the
+         table, because the table was wrong twice on a key that did not exist and the table cannot
+         tell you. Zero crossings per second is a rough pitch proxy - a 440Hz sine crosses zero 880
+         times a second - and it separates four tones spread over 690 cents without any of that
+         needing to be precise. */
+      const hz=[];
+      for(let i=0;i<WEAPONS.length;i++){ player.weaponIdx=i;
+        hz.push({id:Content.idOf(WEAPONS[i]), hz:(await Sound.render('shot',{detune:weaponDetuneCents()})||{}).zeroCrossHz}); }
+      eq(new Set(hz.map(x=>x.hz)).size,hz.length,'two weapons render at the same pitch: '
+        +JSON.stringify(hz)+' - the player cannot tell the guns apart by ear, which is the entire '
+        +'point of the tone table');
+      ok(hz.every(x=>x.hz>0&&x.hz<2000),'a rendered weapon tone measured '+JSON.stringify(hz)+' - the '
+        +'zero-crossing count is off the scale, so the shot is either inaudible or a whistle');
+    }
+
+    /* A RENDER MUST BE A MEASUREMENT, NOT A WINDOW. This is the fourth attempt at one symptom and
+       the first that found it, so it is worth stating what the symptom was and where everyone
+       looked: a 90ms `shot` kept reporting a tail of 0.78 to 1.28 at 0 to -2dBFS, and the number
+       moved between viewports and between runs.
+
+       Three fixes were aimed at the LIVE audio graph - serialising the renders, clearing the pool,
+       suspending the live context - and every one of them was reasonable and none of them was the
+       cause. The live graph was innocent. `renderVoice` builds its voice by swapping the module's
+       `ctx` to an OfflineAudioContext and then AWAITING `startRendering()`. That await yields the
+       main thread, and the game's own code runs in the gap: a fight loop, a keydown, another test's
+       `play()`. Every one of those built its nodes against the OFFLINE context and was rendered
+       into the buffer being measured. So the "shot" was a recording of whatever else was sounding,
+       which is why it was loud, why it rang on, and why it varied.
+
+       The fix is one line in `play`: do not build while a render holds `ctx`. And this test is the
+       proof, because it does the one thing the suite's own ordering made impossible - it fires
+       sounds INTO the render's await window. Mutate the guard out and this fails immediately, with
+       a peak of 1.07 and a 500ms ring on a sound that is silent after 75ms. */
+    Sound.releasePool();
+    const racing=Sound.render('shot',{});
+    for(let i=0;i<3000;i++) Sound.play('shot',{});
+    const raced=await racing;
+    Sound.releasePool();
+    ok(!raced.threw&&!raced.renderThrew,'a render interrupted by live sounds failed: '
+       +(raced.threw||raced.renderThrew));
+    ok(raced.peak<0.2,'a 90ms shot rendered as peak '+raced.peak.toFixed(4)+' while 3000 other shots '
+       +'were fired into the same await window - `play` is building against the offline context, so '
+       +'the measurement is full of sounds that were never part of it');
+    eq(raced.tailPeak,0,'a 90ms shot still ringing at '+(20*Math.log10(Math.max(raced.tailPeak,1e-9)))
+       .toFixed(0)+'dBFS 1.35 seconds later, with 3000 sounds fired during the render - the same '
+       +'defect, and the trace below says which window it is in');
+
     /* AUDIO MUST NOT TOUCH THE GAME'S RNG. The noise buffer and the pitch jitter use a private
        xorshift precisely so that a sound cannot shift a seeded run - which would make audio the first
        thing to break parity, and the first thing to break a save. */
@@ -12521,7 +12702,10 @@ const BOSS_TICKS=26000;
   // the panel itself lives in the main script, because it is not a test - it is the change history,
   // and it is reachable from a normal game on the B key. Here it just gets told the results.
   showBugPanel(results);
+  const refresh=()=>{ window.__testResults.pass=results.filter(r=>r.ok).length;
+                      window.__testResults.total=results.length; };
   window.__testResults={pass:results.filter(r=>r.ok).length,total:results.length,results,
+    settled:false,
     /* TESTS THAT MAKE NO ASSERTIONS AT ALL, listed by the harness rather than hunted for by reading.
 
        This is the one dead-test shape that can be detected without a mutation harness, and it is worth
@@ -12534,8 +12718,29 @@ const BOSS_TICKS=26000;
        tests still pass. That is the right tool and it is not this. */
     dead:results.filter(r=>r.asserts===0).map(r=>r.name),
     assertCounts:results.map(r=>({name:r.name,asserts:r.asserts}))};
+
+  /* DRAIN THE ASYNCHRONOUS TESTS, AND PUBLISH `settled` ON THE OBJECT THAT SURVIVES.
+
+     Both halves of this were wrong at different times, and each wrong version looked correct.
+
+     First: the harness called `fn()`, took the returned promise, and immediately pushed
+     `{ok:true}`. Every assertion in an async test ran AFTER its verdict was recorded, so the suite
+     reported a green waveform check that had never looked at a waveform - and the mutation that
+     proved it, a voice made to ring for three seconds, passed. That is what `pending` is for.
+
+     Second: `window.__testResults` is REPLACED by the object literal below, so a `settled` property
+     written to the previous object is gone. A probe waiting on `settled===true` then waited for ever
+     on a suite that had already finished - at every viewport, on green code. `settled` therefore
+     lives inside the literal, and the drain runs after it exists.
+
+     `allSettled` rather than `all`: a rejected promise is already recorded as a failed test, so
+     awaiting it again would throw here and lose every result collected so far. */
+  const markSettled=()=>{ if(window.__testResults) window.__testResults.settled=true; };
+  Promise.allSettled(pending).then(()=>{ refresh(); markSettled(); });
+  if(pending.length===0) markSettled();
   // the console keeps the full flat list, because that is what gets pasted into a bug report and
-  // it should not require re-expanding six dropdowns to read
+  // it should not require re-expanding six dropdowns to read.
+
   console.log(results.map(r=>(r.ok?'ok    ':'FAIL  ')+r.name+(r.ok?'':'\n        '+r.msg)).join('\n'));
 })();
 

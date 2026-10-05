@@ -252,6 +252,12 @@ let claimedTotal=0;
     try{
       await p.goto('http://127.0.0.1:8731/depths.html?test',{waitUntil:'load',timeout:60000});
       await p.waitForFunction('window.__testResults!==undefined',{timeout:300000});
+      // AND THEN FOR THE ASYNCHRONOUS TESTS. One test is `async` because it renders audio waveforms
+      // through OfflineAudioContext, and the suite publishes its results before that resolves. Waiting
+      // only for `!==undefined` reads a PARTIAL suite and counts it - which is how CONVENTIONS.md came
+      // to say 236 checks when the suite has 237. `settled` is set once every async test has recorded.
+      // A `//` comment and not a `#` one, because this is inside a JavaScript here-string.
+      await p.waitForFunction('window.__testResults.settled===true',{timeout:300000});
       const r=await p.evaluate(()=>({pass:window.__testResults.pass,total:window.__testResults.total,
         fails:window.__testResults.results.filter(x=>!x.ok).map(x=>x.name+' :: '+x.msg)}));
       out.push(w+'x'+h+' '+r.pass+'/'+r.total+(r.fails.length?(' FAIL '+r.fails.length):''));
