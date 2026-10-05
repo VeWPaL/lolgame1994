@@ -254,6 +254,50 @@ namespace Depths
     /// The peak chase speed of a pack. Read out: 2.1, which is faster than a momentum-full
     /// player at 1.6045 - that is the whole point of the bomb-rush tuning.
     /// </summary>
+    /// <summary>
+    /// The distance beyond which the arc stops tracking the real gap. Read out of the running game:
+    /// 118. See the note on <see cref="BrunchShieldFrac"/> for why this is not the stand-off.
+    /// </summary>
+    public const double BrunchShieldR = 118;
+
+    /// <summary>
+    /// Where the shield forms, as a FRACTION OF THE GAP between the guarded body and the player.
+    /// Read out of the running game: 0.25.
+    /// <para>
+    /// A constant radius is badly wrong here, because the thing the arc has to fit between is the
+    /// distance from the player to the body being shielded - and that is not fixed. It is whatever the
+    /// fight has produced, and it gets SMALL: a player who closes on a shooter is inside 118px within
+    /// a second.
+    /// </para>
+    /// <para>
+    /// Measured, before this became a fraction: a player at 170,330 and a shooter at 334,330 is a
+    /// 164px gap, and a 118px stand-off put the wall BEHIND the player - correctly built, correctly
+    /// centred, correctly angled, and on the wrong side of the person it was protecting. Line of sight
+    /// was blocked 27-39% of the way rather than closed. As a quarter of the gap the same wall forms
+    /// 50px from the shooter, which is 114px from the player and well inside the room between them.
+    /// </para>
+    /// </summary>
+    public const double BrunchShieldFrac = 0.25;
+
+    /// <summary>
+    /// How far BEHIND the front rank a second-rank body stands. Read out of the running game: 17.
+    /// <para>
+    /// The surplus of a large pack stacks here rather than sliding outward along the arc, so a shield
+    /// is two deep in the middle and thin at the ends. A shield that is a single file with six
+    /// stragglers beside it is a queue.
+    /// </para>
+    /// </summary>
+    public const double BrunchWallRank = 17;
+
+    /// <summary>The narrowest the arc cone may be, in radians. 0.15707963 = 9 degrees.</summary>
+    public const double BrunchArcFloor = 0.15707963267948966;
+
+    /// <summary>
+    /// The widest the arc cone may be, in radians. 1.04719755 = 60 degrees. This is the only limit
+    /// left on the cone, and it exists so a large boss at close range cannot wrap into a mob.
+    /// </summary>
+    public const double BrunchArcCeil = 1.0471975511965976;
+
     public const double BrunchRun = 2.1;
 
     /// <summary>

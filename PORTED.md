@@ -39,7 +39,7 @@ the view.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 
-`csharp/Depths.Tests` pins 87 `[TestCase]` rows of numbers **read out of the running JavaScript**.
+`csharp/Depths.Tests` pins 93 `[TestCase]` rows of numbers **read out of the running JavaScript**.
 
 Three of those rows are `RoomScaledParityTests`, and they are a different KIND of row from the rest.
 Every other table pins a constant or a function of a seed, so a drift is caught by comparing names.
@@ -114,6 +114,11 @@ that fourth-decimal difference is a momentum of 0.0017.
 Not ported inside the player phase: the boss warning, the blink, firing, the on-use field effects and
 the hook resistance. `CheckDoorTransition` is the geometry half only and returns false rather than
 guessing, so a player at a wall is never teleported into the next room by a stub.
+
+`BrunchArcSlot` is PORTED - the single function that decides whether a Brunch is a shield
+or a crowd, and the source of the session's three earlier Brunch fixes. Its measurements found a PORT
+bug: the original truncates only `(slot/2)` and writing that as C# integer division truncates both,
+which mirrors the arrangement for odd packs and is invisible at even ones.
 
 `AssemblePacks` is the first third of the body phase and it is PORTED: pack centroids, target
 selection, and the guard lists. Its expectations in `PackAssemblyParityTests.cs` are generated from

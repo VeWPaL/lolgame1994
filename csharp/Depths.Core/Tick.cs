@@ -821,5 +821,129 @@ namespace Depths
         public static bool IsRanged(BodyKind k) =>
             k == BodyKind.Shooter || k == BodyKind.Gunner || k == BodyKind.Boss;
 
+
+        /// <summary>A point in the world, returned by the arc geometry. Public because the parity
+        /// tests assert against it - a geometry helper that cannot be measured is a geometry helper
+        /// nobody can port.</summary>
+        public readonly struct Pt
+        {
+            public readonly double X, Y;
+            public Pt(double x, double y) { X = x; Y = y; }
+        }
+
+        /// <summary>
+        /// Where slot <paramref name="slot"/> of an <paramref name="n"/>-body pack stands when
+        /// shielding a body at (<paramref name="tx"/>, <paramref name="ty"/>) against a player at
+        /// (<paramref name="px"/>, <paramref name="py"/>). Null when the pack is too small to have a
+        /// shape.
+        ///
+        /// <para>
+        /// Ported from <c>brunchArcSlot</c> in <c>src/00-balance.js</c>, and it is the single function
+        /// that decides whether a Brunch is a shield or a crowd. Three things about it are not
+        /// obvious, and each was a bug:
+        /// </para>
+        ///
+        /// <para>
+        /// <b>1. The stand-off is a FRACTION OF THE GAP, not a constant.</b> The arc has to fit
+        /// between the guarded body and the player, and that distance is not fixed - it is whatever the
+        /// fight has produced so far, and it gets small. A constant radius put the wall behind the
+        /// player: measured, a 164px gap with a 118px stand-off formed the wall 46px on the far side
+        /// of the person it was meant to protect, and line of sight was blocked 27-39% of the way
+        /// rather than closed. Now it is <see cref="Balance.BrunchShieldFrac"/> of the real gap.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>2. The cone is DERIVED from the target's apparent width, with no floor that can
+        /// dominate.</b> The wall was specified as a minor arc subtending 45-60 degrees, and against a
+        /// shooter that shape was mostly empty: measured, a 3-pack blocked 0 of a 23px shot line, a
+        /// 6-pack blocked 2, a 12-pack blocked 4 - the same 33% for every size, because the floor
+        /// could never lose. The cone is now the target's own apparent width plus a body's margin
+        /// either side, and the only remaining limit is the 60-degree ceiling.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>3. The surplus stacks BEHIND the front rank at the same angle.</b> Spreading columns to
+        /// the cone's edges regardless of whether they fit there put 12 bodies on a wall that 6 already
+        /// overran - half the pack standing in empty floor beside its own shield. Columns are now
+        /// spaced at <see cref="Balance.BrunchArcGap"/> and CLIPPED to the arc's own length, and the
+        /// second rank repeats the angle because it is deliberately the same face.
+        /// </para>
+        ///
+        /// <para>
+        /// Measured slot positions for a shooter 200px from the player, as (slot, distance along the
+        /// bearing from the target): a 6-pack gives 49.64, 65.6, 50, 67, 49.64, 65.6 - three pairs of
+        /// front and back rank, the odd slots 17px behind, and the pair on the centreline where the
+        /// column calculation lands on a whole number.
+        /// </para>
+        /// </summary>
+        public static Pt? BrunchArcSlot(double tx, double ty, double px, double py,
+                                        int n, int slot, double targetRadius)
+        {
+            if (n < Balance.BrunchShieldMin) return null;
+
+            // The bearing from the guarded body toward the player. Everything is measured along it.
+            double dx = px - tx, dy = py - ty;
+            double d = System.Math.Sqrt(dx * dx + dy * dy);
+            if (d == 0) d = 1;
+            double ux = dx / d, uy = dy / d;
+
+            int cols = (int)System.Math.Ceiling(n / 2.0);
+            int rank = slot % 2;
+            /* Symmetric about the centreline, in HALF-STEPS - and the half-step is NOT optional.
+
+               The original writes `(slot/2|0) - ((cols-1)/2)` in JavaScript, where `/` is float
+               division and `|0` truncates ONCE at the end. Writing that as C# INTEGER division is
+               wrong in a way that only shows on odd packs: for n=3, `(cols-1)/2` is `(2-1)/2` = 0.5
+               in the original and `0` in C#, so every column shifts by half a step and the whole
+               three-body arrangement mirrors.
+
+               Measured: the game lays a 3-pack out at 49.642207661, 66.32762017, 49.642207661. With
+               integer division the C# produced 50, 67, 49.642207661 - the middle and outer bodies
+               swapped. Six bodies are unaffected, because `cols-1 = 2` divides evenly, which is
+               exactly why an even-pack-only test suite would never have found it.
+
+               So the half-step is carried as a DOUBLE: the FIRST term truncates, exactly as `|0`
+               does in the original, and the second does not - because in JavaScript `((cols-1)/2)` has
+               no `|0` on it and stays fractional. Getting that wrong in the other direction mirrors
+               the odd-pack arrangement again, so both halves are spelled out. */
+            double col = System.Math.Floor(slot / 2.0) - ((cols - 1) / 2.0);
+
+            /* The stand-off. Two clamps, both of which were bugs once:
+               - never further out than a share of the gap, or the wall ends up behind the player;
+               - never closer than `d - brunchRadius - 2`, or it converges ON the guarded body rather
+                 than in front of it. */
+            double radius = System.Math.Min(d * Balance.BrunchShieldFrac, d - BrunchRadius - 2)
+                          + (rank != 0 ? Balance.BrunchWallRank : 0);
+
+            /* The cone: the target's own apparent width at the arc's radius, plus one body's margin
+               either side. The floor cannot dominate because it is a floor on a DERIVED value - a
+               small enemy at close range gets a shield sized to it. */
+            double apparent = System.Math.Atan2((targetRadius == 0 ? 12 : targetRadius)
+                                              + Balance.BrunchArcGap * 2,
+                                              System.Math.Max(1, d - radius));
+            double half = System.Math.Max(Balance.BrunchArcFloor,
+                                System.Math.Min(Balance.BrunchArcCeil, apparent));
+
+            /* Columns spaced along the cone at the arc gap, and CLIPPED to the arc's own length -
+               which is the fix for a 12-pack standing beside a wall a 6-pack had already overrun. */
+            double arcLen = 2 * half * radius;
+            double maxAlong = System.Math.Max(0, arcLen / 2 - Balance.BrunchArcGap * 0.5);
+            double rawAlong = col * Balance.BrunchArcGap;
+            double along = System.Math.Max(-maxAlong, System.Math.Min(maxAlong, rawAlong));
+
+            double ang = along / System.Math.Max(1, radius);
+            double ca = System.Math.Cos(ang), sa = System.Math.Sin(ang);
+            double qx = -uy, qy = ux;              // perpendicular to the bearing
+            return new Pt(tx + ux * radius * ca + qx * radius * sa,
+                          ty + uy * radius * ca + qy * radius * sa);
+        }
+
+        /// <summary>
+        /// A Brunch's collision radius. Read out of the running game: <c>ENEMY.brunch.r</c> = 8. It
+        /// belongs to a body archetype, which the port does not have yet, so it is named here and the
+        /// spawn table replaces it.
+        /// </summary>
+        public const double BrunchRadius = 8;
+
     }
 }
