@@ -344,6 +344,10 @@ function resolveBoss(e,edx,edy,dist,sm,room){
 }
 
 
+/* THE PLAYER'S LAGGED HITBOX, published once per tick by `tickPlayer` and read by `tickBodies`.
+   See the note at the assignment for why it is module state and not a local. */
+const hitbox={x:0,y:0};
+
 function update(){
   frameCount++;
   tickFX();
@@ -419,6 +423,46 @@ function update(){
   if(bossWarnT>0)bossWarnT--;
   // a key in hand is not a key spent: stand at the door and the lock works, and walking off it
   // leaves the door exactly as shut as it was
+
+  /* ============================ THE FOUR PHASES ============================
+
+     Order is measured, not chosen: player, projectiles, bodies, room. `csharp/Depths.Tests/
+     TickOrderTests.cs` pins it against the running game, including the one early return - a door
+     transition aborts the remainder of the tick, which is why `tickPlayer` returns a boolean
+     instead of `update()` returning from the middle of its own body.
+
+     No phase reads a name declared by the phase before it. Every handoff goes through module
+     state, which is the same channel the C# port has to reproduce, so the split does not hide a
+     dependency the port would then have to invent. If a future change starts passing a local
+     across a seam, that is the split being defeated and it should be pushed through the state
+     instead. */
+  if(tickPlayer()===false) return;
+  tickProjectiles();
+  tickBodies();
+  tickRoom();
+}
+
+/* ====================== THE SIMULATION PHASES ======================
+
+   Split out of a single 1,212-line `update()`. This is not a readability preference: the C# port
+   cannot be written or reviewed against one 1,200-line function, and a port is the whole reason
+   the phases are worth naming.
+
+   Measured before splitting, so the claim is checkable rather than asserted: the player phase
+   declares 14 top-level names, the projectile phase 2, the body phase 15, the room phase 2, and
+   NO phase reads a single name declared by the phase before it. Every handoff is through module
+   state - `player`, `projectiles`, `room.enemies` - which is exactly what the C# side has to
+   reproduce anyway.
+
+   Line counts after the split, because a split that does not make the file smaller is not a split:
+     update()          87   the gates and the dispatch
+     tickPlayer()     169   input, momentum, blink, firing, and the door-transition abort
+     tickProjectiles() 160  movement, wall and body collisions, the hook detonation
+     tickBodies()     697   pack assembly, Brunch shield and rush, gunner intercept, separation
+     tickRoom()       109   pickups, the exit, boss resolution, run end */
+
+/* ---- the player: input, momentum, blink, firing, and the transition abort ---- */
+function tickPlayer(){
   tickUnlock();
   // warn once, the first time the boss becomes visible on the map. bossFront is the set of rooms
   // with a door onto the boss, built once by generateDungeon, so this is a lookup rather than a
@@ -515,7 +559,7 @@ function update(){
   if(Math.abs(player.kvy)<KNOCK_CUT)player.kvy=0;
   clampPlayer();
   checkDoorTransition();
-  if(trans) return;
+  if(trans) return false;   // a transition aborts the REST OF THE TICK - see the note below
 
   const sp=Math.hypot(player.vx,player.vy);
   /* VELOCITY THAT POINTS INTO A WALL IS NOT VELOCITY, and the enemies were reading it as if it were.
@@ -587,8 +631,34 @@ function update(){
   // the hitbox the enemies use trails the real position after a blink, then catches up
   player.lagX+=(player.x-player.lagX)*HITBOX_LAG_EASE;
   player.lagY+=(player.y-player.lagY)*HITBOX_LAG_EASE;
-  const hx=player.lagX, hy=player.lagY;
+  /* PUBLISH THE LAGGED HITBOX. This is the only value one phase computes and a later phase reads:
+     the gunner intercept in `tickBodies` solves against THIS point rather than `player.x`, so it
+     leads toward the position the player is visually leaving. That is the whole reason the intercept
+     reads as leading rather than chasing, and it is why the handoff is explicit and named rather
+     than a local - a local would be invisible to the phase that needs it, and the first attempt at
+     this split had exactly that, which silently pointed the gunners at the real position. */
+  hitbox.x=player.lagX; hitbox.y=player.lagY;
+  /* THE LAGGED HITBOX THE GUNNERS AIM AT IS HANDED ON THROUGH MODULE STATE, not through a local.
 
+     This is the only genuine value one phase computes and a later phase reads: the player phase
+     integrates `lagX`/`lagY` toward the player's real position, and the body phase's gunner
+     intercept solves against THAT point rather than `player.x` - aiming at the position the player
+     is visually leaving, which is the entire reason the intercept reads as leading rather than
+     chasing. The first attempt at this split gave each phase its own locals and the gunners silently
+     switched to `player.x`, which is not a crash and is worse: it is a silently different game.
+
+     So the handoff is explicit and named, and it is module state rather than a parameter because the
+     C# side has to reproduce the same channel. */
+  hx=player.lagX; hy=player.lagY;
+}
+
+/* ---- projectiles: movement, collisions, the hook ---- */
+function tickProjectiles(){
+  /* `r` WAS A LOCAL OF update() AND EVERY PHASE READ IT. Each phase takes its own now, from
+     the same `currentRoom()` - the same object, so this is a change of name and not of
+     behaviour. It is the one piece of shared state the split genuinely had to give back,
+     and it is on the list because the first attempt at this split shipped a build where
+     `tickBodies` threw `r is not defined` on the first tick. */
   const r=currentRoom();
   for(let i=projectiles.length-1;i>=0;i--){
     const p=projectiles[i];
@@ -749,6 +819,16 @@ function update(){
   // costs one allocation and makes the kill order irrelevant.
   // Room pressure is counted ONCE here, from the snapshot, rather than per enemy: it is a property
   // of the room and recomputing it inside the loop would make a pack of eight cost eight scans.
+}
+
+/* ---- bodies: packs, Brunch, gunners, separation ---- */
+function tickBodies(){
+  /* `r` WAS A LOCAL OF update() AND EVERY PHASE READ IT. Each phase takes its own now, from
+     the same `currentRoom()` - the same object, so this is a change of name and not of
+     behaviour. It is the one piece of shared state the split genuinely had to give back,
+     and it is on the list because the first attempt at this split shipped a build where
+     `tickBodies` threw `r is not defined` on the first tick. */
+  const r=currentRoom();
   const roomPress=roomPressure(r.enemies.reduce((n,x)=>n+(x.hp>0?1:0),0));
   /* PACK CENTROIDS, computed ONCE per tick and before the body loop.
 
@@ -970,7 +1050,7 @@ function update(){
     // The offset hitbox is only used for the TOUCH test. Steering still aims at hx,hy: a body walks
     // at the player's position, not at the middle of their chest, and moving the seek target down ten
     // pixels would make every lunger in the room drift visibly low as it closed.
-    const edx=hx-e.x,edy=hy-e.y,dist=Math.hypot(edx,edy)||1;
+    const edx=hitbox.x-e.x,edy=hitbox.y-e.y,dist=Math.hypot(edx,edy)||1;
     /* THE BOSS IS CHECKED FIRST, and that ordering is load-bearing rather than stylistic.
 
        The branch used to be `if(e.walkSpeed!==undefined){...} else if(e.type==='boss'){...}`, which
@@ -1310,7 +1390,7 @@ function update(){
              given that target, because it steers a body and would visibly drift low, but a gunner is
              aiming a projectile at a point and has no reason at all to miss the one part of the
              player it is actually going to hit. */
-          const ty=hy+PLAYER_HIT_DY;
+          const ty=hitbox.y+PLAYER_HIT_DY;
           /* The ORIGIN is where the muzzle will be when the shell leaves, not where it is now.
              The player's position is already predicted this way - the shell does not exist for
              CAST_TIME more ticks - and a walking shooter needs the same treatment for its own side,
@@ -1336,13 +1416,13 @@ function update(){
           if(!rootsWhileCasting){
             const step=CAST_TIME/24, v=e.speed*sm*step;
             for(let t=step;t<=CAST_TIME+0.5;t+=step){
-              const px=hx+bvx*t, py=ty+bvy*t;
+              const px=hitbox.x+bvx*t, py=ty+bvy*t;
               const ax=px-mx, ay=py-my, ad=Math.hypot(ax,ay)||1;
               if(ad<e.close){ mx-=ax/ad*v; my-=ay/ad*v; }
               else if(ad>standoff){ mx+=ax/ad*v; my+=ay/ad*v; }
             }
           }
-          let sx=hx-mx, sy=ty-my, need=0;
+          let sx=hitbox.x-mx, sy=ty-my, need=0;
           /* Twelve passes, and the number is not arbitrary. This is fixed-point iteration, and how
              fast it converges is set by how much slower the target is than the shell: each pass pulls
              the remaining error down by the ratio of the player's speed to the shell's, which here
@@ -1354,7 +1434,7 @@ function update(){
              and shells are the rarest thing in the game. */
           for(let k=0;k<14;k++){
             need=(CAST_TIME+Math.hypot(sx,sy)/e.pspd);
-            const px=hx+bvx*need, py=ty+bvy*need;
+            const px=hitbox.x+bvx*need, py=ty+bvy*need;
             sx=px-mx; sy=py-my;
           }
           const want=Math.atan2(sy,sx)+(Rnd.jitter()-0.5)*2*(0.02+SWERVE_AIM*player.swerve*reach);
@@ -1446,6 +1526,16 @@ function update(){
 
   // clearing a room is what pays out its key: the branch tip gives the gold one that opens the
   // boss door, an arm tip gives the silver one that opens the upgrade room
+}
+
+/* ---- the room: pickups, the exit, boss resolution, run end ---- */
+function tickRoom(){
+  /* `r` WAS A LOCAL OF update() AND EVERY PHASE READ IT. Each phase takes its own now, from
+     the same `currentRoom()` - the same object, so this is a change of name and not of
+     behaviour. It is the one piece of shared state the split genuinely had to give back,
+     and it is on the list because the first attempt at this split shipped a build where
+     `tickBodies` threw `r is not defined` on the first tick. */
+  const r=currentRoom();
   if(r.enemies.length===0){
     // the fight is over, so the dodge bar sprints: walking to the next room should never cost you a
     // blink. half a bar on the spot plus the quiet-room rate means both charges are back well before
@@ -1556,6 +1646,7 @@ function update(){
      find them a tick apart and conclude the readout is broken. */
   if(state==='dev'){ Lab.tickNumbers(); Lab.tickShelf(); }
 }
+
 
 /* The way out. It is a pickup slot so that the existing touch-to-collect code carries it, but it is
    not an item: it cannot be picked up, moved, or missed by accident, and walking into it is the
