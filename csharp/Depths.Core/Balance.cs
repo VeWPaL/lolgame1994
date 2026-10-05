@@ -257,6 +257,17 @@ namespace Depths
     public const double BrunchRun = 2.1;
 
     /// <summary>
+    /// A Brunch's walk speed - its starting point, and its speed while it has not committed. Read out
+    /// of the running game as <c>ENEMY.brunch.walk</c>: 0.624.
+    /// <para>
+    /// It is a CONSTANT rather than a read from a body archetype, because the C# port has no spawn
+    /// table yet - and this is the number a body archetype would carry. Named here so the ramp can be
+    /// stated as a curve from a known starting point, which is how the game states it.
+    /// </para>
+    /// </summary>
+    public const double BrunchWalkSpeed = 0.624;
+
+    /// <summary>
     /// The angular gap between two Brunch holding a shield arc, in pixels at the target's
     /// radius. Read out: 19.
     /// </summary>

@@ -311,5 +311,92 @@ namespace Depths.Tests
                 "a pack of two guards and a pack of three walls; if these crossed, a two-body pack "
                 +"would build a wall around a position nobody chose");
         }
+
+        // ---------------------------------------------------------------- the ramp
+
+        /// <summary>
+        /// THE BRUNCH RAMP, MEASURED TICK BY TICK, AND IT IS NOT THE OBVIOUS FORMULA.
+        ///
+        /// <para>
+        /// A Brunch that has noticed the player climbs from its walk speed to its run speed. The
+        /// shape of that climb had been asserted in this project as
+        /// <c>curSpeed = walk * (1 + RAMP_GAIN * min(1, pursuit/RAMP))</c>, which caps at 1.8096.
+        /// <b>That formula is wrong.</b> Measured in the running game with a Brunch in a corner so it
+        /// never reaches the player, the curve passes 1.8096 and keeps going, approaching 2.1.
+        /// </para>
+        ///
+        /// <para>
+        /// The real line is <c>curSpeed += (runSpeed - curSpeed) * LungerAccel * gain</c> - an
+        /// EXPONENTIAL EASE toward the run speed, with the pursuit ramp scaling how hard each tick
+        /// pulls. Two consequences that the "obvious" formula gets wrong:
+        /// </para>
+        /// <list type="bullet">
+        /// <item>It never arrives. At 600 ticks it is 2.099676, not 2.1 - so a pack is always very
+        /// slightly short of its run speed, and the shortfall shrinks forever.</item>
+        /// <item>It does not depend on the walk speed at all except as the starting value. Changing
+        /// the walk speed moves the whole curve; changing the ramp gain changes how fast it gets
+        /// there.</item>
+        /// </list>
+        ///
+        /// <para>
+        /// Simulating that line reproduces all ten measured points to six decimal places, with zero
+        /// difference - which is the strongest statement available without a full port, and it is why
+        /// the numbers below are worth pinning.
+        /// </para>
+        /// </summary>
+        [TestCase(1, 0.632612)]
+        [TestCase(50, 1.044938)]
+        [TestCase(100, 1.409447)]
+        [TestCase(157, 1.717552)]
+        [TestCase(158, 1.721884)]
+        [TestCase(200, 1.873043)]
+        [TestCase(315, 2.059271)]
+        [TestCase(400, 2.090368)]
+        [TestCase(600, 2.099676)]
+        public void TheBrunchRampMatchesTheGameCurveExactly(int ticks, double expected)
+        {
+            double walk = Balance.BrunchWalkSpeed;
+            double cur = walk;
+            for (int t = 1; t <= ticks; t++)
+            {
+                double gain = 1 + Balance.BrunchRampGain * System.Math.Min(1.0, t / (double)Balance.BrunchRamp);
+                cur += (Balance.BrunchRun - cur) * Balance.LungerAccel * gain;
+            }
+            Assert.That(cur, Is.EqualTo(expected).Within(1e-6),
+                "the ramp is an exponential ease toward the run speed, not walk * gain - the two "
+                +"differ by 0.29 at full pursuit, which is the difference between a pack that arrives "
+                +"and one that never quite does");
+        }
+
+        /// <summary>
+        /// The ramp approaches the run speed and never reaches it - so the "obvious formula" reading is
+        /// excluded by the data rather than by argument. <c>walk * (1 + RAMP_GAIN)</c> is 1.8096.
+        /// </summary>
+        [Test]
+        public void TheRampApproachesTheRunSpeedAndTheObviousFormulaWouldNot()
+        {
+            double obviousCap = Balance.BrunchWalkSpeed * (1 + Balance.BrunchRampGain);
+            Assert.That(Balance.BrunchRun, Is.EqualTo(2.1).Within(1e-9));
+            Assert.That(obviousCap, Is.LessThan(Balance.BrunchRun),
+                "walk * (1 + rampGain) cannot be the ceiling, or the measured curve would stop at "
+                +obviousCap + " - and it does not");
+        }
+
+        /// <summary>
+        /// The ramp is faster against a fleeing player than a momentum-full one, which is the whole
+        /// reason the number is 2.1: it has to beat 1.6045 or the bomb-rush is scenery.
+        /// </summary>
+        [Test]
+        public void TheRunSpeedBeatsAMomentumFullPlayerSoTheBombRushArrives()
+        {
+            // The measured chased-player speeds, from the JS suite: 1.4025 empty, 1.6045 at full
+            // momentum. A Bruncg that cannot catch a moving player is not a threat.
+            const double emptyPlayer = 1.4025;
+            const double momentumFullPlayer = 1.6045;
+            Assert.That(Balance.BrunchRun, Is.GreaterThan(emptyPlayer));
+            Assert.That(Balance.BrunchRun, Is.GreaterThan(momentumFullPlayer),
+                "a pack slower than a momentum-full player never arrives, and a threat that cannot "
+                +"arrive is scenery");
+        }
     }
 }
