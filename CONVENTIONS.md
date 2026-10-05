@@ -1593,7 +1593,7 @@ true by accident, agreeing.**
 - The **cursor** is in screen space; the player, bodies and walls are in world. The aim was
   `atan2(mouse.y - player.y, …)` — a vector from a screen point to a world point — so every shot was
   off by the camera offset, **up to 21.28 degrees**, changing sign across the frame. It read as "a few
-  degrees off, counter-clockwise" from any one seat. 163 checks passed throughout because every
+  degrees off, counter-clockwise" from any one seat. The full C# suite passed throughout because every
   fixture wrote a **world** position into the cursor and the game read a **world** position out of
   it. Fixed with `mouseWorld()` / `screenToWorld()`, which call `updateCamera()` rather than trusting
   `cam` — baking the world position in on `mousemove` would make the aim drift as the camera scrolls.
@@ -1684,7 +1684,7 @@ having is the one that says what happens when the content outgrows the code.
   the other, so they drift apart when either is edited — read both, trust neither alone. The panel
   prints both and names each, because they are genuinely different: the table is bugs found and
   pinned, the suite is every standing guarantee.
-- `csharp/Depths.Core` + `Depths.Tests` - **163 checks**, parity-verified against the JavaScript.
+- `csharp/Depths.Core` + `Depths.Tests` - **185 checks**, parity-verified against the JavaScript.
   The generator (`Dungeon`), the spawn planner (`WavePlanner`), and the run holder + tick skeleton
   (`RunState`, `TickOrder`) are ported; the ~870-line `update()` body is still stubs. See the section
   on the port boundary below.
@@ -1878,7 +1878,7 @@ three streams, the floor seed, the base36 codec), `World` (`Dir`, `RoomKind`, `R
 `Dungeon` generator) and `SpawnPlan` (`SpawnSlot`, `PlannedBody`, `WavePlan` and the `WavePlanner`),
 plus `RunState` (run-scoped holder), `Tick` (`TickOrder` skeleton) and `Area` (`AreaRules`, the
 pure floor-to-area mapping - floors 1-4 Area1, 5-8 Area2, 9-12 Area3, 13+ Final).
-`csharp/Depths.Tests` has **163 checks**, all parity-verified against numbers read out of the running
+`csharp/Depths.Tests` has **185 checks**, all parity-verified against numbers read out of the running
 JavaScript.
 
 **The `update()` body is still stubs.** The gates, counters, tick order, and RNG discipline are in,
