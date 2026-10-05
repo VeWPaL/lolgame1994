@@ -196,6 +196,77 @@ namespace Depths
         public const int PlayerHitDy = 10, PlayerHitR = 10;
 
     /// <summary>
+    /// Ticks the boss warning stays on screen once the boss room comes into view. Read
+    /// out of the running game: 672, which at 210 ticks a second is 3.2 seconds.
+    /// </summary>
+    public const int BossWarnTime = 672;
+
+    /// <summary>
+    /// The width of a doorway in the wall, and the half-width the player must be inside for a
+    /// door to accept them. Read out of the running game: 90.
+    /// </summary>
+    public const int DoorWidth = 90;
+
+    /// <summary>
+    /// Below this magnitude a knockback component is set to exactly zero, so a body that has
+    /// all but stopped does not keep feeding the audio and the hit-flash for ever.
+    /// </summary>
+    public const double KnockCut = 0.006;
+
+    /// <summary>
+    /// Per-tick decay on the PLAYER's knockback, distinct from <see cref="KnockFriction"/>
+    /// which is the body's. Read out of the running game: 0.958, against the body's 0.976 - the
+    /// player's knockback dies faster, which is what makes a trade feel like an escape.
+    /// </summary>
+    public const double KnockPFriction = 0.958;
+
+    /// <summary>
+    /// How fast the player's direction-of-travel estimate chases the real velocity. Lower
+    /// than <see cref="LungeTrack"/> because this one feeds the lunger's belief about where the
+    /// player is going, and a belief that updates too eagerly is a lunger that never commits.
+    /// </summary>
+    public const double LungeBeliefTrack = 0.14;
+
+    /// <summary>
+    /// How much a full Momentum meter improves acceleration. Read out of the running
+    /// game: 0.55, so a charged player accelerates 55% harder rather than merely faster.
+    /// </summary>
+    public const double MomentumAccel = 0.55;
+
+    /// <summary>
+    /// The fraction of the remaining velocity gap closed each tick. Read out of the running
+    /// game: 0.116, which is why the player takes about 40 ticks to reach top speed rather than
+    /// snapping to it - the ramp is the feel.
+    /// </summary>
+    public const double MoveAccel = 0.116;
+
+    /// <summary>
+    /// Below this speed the player's direction-of-travel estimate stops updating, so a
+    /// player standing still is not read as jittering by the enemies that aim at them.
+    /// </summary>
+    public const double PlayerSpeedEps = 0.05;
+
+    /// <summary>
+    /// Per-tick recovery of the firing slow-motion. Fractional on purpose: the meter
+    /// eases and rounding it would make the recovery visibly steppy.
+    /// </summary>
+    public const double ShootSlowRecover = 0.105;
+
+    /// <summary>
+    /// Per-tick easing of the firing slow-motion toward its target of 1. The lower this is,
+    /// the longer the player spends slowed after a shot, which is the cost of firing on the move.
+    /// </summary>
+    public const double SlowEase = 0.079;
+
+    /// <summary>
+    /// Pixels of animation phase per pixel travelled. Dividing by it is what makes the walk
+    /// cycle scale with actual distance rather than with time, so a slow walk animates slowly.
+    /// </summary>
+    public const double Stride = 38.5;
+
+
+
+    /// <summary>
     /// Ticks for one blink charge, and the divisor behind the half-charge a cleared room refunds.
     /// <para>
     /// Read out of the running game: <c>BLINK_RECHARGE</c> is 735 there. The refund is
@@ -406,7 +477,26 @@ namespace Depths
         // ------------------------------------------------------------- counterstrafing
 
         /// <summary>How fast a reversal is forgotten, and how much a reversal widens a gunner's aim.</summary>
-        public const double SwerveGain = 0.22, SwerveDecay = 0.011, SwerveAim = 0.30;
+        public const double SwerveGain = 0.22, SwerveAim = 0.30;
+
+        /// <summary>
+        /// Per-tick decay of the swerve meter - how fast the game forgets that the player reversed.
+        /// <para>
+        /// THIS WAS WRONG AND NOTHING CHECKED IT. The value here was 0.011, roughly three times the
+        /// original's 0.0035, and no test pinned it: the suite asserted <c>SwerveDecay &gt; 0</c> and
+        /// that a reversal is remembered for a second, and 0.011 satisfies both. Nothing in the port
+        /// read the constant, so a wrong value sat in a file whose whole purpose is to hold the
+        /// game's numbers.
+        /// </para>
+        /// <para>
+        /// The original's own test says what the constant is FOR: <c>SWERVE_DECAY * sec(1) &gt; 0.5</c>,
+        /// so a reversal is still fully remembered after a second. At 210 ticks that is a per-tick
+        /// decay below about 0.0033 - which rules 0.011 out on the game's own terms, before any
+        /// measurement. Measured directly as well: a meter filled to 1 and left alone falls to 0.5765
+        /// after one second, which is 0.0035 a tick.
+        /// </para>
+        /// </summary>
+        public const double SwerveDecay = 0.0035;
 
         // SwerveDeadzone and SwerveFull used to live here, reading (RoomRight - RoomLeft) / 2 and
         // +220 - which is 350 and 570, where the JavaScript reads 300 and 430. They now sit beside

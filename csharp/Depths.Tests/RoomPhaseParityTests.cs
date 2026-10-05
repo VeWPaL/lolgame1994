@@ -453,5 +453,42 @@ namespace Depths.Tests
 
             Assert.That(run.pickups.Count, Is.EqualTo(1));
         }
+
+        // ------------------------------------------------------------------ a constant that was wrong
+
+        /// <summary>
+        /// The swerve meter's per-tick decay, pinned because it WAS wrong and nothing noticed.
+        ///
+        /// <para>
+        /// <c>Balance.SwerveDecay</c> held 0.011 against the original's 0.0035 - a little over three
+        /// times the rate, which means the game would have forgotten a reversal roughly three times
+        /// faster than it does, and every gunner in the game would have aimed at where the player is
+        /// instead of where they were going. No test failed. The suite asserted
+        /// <c>SWERVE_DECAY &gt; 0</c> and that a reversal survives a second, and 0.011 satisfies both.
+        /// Nothing in the port read the constant, so a wrong number sat in the file whose entire job
+        /// is to hold the game's numbers.
+        /// </para>
+        ///
+        /// <para>
+        /// Two things catch it now. The bound is arithmetic rather than a restatement: the original's
+        /// own test requires a reversal to still be fully remembered after
+        /// <c>sec(1)</c> = 210 ticks, which caps the per-tick decay at about 0.0033 and rules 0.011
+        /// out on the game's own terms. And the value is pinned exactly, measured from a meter filled
+        /// to 1 and left alone: 0.5765 after one second, which is 0.0035 a tick.
+        /// </para>
+        /// </summary>
+        [Test]
+        public void TheSwerveDecayIsTheGamesRateAndNotAFasterOne()
+        {
+            // Read out of the running game.
+            Assert.That(Balance.SwerveDecay, Is.EqualTo(0.0035).Within(1e-12));
+
+            // And the property the original's own test states: a reversal is still more than half
+            // remembered after a full second. At 0.011 this fails.
+            Assert.That(Balance.SwerveDecay * 210, Is.LessThan(0.75),
+                "a reversal must still be mostly remembered after a second, or the only safe play "
+                + "is to never move at all");
+            Assert.That(Balance.SwerveDecay * 210, Is.GreaterThan(0.5));
+        }
     }
 }
