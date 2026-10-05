@@ -196,6 +196,108 @@ namespace Depths
         public const int PlayerHitDy = 10, PlayerHitR = 10;
 
     /// <summary>
+    /// Ticks a struck body stays flashed. Read out of the running game: 27.
+    /// <para>
+    /// Read by the body phase every tick, and it DECREMENTS rather than clearing - so a body hit
+    /// again while already flashing has its flash extended rather than restarted, and a rapid weapon
+    /// reads as one sustained hit instead of a stutter of separate ones.
+    /// </para>
+    /// </summary>
+    public const int HitFlash = 27;
+
+    /// <summary>
+    /// How often, in ticks, an UNGUARDED pack looks for a body to shield. Read out of the
+    /// running game: 20.
+    /// </summary>
+    public const int BrunchScanTicks = 20;
+
+    /// <summary>
+    /// The smallest pack that will form a shield arc. Below this a pack walks at the player
+    /// instead. Read out: 2.
+    /// </summary>
+    public const int BrunchShieldMin = 2;
+
+    /// <summary>
+    /// The smallest pack that will form a wall around an unguarded position. Read out: 3.
+    /// Above <see cref="BrunchShieldMin"/>, so a pack of two guards and a pack of three walls.
+    /// </summary>
+    public const int BrunchWallMin = 3;
+
+    /// <summary>
+    /// How fast a pack moves while it is holding a shield slot, rather than closing. Read
+    /// out: 0.72 - slower than the guard's own approach, so a guarded body is genuinely easier to
+    /// reach than an unguarded one.
+    /// </summary>
+    public const double BrunchShieldSpeed = 0.72;
+
+    /// <summary>
+    /// How fast a pack gains speed when closing on its slot. Read out: 0.09.
+    /// </summary>
+    public const double BrunchAccel = 0.09;
+
+    /// <summary>
+    /// How fast a pack sheds speed when leaving a slot. Deliberately FASTER than
+    /// <see cref="BrunchAccel"/> (0.16 against 0.09), so a pack does not drift on after its target
+    /// moves - a pack that eases out slowly feels like it is following you.
+    /// </summary>
+    public const double BrunchDecel = 0.16;
+
+    /// <summary>
+    /// How close a Brunch must be before it stops steering and simply reaches. Read out: 6.
+    /// Inside this the pack uses the direction to the PLAYER rather than to its slot, which is what
+    /// makes a pack that has arrived commit to contact instead of circling.
+    /// </summary>
+    public const double BrunchDeadzone = 6;
+
+
+    /// <summary>
+    /// The peak chase speed of a pack. Read out: 2.1, which is faster than a momentum-full
+    /// player at 1.6045 - that is the whole point of the bomb-rush tuning.
+    /// </summary>
+    public const double BrunchRun = 2.1;
+
+    /// <summary>
+    /// The angular gap between two Brunch holding a shield arc, in pixels at the target's
+    /// radius. Read out: 19.
+    /// </summary>
+    public const double BrunchArcGap = 19;
+
+    /// <summary>
+    /// A guarded ranged body stands off at <c>far * this</c> rather than <c>far</c>, so a
+    /// Brunch escort pulls its charge back and gives the player room to reach it. Read out: 1.45.
+    /// </summary>
+    public const double GuardStandoffMult = 1.45;
+
+    /// <summary>
+    /// How much a crowded room closes the standoff distance. Read out: 0.85 - at a
+    /// full room a guarded gunner stands at <c>far * 1.45 - (far-close) * 0.85</c>, which is nearer
+    /// than its own far value, so pressure pushes a guarded body INTO range rather than away.
+    /// </summary>
+    public const double PressureClosure = 0.85;
+
+    /// <summary>
+    /// How much of the swerve meter widens a gunner's aim cone, in radians at the extremes.
+    /// Read out: 0.30.
+    /// </summary>
+    public const double SwerveAim = 0.3;
+
+    /// <summary>
+    /// How much a SWERVE costs a gunner's confidence in its intercept while it is casting,
+    /// when it is planted and reading the player's velocity directly. Read out: 1 - so a counterstrafe
+    /// takes a rooted gunner's confidence to zero.
+    /// </summary>
+    public const double SwerveTrustRooted = 1.0;
+
+    /// <summary>
+    /// The same cost while the gunner is moving. Read out: 2.2 against 1 for rooted, so
+    /// a walking gunner is roughly twice as wrong - which is why the counterstrafe result was so much
+    /// stronger against a moving shooter than a planted one.
+    /// </summary>
+    public const double SwerveTrustWalking = 2.2;
+
+
+
+    /// <summary>
     /// Ticks the boss warning stays on screen once the boss room comes into view. Read
     /// out of the running game: 672, which at 210 ticks a second is 3.2 seconds.
     /// </summary>
@@ -416,15 +518,31 @@ namespace Depths
         public const double WanderSpeed = 0.25;
 
         /// <summary>
-        /// The Brunch ramp. It used to reach full commitment in 0.23s, which meant a pack was on you
-        /// before you had finished looking at where it had come from - there was no interval in
-        /// which to pick your ground, which is the one thing the pack is supposed to be asking of
-        /// you. 2.2s with a lower peak gain is a pack that announces itself and then arrives, instead
-        /// of one that is simply on top of you from the moment it was noticed. A Brunch is still
-        /// faster than you once it commits - that is the whole reason it is frightening - it just
-        /// commits in front of you now.
+        /// The Brunch ramp: ticks over which a pack's chase speed climbs from its walk to its run.
+        ///
+        /// <para>
+        /// It used to reach full commitment in 0.23s, which meant a pack was on you before you had
+        /// finished looking at where it had come from - there was no interval in which to pick your
+        /// ground, which is the one thing the pack is supposed to be asking of you. A pack that
+        /// announces itself and then arrives is the design; one that is simply on top of you from the
+        /// moment it was noticed is not.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>1.5s, and this was STALE.</b> The value here was <c>Sec(2.2)</c> = 462 ticks - the
+        /// pre-tuning number. The game ships 1.5s, chosen deliberately when the slow approach was
+        /// replaced by the bomb-rush: the ramp had to stay long enough that a pack announces itself,
+        /// but 2.2s was dead time in which a pack was neither guarding nor threatening.
+        /// </para>
+        ///
+        /// <para>
+        /// Nothing caught it because nothing in the port read the constant - the same failure mode as
+        /// <see cref="SwerveDecay"/>, and the second one in this file. An unpinned constant in the
+        /// place the game's tuning lives is indistinguishable from a correct one until something
+        /// reads it. Measured: <c>BRUNCH_RAMP</c> is 315 in the running game, which is 1.5s at 210Hz.
+        /// </para>
         /// </summary>
-        public static int BrunchRamp => Sec(2.2);
+        public static int BrunchRamp => Sec(1.5);
         public const double BrunchRampGain = 1.9;
 
         // ------------------------------------------------------------- the lunge
@@ -504,7 +622,7 @@ namespace Depths
         // ------------------------------------------------------------- counterstrafing
 
         /// <summary>How fast a reversal is forgotten, and how much a reversal widens a gunner's aim.</summary>
-        public const double SwerveGain = 0.22, SwerveAim = 0.30;
+        public const double SwerveGain = 0.22;
 
         /// <summary>
         /// Per-tick decay of the swerve meter - how fast the game forgets that the player reversed.
