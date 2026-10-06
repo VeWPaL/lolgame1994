@@ -132,7 +132,7 @@ namespace Depths.Playtest
                 {
                     double s = (cx * p.vy - cy * p.vx) > 0 ? 1 : -1, vn = Math.Sqrt(vv);
                     _mvX = -p.vy / vn * s * 2; _mvY = p.vx / vn * s * 2;
-                    if (tc < Balance.SecF(BlinkLookS) && run.blinkCharges > 0 && _rnd.Next() < _p.Dodge * 0.15) blink = true;
+                    if (tc < Balance.SecF(BlinkLookS) && run.blinkCharges > 0 && _rnd.Next() < Balance.Chance(_p.Dodge * 0.15)) blink = true;   // a roll per tick
                     break;
                 }
             }
