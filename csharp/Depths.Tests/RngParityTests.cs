@@ -225,34 +225,15 @@ namespace Depths.Tests
         }
 
         [Test]
-        public void ASeedTooLargeForThirtyTwoBitsWrapsRatherThanFailing()
+        public void ASeedTooLargeForThirtyTwoBitsIsRefusedAsTheGameRefusesIt()
         {
-            // "ZZZZZZZ" is seven valid base36 digits, which is 36^7-1 = 78364164095 - well past 2^32.
-            // The original does `n>>>0` and wraps to 1054752767, and the port has to wrap identically.
-            //
-            // This is a REAL BUG the test caught rather than a hypothetical: `(uint)someDouble` in C#
-            // does not wrap the way `>>> 0` does in JavaScript, it saturates to 4294967295. Those are
-            // different seeds, so the largest seed the game can display could not be typed back in to
-            // get the run that is on screen - which is the entire promise of the feature.
-            Assert.That(Rng.Decode("ZZZZZZZ"), Is.EqualTo(1054752767u),
-                "a maximal seed does not wrap the way the original wraps, so the largest seed on " +
-                "screen cannot be typed back in. (C# saturates a double-to-uint cast; it does not wrap.)");
-        }
-
-        [Test]
-        public void TheLargestSeedOnScreenIsNotItsOwnRoundTripAndDoesNotNeedToBe()
-        {
-            // The field is seven base36 characters and the largest such value does not fit in
-            // thirty-two bits, so ZZZZZZZ -> 1054752767 -> 0HFZ0FZ. That is correct and intended.
-            // What has to hold is the weaker and actually-load-bearing property: the wrap is
-            // DETERMINISTIC, so the same characters always give the same run, and any seed that
-            // does fit round-trips exactly.
-            Assert.That(Rng.Encode(Rng.Decode("ZZZZZZZ")!.Value), Is.EqualTo("0HFZ0FZ"),
-                "the wrap is not stable, so the same seven characters give two different runs");
-            Assert.That(Rng.Decode("0HFZ0FZ"), Is.EqualTo(1054752767u), "and it does not survive the trip back");
-            // every seed that fits, round-trips exactly
+            // Read from the running game 2026-10-06: Rnd.decode("ZZZZZZZ") is null, "1Z141Z4" is null,
+            // "1Z141Z3" is 4294967295. The port used to wrap ZZZZZZZ to 1054752767 under a stale premise
+            // ("the original does n>>>0"); it does not, it refuses.
+            Assert.That(Rng.Decode("ZZZZZZZ"), Is.Null, "a seed the game refuses is accepted by the port");
+            Assert.That(Rng.Decode("1Z141Z4"), Is.Null, "one past 2^32-1 is accepted");
+            Assert.That(Rng.Decode("1Z141Z3"), Is.EqualTo(4294967295u), "the largest seed that fits is refused");
             Assert.That(Rng.Encode(4294967295u), Is.EqualTo("1Z141Z3"));
-            Assert.That(Rng.Decode("1Z141Z3"), Is.EqualTo(4294967295u));
         }
     }
 }

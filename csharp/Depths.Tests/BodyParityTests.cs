@@ -23,12 +23,12 @@ namespace Depths.Tests
         [Test]
         public void TheTableMatchesTheMeasuredJavaScriptValues()
         {
-            // read out of the browser at floor 1, where depthTough and depthRate are both exactly 1
+            // read out of the browser at floor 1 (depthTough = depthRate = 1); re-read 2026-10-06
             var lunger = Bodies.Of(BodyKind.Lunger);
             Assert.That(lunger.Mass, Is.EqualTo(1.0));
             Assert.That(lunger.Radius, Is.EqualTo(14));
             Assert.That(lunger.Bar, Is.EqualTo(26));
-            Assert.That(lunger.Hp, Is.EqualTo(24.3).Within(1e-9));
+            Assert.That(lunger.Hp, Is.EqualTo(20.25).Within(1e-9));
             Assert.That(lunger.Walk, Is.EqualTo(0.3456).Within(1e-9));
             Assert.That(lunger.Run, Is.EqualTo(0.94464).Within(1e-9));
             Assert.That(lunger.Armour, Is.EqualTo(0.66));
@@ -38,11 +38,10 @@ namespace Depths.Tests
             Assert.That(brunch.Radius, Is.EqualTo(8));
             Assert.That(brunch.Bar, Is.EqualTo(11));
             Assert.That(brunch.Hp, Is.EqualTo(2.7).Within(1e-9));
-            Assert.That(brunch.Walk, Is.EqualTo(0.744).Within(1e-9));
-            Assert.That(brunch.Run, Is.EqualTo(1.75).Within(1e-9),
-                "the last-resort chase speed: measured at 1.35 the pack grew the gap ~107px per 2s "
-                + "against a player running flat out, so it could never catch them - and 1.62 only "
-                + "held the gap rather than closing it. 1.75 is the first value that closes.");
+            Assert.That(brunch.Walk, Is.EqualTo(0.624).Within(1e-9));
+            Assert.That(brunch.Run, Is.EqualTo(2.1).Within(1e-9),
+                "ENEMY.brunch.run in the running game (BRUNCH_CHASE_SPEED). This test pinned a stale 1.75 "
+                + "by hand for a while, and passed; the values here were re-read from the browser 2026-10-06");
             Assert.That(brunch.Armour, Is.EqualTo(1.0).Within(1e-9),
                 "the Brunch is the one body below the size line, so it takes full damage; armouring "
                 + "the chip body broke the alt blast's promise that one budget deletes a small group");

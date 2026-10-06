@@ -268,14 +268,11 @@ namespace Depths
             foreach (char c in t) acc = acc * 36 + Alphabet.IndexOf(c);
             if (double.IsNaN(acc) || double.IsInfinity(acc) || acc < 0) return null;
 
-            // The wrap has to be EXPLICIT. `(uint)acc` on a double above uint.MaxValue does not wrap
-            // the way JavaScript's `>>> 0` does - it saturates to 4294967295, which is a different
-            // seed. Seven base36 digits reach 36^7-1 = 78364164095, comfortably past 2^32, so a
-            // player who reads a maximal seed off the screen could not type it back in and get the
-            // same run. That is precisely the failure the whole seed feature exists to prevent, and
-            // it is invisible until someone actually types the biggest seed the game can show.
-            ulong wrapped = (ulong)acc % 4294967296UL;
-            return (uint)wrapped;
+            // Above 32 bits is refused, as the game refuses it (src/05-rng.js decode): the 7-character
+            // field reaches 36^7-1, so this rejects the top 94.5% rather than wrapping. Wrapping, as this
+            // port used to, accepted ZZZZZZZ as a different seed the game would not play.
+            if (acc > 4294967295.0) return null;
+            return (uint)acc;
         }
     
 }
