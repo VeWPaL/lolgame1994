@@ -43,7 +43,7 @@ the view.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 
-`csharp/Depths.Tests` pins 145 `[TestCase]` rows (48 `FireParityTests` and 4 held-fire cadences, 2026-10-06) of numbers **read out of the running JavaScript**.
+`csharp/Depths.Tests` pins 148 `[TestCase]` rows (48 `FireParityTests`, 4 held-fire cadences and 3 `RoomLoopTests` seeds, 2026-10-06) of numbers **read out of the running JavaScript**.
 
 Three of those rows are `RoomScaledParityTests`, and they are a different KIND of row from the rest.
 Every other table pins a constant or a function of a seed, so a drift is caught by comparing names.
