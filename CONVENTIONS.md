@@ -45,7 +45,7 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
   3. `dotnet run --project csharp/Depths.Playtest -c Release -- play --label current`
   4. `dotnet run --project csharp/Depths.Playtest -c Release -- report baseline current` (also saved
      as `playtest/report-baseline-vs-current.md`; it warns if seeds, minutes, tick rate or Brunch differ)
-  5. `git worktree remove --force ../depths-base` (it holds build output)
+  5. `git worktree remove --force ../depths-base`
 
   Same `--seeds/--minutes/--brunch` on both sides. The bot is deterministic, so any difference is the
   change. Use `--minutes 60` for difficulty (20 min caps the median floor at 7). It answers "harder,
