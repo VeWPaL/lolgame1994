@@ -224,6 +224,14 @@ namespace Depths
     public const int AltCooldown = 756;                     // sec(3.6); /TEMPO at the cast
     public const double AltSpeed = 1.87, AltR = 12, AltAoe = 100, AltKnock = 2.7;
     public const double AltPool = 18 * 1.35 / 0.66 * 1.02;  // 18*TOUGH/ARMOUR*1.02 = 37.5545...
+    /// <summary>
+    /// The Brunch guard rule, as the JS playtest flag ?brunch= (A: guard the shooter wherever the
+    /// player is; B: leash at BrunchGuardLeash; A+: the wall advances once the player leaves the
+    /// target's reach). A is the reference until the owner chooses.
+    /// </summary>
+    public static string BrunchVariant = "A";
+    public const double BrunchGuardLeash = 420;
+
     // The blink, read from the game 2026-10-06.
     public const int BlinkFillClear = 9;                    // a charge refills 9x faster in a cleared room
     public static readonly int BlinkIframes = Sec(0.17), BlinkGrace = Sec(0.6), DashTrail = Sec(0.23);   // 36, 126, 48

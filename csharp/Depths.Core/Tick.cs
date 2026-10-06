@@ -275,6 +275,55 @@ namespace Depths
         /// </summary>
         static readonly List<Enemy> Snapshot = new List<Enemy>();
 
+        /// <summary>brunchGuardAnchor: where a guarding pack forms its wall, by Balance.BrunchVariant; null = chase.</summary>
+        public static Pt? GuardAnchor(RunState run, Enemy tgt)
+        {
+            var v = Balance.BrunchVariant;
+            if (v == "A") return new Pt(tgt.x, tgt.y);
+            var p = run.player;
+            double d = Dist(p.x - tgt.x, p.y - tgt.y);
+            if (d == 0) d = 1;
+            if (v == "B") return d > Balance.BrunchGuardLeash ? (Pt?)null : new Pt(tgt.x, tgt.y);
+            double reach = tgt.kind == BodyKind.Gunner ? 600 : tgt.kind == BodyKind.Shooter ? 520 : Balance.BrunchGuardLeash;
+            if (d <= reach) return new Pt(tgt.x, tgt.y);
+            double u = System.Math.Min((d - reach) * 1.5, d - 150) / d;
+            return new Pt(tgt.x + (p.x - tgt.x) * u, tgt.y + (p.y - tgt.y) * u);
+        }
+
+        /// <summary>
+        /// A Brunch on the hunt (src/60-tick.js tickBodies, the Brunch branch): the speed ramp, then a
+        /// slot in the wall before its pack's target (or the player when it has none, or when the slot
+        /// is already reached), at the guard or chase speed, easing its velocity a fraction per tick.
+        /// </summary>
+        static void StepBrunch(RunState run, Enemy e, double edx, double edy, double sm)
+        {
+            var p = run.player;
+            e.pursuit++;
+            double gain = 1 + Balance.BrunchRampGain * System.Math.Min(1, e.pursuit / Balance.BrunchRamp);
+            e.curSpeed += (e.runSpeed - e.curSpeed) * Balance.LungerAccel * gain;
+            PackCentroid? pc = null;
+            if (e.packId.HasValue) Packs.TryGetValue(e.packId.Value, out pc);
+            double mdx = edx, mdy = edy;
+            var tgt = e.shieldTarget;
+            Pt? anchor = tgt != null && tgt.hp > 0 && pc != null && pc.Count >= Balance.BrunchShieldMin ? GuardAnchor(run, tgt) : null;
+            if (anchor.HasValue)
+            {
+                var slot = BrunchArcSlot(anchor.Value.X, anchor.Value.Y, p.x, p.y, pc!.Count, e.packSlot, tgt!.r);
+                if (slot.HasValue) { mdx = slot.Value.X - e.x; mdy = slot.Value.Y - e.y; }
+            }
+            bool reachable = Dist(mdx, mdy) <= Balance.BrunchDeadzone + e.r;
+            double tx = reachable ? edx : mdx, ty = reachable ? edy : mdy, td = Dist(tx, ty);
+            if (td == 0) td = 1;
+            double desired = anchor.HasValue ? Balance.BrunchShieldSpeed : e.curSpeed;
+            double share = desired > e.curSpeed ? Balance.BrunchAccel : Balance.BrunchDecel;
+            e.vx += (tx / td * desired - e.vx) * share;
+            e.vy += (ty / td * desired - e.vy) * share;
+            if (System.Math.Abs(e.vx) < 0.02) e.vx = 0;
+            if (System.Math.Abs(e.vy) < 0.02) e.vy = 0;
+            e.x += e.vx * sm;
+            e.y += e.vy * sm;
+        }
+
         /// <summary>
         /// A shooter or gunner in sight of the player: hold a standoff that shrinks as the room empties
         /// (longer while guarded), walk (a gunner roots while casting), then cast at an intercept - the
@@ -338,7 +387,7 @@ namespace Depths
             {
                 if (e.hp <= 0) continue;   // killed earlier this tick
                 bool ranged = e.kind == BodyKind.Shooter || e.kind == BodyKind.Gunner;
-                if (e.kind != BodyKind.Lunger && !ranged)
+                if (e.kind != BodyKind.Lunger && e.kind != BodyKind.Brunch && !ranged)
                     throw new System.NotSupportedException("tickBodies: " + e.kind + " movement is not ported yet");
                 if (e.hitFlash > 0) e.hitFlash--;
                 if (e.kvx != 0 || e.kvy != 0)
@@ -373,8 +422,12 @@ namespace Depths
                 {
                     if (dist < aggro) e.aggroTimer = Balance.AggroTime;
                     else if (e.aggroTimer > 0) e.aggroTimer--;
-                    if (e.aggroTimer > 0) Movement.StepLunge(run, e, edx / dist, edy / dist, dist, sm);
-                    else Movement.IdleWander(run, e);
+                    if (e.aggroTimer > 0)
+                    {
+                        if (e.kind == BodyKind.Lunger) Movement.StepLunge(run, e, edx / dist, edy / dist, dist, sm);
+                        else StepBrunch(run, e, edx, edy, sm);
+                    }
+                    else { e.curSpeed = e.walkSpeed; e.pursuit = 0; Movement.IdleWander(run, e); }
                 }
                 else if (e.alerted || dist < e.sense) StepRanged(run, e, edx, edy, dist, sm, roomPress);
                 else Movement.IdleWander(run, e);
@@ -384,8 +437,17 @@ namespace Depths
                 double cy = edy - Balance.PlayerHitDy;
                 if (System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR)
                 {
-                    if (Combat.DamagePlayer(run, 1, edx / dist, edy / dist, 5.5 * Balance.KnockPGain))
+                    // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
+                    bool brunch = e.kind == BodyKind.Brunch;
+                    bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0;
+                    if (Combat.DamagePlayer(run, 1, edx / dist, edy / dist, 5.5 * Balance.KnockPGain) && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
+                    if (brunch)
+                    {
+                        e.hp -= e.maxHp / 2;
+                        e.hitFlash = Balance.HitFlash;
+                        if (e.hp <= 0) { int j = list.IndexOf(e); if (j >= 0) Kills.KillEnemy(run, j); }
+                    }
                 }
             }
             Movement.Separate(run, list);
@@ -1004,6 +1066,9 @@ namespace Depths
         /// losing any single member - there is no body whose death changes where the others go.
         /// </para>
         /// </summary>
+        static readonly Dictionary<int, PackCentroid> Packs = new Dictionary<int, PackCentroid>();
+        static readonly List<PackCentroid> CentroidPool = new List<PackCentroid>();
+
         private sealed class PackCentroid
         {
             public double X, Y;
@@ -1041,13 +1106,17 @@ namespace Depths
 
             // --- centroids. One pass to sum, one to divide, which is what the original does and is
             // cheaper than carrying a running mean through the second loop.
-            var packs = new Dictionary<int, PackCentroid>();
+            // reused every tick (pooled centroids), and kept for the body pass to read
+            var packs = Packs;
+            foreach (var old in packs.Values) CentroidPool.Add(old);
+            packs.Clear();
             foreach (var b in run.enemies)
             {
                 if (b.kind != BodyKind.Brunch || !b.packId.HasValue) continue;
                 if (!packs.TryGetValue(b.packId.Value, out var c))
                 {
-                    c = new PackCentroid();
+                    if (CentroidPool.Count > 0) { c = CentroidPool[CentroidPool.Count - 1]; CentroidPool.RemoveAt(CentroidPool.Count - 1); c.X = c.Y = 0; c.Count = 0; }
+                    else c = new PackCentroid();
                     packs[b.packId.Value] = c;
                 }
                 c.X += b.x; c.Y += b.y; c.Count++;

@@ -64,6 +64,18 @@ namespace Depths.Unity
             _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
             _run.enemies.Clear();
             for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k);
+            SpawnPack();
+        }
+
+        // A Brunch pack of four: it walls the nearest shooter or gunner, or hunts you if there is none.
+        void SpawnPack()
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                var e = Enemy.Of(BodyKind.Brunch, Balance.RoomLeft + 300 + (i % 2) * 18, Balance.RoomTop + 200 + (i / 2) * 18);
+                e.packId = 1; e.packSlot = i; e.noticeTimer = 90;
+                _run.enemies.Add(e);
+            }
         }
 
         void SpawnDummy(int k)
@@ -90,8 +102,8 @@ namespace Depths.Unity
                 _hud = new Label();
                 _hud.AddToClassList("game-text");
                 _hud.style.top = 600;   // below the room, which fills the middle of the screen
-                _hud.style.left = 290;
-                _hud.style.width = 720;
+                _hud.style.left = 190;
+                _hud.style.width = 900;
                 root.Add(_hud);
             }
             var kb = Keyboard.current;
@@ -100,6 +112,8 @@ namespace Depths.Unity
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
                 if (kb.rKey.wasPressedThisFrame) NewRun();
+                if (kb.vKey.wasPressedThisFrame)   // cycle the Brunch guard rule under test
+                    Balance.BrunchVariant = Balance.BrunchVariant == "A" ? "B" : Balance.BrunchVariant == "B" ? "A+" : "A";
             }
 
             // the aim: the pointer, from screen pixels to panel units to the room
@@ -131,7 +145,7 @@ namespace Depths.Unity
                     TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
                 }
-                if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); }
+                if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); }
                 _acc -= StepMs;
             }
             PlayEvents();
@@ -140,8 +154,8 @@ namespace Depths.Unity
             _hud.text = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
                         "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   shots " + _run.shots + "  hits " + _run.hits + "  kills " + _run.kills +
                         (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                        "\nSandbox on the ported core: movement, guns, shells, lungers, shooters, gunners, loot.\nBrunch packs and the Warden join as they are ported." +
-                        "\n\n1-4 guns    R new room    Esc menu";
+                        "\nSandbox on the ported core: movement, guns, shells, lungers, shooters, gunners, Brunch packs, loot.\nThe Warden joins next.   Brunch guard rule: " + Balance.BrunchVariant + " (V to switch)" +
+                        "\n\n1-4 guns    right-click blast    Shift blink    R new room    Esc menu";
         }
 
         // The simulation makes no sound; the view hears what changed since the last frame.

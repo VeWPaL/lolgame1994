@@ -106,9 +106,10 @@ gunner intercept solves against the position the player is visually leaving.
     tickProjectiles()    160   PARTIAL - TickOrder.TickProjectiles: all but the HOOK (the blast, explode
                                 and tryBreakSecret are ported: BlastParityTests, tools/blast-parity.js). ProjectilePhaseParityTests, from
                                 tools/proj-parity.js, 2026-10-06
-    tickBodies()         697   PARTIAL - AssemblePacks + TickOrder.TickBodies for the LUNGER, SHOOTER
-                                and GUNNER (standoff, intercept cast, clearShot, dodge;
-                                RangedParityTests). Brunch and the boss throw until ported, 2026-10-06
+    tickBodies()         697   PARTIAL - AssemblePacks + TickOrder.TickBodies for the LUNGER, SHOOTER,
+                                GUNNER and BRUNCH (wall slots, chase, self-spend, the A/B/A+
+                                guard variants via Balance.BrunchVariant; BrunchMoveParityTests).
+                                Only the boss throws, 2026-10-06
     tickRoom()           109   PORTED - TickOrder.TickRoom
 
 `TickPlayer` is the second, and porting it found a **pre-existing defect in `TickMomentum`**: the C# had

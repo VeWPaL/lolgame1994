@@ -208,6 +208,7 @@ namespace Depths
 
         // Movement (src/30-enemies.js stepLunge, idleWander; 40-combat.js knockEnemy).
         public double kvx, kvy, curSpeed, walkSpeed, runSpeed, flank, anim;
+        public double vx, vy;   // a Brunch eases its velocity toward its slot rather than stepping
         public string lungeState = "approach";
         public int lungeT, lungeCd;
         public double lungeDx, lungeDy, lungeLen;
