@@ -498,8 +498,8 @@ namespace Depths
 
 
     /// <summary>
-    /// Ticks the boss warning stays on screen once the boss room comes into view. Read
-    /// out of the running game: 672, which at 210 ticks a second is 3.2 seconds.
+    /// Ticks the boss warning stays on screen once the boss room comes into view: 3.2 seconds
+    /// (672 at the JS rate). Nothing in the port sets the warning yet.
     /// </summary>
     public static int BossWarnTime => Sec(3.2);
 

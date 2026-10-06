@@ -18,7 +18,7 @@ namespace Depths
 
     /// <summary>
     /// The four guns and the act of firing one, src/40-combat.js fireWeapon. Values read from the
-    /// running game 2026-10-06 (WEAPONS evaluated, so sec() and SPEEDUP are already applied).
+    /// running game 2026-10-06, held in seconds and px/s; at 210 Hz they convert back to its numbers.
     /// </summary>
     public static class Weapons
     {
