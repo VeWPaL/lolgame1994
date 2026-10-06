@@ -411,14 +411,25 @@ namespace Depths
             {
                 var p = ps[i];
                 if (p.alt)
-                    throw new System.NotSupportedException("tickProjectiles: blast and hook shells call explode, "
-                        + "which is not ported. A silent no-op would be a port that plays differently.");
+                {
+                    if (p.mode != "blast")
+                        throw new System.NotSupportedException("tickProjectiles: the hook is not ported yet");
+                    // stop on the point, not past it
+                    if (Dist(p.tx - p.x, p.ty - p.y) <= p.speed)
+                    {
+                        p.x = p.tx; p.y = p.ty;
+                        Blast.Explode(run, p.tx, p.ty);
+                        ps.RemoveAt(i);
+                        continue;
+                    }
+                }
                 p.age++;
                 p.x += p.vx;
                 p.y += p.vy;
                 if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
                     || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
                 {
+                    if (p.alt) Blast.Explode(run, p.x, p.y);
                     ps.RemoveAt(i);
                     continue;
                 }
@@ -436,6 +447,7 @@ namespace Depths
                         if (a < bestA) { bestA = a; best = j; }
                     }
                     if (best < 0) continue;
+                    if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); continue; }   // the blast goes off on the first body
                     var t = en[best];
                     t.hp -= p.dmg * Combat.FalloffMult(p) * t.armour * p.scale;
                     t.hitFlash = Balance.HitFlash;
@@ -865,6 +877,7 @@ namespace Depths
             if (p.shootSlow > 0) p.shootSlow = System.Math.Max(0, p.shootSlow - Balance.ShootSlowRecover);
             // held fire shoots the moment the cooldown runs out (mouseDown in the game); the alt is not ported
             if (input.fire && p.cooldown <= 0) Weapons.Fire(run, input.aimX, input.aimY);
+            if (input.alt) Weapons.FireAlt(run, input.aimX, input.aimY);   // not gated here: fireAlt decides
 
             /* THE LAGGED HITBOX, and the publish. This trails the real position and catches up, so
                after a blink the enemies aim at where the player was for a moment - which is the

@@ -75,6 +75,59 @@ namespace Depths
         }
     }
 
+    /// <summary>The right-click blast going off: src/40-combat.js explode (the blast mode) and tryBreakSecret.</summary>
+    public static class Blast
+    {
+        static readonly List<Enemy> Caught = new List<Enemy>();
+
+        static double Smooth(double t) => t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+
+        /// <summary>
+        /// One damage pool shared by everyone caught, divided by count^DISPERSE, so a crowd takes less
+        /// each; a shove strongest at the centre and fading to the rim; then the fake wall, if it is
+        /// close enough. Hook fields are not ported.
+        /// </summary>
+        public static void Explode(RunState run, double x, double y)
+        {
+            var en = run.enemies;
+            Caught.Clear();
+            foreach (var e in en)
+                if (System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y)) < Balance.AltAoe + e.r) Caught.Add(e);
+            double share = Caught.Count > 0 ? Balance.AltPool / System.Math.Pow(Caught.Count, Balance.Disperse) : 0;
+            for (int j = en.Count - 1; j >= 0; j--)
+            {
+                var e = en[j];
+                if (!Caught.Contains(e)) continue;
+                double dist = System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y));
+                double t = System.Math.Min(1, dist / (Balance.AltAoe + e.r));
+                if (share != 0) { e.hp -= share * e.armour; e.hitFlash = Balance.HitFlash; }
+                Combat.AlertEnemy(e);
+                Combat.SlowEnemy(e);
+                double near = 1 - Smooth(t);
+                Movement.Knock(run, e, e.x - x, e.y - y, Balance.AltKnock * (Balance.AltKnockFar + (Balance.AltKnockNear - Balance.AltKnockFar) * near));
+                if (e.hp <= 0) Kills.KillEnemy(run, j);
+            }
+            TryBreakSecret(run, x, y);
+        }
+
+        /// <summary>A right-click impact within 80% of the blast radius of a fake wall opens it, both sides.</summary>
+        public static bool TryBreakSecret(RunState run, double x, double y)
+        {
+            var room = run.CurrentRoom;
+            if (room == null || !room.Secret.HasValue) return false;
+            var d = room.Secret.Value;
+            double px = d == Dir.E ? Balance.RoomRight : d == Dir.W ? Balance.RoomLeft : Balance.MidX;
+            double py = d == Dir.S ? Balance.RoomBottom : d == Dir.N ? Balance.RoomTop : Balance.MidY;
+            if (System.Math.Sqrt((x - px) * (x - px) + (y - py) * (y - py)) > Balance.AltAoe * 0.8) return false;
+            var sec = run.dungeon.Neighbour(room, d);
+            room.Secret = null;
+            room.Doors.Add(d);
+            if (sec != null) sec.Doors.Add(d == Dir.N ? Dir.S : d == Dir.S ? Dir.N : d == Dir.E ? Dir.W : Dir.E);
+            run.secret = true;
+            return true;
+        }
+    }
+
     public static class Kills
     {
         /// <summary>

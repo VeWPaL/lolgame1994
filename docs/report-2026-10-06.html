@@ -22,11 +22,11 @@ Baseline for A/B: git tag <code>pre-features-2026-10-06</code>, checked out at <
 
 <h2>At a glance</h2>
 <table>
-<tr><th>Gate (<code>.\verify.ps1</code>)</th><td><span class="tag ok">green</span> JS 246/246 at 3 viewports, C# 356/356, parity 0 diffs, 145 parity rows, 47/47 constants. About 3 min; it used to time out.</td></tr>
+<tr><th>Gate (<code>.\verify.ps1</code>)</th><td><span class="tag ok">green</span> JS 246/246 at 3 viewports, C# 360/360, parity 0 diffs, 145 parity rows, 47/47 constants. About 3 min; it used to time out.</td></tr>
 <tr><th>Bugs fixed</th><td>11 in the game, 4 in the port, 3 in the gate tooling. Each comes with a test that fails on the old code.</td></tr>
 <tr><th>Playtesting</th><td>A new bot plays 18 full runs in about 50s. It's deterministic and produces an A/B report. <code>node tools/playtest.js</code></td></tr>
 <tr><th>Unity</th><td><span class="tag ok">playable</span> A main menu with key binds and volume, a sound engine, and a sandbox room where you walk, shoot four guns and fight lungers. It all runs on the ported core.</td></tr>
-<tr><th>Port</th><td>New this session: the projectile phase (except blast and hook), the four guns, the lunger, and the shooter and gunner. Each is checked against recordings from the running game.</td></tr>
+<tr><th>Port</th><td>New this session: the projectile phase and the blast (everything except the hook), the four guns, the lunger, and the shooter and gunner. Each is checked against recordings from the running game.</td></tr>
 </table>
 
 <h2>1. Housekeeping and the gate</h2>
@@ -112,7 +112,7 @@ retreat across a big room from a shooter with a pack. Reports: <code>playtest/re
 <h3>4.4 The port, and a playable sandbox <span class="tag ok">big step</span></h3>
 <table>
 <tr><th>Ported this session</th><th>Checked against the game by</th></tr>
-<tr><td>Projectile phase (all but blast and hook)</td><td>12 banked cases, plus "older shells keep moving", the loot draw and the boss wall</td></tr>
+<tr><td>Projectile phase, and the right-click blast (all but the hook)</td><td>12 banked cases, plus "older shells keep moving", the loot draw and the boss wall; 4 recorded blasts (a crowd sharing the damage, a contact hit, a target past the wall, a kill)</td></tr>
 <tr><td>The four guns (<code>Weapons.cs</code>)</td><td>48 shots: 4 seeds &times; 4 guns &times; 3 aims, every pellet to 1e-6, RNG draws exact</td></tr>
 <tr><td>Held fire</td><td>The tick each gun fires on: Bolt every 89, Scatter 154, Beam 13, Voidball 56</td></tr>
 <tr><td>The lunger (<code>Movement.cs</code>, <code>TickBodies</code>)</td><td>4 recorded fights, 200&ndash;420 ticks each, compared every 10 ticks to 1e-6</td></tr>

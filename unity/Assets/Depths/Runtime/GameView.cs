@@ -24,7 +24,7 @@ namespace Depths.Unity
         static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
         RunState _run;
-        InputAction _move, _cast, _pause;
+        InputAction _move, _cast, _blast, _pause;
         RoomPainter _painter;
         Label _hud;
         double _acc;
@@ -38,6 +38,7 @@ namespace Depths.Unity
             var map = controls.FindActionMap("Gameplay", true);
             _move = map.FindAction("Move", true);
             _cast = map.FindAction("Cast", true);
+            _blast = map.FindAction("Blast", true);
             _pause = map.FindAction("Pause", true);
             map.Enable();
             var args = Environment.GetCommandLineArgs();
@@ -107,14 +108,14 @@ namespace Depths.Unity
                 aim = pp - Offset;
             }
             Vector2 mv = _move.ReadValue<Vector2>();
-            bool fire = _cast.IsPressed();
-            if (_demo) DemoInput(ref mv, ref fire, ref aim);
+            bool fire = _cast.IsPressed(), alt = _blast.IsPressed();
+            if (_demo) { DemoInput(ref mv, ref fire, ref aim); alt = _demoT == 20; }
 
             _acc += Math.Min(Time.unscaledDeltaTime * 1000.0, 250.0);
             while (_acc >= StepMs)
             {
                 // keys are -1/0/1 per axis in the game, and screen y points down
-                var input = new Input(Math.Sign(mv.x), -Math.Sign(mv.y), fire: fire, aimX: aim.x, aimY: aim.y);
+                var input = new Input(Math.Sign(mv.x), -Math.Sign(mv.y), fire: fire, alt: alt, aimX: aim.x, aimY: aim.y);
                 if (_run.state == "playing")
                 {
                     TickOrder.TickPlayer(_run, input);

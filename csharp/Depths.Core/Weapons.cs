@@ -75,5 +75,29 @@ namespace Depths
             p.muzzleTimer = MuzzleTicks;
             p.shootSlow = System.Math.Min(ShootSlowMax, p.shootSlow + ShootSlowMain);
         }
+
+        /// <summary>
+        /// fireAlt for the BLAST: a slow bolt to the cursor (clamped to the room), on its own cooldown.
+        /// The hook (a secret-room pickup) is not ported and throws.
+        /// </summary>
+        public static void FireAlt(RunState run, double aimX, double aimY)
+        {
+            var p = run.player;
+            if (p.altMode != "blast")
+                throw new System.NotSupportedException("fireAlt: the hook is not ported yet");
+            if (p.altCooldown > 0) return;
+            double tx = System.Math.Max(Balance.RoomLeft, System.Math.Min(Balance.RoomRight, aimX));
+            double ty = System.Math.Max(Balance.RoomTop, System.Math.Min(Balance.RoomBottom, aimY));
+            double a = System.Math.Atan2(ty - p.y, tx - p.x);
+            run.projectiles.Add(new Projectile
+            {
+                x = p.x, y = p.y, vx = System.Math.Cos(a) * Balance.AltSpeed, vy = System.Math.Sin(a) * Balance.AltSpeed,
+                speed = Balance.AltSpeed, r = Balance.AltR, friendly = true, color = "#ff8a3d",
+                alt = true, phase = false, mode = "blast", age = 0, tx = tx, ty = ty,
+            });
+            p.altCooldown = (int)(Balance.AltCooldown / Balance.TempoRate);
+            p.muzzleTimer = MuzzleTicks;
+            p.shootSlow = System.Math.Min(ShootSlowMax, p.shootSlow + Balance.ShootSlowAlt);
+        }
     }
 }

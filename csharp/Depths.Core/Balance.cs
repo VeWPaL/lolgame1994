@@ -220,6 +220,12 @@ namespace Depths
     public const double GunnerDodgeSight = 250, GunnerDodgeChance = 0.5, GunnerDodgeKick = 0.6;
     public const int GunnerDodgeCd = 126;
 
+    // The right-click blast, ALT_WEAPON, read from the game 2026-10-06.
+    public const int AltCooldown = 756;                     // sec(3.6); /TEMPO at the cast
+    public const double AltSpeed = 1.87, AltR = 12, AltAoe = 100, AltKnock = 2.7;
+    public const double AltPool = 18 * 1.35 / 0.66 * 1.02;  // 18*TOUGH/ARMOUR*1.02 = 37.5545...
+    public const double AltKnockNear = 2, AltKnockFar = 0.35, Disperse = 2.3, ShootSlowAlt = 0.45;
+
     /// <summary>roomPressure: 1 with one body or none, easing to PRESSURE_FLOOR at PRESSURE_SPAN+1 bodies.</summary>
     public static double RoomPressure(int live)
     {

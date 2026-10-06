@@ -72,6 +72,9 @@ namespace Depths
         /// <summary>Shells fired this run, one per pellet (run.shots).</summary>
         public int shots;
 
+        /// <summary>Whether this run broke a secret wall (run.secret).</summary>
+        public bool secret;
+
         /// <summary>
         /// The bodies in the room being fought, and the pickups on its floor. Both are needed by
         /// <c>killEnemy</c> (which splices a body out and pushes a drop) and neither existed on the

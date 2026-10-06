@@ -27,7 +27,7 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | `World.cs` | `20-world.js` — `Dir`, `RoomKind`, `Room`, `Map`, `Dungeon` | Signature must match byte for byte |
 | `SpawnPlan.cs` | `spawnPlan()` in `20-world.js` | Position, distance, and the **draw count** |
 | `Movement.cs` | `stepLunge`, `solveIntercept`, `idleWander` in `30-enemies.js`; `knockEnemy`, `clampEnemy`, `separateBodies`, `clearShot` in `40-combat.js`; the gunner dodge | The lunger, draw for draw on the jitter stream. `LungerParityTests`, trajectories from `tools/lunger-parity.js`. Separation is a double loop: the game's 96px grid (8+ bodies) is not ported |
-| `Weapons.cs` | `WEAPONS` in `00-balance.js` + `fireWeapon` in `40-combat.js` | Every shell of every gun, draw for draw on the jitter stream; never the run stream. `FireParityTests`, from `tools/fire-parity.js`. Strength and precision are parameters until stats are ported |
+| `Weapons.cs` | `WEAPONS` in `00-balance.js` + `fireWeapon` and `fireAlt` (the blast) in `40-combat.js` | Every shell of every gun, draw for draw on the jitter stream; never the run stream. `FireParityTests`, from `tools/fire-parity.js`. Strength and precision are parameters until stats are ported |
 | `Area.cs` | `areaForFloor()` in `00-balance.js` | Same thresholds. Takes a floor argument on both sides |
 | `Combat.cs` | `40-combat.js` + `50-run.js` + `10-art.js` — `falloffMult`, `alertEnemy`, `slowEnemy`, `damagePlayer`, `killEnemy`, `dropLoot` | On `Enemy`, the live body. `killEnemy` drops loot (one run draw per kill) and takes the Warden's wall with it |
 | `RunState.cs` / `Actors.cs` / `Tick.cs` | the run holder and the `update()` gates in `50-run.js`/`60-tick.js` | Tick order and RNG discipline. **`Tick.Update` is a skeleton** |
@@ -103,8 +103,8 @@ gunner intercept solves against the position the player is visually leaving.
     phase              lines   C#
     update()              93   gates + dispatch, all four called in order
     tickPlayer()         169   PORTED - TickOrder.TickPlayer (movement core)
-    tickProjectiles()    160   PARTIAL - TickOrder.TickProjectiles: all but alt shells (blast/hook call
-                                explode, unported, so they throw). ProjectilePhaseParityTests, from
+    tickProjectiles()    160   PARTIAL - TickOrder.TickProjectiles: all but the HOOK (the blast, explode
+                                and tryBreakSecret are ported: BlastParityTests, tools/blast-parity.js). ProjectilePhaseParityTests, from
                                 tools/proj-parity.js, 2026-10-06
     tickBodies()         697   PARTIAL - AssemblePacks + TickOrder.TickBodies for the LUNGER, SHOOTER
                                 and GUNNER (standoff, intercept cast, clearShot, dodge;

@@ -212,10 +212,10 @@ namespace Depths.Tests
         }
 
         [Test]
-        public void AltShellsRefuseUntilExplodeIsPorted()
+        public void TheHookRefusesUntilItIsPorted()
         {
             var run = Room();
-            run.projectiles.Add(new Projectile { alt = true, x = 400, y = 300 });
+            run.projectiles.Add(new Projectile { alt = true, mode = "hook", x = 400, y = 300 });
             Assert.Throws<System.NotSupportedException>(() => TickOrder.TickProjectiles(run));
         }
     }
