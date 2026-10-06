@@ -10,8 +10,8 @@ namespace Depths.Unity
     /// <summary>
     /// The playable sandbox: one room driven by Depths.Core at the game's 210 Hz tick. The player
     /// moves (TickPlayer), shoots (Weapons.Fire), shells resolve (TickProjectiles), and loot is
-    /// picked up (TickRoom) - all ported with parity. The bodies are target dummies, because their
-    /// movement (tickBodies) is the next port. This class only reads input and draws.
+    /// picked up (TickRoom), and lungers hunt and lunge (TickBodies) - all ported with parity. Other
+    /// kinds join as their movement is ported. This class only reads input and draws.
     /// Esc: menu. 1-4: guns. R: a fresh room.
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
@@ -21,7 +21,7 @@ namespace Depths.Unity
 
         const double StepMs = 1000.0 / 210;
         static readonly Vector2 Offset = new Vector2(640 - 400, 360 - 355);   // room centre to screen centre
-        static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Gunner, BodyKind.Brunch };
+        static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Lunger, BodyKind.Lunger };
 
         RunState _run;
         InputAction _move, _cast, _pause;
@@ -63,8 +63,11 @@ namespace Depths.Unity
 
         void SpawnDummy(int k)
         {
-            double x = Balance.RoomLeft + 120 + k * 150, y = Balance.RoomTop + 110 + (k % 2) * 60;
-            _run.enemies.Add(Enemy.Of(DummyKinds[k % DummyKinds.Length], x, y));
+            double x = Balance.RoomLeft + 120 + k * 230, y = Balance.RoomTop + 90 + (k % 2) * 60;
+            var e = Enemy.Of(DummyKinds[k % DummyKinds.Length], x, y);
+            e.flank = k * 2.399963229728653;   // the game's golden-angle flank cursor
+            e.noticeTimer = 60 + k * 25;        // a beat before they move, as a spawn has
+            _run.enemies.Add(e);
         }
 
         void Update()
@@ -112,21 +115,18 @@ namespace Depths.Unity
                 {
                     TickOrder.TickPlayer(_run, input);
                     TickOrder.TickProjectiles(_run);
+                    TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
                 }
-                if (_run.enemies.Count < DummyKinds.Length && ++_respawnT > 210)
-                {
-                    _respawnT = 0;
-                    for (int k = 0; k < DummyKinds.Length; k++)
-                        if (!_run.enemies.Any(e => e.kind == DummyKinds[k])) SpawnDummy(k);
-                }
+                if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); }
                 _acc -= StepMs;
             }
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
             _hud.text = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
                         "   armour " + pl.armor.ToString("0.#") + "   shots " + _run.shots + "  hits " + _run.hits + "  kills " + _run.kills +
-                        "\nSandbox: movement, guns, shells and loot run on the ported core.\nTargets stand still until tickBodies is ported." +
+                        (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
+                        "\nSandbox on the ported core: movement, guns, shells, lungers, loot.\nOther enemies join as they are ported." +
                         "\n\n1-4 guns    R new room    Esc menu";
         }
 

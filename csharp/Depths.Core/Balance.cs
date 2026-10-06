@@ -211,6 +211,9 @@ namespace Depths
     public const double PierceFalloff = 0.72;               // each body a piercing bolt drills through
     public const int BrunchAbsorbFlash = 21;                // a Brunch flashes this long when it eats a shell
     public const int BossWallId = -1;                       // the pack id of the statues the Warden calls
+    public const double KnockMax = 5, KnockTrade = 0.09;    // a hit shoves, never launches; below this speed no trade
+    public const int KnockStun = 88;                        // KNOCK_STUN
+    public const int WanderTicks = 210;                     // WANDER_TICKS
 
     /// <summary>
     /// How often, in ticks, an UNGUARDED pack looks for a body to shield. Read out of the

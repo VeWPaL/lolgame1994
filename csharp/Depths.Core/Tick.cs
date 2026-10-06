@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Collections.Generic;
 
 namespace Depths
@@ -262,7 +263,73 @@ namespace Depths
                loop, so it has to be honoured here or a descent would also re-open the boss exit on
                the same tick. */
             TickProjectiles(run);
+            TickBodies(run);
             TickRoom(run);
+        }
+
+        /// <summary>
+        /// The body phase, src/60-tick.js tickBodies, for the LUNGER: knock drift, slow and stun clocks,
+        /// notice, aggro (AGGRO_RANGE from the lagged hitbox), stepLunge or the idle wander, the wall,
+        /// contact damage with its knock-back, then separation and the wall again. Pack assembly runs
+        /// first, as in the game. Any other kind that would act throws: their movement is not ported.
+        /// </summary>
+        static readonly List<Enemy> Snapshot = new List<Enemy>();
+
+        public static void TickBodies(RunState run)
+        {
+            AssemblePacks(run);
+            var list = run.enemies;
+            Snapshot.Clear();
+            Snapshot.AddRange(list);   // iterate a snapshot, as the game does (r.enemies.slice()), without a per-tick allocation
+            int aggro = Balance.AggroRange(Balance.Room.Standard);
+            foreach (var e in Snapshot)
+            {
+                if (e.hp <= 0) continue;   // killed earlier this tick
+                if (e.kind != BodyKind.Lunger)
+                    throw new System.NotSupportedException("tickBodies: " + e.kind + " movement is not ported yet");
+                if (e.hitFlash > 0) e.hitFlash--;
+                if (e.kvx != 0 || e.kvy != 0)
+                {
+                    e.x += e.kvx; e.y += e.kvy;
+                    e.kvx *= Balance.KnockFriction; e.kvy *= Balance.KnockFriction;
+                    if (System.Math.Abs(e.kvx) < Balance.KnockCut) e.kvx = 0;
+                    if (System.Math.Abs(e.kvy) < Balance.KnockCut) e.kvy = 0;
+                }
+                if (e.slowT > 0) e.slowT--;
+                if (e.slowT < 0) e.slowT = 0;
+                if (e.stun < 0) e.stun = 0;
+                double sm = e.slowT > 0 ? Balance.HitSlowMult : 1;
+                if (e.stun > 0)
+                {
+                    if (e.lungeState == "wind" || e.lungeState == "lunge")
+                    {
+                        e.lungeState = "approach"; e.lungeT = 0; e.lungeLen = 0; e.lungeCd = Balance.LungeCd;
+                    }
+                    e.stun--;
+                    e.anim = 0;
+                    Movement.Clamp(e);
+                    continue;
+                }
+                if (e.noticeTimer > 0) { e.noticeTimer--; e.anim = 0; continue; }
+                double ox = e.x, oy = e.y;
+                double edx = HitboxX - e.x, edy = HitboxY - e.y, dist = System.Math.Sqrt(edx * edx + edy * edy);
+                if (dist == 0) dist = 1;
+                if (dist < aggro) e.aggroTimer = Balance.AggroTime;
+                else if (e.aggroTimer > 0) e.aggroTimer--;
+                if (e.aggroTimer > 0) Movement.StepLunge(run, e, edx / dist, edy / dist, dist, sm);
+                else Movement.IdleWander(run, e);
+                double mv = System.Math.Sqrt((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy));
+                e.anim = mv > 0.05 ? e.anim + mv / Balance.Stride : 0;
+                Movement.Clamp(e);
+                double cy = edy - Balance.PlayerHitDy;
+                if (System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR)
+                {
+                    if (Combat.DamagePlayer(run, 1, edx / dist, edy / dist, 5.5 * Balance.KnockPGain))
+                        Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
+                }
+            }
+            Movement.Separate(run, list);
+            foreach (var e in list) Movement.Clamp(e);
         }
 
         static double Dist(double dx, double dy) => System.Math.Sqrt(dx * dx + dy * dy);

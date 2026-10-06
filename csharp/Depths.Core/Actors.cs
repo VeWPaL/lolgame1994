@@ -206,12 +206,20 @@ namespace Depths
         public bool alerted;
         public double pursuit;
 
+        // Movement (src/30-enemies.js stepLunge, idleWander; 40-combat.js knockEnemy).
+        public double kvx, kvy, curSpeed, walkSpeed, runSpeed, flank, anim;
+        public string lungeState = "approach";
+        public int lungeT, lungeCd;
+        public double lungeDx, lungeDy, lungeLen;
+        public int idleTimer;
+        public double idleDirX, idleDirY;
+
         /// <summary>A live body of a kind at a point, with the table's radius, armour, mass and health.</summary>
         public static Enemy Of(BodyKind kind, double x, double y)
         {
             var row = Bodies.Of(kind);
             return new Enemy { kind = kind, x = x, y = y, r = row.Radius, armour = row.Armour, mass = row.Mass,
-                               hp = row.Hp, maxHp = row.Hp, aggroTimer = kind == BodyKind.Boss ? 9999 : 0 };   // measured: every body has one; the boss starts committed
+                               hp = row.Hp, maxHp = row.Hp, walkSpeed = row.Walk ?? 0, runSpeed = row.Run ?? 0, curSpeed = row.Walk ?? 0, aggroTimer = kind == BodyKind.Boss ? 9999 : 0 };   // measured: every body has one; the boss starts committed
         }
 }
 
