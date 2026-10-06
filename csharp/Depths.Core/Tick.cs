@@ -804,7 +804,8 @@ namespace Depths
                 if (pk.hold) { if (!touching) pk.hold = false; continue; }
                 if (!touching) continue;
 
-                if (pk.kind == "exit") { run.Descend(); descended = true; continue; }
+                // break, not continue: Descend empties run.pickups, so the old room has nothing left to read
+                if (pk.kind == "exit") { run.Descend(); descended = true; break; }
 
                 if (pk.kind == "weapon")
                 {
@@ -862,8 +863,8 @@ namespace Depths
                floor the player never saw - and re-opening an exit on it is a second, invisible bug.
 
                The only thing after the loop that is still correct to skip is the whole tail, so this
-               returns rather than falling through. It returns FALSE because the caller wants to know
-               whether it descended, and `descended` above already recorded that. */
+               returns rather than falling through. It returns true: the caller wants to know whether it
+               descended. */
             if (descended) return true;
 
             // Death wins ties: a pickup that arrives on the frame the player dies ends the run as a

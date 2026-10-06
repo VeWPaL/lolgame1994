@@ -305,27 +305,8 @@ namespace Depths
             projectiles.Clear();
             transients.Clear();
 
-            /* PICKUPS AND BODIES BELONG TO THE ROOM, SO A DESCENT DOES NOT CLEAR THEM.
-
-               This is the second time this line has been written in this port, and the first version
-               was wrong - which is worth recording because both versions were reasonable.
-
-               In the JavaScript a pickup lives on the ROOM (`r.pickups`), so descending builds a new
-               dungeon and the old room keeps its contents while the player's cursor lands in a new
-               room that has none. Measured: an exit portal and a heart on floor 1, then a descent -
-               the old room still holds 2 pickups, and the new start room holds 0.
-
-               The first version of this port read that as "descend must clear the list" and added
-               `pickups.Clear()`, on the reasoning that this port keeps the current room's pickups on
-               the RUN rather than on the ROOM and so something has to do the job `rooms[key()]` does
-               for free. A test caught it immediately. The reasoning was sound and the conclusion was
-               wrong: clearing is not what makes a new room empty, REPLACING THE ROOM is, and a
-               descent that clears the run's list is clearing the OLD room's contents as a side effect
-               of arriving somewhere new.
-
-               So nothing is cleared here. `enterRoom` - which is where the original actually empties a
-               room - is the port's remaining gap on this path, and it is named rather than papered
-               over, because the moment it lands it has to do the clearing instead. */
+            // The old room keeps its pickups and bodies (stashed above, as the JS keeps r.pickups); the
+            // run's lists were then cleared because they now stand for the new start room, which is empty.
 
             trans = null;
             readyT = 0;
