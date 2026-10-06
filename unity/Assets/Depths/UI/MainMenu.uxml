@@ -1,0 +1,32 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements">
+    <Style src="MainMenu.uss" />
+    <ui:VisualElement name="root" class="root">
+        <ui:VisualElement name="main" class="panel">
+            <ui:Label text="DEPTHS" class="title" />
+            <ui:Label text="the seed decides the dungeon" class="subtitle" />
+            <ui:Button name="start" text="Start Game" class="menu-btn" />
+            <ui:Button name="options" text="Options" class="menu-btn" />
+            <ui:Button name="quit" text="Quit" class="menu-btn" />
+        </ui:VisualElement>
+        <ui:VisualElement name="optionsPanel" class="panel wide hidden">
+            <ui:Label text="OPTIONS" class="heading" />
+            <ui:VisualElement class="tabs">
+                <ui:Button name="tabControls" text="Controls" class="tab" />
+                <ui:Button name="tabAudio" text="Audio" class="tab" />
+            </ui:VisualElement>
+            <ui:VisualElement name="controlsPage" class="page">
+                <ui:DropdownField name="preset" label="Keyboard layout" />
+                <ui:Label name="presetHint" class="hint" />
+                <ui:ScrollView name="bindList" class="bind-list" />
+                <ui:Button name="resetBinds" text="Reset to layout" class="small-btn" />
+            </ui:VisualElement>
+            <ui:VisualElement name="audioPage" class="page hidden">
+                <ui:Slider name="vol-Master" label="Master" low-value="0" high-value="1" show-input-field="false" />
+                <ui:Slider name="vol-Music" label="Music" low-value="0" high-value="1" />
+                <ui:Slider name="vol-Sfx" label="Sound effects" low-value="0" high-value="1" />
+                <ui:Label text="More options will live here: display, accessibility, gameplay." class="hint" />
+            </ui:VisualElement>
+            <ui:Button name="back" text="Back" class="menu-btn" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

@@ -1,0 +1,45 @@
+/* The JS game's palette: near-black slate, cold text, brass wood, key caps. */
+.root { flex-grow: 1; align-items: center; justify-content: center; background-color: rgb(11, 13, 18); }
+.panel { width: 360px; padding: 28px; background-color: rgb(20, 23, 31); border-width: 2px; border-color: rgb(122, 86, 50);
+         border-radius: 6px; align-items: stretch; }
+.wide { width: 640px; }
+.hidden { display: none; }
+.title { font-size: 56px; color: rgb(232, 232, 236); -unity-text-align: middle-center; -unity-font-style: bold; letter-spacing: 8px; }
+.subtitle { font-size: 14px; color: rgb(138, 147, 165); -unity-text-align: middle-center; margin-bottom: 22px; }
+.heading { font-size: 26px; color: rgb(224, 176, 122); -unity-font-style: bold; margin-bottom: 12px; }
+.menu-btn { height: 42px; margin: 5px 0; font-size: 18px; color: rgb(211, 218, 230); background-color: rgb(23, 28, 37);
+            border-width: 1px; border-bottom-width: 3px; border-color: rgb(72, 80, 95); border-radius: 4px; }
+.menu-btn:hover, .menu-btn:focus { border-color: rgb(192, 138, 82); color: rgb(255, 255, 255); }
+.small-btn { height: 30px; margin-top: 8px; color: rgb(211, 218, 230); background-color: rgb(23, 28, 37); border-color: rgb(72, 80, 95); }
+.tabs { flex-direction: row; margin-bottom: 10px; }
+.tab { flex-grow: 1; height: 32px; color: rgb(138, 147, 165); background-color: rgb(16, 19, 26); border-color: rgb(43, 50, 64); }
+.tab.selected { color: rgb(232, 232, 236); border-color: rgb(192, 138, 82); background-color: rgb(30, 35, 46); }
+.page { min-height: 280px; }
+.hint { font-size: 12px; color: rgb(138, 147, 165); white-space: normal; margin: 4px 0 8px 0; }
+.bind-list { max-height: 330px; }
+.bind-row { flex-direction: row; align-items: center; justify-content: space-between; padding: 1px 0; border-bottom-width: 1px; border-color: rgb(36, 41, 52); }
+.bind-name { color: rgb(211, 218, 230); font-size: 15px; }
+.bind-key { min-width: 120px; height: 26px; color: rgb(232, 232, 236); background-color: rgb(23, 28, 37);
+            border-width: 1px; border-bottom-width: 3px; border-color: rgb(72, 80, 95); border-radius: 3px; }
+.bind-key.listening { border-color: rgb(224, 176, 122); color: rgb(224, 176, 122); }
+Label, .unity-base-field__label { color: rgb(211, 218, 230); }
+.game-room { position: absolute; border-width: 1px; border-color: rgb(72, 80, 95); background-color: rgb(30, 35, 46); }
+.game-room.start { background-color: rgb(47, 125, 79); }
+.game-room.item { background-color: rgb(192, 138, 82); }
+.game-room.boss { background-color: rgb(179, 65, 47); }
+.game-room.secret { background-color: rgb(90, 70, 130); }
+.game-door { position: absolute; background-color: rgb(138, 147, 165); }
+.game-text { position: absolute; left: 24px; top: 20px; font-size: 16px; color: rgb(232, 232, 236); white-space: normal; width: 560px; }
+
+/* The default runtime theme is light; these bring its controls into the palette. */
+.unity-base-popup-field__input, .unity-base-dropdown__input { background-color: rgb(23, 28, 37); color: rgb(232, 232, 236);
+    border-color: rgb(72, 80, 95); border-radius: 3px; }
+.unity-base-popup-field__arrow { -unity-background-image-tint-color: rgb(192, 138, 82); }
+.unity-base-dropdown__container-outer { background-color: rgb(20, 23, 31); border-color: rgb(122, 86, 50); }
+.unity-base-dropdown__item { color: rgb(211, 218, 230); }
+.unity-base-dropdown__item:hover { background-color: rgb(43, 50, 64); }
+.unity-base-slider__tracker { background-color: rgb(43, 50, 64); border-color: rgb(43, 50, 64); }
+.unity-base-slider__dragger { background-color: rgb(192, 138, 82); border-color: rgb(224, 176, 122); }
+.unity-scroller { background-color: rgb(16, 19, 26); border-width: 0; }
+.unity-scroller .unity-base-slider__dragger { background-color: rgb(72, 80, 95); border-width: 0; }
+.unity-scroller .unity-repeat-button { background-color: rgb(23, 28, 37); border-width: 0; }

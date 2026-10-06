@@ -1,0 +1,7 @@
+{
+  "name": "com.depths.core",
+  "displayName": "Depths Core",
+  "version": "0.1.0",
+  "unity": "6000.3",
+  "description": "The engine-independent simulation of Depths. Built and tested outside Unity by csharp/Depths.sln; referenced by the Unity project as a local package."
+}

@@ -35,6 +35,10 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 
 ## Working rules
 
+- **Gameplay changed? Playtest it A/B before committing.** `node tools/playtest.js --label current`
+  against `--root ab/baseline --label baseline` (or `--query flag=value` for a variant), then
+  `node tools/playtest-report.js baseline current`. The bot is deterministic, so any difference is the
+  change. It answers "harder, fairer, longer?"; "more fun?" still needs a person and the URL variant.
 - **Drawing changed? Verify pixels, not data.** Assert on meaning ("the lit heart is at x 43"),
   sample the framebuffer, and pin directions and orders explicitly.
 - **Write the test from the specification, never from what the code currently does.**

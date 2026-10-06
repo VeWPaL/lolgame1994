@@ -1,0 +1,14 @@
+{
+    "name": "Depths.Unity.Editor",
+    "rootNamespace": "Depths.Unity.EditorTools",
+    "references": ["Depths.Core", "Depths.Unity", "Unity.InputSystem"],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

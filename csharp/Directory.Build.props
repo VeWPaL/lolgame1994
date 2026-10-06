@@ -1,0 +1,9 @@
+<Project>
+  <!-- Build output goes to obj~/bin~: Depths.Core is also a Unity package (package.json, asmdef), and
+       Unity imports every folder in a package except those ending in '~'. A plain obj/ would hand
+       Unity a second copy of the generated assembly attributes and break its compile. -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\obj~\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildProjectDirectory)\bin~\</BaseOutputPath>
+  </PropertyGroup>
+</Project>

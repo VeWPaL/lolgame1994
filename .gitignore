@@ -27,3 +27,6 @@ Thumbs.db
 # A/B: a worktree of the pre-features tag, and playtest output
 ab/
 playtest/
+bin~/
+obj~/
+unity/Build/
