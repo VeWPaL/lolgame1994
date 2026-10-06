@@ -50,7 +50,7 @@ namespace Depths
             e.volleyLeft = 0; e.volleyT = 0; e.wallT = 0;
             e.sense = 900; e.close = 140; e.far = 260;
             e.cdMin = Balance.BossCdMin; e.cdVar = Balance.BossCdVar;
-            e.dmg = Balance.BossShellDmg; e.pspd = 1.9; e.pr = 8;
+            e.dmg = Balance.JsReference ? Balance.JsBossShellDmg : Balance.BossShellDmg; e.pspd = 1.9; e.pr = 8;
         }
 
         // TRAIT_TABLE by the gun the player holds: (trait, weight)

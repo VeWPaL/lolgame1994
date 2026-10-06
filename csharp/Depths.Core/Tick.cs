@@ -252,7 +252,7 @@ namespace Depths
                     e.y += System.Math.Sin(a) * Balance.BossSweepDist;
                     Movement.Clamp(e);
                     if (Dist(e.x - p.x, e.y - p.y) < e.r + p.r)
-                        Combat.DamagePlayer(run, e.dmg * 1.4, System.Math.Cos(a), System.Math.Sin(a), 3 * Balance.KnockPGain);
+                        Combat.DamagePlayer(run, Balance.JsReference ? e.dmg * Balance.JsBossSweepMult : Balance.BossSweepDmg, System.Math.Cos(a), System.Math.Sin(a), 3 * Balance.KnockPGain, true);
                 }
                 e.move = "idle"; e.moveT = Balance.BossRecover; e.sweepDone = false;
             }
@@ -530,7 +530,7 @@ namespace Depths
                     bool brunch = e.kind == BodyKind.Brunch;
                     bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0;
                     bool boss = e.kind == BodyKind.Boss;
-                    if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain) && (!brunch || holdingSlot))
+                    if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, boss) && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
                     if (brunch)
                     {
@@ -695,7 +695,7 @@ namespace Depths
                 {
                     double pn = Dist(p.vx, p.vy);
                     if (pn == 0) pn = 1;
-                    Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain);
+                    Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
                     hitSomething = true;
                 }
                 if (hitSomething) ps.RemoveAt(i);
@@ -818,15 +818,15 @@ namespace Depths
                     continue;
                 }
 
-                if (pk.kind == "heart")
+                if (pk.kind == "heart" || pk.kind == "halfheart")
                 {
                     if (player.hp >= player.maxHp) continue;   // a full-health heart is left lying
-                    player.hp = System.Math.Min(player.maxHp, player.hp + 2);
+                    player.hp = System.Math.Min(player.maxHp, player.hp + (pk.kind == "heart" ? Balance.HeartHeal : Balance.HalfHeal));
                 }
-                else if (pk.kind == "armor")
+                else if (pk.kind == "armor" || pk.kind == "halfarmor")
                 {
                     if (player.armor >= Balance.MaxArmor) continue;
-                    player.armor = System.Math.Min(Balance.MaxArmor, player.armor + 2);
+                    player.armor = System.Math.Min(Balance.MaxArmor, player.armor + (pk.kind == "armor" ? Balance.HeartHeal : Balance.HalfHeal));
                 }
                 else if (pk.kind == "key") player.hasSilver = true;
                 else if (pk.kind == "goldkey") player.hasGold = true;

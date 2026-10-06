@@ -366,7 +366,13 @@ namespace Depths.Unity
             DrawMinimap(g, run);
 
             foreach (var pk in run.pickups)
-                Disc(g, W(pk.x, pk.y), (float)pk.r * 0.7f, PickupColor(pk.kind));
+            {
+                // placeholder sprites: hearts red, armour gray, a half pickup is the left half
+                bool half = pk.kind == "halfheart" || pk.kind == "halfarmor";
+                if (pk.kind == "heart" || pk.kind == "halfheart") Heart(g, W(pk.x, pk.y), (float)pk.r, HeartRed, half);
+                else if (pk.kind == "armor" || pk.kind == "halfarmor") Heart(g, W(pk.x, pk.y), (float)pk.r, ArmourGray, half);
+                else Disc(g, W(pk.x, pk.y), (float)pk.r * 0.7f, PickupColor(pk.kind));
+            }
 
             foreach (var e in run.enemies)
             {
@@ -408,6 +414,41 @@ namespace Depths.Unity
             if (run.roomFade > 0.01) Rect(g, a - new Vector2(6, 6), b + new Vector2(6, 6), new Color(0.04f, 0.05f, 0.07f, (float)run.roomFade));
             bool flicker = pl.iframes > 0 && (pl.iframes / 14) % 2 == 0;
             Disc(g, W(pl.x, pl.y), (float)pl.r, flicker ? new Color(1, 1, 1, 0.5f) : PlayerC);
+            DrawHearts(g, pl);
+        }
+
+        static readonly Color HeartRed = new Color32(230, 57, 90, 255), ArmourGray = new Color32(170, 176, 186, 255),
+                              HeartEmpty = new Color32(58, 37, 48, 255);
+
+        // a heart of half-width s centred on c: two lobes and a point; half = the left half only
+        static void Heart(Painter2D g, Vector2 c, float s, Color col, bool half = false)
+        {
+            float ly = c.y - s * 0.3f, r = s * 0.5f;
+            Disc(g, new Vector2(c.x - r, ly), r, col);
+            g.fillColor = col;
+            g.BeginPath();
+            g.MoveTo(new Vector2(c.x - s, ly)); g.LineTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x, c.y + s));
+            g.ClosePath(); g.Fill();
+            if (half) return;
+            Disc(g, new Vector2(c.x + r, ly), r, col);
+            g.BeginPath();
+            g.MoveTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x + s, ly)); g.LineTo(new Vector2(c.x, c.y + s));
+            g.ClosePath(); g.Fill();
+        }
+
+        // the health row above the room: one heart per 2 HP (dark when empty), then armour in gray
+        static void DrawHearts(Painter2D g, Player pl)
+        {
+            const float s = 10, step = 26;
+            var at = W(Balance.RoomLeft, Balance.RoomTop) + new Vector2(s, -34);
+            int hearts = (int)Math.Ceiling(pl.maxHp / 2), hp = (int)Math.Max(0, Math.Round(pl.hp));
+            for (int i = 0; i < hearts; i++, at.x += step)
+            {
+                Heart(g, at, s, HeartEmpty);
+                if (hp >= 2 * i + 1) Heart(g, at, s, HeartRed, hp == 2 * i + 1);
+            }
+            int ar = (int)Math.Round(pl.armor);
+            for (int i = 0; 2 * i < ar; i++, at.x += step) Heart(g, at, s, ArmourGray, ar == 2 * i + 1);
         }
     }
 }

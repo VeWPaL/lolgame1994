@@ -50,7 +50,7 @@ namespace Depths
         /// cost still apply, no i-frames); otherwise armour absorbs first, momentum keeps 55%, the
         /// knock is applied and i-frames start. The lab cannot die.
         /// </summary>
-        public static bool DamagePlayer(RunState run, double amount, double kx, double ky, double force)
+        public static bool DamagePlayer(RunState run, double amount, double kx, double ky, double force, bool fromBoss = false)
         {
             var p = run.player;
             if (p.iframes > 0) return false;
@@ -64,7 +64,15 @@ namespace Depths
             }
             run.dmgTaken += amount;
             double rem = amount;
-            if (p.armor > 0) { double used = System.Math.Min(p.armor, rem); p.armor -= used; rem -= used; }
+            if (p.armor > 0 && Balance.JsReference) { double used = System.Math.Min(p.armor, rem); p.armor -= used; rem -= used; }
+            else if (p.armor > 0)
+            {
+                // armour pays its own, smaller, cost; what it cannot cover reaches the hearts at full weight
+                double cost = ArmorCost(amount, fromBoss);
+                double paid = System.Math.Min(p.armor, cost);
+                p.armor -= paid;
+                rem = System.Math.Ceiling(amount * (cost - paid) / cost);
+            }
             if (rem > 0) p.hp -= rem;
             if (p.hp < 0 && p.hp > -1e-6) p.hp = 0;   // a float epsilon is not a death
             if (run.state == "dev" && p.hp < 1) p.hp = 1;
@@ -73,6 +81,10 @@ namespace Depths
             p.iframes = Balance.Iframes;
             return true;
         }
+
+        /// <summary>What a hit costs in armour: ArmorTake x, rounded down, at least 1; the Warden's at full weight.</summary>
+        public static double ArmorCost(double amount, bool fromBoss) =>
+            fromBoss ? amount : System.Math.Max(1, System.Math.Floor(amount * Balance.ArmorTake));
     }
 
     /// <summary>The right-click blast going off: src/40-combat.js explode (the blast mode) and tryBreakSecret.</summary>
@@ -213,11 +225,18 @@ namespace Depths
 
     public static class Loot
     {
-        /// <summary>src/10-art.js dropLoot: 18% a heart, 8% armour, otherwise nothing. Always one draw.</summary>
+        /// <summary>
+        /// dropLoot: 9% a half heart, 9% a heart, 4% half armour, 4% armour, otherwise nothing. Always
+        /// one draw. The JS has no halves (18% heart, 8% armour); the split, 2026-10-06, cuts the
+        /// healing a kill pays by a quarter while keeping the same draws and the same drop rate.
+        /// </summary>
         public static Pickup? Drop(Rng rng, double x, double y)
         {
             double roll = rng.Run();
+            if (Balance.JsReference) return roll < 0.18 ? Pickup.Of("heart", x, y, 10) : roll < 0.26 ? Pickup.Of("armor", x, y, 10) : null;
+            if (roll < 0.09) return Pickup.Of("halfheart", x, y, 10);
             if (roll < 0.18) return Pickup.Of("heart", x, y, 10);
+            if (roll < 0.22) return Pickup.Of("halfarmor", x, y, 10);
             if (roll < 0.26) return Pickup.Of("armor", x, y, 10);
             return null;
         }

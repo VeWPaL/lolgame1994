@@ -11,8 +11,9 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  394/394, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
-  `js-final`, C# may differ from the JS on purpose: so far only the placeholder items (below).
+  407/407, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
+  `js-final`, C# differs from the JS on purpose: whole-number HP and the placeholder items (below).
+  `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
   real seeded run with placeholder shapes: pause (Esc), death summary, floor banner.
 - **Playtest bot**: `tools/playtest.js` + `tools/playtest-report.js`; baseline tag `pre-features-2026-10-06`.
@@ -39,9 +40,13 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 ## Owner decisions
 
 - **Brunch**: A+ (decided 2026-10-06).
-- **Heart values**: proposal awaiting the owner. Integer HP, 1 HP = half a heart, 8 HP base; round
-  enemy damage (shooter 1.8->2, gunner 3.6->4, Warden shell 1.44->1, sweep 2.02->2; contact 1, Warden
-  contact 2 unchanged). Heart pickup and Tin Cup stay a fixed +2 HP. Best done together with session 5.
+- **Heart values** (done 2026-10-06, C# + Unity): whole HP, 1 HP = half a heart, 8 at the start.
+  Shooter 2, gunner 4, contact 1, Warden contact 2, shell 2, sweep 3 (my rounding of 2 x 1.4 - owner
+  to confirm). Armour takes 0.6x a normal hit, rounded down, min 1 (so contact still costs 1); the
+  Warden hits armour at full weight; what armour cannot cover spills to hearts at full weight. Loot
+  splits each band: 9% half heart, 9% heart, 4% half armour, 4% armour (a quarter less healing per
+  kill, same drop rate). Unity: placeholder heart sprites for pickups and a heart row above the room.
+  Not yet checked in the Unity editor (no Unity in the cloud session).
 - **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
   curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
   area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,

@@ -26,7 +26,7 @@ namespace Depths
         /// The knobs the table is written in multiples of, so the relationships survive the port.
         /// </summary>
         public const double Tough = 1.35;      // the global HP multiplier
-        public const double ShotDmg = 1.8;     // a chip off a lunger rather than half a heart
+        public const double ShotDmg = 2;       // whole HP since 2026-10-06 (JS: 1.8): one heart; a gunner's is two
         public const double Armour = 0.66;     // per-hit multiplier, so it scales every pellet
 
         // Every row names its Armour explicitly; a forgotten one reads 0.0. [h:Bodies-1]

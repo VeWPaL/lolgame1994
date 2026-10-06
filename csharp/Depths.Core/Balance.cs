@@ -232,6 +232,18 @@ namespace Depths
     public static string BrunchVariant = "A+";
     public const double BrunchGuardLeash = 420;
 
+    // Hearts, 2026-10-06 (C# only): HP is whole numbers, 1 HP = half a heart, 8 at the start.
+    // Armour takes ArmorTake x a normal enemy's hit, rounded down but never below 1; the Warden hits
+    // armour at full weight. Pickups come whole (2) or half (1).
+    public const double ArmorTake = 0.6;
+    public const int HeartHeal = 2, HalfHeal = 1;
+    /// <summary>
+    /// The JS game's damage rules (fractional hits, armour 1:1, no half pickups), for the parity tests
+    /// whose recordings hold them. Never true in the game.
+    /// </summary>
+    public static bool JsReference = false;
+    public const double JsShotDmg = 1.8, JsBossShellDmg = 1.44, JsBossSweepMult = 1.4;
+
     // Placeholder item effects (C# only, 2026-10-06; the item overhaul replaces them).
     public static readonly int MarkTicks = Sec(5);   // Hunter's Mark: how long a body stays marked
     public const double MarkVuln = 1.5;              // and the damage it takes meanwhile
@@ -242,7 +254,7 @@ namespace Depths
 
     // The Warden, read from the game 2026-10-06.
     public const int BossVolleyN = 3, BossVolleyGap = 116, BossWallHp = 5, BossWallLife = 2940;   // sec(14)
-    public const double BossSweepDist = 150, BossShellDmg = 1.44;
+    public const double BossSweepDist = 150, BossShellDmg = 2, BossSweepDmg = 3;   // whole HP since 2026-10-06 (JS: 1.44, and the sweep was shell x 1.4)
 
     // The hook (HOOK_WEAPON and its field), read from the game 2026-10-06.
     public const double HookSpeed = 2.04, HookR = 14, HookAoe = 118, HookPull = 1.2, HookSuck = 0.24, HookDps = 3.5;

@@ -243,7 +243,7 @@ namespace Depths
             return new Enemy { sense = row.Sense ?? 0, close = row.Close ?? 0, far = row.Far ?? 0,
                                speed = (row.Base ?? 0) * Balance.TempoRate, cdMin = (row.CdMin ?? 0) / Balance.TempoRate,
                                cdVar = (row.CdVar ?? 0) / Balance.TempoRate, pspd = row.PShotSpeed ?? 0, pr = row.PShotRadius ?? 0,
-                               dmg = row.Dmg ?? 0, kind = kind, x = x, y = y, r = row.Radius, armour = row.Armour, mass = row.Mass,
+                               dmg = (row.Dmg ?? 0) * (Balance.JsReference ? Balance.JsShotDmg / Bodies.ShotDmg : 1), kind = kind, x = x, y = y, r = row.Radius, armour = row.Armour, mass = row.Mass,
                                hp = row.Hp, maxHp = row.Hp, walkSpeed = row.Walk ?? 0, runSpeed = row.Run ?? 0, curSpeed = row.Walk ?? 0, aggroTimer = kind == BodyKind.Boss ? 9999 : 0 };   // measured: every body has one; the boss starts committed
         }
 }

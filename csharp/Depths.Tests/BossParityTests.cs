@@ -12,6 +12,10 @@ namespace Depths.Tests
     [TestFixture]
     public sealed class BossParityTests
     {
+        // The recordings hold the JS damage rules (1.44 shells, a 1.4x sweep).
+        [SetUp] public void JsRules() => Balance.JsReference = true;
+        [TearDown] public void GameRules() => Balance.JsReference = false;
+
         static void Check(double hpFrac, double bx, double by, double px, double py, int ticks, int jitterDraws, int runDraws, object[][] rows, int every = 25)
         {
             var run = new RunState(new Rng(4242)) { dungeon = Dungeon.FromSeed(new Rng(4242)) };
