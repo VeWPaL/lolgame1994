@@ -35,16 +35,18 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 
 ## Working rules
 
-- **Gameplay changed? Playtest it A/B before committing.** From the change's worktree root (Linux:
-  prefix each `dotnet` with `DOTNET_ROLL_FORWARD=Major`):
-  1. `git worktree add ../depths-base <commit before the change>` (it needs `csharp/Depths.Playtest`;
-     for an older commit, copy that folder in).
+- **Gameplay changed? Playtest it A/B before committing.** The C# bot measures commits that contain
+  it with its build stamp: this branch from 22ebe4c on, and on the main branch from the merge that
+  lands it. Older baselines are not supported. From the change's worktree root (Linux: prefix each
+  `dotnet` with `DOTNET_ROLL_FORWARD=Major`):
+  1. `git worktree add ../depths-base <baseline commit>`
   2. `dotnet run --project ../depths-base/csharp/Depths.Playtest -c Release -- play --label baseline`
-     writes `playtest/baseline.json` HERE (output follows the working directory); its header records
-     the commit the bot was built from, so it names the baseline.
-  3. `dotnet run --project csharp/Depths.Playtest -c Release -- play --label current`, then
-     `... -- report baseline current` (also `playtest/report-baseline-vs-current.md`; it warns when
-     seeds, minutes, tick rate or Brunch variant differ). 4. `git worktree remove ../depths-base`.
+     (the JSON lands in THIS worktree's `playtest/`; its header names the commit it was built from)
+  3. `dotnet run --project csharp/Depths.Playtest -c Release -- play --label current`
+  4. `dotnet run --project csharp/Depths.Playtest -c Release -- report baseline current` (also saved
+     as `playtest/report-baseline-vs-current.md`; it warns if seeds, minutes, tick rate or Brunch differ)
+  5. `git worktree remove --force ../depths-base` (it holds build output)
+
   Same `--seeds/--minutes/--brunch` on both sides. The bot is deterministic, so any difference is the
   change. Use `--minutes 60` for difficulty (20 min caps the median floor at 7). It answers "harder,
   fairer, longer?"; "more fun?" still needs a person. The JS bot (`tools/playtest.js`) plays only the JS.
@@ -98,7 +100,7 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **478 checks**, parity-verified against the JavaScript except the 90 in
+- C# `Depths.Tests` has **516 checks**, parity-verified against the JavaScript except the 128 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests` and
   `PlaytestToolTests` (C#-only, after
   `js-final`). Parity tests whose

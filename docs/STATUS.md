@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  478/478, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
+  516/516, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
   `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
@@ -21,10 +21,11 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   in about 5 s) and writes `playtest/<label>.json`:
   `DOTNET_ROLL_FORWARD=Major dotnet run --project csharp/Depths.Playtest -c Release -- play --label X
   [--seeds 1,7] [--profiles novice,skilled] [--minutes 20] [--brunch A+]`, then `... -- report X [Y]`
-  (Markdown, also saved as `playtest/report-X[-vs-Y].md`). A/B against another commit: play the
-  baseline with `--project <other worktree>/csharp/Depths.Playtest` from THIS worktree's root, so
-  its JSON lands in this `playtest/`; its header names the commit it was built from (full recipe in
-  CONVENTIONS "Gameplay changed?").
+  (Markdown, also saved as `playtest/report-X[-vs-Y].md`). A/B against another commit (one that
+  contains the bot: this branch from 22ebe4c on): `git worktree add ../depths-base <commit>`, play
+  `--label baseline` with `--project ../depths-base/csharp/Depths.Playtest` from THIS worktree's
+  root (its JSON lands here and its header names its commit), play `current`, `report baseline
+  current`, then `git worktree remove --force ../depths-base` (steps in CONVENTIONS "Gameplay changed?").
   Numbers (2026-10-06, after the exit-crash fix a264e45, which the bot found): at 20 min, 17 of 18 runs
   time out on floor 7 (about 3 min a floor), 1 death (average/42, floor 6), 0 stuck, 0 errors, damage
   9.8 vs healing 10.3 hp per floor. The 20-min default caps the median floor, so its A/B signal is

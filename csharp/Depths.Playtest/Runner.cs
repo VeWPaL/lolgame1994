@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 
 namespace Depths.Playtest
 {
@@ -21,6 +22,8 @@ namespace Depths.Playtest
         readonly List<Projectile> _shots0 = new List<Projectile>();
         readonly List<(BodyKind kind, double x, double y, double r)> _bodies0 =
             new List<(BodyKind, double, double, double)>();
+        readonly List<string> _redGone = new List<string>(), _armGone = new List<string>();
+        Exception? _recordingError;
         double _hp0, _ar0, _rg0, _taken0;
         int _rgT0, _live0, _floor0, _cx0, _cy0;
 
@@ -64,37 +67,37 @@ namespace Depths.Playtest
             for (int t = 0; t < _cap; t++)
             {
                 if (Run.state != "playing") { o.end = Run.state == "gameover" ? "death" : Run.state; break; }
-                var r = Run.CurrentRoom!;
-                o.ticks++; _f.ticks++;
-                if (r.Type == RoomKind.Boss && Run.enemies.Count > 0) _f.bossTicks++;
-                if (Run.curX != lastX || Run.curY != lastY || Run.floor != lastFloor)
-                {
-                    lastX = Run.curX; lastY = Run.curY; lastFloor = Run.floor;
-                    _f.rooms++; lastProgress = t;
-                }
-                if (Run.kills != prevKills) { prevKills = Run.kills; lastProgress = t; }
-                // damage dealt is progress too: a deep boss fight runs past a minute without a kill
-                double hpSum = 0;
-                foreach (var e in Run.enemies) hpSum += Math.Max(0, e.hp);
-                if (hpSum < lastHpSum - 1e-9) lastProgress = t;
-                lastHpSum = hpSum;
-                if (t - lastProgress > _stuck) { o.end = "stuck"; o.cause = StuckCause(r); break; }
-
                 int floorBefore = Run.floor;
-                string where = "game";   // who threw: the bot's decision, or the game's own code
+                string where = "bot";   // who threw: the bot (bookkeeping, decision, recording) or the game
                 try
                 {
-                    if (Run.trans != null) { Step(Input.None); continue; }
+                    var r = Run.CurrentRoom!;
+                    o.ticks++; _f.ticks++;
+                    if (r.Type == RoomKind.Boss && Run.enemies.Count > 0) _f.bossTicks++;
+                    if (Run.curX != lastX || Run.curY != lastY || Run.floor != lastFloor)
+                    {
+                        lastX = Run.curX; lastY = Run.curY; lastFloor = Run.floor;
+                        _f.rooms++; lastProgress = t;
+                    }
+                    if (Run.kills != prevKills) { prevKills = Run.kills; lastProgress = t; }
+                    // damage dealt is progress too: a deep boss fight runs past a minute without a kill
+                    double hpSum = 0;
+                    foreach (var e in Run.enemies) hpSum += Math.Max(0, e.hp);
+                    if (hpSum < lastHpSum - 1e-9) lastProgress = t;
+                    lastHpSum = hpSum;
+                    if (t - lastProgress > _stuck) { o.end = "stuck"; o.cause = StuckCause(r); break; }
+
+                    if (Run.trans != null) { where = "game"; Step(Input.None); continue; }
                     bool live = false;
                     foreach (var e in Run.enemies) if (e.hp > 0) { live = true; break; }
                     if (!live && r.Cleared && Run.enemies.Count == 0 && lastCleared != r) { lastCleared = r; _f.cleared++; }
 
-                    where = "bot";
                     var act = _policy.Decide(Run, t);
                     where = "game";
                     if (act.UseActive && Run.state == "playing") UseActive();
                     if (act.Input.blink && TickOrder.TryBlink(Run, act.Input)) { o.blinks++; o.dodgeBlinks++; }
                     Step(act.Input);
+                    where = "bot";
                     if (Run.floor != floorBefore)
                     {
                         _f.bossKilled = true; CloseFloor();
@@ -106,7 +109,10 @@ namespace Depths.Playtest
                 {
                     // a step that threw after the descent still went down: close the floor it left
                     if (Run.floor != floorBefore) _f.bossKilled = true;
+                    if (e is RecordingFault rf) { where = "bot"; e = rf.InnerException!; }
                     o.errors.Add(ErrorText(where, e));
+                    if (_recordingError != null)
+                        o.errors.Add(ErrorText("bot", _recordingError) + " (while recording the error above)");
                     o.end = "error";
                     break;
                 }
@@ -146,23 +152,38 @@ namespace Depths.Playtest
             _bodies0.Clear();
             foreach (var e in Run.enemies) _bodies0.Add((e.kind, e.x, e.y, e.r));
 
+            // a step that throws is still counted; the game's exception wins over one from recording it
+            Exception? game = null;
             try { TickOrder.Update(Run, input); }
-            finally { Observe(); }   // a step that throws is still counted
+            catch (Exception e) { game = e; }
+            try { Observe(); }
+            catch (Exception e) when (game != null) { _recordingError = e; }
+            catch (Exception e) { throw new RecordingFault(e); }
+            if (game != null) ExceptionDispatchInfo.Capture(game).Throw();
+        }
+
+        sealed class RecordingFault : Exception
+        {
+            public RecordingFault(Exception inner) : base(inner.Message, inner) { }
         }
 
         void Observe()
         {
             var p = Run.player;
             bool sameRoom = Run.floor == _floor0 && Run.curX == _cx0 && Run.curY == _cy0;
-            string? by = null;   // the heal pickup that left the floor this step, if one did
+            // the heal pickups that left the floor, per layer, in the order the game takes them (backwards)
+            _redGone.Clear(); _armGone.Clear();
+            if (sameRoom)
+                for (int i = _pk0.Count - 1; i >= 0; i--)
+                {
+                    var pk = _pk0[i];
+                    if (Run.pickups.Contains(pk)) continue;
+                    if (pk.kind == "heart" || pk.kind == "halfheart") _redGone.Add(pk.kind);
+                    if (pk.kind == "armor" || pk.kind == "halfarmor") _armGone.Add(pk.kind);
+                }
             if (sameRoom)
                 foreach (var pk in _pk0)
-                {
-                    if (Run.pickups.Contains(pk)) continue;
-                    bool heals = pk.kind == "heart" || pk.kind == "halfheart" || pk.kind == "armor" || pk.kind == "halfarmor";
-                    if (heals) by ??= pk.kind;
-                    if (pk.kind == "item") Result.items.Add(pk.id + "@" + _floor0);
-                }
+                    if (pk.kind == "item" && !Run.pickups.Contains(pk)) Result.items.Add(pk.id + "@" + _floor0);
 
             // the tick runs regen, then at most one landed hit (i-frames), then pickups; with a hit,
             // the first two are replayed on the probe and what is left over is the pickups
@@ -198,9 +219,27 @@ namespace Depths.Playtest
                 _f.dmg += dmg;
             }
             if (dRg > 0) Regen(dRg);
-            // no pickup left the floor: a drop spawned and taken in the same tick; only its layer is known
-            if (dHp > 0) Heal(by ?? "unseen:red", dHp);
-            if (dAr > 0) Heal(by ?? "unseen:armour", dAr);
+            if (dHp > 0) HealLayer(dHp, _redGone, "heart", "halfheart", p.hp >= p.maxHp, "red");
+            if (dAr > 0) HealLayer(dAr, _armGone, "armor", "halfarmor", p.armor >= Balance.MaxArmor, "armour");
+        }
+
+        void HealLayer(double g, List<string> gone, string whole, string half, bool atCap, string layer) =>
+            Share(g, gone, whole, half, atCap, layer, Heal);
+
+        /// <summary>A layer's gain, shared out over the pickups that left in take order (each up to its
+        /// worth); the rest was a drop spawned and taken in the tick, named where its amount decides.</summary>
+        internal static void Share(double g, List<string> gone, string whole, string half, bool atCap, string layer,
+                                   Action<string, double> heal)
+        {
+            foreach (var kind in gone)
+            {
+                if (g <= 1e-9) return;
+                double take = Math.Min(kind == whole ? Balance.HeartHeal : Balance.HalfHeal, g);
+                heal(kind, take); g -= take;
+            }
+            // 2 can only be a whole one; 1 below the cap only a half; 1 at the cap is either, so unseen
+            while (g >= Balance.HeartHeal - 1e-9) { heal(whole, Balance.HeartHeal); g -= Balance.HeartHeal; }
+            if (g > 1e-9) heal(Math.Abs(g - Balance.HalfHeal) < 1e-9 && !atCap ? half : "unseen:" + layer, g);
         }
 
         void Regen(double hp)

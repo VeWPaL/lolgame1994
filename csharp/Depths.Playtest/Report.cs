@@ -129,7 +129,8 @@ namespace Depths.Playtest
                   .Append(", built from ").Append(s.commit ?? "an unknown commit").Append('\n');
             if (ab)
                 foreach (var m in Mismatches(sets[0], sets[1]))
-                    sb.Append("\n**Warning: ").Append(m).Append(".** The deltas below mix that difference with the change.\n");
+                    sb.Append("\n**Warning: ").Append(m)
+                      .Append(".** The deltas below mix that difference with the change.\n");
             sb.Append("\nA bot plays every run through the game's own input. Profiles differ in reaction time, ")
               .Append("aim error, dodging and spacing. It does not hunt secrets.\n");
 
@@ -183,7 +184,26 @@ namespace Depths.Playtest
                     sb.Append("\n- ERROR ").Append(r.profile).Append(" seed ").Append(r.seed).Append(": ")
                       .Append(r.errors[0]).Append('\n');
             }
+            foreach (var s in sets) Floors(sb, s);
             return sb.ToString();
+        }
+
+        /// <summary>Every floor of every run, as the JS report's per-run detail had it.</summary>
+        static void Floors(StringBuilder sb, Batch s)
+        {
+            int hz = Hz(s);
+            sb.Append("\n## Floors: ").Append(s.label).Append("\n\n")
+              .Append("| profile | seed | floor | min | rooms | dmg | healed (regen) | boss s | left ")
+              .Append("| hp in > out | armour in > out |\n")
+              .Append("|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|\n");
+            foreach (var r in s.runs)
+                foreach (var f in r.floors)
+                    sb.Append("| ").Append(r.profile).Append(" | ").Append(r.seed).Append(" | ").Append(f.floor)
+                      .Append(" | ").Append(F1(f.ticks / (double)hz / 60)).Append(" | ").Append(f.rooms)
+                      .Append(" | ").Append(F1(f.dmg)).Append(" | ").Append(F1(f.healed)).Append(" (").Append(F1(f.regen))
+                      .Append(") | ").Append(F1(f.bossTicks / (double)hz)).Append(" | ").Append(f.bossKilled ? "yes" : "no")
+                      .Append(" | ").Append(F1(f.hpIn)).Append(" > ").Append(F1(f.hpOut ?? f.hpIn))
+                      .Append(" | ").Append(F1(f.armorIn)).Append(" > ").Append(F1(f.armorOut ?? f.armorIn)).Append(" |\n");
         }
 
         /// <summary>The cause column: the top damage source for a death, what the room held for a stuck run.</summary>

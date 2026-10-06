@@ -28,8 +28,13 @@ namespace Depths.Playtest
             Batch? b;
             try { b = JsonSerializer.Deserialize<Batch>(text, Compact); }
             catch (JsonException e) { throw new UsageException(name + " is not a playtest file: " + e.Message); }
-            if (b == null || b.runs == null || b.profiles == null || b.seeds == null)
+            if (b == null || b.runs == null || b.profiles == null || b.seeds == null || b.label == null)
                 throw new UsageException(name + " is not a playtest file (no runs)");
+            // well-formed JSON with holes is still not a playtest file
+            foreach (var r in b.runs)
+                if (r == null || r.profile == null || r.end == null || r.floors == null || r.floors.Contains(null!)
+                    || r.dmgBySource == null || r.healBy == null || r.items == null || r.errors == null)
+                    throw new UsageException(name + " is not a playtest file (a run is missing fields)");
             return b;
         }
     }
@@ -82,10 +87,8 @@ namespace Depths.Playtest
 
         static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out" };
 
-        public const string Usage =
-            "usage: play --label X [--seeds 1,7,42] [--profiles novice,average,skilled] [--minutes 20]\n" +
-            "            [--brunch A+] [--out DIR]\n" +
-            "       report A [B] [--out DIR]";
+        public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
+            "[--minutes 20] [--brunch A+] [--out DIR]  |  report A [B] [--out DIR]";
 
         static string Name(string s, string what)
         {
@@ -115,7 +118,10 @@ namespace Depths.Playtest
                 switch (k)
                 {
                     case "label": c.Label = Name(v, "--label"); break;
-                    case "out": c.Out = v; break;
+                    case "out":
+                        if (v.Trim().Length == 0) throw new UsageException("--out needs a folder");
+                        c.Out = v;
+                        break;
                     case "seeds":
                         c.Seeds = v.Split(',').Select(s =>
                             uint.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var u) ? u
