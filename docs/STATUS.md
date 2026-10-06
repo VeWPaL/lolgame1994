@@ -9,7 +9,7 @@ _Last updated: 2026-10-06, session 1 (cleanup and freeze)._
 
 - **JS (`depths.html`, `src/`)**: frozen reference, **not yet tagged** - `js-final` is set after the
   Brunch guard-leash fix. Playable. Tests and the parity page load only with `?test` / `?parity`.
-  Suite: 239/239. `.erify.ps1` is fully green (about 3 minutes).
+  Suite: 239/239. `.\verify.ps1` is fully green (about 3 minutes).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1. Ported: RNG, balance, world gen, spawn plan,
   room phase + Descend, player phase, pack assembly, `BrunchArcSlot`. Not ported: Brunch/enemy
   movement in `tickBodies`, `tickProjectiles` (14 cases banked in `tools/proj-parity.js`).
