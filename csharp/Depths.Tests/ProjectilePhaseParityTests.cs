@@ -211,12 +211,5 @@ namespace Depths.Tests
             Assert.That(run.kills, Is.EqualTo(1), "the statues are not kills");
         }
 
-        [Test]
-        public void TheHookRefusesUntilItIsPorted()
-        {
-            var run = Room();
-            run.projectiles.Add(new Projectile { alt = true, mode = "hook", x = 400, y = 300 });
-            Assert.Throws<System.NotSupportedException>(() => TickOrder.TickProjectiles(run));
-        }
     }
 }

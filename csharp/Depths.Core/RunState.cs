@@ -78,6 +78,11 @@ namespace Depths
         /// <summary>FLANK_CURSOR: the golden-angle flank handed to each walker spawned this run.</summary>
         public double flankCursor;
 
+        /// <summary>A hook's ground spell (hookFields): where, how big, and how long it has left.</summary>
+        public sealed class HookField { public double x, y, r; public int life, max, id; }
+        public readonly List<HookField> hookFields = new List<HookField>();
+        public int hookFieldId;
+
         /// <summary>Whether the boss / item door on this floor has been paid for (bossUnlocked, itemUnlocked).</summary>
         public bool bossUnlocked, itemUnlocked;
         /// <summary>The lock being worked (unlockDoor), and for how long.</summary>
@@ -100,7 +105,7 @@ namespace Depths
             planner = new WavePlanner(rng);
             curX = Map.Start; curY = Map.Start;
             player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY, hp = 8, maxHp = 8 };
-            enemies.Clear(); pickups.Clear(); projectiles.Clear();
+            enemies.Clear(); pickups.Clear(); projectiles.Clear(); hookFields.Clear();
             floor = 1; floorTicks = 0; ticks = 0; kills = 0; hits = 0; shots = 0; dmgTaken = 0; secret = false;
             blinkCharges = 2; blinkGrace = 0; graceSpent = false; blinkRestoreT = 0;
             flankCursor = 0; bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;

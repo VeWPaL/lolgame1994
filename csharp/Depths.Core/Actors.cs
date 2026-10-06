@@ -201,7 +201,8 @@ namespace Depths
 
         // The fields the projectile phase reads and writes (src/60-tick.js tickProjectiles).
         public double r, armour = 1, mass = 1;
-        public int hitFlash, noticeTimer, slowT, stun;
+        public int noticeTimer, slowT;
+        public double hitFlash, stun;   // fractional in the game: a hook field stuns 3 x its power and flashes by it
         public int? aggroTimer;   // every spawned body has one; null models the game's `undefined` guard
         public bool alerted;
         public double pursuit;
@@ -224,6 +225,10 @@ namespace Depths
         public bool sweepDone;
         public List<Enemy>? wallBodies;
         public int? wallAge;   // a called statue's age; null until its first sweep tick
+        // the hook's resistance: which field last charged this body, how many hooks it has taken, how
+        // long since it was last in one, and the power the current field acts with
+        public int hookMark, hookStacks, hookCalm;
+        public double hookPower;
         public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
 
         /// <summary>A live body of a kind at a point, with the table's radius, armour, mass and health.</summary>

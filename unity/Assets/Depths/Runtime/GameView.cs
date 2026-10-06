@@ -350,6 +350,16 @@ namespace Depths.Unity
                 Rect(g, c + new Vector2(-w / 2, -top), c + new Vector2(-w / 2 + w * frac, -top + 4), new Color32(94, 226, 122, 255));
             }
 
+            foreach (var hf in run.hookFields)
+            {
+                // the hook's ground spell, fading as it runs out
+                g.strokeColor = new Color(0.16f, 0.44f, 0.77f, 0.25f + 0.6f * hf.life / hf.max);
+                g.lineWidth = 2;
+                g.BeginPath();
+                g.Arc(W(hf.x, hf.y), (float)hf.r, 0, 360);
+                g.Stroke();
+            }
+
             foreach (var p in run.projectiles)
             {
                 Color col = Hostile;

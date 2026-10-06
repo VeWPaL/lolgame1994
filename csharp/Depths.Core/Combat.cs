@@ -87,27 +87,82 @@ namespace Depths
         /// each; a shove strongest at the centre and fading to the rim; then the fake wall, if it is
         /// close enough. Hook fields are not ported.
         /// </summary>
-        public static void Explode(RunState run, double x, double y)
+        public static void Explode(RunState run, double x, double y, string mode = "blast")
         {
+            bool hook = mode == "hook";
+            double aoe = hook ? Balance.HookAoe : Balance.AltAoe, pool = hook ? 0 : Balance.AltPool;
             var en = run.enemies;
             Caught.Clear();
             foreach (var e in en)
-                if (System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y)) < Balance.AltAoe + e.r) Caught.Add(e);
-            double share = Caught.Count > 0 ? Balance.AltPool / System.Math.Pow(Caught.Count, Balance.Disperse) : 0;
+                if (System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y)) < aoe + e.r) Caught.Add(e);
+            double share = Caught.Count > 0 ? pool / System.Math.Pow(Caught.Count, Balance.Disperse) : 0;
             for (int j = en.Count - 1; j >= 0; j--)
             {
                 var e = en[j];
                 if (!Caught.Contains(e)) continue;
                 double dist = System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y));
-                double t = System.Math.Min(1, dist / (Balance.AltAoe + e.r));
+                double t = System.Math.Min(1, dist / (aoe + e.r));
                 if (share != 0) { e.hp -= share * e.armour; e.hitFlash = Balance.HitFlash; }
                 Combat.AlertEnemy(e);
                 Combat.SlowEnemy(e);
-                double near = 1 - Smooth(t);
-                Movement.Knock(run, e, e.x - x, e.y - y, Balance.AltKnock * (Balance.AltKnockFar + (Balance.AltKnockNear - Balance.AltKnockFar) * near));
+                if (hook)
+                {
+                    // the yank to the point, scaled by how far out and by mass so the catch arrives together, then held
+                    Movement.Knock(run, e, x - e.x, y - e.y, Balance.HookPull * dist * Balance.HookPullGain * e.mass);
+                    e.stun = System.Math.Max(e.stun, Balance.HookHold);
+                }
+                else
+                {
+                    double near = 1 - Smooth(t);
+                    Movement.Knock(run, e, e.x - x, e.y - y, Balance.AltKnock * (Balance.AltKnockFar + (Balance.AltKnockNear - Balance.AltKnockFar) * near));
+                }
                 if (e.hp <= 0) Kills.KillEnemy(run, j);
             }
+            if (hook) run.hookFields.Add(new RunState.HookField { x = x, y = y, r = Balance.HookAoe, life = Balance.HookField, max = Balance.HookField, id = ++run.hookFieldId });
             TryBreakSecret(run, x, y);
+        }
+
+        /// <summary>tickFields: each live field drains, holds and sucks in what stands in it, at a power
+        /// charged once per field per body from how many hooks that body has already taken.</summary>
+        public static void TickFields(RunState run)
+        {
+            var en = run.enemies;
+            for (int i = run.hookFields.Count - 1; i >= 0; i--)
+            {
+                var f = run.hookFields[i];
+                if (--f.life <= 0) { run.hookFields.RemoveAt(i); continue; }
+                for (int j = en.Count - 1; j >= 0; j--)
+                {
+                    var e = en[j];
+                    double dx = f.x - e.x, dy = f.y - e.y, d = System.Math.Sqrt(dx * dx + dy * dy);
+                    if (d > f.r + e.r) continue;
+                    if (e.hookMark != f.id)
+                    {
+                        e.hookMark = f.id;
+                        int n = e.hookStacks;
+                        e.hookPower = n < Balance.HookResist.Length ? Balance.HookResist[n] : Balance.HookResist[Balance.HookResist.Length - 1];
+                        e.hookStacks = System.Math.Min(Balance.HookResist.Length - 1, n + 1);
+                        e.hookCalm = 0;
+                    }
+                    double power = e.hookPower;
+                    e.stun = System.Math.Max(e.stun, 3 * power);
+                    if (d > 1) { e.x += dx / d * Balance.HookSuck * power; e.y += dy / d * Balance.HookSuck * power; }
+                    e.hp -= Balance.HookDps * power / Balance.TickHz * e.armour;
+                    e.hitFlash = System.Math.Max(e.hitFlash, power);
+                    Combat.AlertEnemy(e);
+                    if (e.hp <= 0) Kills.KillEnemy(run, j);
+                }
+            }
+        }
+
+        /// <summary>tickHookResist: a body out of the fields for HOOK_FORGET ticks forgets one stack.</summary>
+        public static void TickHookResist(RunState run)
+        {
+            foreach (var e in run.enemies)
+            {
+                if (e.hookMark == 0 || e.hookStacks <= 0) continue;
+                if (++e.hookCalm >= Balance.HookForget) { e.hookStacks--; e.hookCalm = 0; }
+            }
         }
 
         /// <summary>A right-click impact within 80% of the blast radius of a fake wall opens it, both sides.</summary>

@@ -83,17 +83,28 @@ namespace Depths
         public static void FireAlt(RunState run, double aimX, double aimY)
         {
             var p = run.player;
-            if (p.altMode != "blast")
-                throw new System.NotSupportedException("fireAlt: the hook is not ported yet");
+            bool hook = p.altMode == "hook";
+            if (hook)
+            {
+                // a second right click while the hook flies detonates it where it is (after HOOK_EARLY_MIN)
+                int live = run.projectiles.FindIndex(q => q.alt && q.mode == "hook");
+                if (live >= 0)
+                {
+                    var q = run.projectiles[live];
+                    if (q.age >= Balance.HookEarlyMin) { Blast.Explode(run, q.x, q.y, "hook"); run.projectiles.RemoveAt(live); }
+                    return;
+                }
+            }
             if (p.altCooldown > 0) return;
             double tx = System.Math.Max(Balance.RoomLeft, System.Math.Min(Balance.RoomRight, aimX));
             double ty = System.Math.Max(Balance.RoomTop, System.Math.Min(Balance.RoomBottom, aimY));
             double a = System.Math.Atan2(ty - p.y, tx - p.x);
             run.projectiles.Add(new Projectile
             {
-                x = p.x, y = p.y, vx = System.Math.Cos(a) * Balance.AltSpeed, vy = System.Math.Sin(a) * Balance.AltSpeed,
-                speed = Balance.AltSpeed, r = Balance.AltR, friendly = true, color = "#ff8a3d",
-                alt = true, phase = false, mode = "blast", age = 0, tx = tx, ty = ty,
+                x = p.x, y = p.y,
+                vx = System.Math.Cos(a) * (hook ? Balance.HookSpeed : Balance.AltSpeed), vy = System.Math.Sin(a) * (hook ? Balance.HookSpeed : Balance.AltSpeed),
+                speed = hook ? Balance.HookSpeed : Balance.AltSpeed, r = hook ? Balance.HookR : Balance.AltR, friendly = true,
+                color = hook ? "#2a6fc4" : "#ff8a3d", alt = true, phase = hook, mode = hook ? "hook" : "blast", age = 0, tx = tx, ty = ty,
             });
             p.altCooldown = (int)(Balance.AltCooldown / Balance.TempoRate);
             p.muzzleTimer = MuzzleTicks;

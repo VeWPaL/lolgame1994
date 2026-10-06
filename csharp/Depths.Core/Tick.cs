@@ -608,13 +608,11 @@ namespace Depths
                 var p = ps[i];
                 if (p.alt)
                 {
-                    if (p.mode != "blast")
-                        throw new System.NotSupportedException("tickProjectiles: the hook is not ported yet");
                     // stop on the point, not past it
                     if (Dist(p.tx - p.x, p.ty - p.y) <= p.speed)
                     {
                         p.x = p.tx; p.y = p.ty;
-                        Blast.Explode(run, p.tx, p.ty);
+                        Blast.Explode(run, p.tx, p.ty, p.mode);
                         ps.RemoveAt(i);
                         continue;
                     }
@@ -625,10 +623,11 @@ namespace Depths
                 if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
                     || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
                 {
-                    if (p.alt) Blast.Explode(run, p.x, p.y);
+                    if (p.alt) Blast.Explode(run, p.x, p.y, p.mode);   // on the mode it was cast with
                     ps.RemoveAt(i);
                     continue;
                 }
+                if (p.alt && p.phase) continue;   // the hook flies through bodies and acts only at its point
                 if (p.friendly)
                 {
                     int best = -1;
@@ -1069,6 +1068,8 @@ namespace Depths
             TickBlink(run);
             if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1);
             if (p.altCooldown > 0) p.altCooldown--;
+            Blast.TickFields(run);
+            Blast.TickHookResist(run);
             if (p.iframes > 0) p.iframes--;
             if (run.blinkGrace > 0) run.blinkGrace--;   // its own clock, not folded into iframes
             if (p.muzzleTimer > 0) p.muzzleTimer--;

@@ -148,6 +148,7 @@ namespace Depths
             var r = run.CurrentRoom!;
             r.Visited = true;
             run.projectiles.Clear();
+            run.hookFields.Clear();   // clearTransient
             run.player.muzzleTimer = 0;
             Load(run, r);
             if (!r.Spawned)

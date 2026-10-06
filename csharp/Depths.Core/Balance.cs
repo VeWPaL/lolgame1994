@@ -240,6 +240,11 @@ namespace Depths
     public const int BossVolleyN = 3, BossVolleyGap = 116, BossWallHp = 5, BossWallLife = 2940;   // sec(14)
     public const double BossSweepDist = 150, BossShellDmg = 1.44;
 
+    // The hook (HOOK_WEAPON and its field), read from the game 2026-10-06.
+    public const double HookSpeed = 2.04, HookR = 14, HookAoe = 118, HookPull = 1.2, HookSuck = 0.24, HookDps = 3.5;
+    public const int HookHold = 147, HookField = 378, HookForget = 1470, HookEarlyMin = 38;
+    public static readonly double[] HookResist = { 1, 0.7, 0.45, 0.2, 0.08 };
+
     // The blink, read from the game 2026-10-06.
     public const int BlinkFillClear = 9;                    // a charge refills 9x faster in a cleared room
     public static readonly int BlinkIframes = Sec(0.17), BlinkGrace = Sec(0.6), DashTrail = Sec(0.23);   // 36, 126, 48

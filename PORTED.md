@@ -105,8 +105,8 @@ gunner intercept solves against the position the player is visually leaving.
     phase              lines   C#
     update()              93   gates + dispatch, all four called in order
     tickPlayer()         169   PORTED - TickOrder.TickPlayer (movement core)
-    tickProjectiles()    160   PARTIAL - TickOrder.TickProjectiles: all but the HOOK (the blast, explode
-                                and tryBreakSecret are ported: BlastParityTests, tools/blast-parity.js). ProjectilePhaseParityTests, from
+    tickProjectiles()    160   PORTED - TickOrder.TickProjectiles, the blast and the hook (explode, its
+                                field and resistance, early detonation; BlastParityTests, HookParityTests) ProjectilePhaseParityTests, from
                                 tools/proj-parity.js, 2026-10-06
     tickBodies()         697   PORTED - every body: lunger, shooter, gunner, Brunch (A/B/A+ via
                                 Balance.BrunchVariant) and the Warden (volley, sweep, the wall of
