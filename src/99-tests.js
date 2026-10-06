@@ -4059,6 +4059,64 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        'between shells');
   });
 
+  test('the Warden\'s wall dies with it, so the way out opens on the kill',()=>{
+    startGame(42);
+    const room=currentRoom(); room.enemies.length=0; room.pickups.length=0; projectiles.length=0;
+    room.type='boss';
+    const boss=spawnEnemy(true,room,ROOM_LEFT+520,ROOM_TOP+330,'boss');
+    room.enemies.push(boss);
+    bossCallWall(boss,room);
+    const walls=room.enemies.filter(b=>b.packId===BOSS_WALL_ID).length;
+    ok(walls>0,'bossCallWall put no statues in the room, so this test cannot see the bug');
+    const kills0=run.kills;
+    killEnemy(room,room.enemies.indexOf(boss));
+    eq(room.enemies.length,0,'statues outlived the Warden: '+room.enemies.length+' left standing between the player and the exit');
+    eq(run.kills-kills0,1,'the crumbling wall counted as kills');
+    player.hp=player.maxHp; readyT=0; fadeT=0; update();
+    ok(room.pickups.some(p=>p.kind==='exit'),'the boss is dead and the room is empty, but no exit opened');
+  });
+
+  test('a bolt that lands does not freeze the older projectiles for that tick',()=>{
+    // The bug: the hit path did `break` after the inner body loop, which left the OUTER loop, so
+    // every projectile older than the one that hit skipped its move and its collisions that tick.
+    startGame(7);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    const e=spawnEnemy(false,room,MIDX+200,MIDY,'lunger'); e.hp=e.maxHp=1e9; room.enemies.push(e);
+    projectiles.push({x:MIDX-200,y:MIDY-150,vx:1.5,vy:0,r:5,dmg:1,friendly:false,color:'#f00',from:'enemy'});
+    projectiles.push({x:MIDX-200,y:MIDY+150,vx:0,vy:-1.25,r:5,dmg:1,friendly:true,color:'#0ff'});   // a friendly that misses
+    projectiles.push({x:e.x,y:e.y,vx:0.1,vy:0,r:5,dmg:1,friendly:true,color:'#0ff',
+      ox:e.x,oy:e.y,dx:1,dy:0,scale:1,age:0,range:1e9});                                            // the newest: it lands
+    const shell=projectiles[0], miss=projectiles[1];
+    const x0=shell.x, y0=miss.y;
+    tickProjectiles();
+    ok(Math.abs(shell.x-(x0+1.5))<1e-9,'a hostile shell moved '+(shell.x-x0)+'px instead of 1.5 on the tick a bolt landed');
+    ok(Math.abs(miss.y-(y0-1.25))<1e-9,'a friendly bolt moved '+(miss.y-y0)+'px instead of -1.25 on the tick another bolt landed');
+  });
+
+  test('the boss tell drains: on only while a shell is coming, off between volleys',()=>{
+    // The bug: castT was set to CAST_TIME and nothing drained it, so after the first volley the
+    // cast flash was drawn for the rest of the fight and the tell said nothing.
+    startGame(31337);
+    const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
+    const boss=spawnEnemy(true,room,ROOM_LEFT+520,ROOM_TOP+330,'boss');
+    room.enemies.push(boss);
+    player.x=ROOM_LEFT+120; player.y=ROOM_TOP+330; player.maxHp=player.hp=1e9;
+    let idleTicks=0, idleLit=0, volleyTicks=0, rises=0, prev=0, shells=0;
+    for(let t=0;t<210*40;t++){
+      player.hp=player.maxHp;
+      const n0=projectiles.length;
+      update();
+      for(let k=n0;k<projectiles.length;k++) if(projectiles[k].owner===boss) shells++;
+      if(boss.move==='volley') volleyTicks++;
+      else { idleTicks++; if(boss.castT>0) idleLit++; }
+      if(boss.castT>prev+1) rises++;
+      prev=boss.castT||0;
+    }
+    ok(volleyTicks>0&&shells>=BOSS_VOLLEY_N,'no volley was fired in 40s ('+shells+' shells), so the tell was never exercised');
+    eq(idleLit,0,'the cast flash was lit for '+idleLit+' of '+idleTicks+' ticks the boss was NOT in a volley - a tell that is always on tells nothing');
+    ok(rises>=shells,'the tell re-armed '+rises+' times for '+shells+' shells; each shell must get its own countdown');
+  });
+
   test('stun and slowT are tick COUNTS: never negative, and a fractional write cannot strand a body',()=>{
     /* THE BUG THIS EXISTS FOR. [h:99-tests-172] */
     /* NOT `Number.isInteger(KNOCK_STUN/3)` - that expression is fractional by arithmetic and always will be, so asserting on it asserts something false. [h:99-tests-173] */
@@ -4768,6 +4826,9 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
         const d=Math.max(20,Math.min(dist,MIDX-ROOM_LEFT-24,ROOM_RIGHT-MIDX-24));
         const e=spawnEnemy(false,r,player.x+d,player.y,'shooter');
         e.noticeTimer=1e9; e.aggroTimer=0; r.enemies.push(e);
+        // too big to die: a full Scatter volley lands in one tick now, and a killed body leaves the
+        // room, after which every later shot measured 0
+        e.hp=e.maxHp=1e6;
         for(let s=0;s<SHOTS;s++){
           pointAt(e.x, e.y); fireWeapon();
           for(let i=0;i<400&&projectiles.length&&e.hp===e.maxHp;i++) update();

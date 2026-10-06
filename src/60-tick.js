@@ -158,10 +158,12 @@ function resolveBoss(e,edx,edy,dist,sm,room){
           dmg:e.dmg,friendly:false,color:e.pcol,owner:e,heavy:true,from:'enemy'});
         e.volleyLeft--;
         e.volleyT=BOSS_VOLLEY_GAP;
-        e.castT=CAST_TIME;       // re-tell between shells, so each one is answerable on its own
       }
+      // The tell counts down to the next shell, so each one is answerable on its own and the flash
+      // ends as it leaves. It used to be set to CAST_TIME and never drained: on for the whole fight.
+      e.castT=e.volleyLeft>0?Math.min(CAST_TIME,e.volleyT):0;
     } else {
-      e.move='idle'; e.moveT=BOSS_RECOVER;
+      e.move='idle'; e.moveT=BOSS_RECOVER; e.castT=0;
     }
   } else if(e.move==='sweep'){
     if(e.moveT>0) return;        // still winding up
@@ -383,7 +385,7 @@ function tickProjectiles(){
       if(best>=0){
         const e=r.enemies[best];
         const j=best;
-        if(p.alt){ explode(r,p.x,p.y,p.mode); projectiles.splice(i,1); break; }   // the blast detonates on contact
+        if(p.alt){ explode(r,p.x,p.y,p.mode); projectiles.splice(i,1); continue; }   // the blast detonates on contact
         e.hp-=p.dmg*falloffMult(p)*e.armour*p.scale; e.hitFlash=HIT_FLASH; run.hits++;
         Sfx.hit(e);   // panned by where the body is, so a hit on the far side of the room says so
         alertEnemy(e); slowEnemy(e);
@@ -394,7 +396,7 @@ function tickProjectiles(){
           p.pierce--; p.scale*=PIERCE_FALLOFF; (p.hit||(p.hit=[])).push(e);
         } else {
           projectiles.splice(i,1);
-          break;
+          continue;   // not break: older projectiles still have to move this tick
         }
       }
     } else {

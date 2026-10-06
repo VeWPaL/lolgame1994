@@ -212,6 +212,9 @@ function killEnemy(r,j){
   Sfx.kill(r.enemies[j]);
   const e=r.enemies[j];
   r.enemies.splice(j,1);
+  // The Warden's wall goes with it. Only stepBoss expired the statues, so after the boss died they
+  // stood until shot one by one, and the exit waits for an empty room. Not kills, so no loot.
+  if(e.type==='boss') for(let i=r.enemies.length-1;i>=0;i--) if(r.enemies[i].packId===BOSS_WALL_ID) r.enemies.splice(i,1);
   run.kills++;
   const d=dropLoot(e.x,e.y); if(d) r.pickups.push(d);
 }
