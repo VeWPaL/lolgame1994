@@ -571,6 +571,12 @@ BOUNDED BY TIME, NOT BY A FRAME COUNT. This was `if(++frames>30) finish(false)` 
 
           So both bounds are now milliseconds, which is what they were always trying to express.
 
+          Correction, 2026-10-06: the bound never ran. When `requestAnimationFrame(tick)` became
+          `yieldToBrowser()` (2f516b2), the `.then(tick)` was dropped, so `tick` was never called and
+          both `whenAudible` and `whenIdle` waited for ever on any context not already running. The
+          "suspended context can be brought back" test hung to its 240s watchdog on every run. Fixed
+          by `yieldToBrowser().then(tick)`; suite 238/239 -> 239/239; whole gate (3 viewports) ~15 min -> 172s.
+
 ## [h:45-sound-42]
 near: `const target=liveCtx;`
 

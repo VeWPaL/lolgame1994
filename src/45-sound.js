@@ -525,9 +525,9 @@ const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss a
         const tick=()=>{
           if(!rendering) return resolve(true);
           if(Date.now()>deadline) return resolve(false);
-          yieldToBrowser();
+          yieldToBrowser().then(tick);
         };
-        yieldToBrowser();
+        yieldToBrowser().then(tick);
       });
     },
 
@@ -546,9 +546,9 @@ const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss a
           if(done) return;
           if(ctxNow.state==='running') return finish(true);
           if(Date.now()>deadline) return finish(false);
-          yieldToBrowser();
+          yieldToBrowser().then(tick);
         };
-        yieldToBrowser();
+        yieldToBrowser().then(tick);
       });
     },
 
