@@ -5,6 +5,7 @@ using UnityEngine.Audio;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
+using Depths.Unity.Audio;
 
 namespace Depths.Unity
 {
@@ -50,12 +51,12 @@ namespace Depths.Unity
             _preset = root.Q<DropdownField>("preset");
             _presetHint = root.Q<Label>("presetHint");
 
-            root.Q<Button>("start").clicked += () => SceneManager.LoadScene(gameScene);
-            root.Q<Button>("options").clicked += () => ShowView("controls");
+            root.Q<Button>("start").clicked += () => { SoundEngine.Play("door"); SceneManager.LoadScene(gameScene); };
+            root.Q<Button>("options").clicked += () => { SoundEngine.Play("pickup"); ShowView("controls"); };
             root.Q<Button>("quit").clicked += Quit;
-            root.Q<Button>("back").clicked += () => ShowView("menu");
-            _tabControls.clicked += () => ShowView("controls");
-            _tabAudio.clicked += () => ShowView("audio");
+            root.Q<Button>("back").clicked += () => { SoundEngine.Play("pickup", 0, 0.7f); ShowView("menu"); };
+            _tabControls.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("controls"); };
+            _tabAudio.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("audio"); };
             root.Q<Button>("resetBinds").clicked += () => { _bindings.ApplyPreset(_bindings.Preset); RefreshBinds(); };
 
             var presets = Enum.GetValues(typeof(KeyPreset)).Cast<KeyPreset>().ToList();
@@ -72,13 +73,22 @@ namespace Depths.Unity
                 var s = root.Q<Slider>("vol-" + c);
                 s.SetValueWithoutNotify(_volume.Get(c));
                 var ch = c;
-                s.RegisterValueChangedCallback(e => _volume.Set(ch, e.newValue));
+                s.RegisterValueChangedCallback(e => { _volume.Set(ch, e.newValue); Preview(ch); });
             }
             RefreshBinds();
             ShowView("menu");
         }
 
         void OnDisable() { _rebind?.Cancel(); }
+
+        // Dragging a slider plays the level you are setting, at most a few times a second.
+        float _lastPreview;
+        void Preview(Channel c)
+        {
+            if (c == Channel.Music || Time.unscaledTime - _lastPreview < 0.18f) return;
+            _lastPreview = Time.unscaledTime;
+            SoundEngine.Play("hit");
+        }
 
         // Without a mixer (it could not be generated) the master slider still works, on the listener.
         void ApplyVolume()
@@ -119,7 +129,7 @@ namespace Depths.Unity
                     if (_rebind != null) return;
                     key.text = "press a key...";
                     key.AddToClassList("listening");
-                    _rebind = _bindings.StartRebind(slot, () => { _rebind = null; RefreshBinds(); });
+                    _rebind = _bindings.StartRebind(slot, () => { _rebind = null; SoundEngine.Play("blink"); RefreshBinds(); });
                 };
                 row.Add(name);
                 row.Add(key);

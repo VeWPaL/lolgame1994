@@ -35,7 +35,7 @@ Full write-up: `docs/report-2026-10-06.html`._
 | 3 | Main menu: Start / Options / Quit; key binds with presets + rebinding; volume sliders | Medium | done (gamepad + display options later) |
 | 4 | Finish the port: `tickBodies`, then `tickProjectiles`; allocation-free hot paths | High | next, after the Brunch choice |
 | 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | |
-| 6 | New sound engine: event-based, sample assets, mixer (groups exist) | Medium | |
+| 6 | New sound engine: event-based, sample assets, mixer | Medium | started: `SoundEngine.Play(name, pan)`, the 12 JS voices synthesised, pool of 12 on the Sfx group, menu sounds. Next: master compressor, samples, music |
 
 ## Open questions / known issues
 

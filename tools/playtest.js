@@ -95,7 +95,7 @@ function playOne(cfg){
   const ignored=new WeakSet();    // pickups it chose not to take, or has already dealt with
   const tookItemIn=new Set();
   let decideT=0, strafe=rnd()<0.5?1:-1, strafeT=0, aimJ=0, moveV=[0,0], fire=false;
-  let lastProgress=0, lastKey='', lastCleared=0, lowHpShot=false, bossShot=false, prevKills=0;
+  let lastHpSum=0, lastProgress=0, lastKey='', lastCleared=0, lowHpShot=false, bossShot=false, prevKills=0;
   thumb('floor 1');
 
   const key2=(x,y)=>x+','+y;
@@ -131,6 +131,8 @@ function playOne(cfg){
     const rk=key2(r.x,r.y)+'@'+run.floor;
     if(rk!==lastKey){ lastKey=rk; F.rooms++; lastProgress=t; }
     if(run.kills!==prevKills){ prevKills=run.kills; lastProgress=t; }
+    // damage dealt is progress too: a deep boss fight runs past a minute without a kill
+    { let hpSum=0; for(const e of r.enemies) hpSum+=Math.max(0,e.hp); if(hpSum<lastHpSum-1e-9) lastProgress=t; lastHpSum=hpSum; }
     if(t-lastProgress>STUCK){ out.end='stuck'; out.cause={room:r.type,enemies:r.enemies.length,
       pickups:r.pickups.map(p=>p.kind),gold:player.hasGold,silver:player.hasSilver,
       bossUnlocked,itemUnlocked}; thumb('stuck'); break; }

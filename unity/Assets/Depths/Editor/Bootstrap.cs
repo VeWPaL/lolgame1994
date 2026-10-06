@@ -44,6 +44,9 @@ namespace Depths.Unity.EditorTools
             var ctl = menu.AddComponent<MainMenuController>();
             ctl.controls = controls;
             ctl.mixer = mixer;
+            var sound = new GameObject("SoundEngine").AddComponent<Depths.Unity.Audio.SoundEngine>();
+            var groups = mixer != null ? mixer.FindMatchingGroups("Sfx") : null;
+            sound.sfx = groups != null && groups.Length > 0 ? groups[0] : null;
             EditorSceneManager.SaveScene(scene, Root + "/Scenes/MainMenu.unity");
 
             // Game (placeholder until the port plays)
