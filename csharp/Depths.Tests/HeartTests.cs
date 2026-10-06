@@ -9,7 +9,7 @@ namespace Depths.Tests
     /// these are assertions, not parity rows. The player here is a bare one (8 red, no regenerating
     /// heart), so each rule is seen alone; RegenHeartTests covers the real starting body.
     /// </summary>
-    [TestFixture]
+    [TestFixture, Category("csharp-only")]
     public sealed class HeartTests
     {
         static RunState Run()

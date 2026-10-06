@@ -8,7 +8,7 @@ namespace Depths.Tests
     /// after RegenDelay without a hit, 1 HP then 1 HP per RegenStep. Pickups heal red only, Vigor
     /// adds red only, and Balance.JsReference turns it off.
     /// </summary>
-    [TestFixture]
+    [TestFixture, Category("csharp-only")]
     public sealed class RegenHeartTests
     {
         static RunState Started()

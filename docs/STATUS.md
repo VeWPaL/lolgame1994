@@ -19,6 +19,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   real seeded run with placeholder shapes: pause (Esc), death summary, floor banner.
 - **Playtest bot**: `tools/playtest.js` + `tools/playtest-report.js`; baseline tag `pre-features-2026-10-06`.
 - Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
+  `verify.ps1` is Windows-only (backslash paths): under Linux `pwsh` it stops at step 2.
 
 ## Unity commands (batch mode, no editor window needed)
 
