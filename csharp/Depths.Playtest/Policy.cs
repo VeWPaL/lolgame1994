@@ -20,11 +20,8 @@ namespace Depths.Playtest
         BotAction Decide(RunState run, int t);
     }
 
-    /// <summary>
-    /// The JS bot's player (tools/playtest.js playOne), ported: fight by circling and keeping a band,
-    /// dodge only shots it has seen for a reaction time, then in a quiet room take what is worth
-    /// having and route on. Its memory (decision timer, strafe, seen shots) is a player's memory.
-    /// </summary>
+    /// <summary>The JS bot's player (tools/playtest.js playOne): circle and keep a band, dodge shots it
+    /// has seen for a reaction time, then take what is worth having and route on.</summary>
     public sealed class BotPolicy : IPolicy
     {
         static readonly Dir[] Dirs = { Dir.N, Dir.S, Dir.E, Dir.W };   // the JS route's order
@@ -42,6 +39,7 @@ namespace Depths.Playtest
         int _decideT, _strafe;
         double _strafeT;
         double _aimJ, _mvX, _mvY;
+        double? _aimX, _aimY;   // the mouse stays where the last fight left it, as in the JS
         bool _fire;
 
         // route scratch, reused
@@ -113,7 +111,7 @@ namespace Depths.Playtest
                 int crowd = 0;
                 foreach (var e in run.enemies) if (e.hp > 0 && Hyp(e.x - pl.x, e.y - pl.y) < 150) crowd++;
                 if (crowd >= 3 && _rnd.Next() < _p.Blast) alt = true;
-                if (pl.hp <= _p.Heal && _rnd.Next() < 0.5) useActive = true;
+                if (pl.hp + pl.regenHeart <= _p.Heal && _rnd.Next() < 0.5) useActive = true;   // JS hp: every heart
             }
 
             // dodging: only a shot the bot has had time to react to, heading for it
@@ -136,8 +134,8 @@ namespace Depths.Playtest
 
             double a = Math.Atan2(target.y - pl.y, target.x - pl.x) + _aimJ;
             double td = Hyp(target.x - pl.x, target.y - pl.y);
-            var input = new Input(Axis(_mvX, 0.3), Axis(_mvY, 0.3), _fire, alt, blink,
-                                  pl.x + Math.Cos(a) * td, pl.y + Math.Sin(a) * td);
+            _aimX = pl.x + Math.Cos(a) * td; _aimY = pl.y + Math.Sin(a) * td;
+            var input = new Input(Axis(_mvX, 0.3), Axis(_mvY, 0.3), _fire, alt, blink, _aimX.Value, _aimY.Value);
             return new BotAction(input, useActive);
         }
 
@@ -166,7 +164,7 @@ namespace Depths.Playtest
                 return Steer(pl, goal.x, goal.y, 3);
             }
             var d = Route(run);
-            if (d == null) return BotAction.None;
+            if (d == null) return Steer(pl, pl.x, pl.y, 4);
             var (px, py) = Rooms.DoorPoint(d.Value);
             return Steer(pl, px + Math.Sign(px - Balance.MidX) * 40, py + Math.Sign(py - Balance.MidY) * 40, 4);
         }
@@ -184,8 +182,8 @@ namespace Depths.Playtest
             }
         }
 
-        static BotAction Steer(Player pl, double tx, double ty, double stop) =>
-            new BotAction(new Input(Axis(tx - pl.x, stop), Axis(ty - pl.y, stop), aimX: pl.x + 200, aimY: pl.y));
+        BotAction Steer(Player pl, double tx, double ty, double stop) =>
+            new BotAction(new Input(Axis(tx - pl.x, stop), Axis(ty - pl.y, stop), aimX: _aimX ?? pl.x + 200, aimY: _aimY ?? pl.y));
 
         /// <summary>
         /// BFS over the floor through doors that exist and are open or that the bot holds the key for.

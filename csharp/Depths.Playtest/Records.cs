@@ -10,7 +10,7 @@ namespace Depths.Playtest
         public int floor, ticks, rooms, cleared, bossTicks;
         public double dmg, healed, regen;   // regen: HP the regenerating heart refilled on this floor
         public bool bossKilled;
-        public double hpIn, maxHpIn;
+        public double hpIn, maxHpIn;   // hearts: red + regenerating, as the JS bot's hp
         public double? hpOut;
     }
 
@@ -25,7 +25,10 @@ namespace Depths.Playtest
         public SortedDictionary<string, double> dmgBySource = new SortedDictionary<string, double>(StringComparer.Ordinal);
         public double healed, regenHealed;
         public SortedDictionary<string, double> healBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
-        public int hits, shots, kills, blinks, dodgeBlinks, actives, secrets;
+        public int hits, shots, kills, blinks, dodgeBlinks, secrets;
+        public int qPresses, actives;   // Q pressed when low; actives: presses that raised HP (the JS rule)
+        public int maskedHits;          // ticks where a heal on the same layer hid a hit from the HP deltas
+        public double maskedHp;
         public List<string> items = new List<string>();
         public string weapon = "";
         public List<string> errors = new List<string>();

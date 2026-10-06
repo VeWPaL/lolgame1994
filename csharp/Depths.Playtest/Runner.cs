@@ -3,11 +3,8 @@ using System.Collections.Generic;
 
 namespace Depths.Playtest
 {
-    /// <summary>
-    /// Owns one run: the loop, the metrics and stuck detection. The policy only returns input; the
-    /// runner applies it the way a keyboard would (blink and Q between ticks, then one Update).
-    /// Damage and healing are observed as HP changes across each step, never hooked into the game.
-    /// </summary>
+    /// <summary>Owns one run: the loop, metrics and stuck detection. It applies the policy's input as a
+    /// keyboard would and observes HP across each step, never hooking the game.</summary>
     public sealed class Runner
     {
         public const double StuckSeconds = 60;
@@ -21,7 +18,7 @@ namespace Depths.Playtest
         // per-step snapshots, reused so the loop does not allocate
         readonly List<Pickup> _pk0 = new List<Pickup>();
         readonly List<Projectile> _shots0 = new List<Projectile>();
-        readonly List<(BodyKind kind, double x, double y)> _bodies0 = new List<(BodyKind, double, double)>();
+        readonly List<(BodyKind kind, double x, double y, double r)> _bodies0 = new List<(BodyKind, double, double, double)>();
 
         public Runner(uint seed, string profile, double minutes, IPolicy? policy = null)
         {
@@ -36,7 +33,8 @@ namespace Depths.Playtest
 
         void NewFloor()
         {
-            _f = new FloorRecord { floor = Run.floor, hpIn = Run.player.hp, maxHpIn = Run.player.maxHp };
+            var p = Run.player;
+            _f = new FloorRecord { floor = Run.floor, hpIn = Hearts(p), maxHpIn = p.maxHp + p.regenHeartMax };
             Result.floors.Add(_f);
         }
 
@@ -68,7 +66,7 @@ namespace Depths.Playtest
                 if (t - lastProgress > _stuck) { o.end = "stuck"; o.cause = StuckCause(r); break; }
 
                 int floorBefore = Run.floor;
-                double hpBefore = Run.player.hp;
+                double hpBefore = Hearts(Run.player);
                 try
                 {
                     if (Run.trans != null) { Step(Input.None); continue; }
@@ -101,46 +99,68 @@ namespace Depths.Playtest
             o.secrets = Run.secret ? 1 : 0;
             o.weapon = Weapons.All[Run.player.weaponIdx].Name;
             if (o.cause == null && o.end == "death") o.cause = TopSource(o.dmgBySource);
-            _f.hpOut ??= Run.player.hp;
+            _f.hpOut ??= Hearts(Run.player);
             return o;
         }
 
+        // the JS bot's hp: every heart, red and regenerating
+        static double Hearts(Player p) => p.hp + p.regenHeart;
+
+        // as the JS: a use counts only if it raised HP; a press that did not is kept visible too
         void UseActive()
         {
             var p = Run.player;
             double hp = p.hp, armor = p.armor;
-            if (!Items.UseActive(Run)) return;
-            Result.actives++;
+            Result.qPresses++;
+            Items.UseActive(Run);
             double gain = Math.Max(0, p.hp - hp) + Math.Max(0, p.armor - armor);
-            if (gain > 0) Heal("active", gain);
+            if (gain > 0) { Result.actives++; Heal("active", gain); }
         }
 
         /// <summary>One Update, with the HP layers compared across it: losses are damage, gains are healing.</summary>
         void Step(Input input)
         {
             var p = Run.player;
-            double hp0 = p.hp, ar0 = p.armor, rg0 = p.regenHeart;
+            double hp0 = p.hp, ar0 = p.armor, rg0 = p.regenHeart, taken0 = Run.dmgTaken;
             int floor0 = Run.floor, cx0 = Run.curX, cy0 = Run.curY;
             _pk0.Clear(); _pk0.AddRange(Run.pickups);
             _shots0.Clear();
             foreach (var s in Run.projectiles) if (!s.friendly) _shots0.Add(s);
             _bodies0.Clear();
-            foreach (var e in Run.enemies) _bodies0.Add((e.kind, e.x, e.y));
+            foreach (var e in Run.enemies) _bodies0.Add((e.kind, e.x, e.y, e.r));
 
             try { TickOrder.Update(Run, input); }
-            finally { Observe(hp0, ar0, rg0, floor0, cx0, cy0); }   // a step that throws is still counted
+            finally { Observe(hp0, ar0, rg0, taken0, floor0, cx0, cy0); }   // a step that throws is still counted
         }
 
-        void Observe(double hp0, double ar0, double rg0, int floor0, int cx0, int cy0)
+        /// <summary>The HP layers a hit of <paramref name="amount"/> should cost, read off the game's own
+        /// armour rule; the lower of the boss and non-boss cost, so it never overstates.</summary>
+        static double ExpectedLoss(double amount, double armor)
+        {
+            if (armor <= 0 || Balance.JsReference) return amount;
+            double best = double.PositiveInfinity;
+            foreach (bool boss in new[] { false, true })
+            {
+                double cost = Combat.ArmorCost(amount, boss), paid = Math.Min(armor, cost);
+                best = Math.Min(best, paid + Math.Ceiling(amount * (cost - paid) / cost));
+            }
+            return best;
+        }
+
+        void Observe(double hp0, double ar0, double rg0, double taken0, int floor0, int cx0, int cy0)
         {
             var p = Run.player;
             double dHp = p.hp - hp0, dAr = p.armor - ar0, dRg = p.regenHeart - rg0;
             double lost = Math.Max(0, -dHp) + Math.Max(0, -dAr) + Math.Max(0, -dRg);
-            if (lost > 0)
+            // a hit and a heal on one layer in one tick cancel in the deltas; the game's dmgTaken
+            // (one landed hit per tick at most, i-frames) shows the part they hid
+            double hidden = 0;
+            if (Run.dmgTaken > taken0) hidden = Math.Max(0, ExpectedLoss(Run.dmgTaken - taken0, ar0) - lost);
+            if (lost + hidden > 0)
             {
                 string src = Source();
-                Result.dmgBySource[src] = Result.dmgBySource.TryGetValue(src, out var v) ? v + lost : lost;
-                _f.dmg += lost;
+                Result.dmgBySource[src] = Result.dmgBySource.TryGetValue(src, out var v) ? v + lost + hidden : lost + hidden;
+                _f.dmg += lost + hidden;
             }
             if (dRg > 0) { Heal("regen", dRg); _f.regen += dRg; Result.regenHealed += dRg; }
             double gain = Math.Max(0, dHp) + Math.Max(0, dAr);
@@ -156,6 +176,13 @@ namespace Depths.Playtest
             // nothing left the floor: a drop that landed under the player and was taken on the same tick
             if (gain > 0 && by == null) by = dAr > 0 ? (dAr >= 2 ? "armor" : "halfarmor") : dHp > 0 ? (dHp >= 2 ? "heart" : "halfheart") : "other";
             if (gain > 0) Heal(by!, gain);
+            if (hidden > 0)
+            {
+                Result.maskedHits++; Result.maskedHp += hidden;
+                string hb = by ?? (rg0 < p.regenHeartMax ? "regen" : "unseen");
+                if (hb == "regen") { _f.regen += hidden; Result.regenHealed += hidden; }
+                Heal(hb, hidden);
+            }
         }
 
         void Heal(string by, double gain)
@@ -164,10 +191,8 @@ namespace Depths.Playtest
             Result.healBy[by] = Result.healBy.TryGetValue(by, out var v) ? v + gain : gain;
         }
 
-        /// <summary>
-        /// The JS bot's rule, seen from outside: a hostile shot within 40px of the player (or its lagged
-        /// hitbox) that is gone after the step is the source; else the nearest body.
-        /// </summary>
+        /// <summary>A hostile shot gone after the step within 40px of the player or its shot hitbox; else
+        /// the body nearest the contact hitbox, by distance less its radius, as the game tests it.</summary>
         string Source()
         {
             var p = Run.player;
@@ -182,23 +207,18 @@ namespace Depths.Playtest
                 if (d < best) { best = d; near = s; }
             }
             if (near != null) return "shot:" + (near.owner != null ? Name(near.owner.kind) : "?");
-            double bd = double.PositiveInfinity;
+            // the game's body contact is tested at (lagX, lagY - PlayerHitDy)
+            double hx = p.lagX, hy = p.lagY - Balance.PlayerHitDy, bd = double.PositiveInfinity;
             string kind = "?";
-            if (Run.enemies.Count > 0)
+            foreach (var e in Run.enemies)
             {
-                foreach (var e in Run.enemies)
-                {
-                    double d = Math.Sqrt((e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y));
-                    if (d < bd) { bd = d; kind = Name(e.kind); }
-                }
+                double d = Math.Sqrt((e.x - hx) * (e.x - hx) + (e.y - hy) * (e.y - hy)) - e.r;
+                if (d < bd) { bd = d; kind = Name(e.kind); }
             }
-            else
+            foreach (var (k, x, y, r) in _bodies0)   // a body the hit killed (a Brunch spends itself)
             {
-                foreach (var (k, x, y) in _bodies0)
-                {
-                    double d = Math.Sqrt((x - p.x) * (x - p.x) + (y - p.y) * (y - p.y));
-                    if (d < bd) { bd = d; kind = Name(k); }
-                }
+                double d = Math.Sqrt((x - hx) * (x - hx) + (y - hy) * (y - hy)) - r;
+                if (d < bd) { bd = d; kind = Name(k); }
             }
             return "contact:" + kind;
         }

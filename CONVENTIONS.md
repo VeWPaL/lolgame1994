@@ -91,7 +91,7 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **448 checks**, parity-verified against the JavaScript except the 60 in
+- C# `Depths.Tests` has **452 checks**, parity-verified against the JavaScript except the 64 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests` and `PlaytestBotTests` (C#-only, after
   `js-final`). Parity tests whose
   recordings take player damage run with `Balance.JsReference = true` (the JS damage rules).

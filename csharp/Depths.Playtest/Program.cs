@@ -5,14 +5,16 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace Depths.Playtest
 {
     public static class Json
     {
-        static readonly JsonSerializerOptions Pretty = new JsonSerializerOptions { IncludeFields = true, WriteIndented = true };
-        static readonly JsonSerializerOptions Compact = new JsonSerializerOptions { IncludeFields = true };
+        // relaxed escaping keeps "A+" readable; the output is a file, never embedded in HTML
+        static readonly JsonSerializerOptions Pretty = new JsonSerializerOptions { IncludeFields = true, WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+        static readonly JsonSerializerOptions Compact = new JsonSerializerOptions { IncludeFields = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
         public static string Write(Batch b) => JsonSerializer.Serialize(b, Pretty).Replace("\r\n", "\n") + "\n";
         public static string Write(RunResult r) => JsonSerializer.Serialize(r, Compact);

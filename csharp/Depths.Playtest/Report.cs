@@ -3,13 +3,14 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 
 namespace Depths.Playtest
 {
     /// <summary>One row of numbers per (label, profile); definitions are tools/playtest-report.js's.</summary>
     public sealed class Stats
     {
-        public int n, deaths, stuck, errors;
+        public int n, deaths, stuck, errors, qPresses, actives, maskedHits;
         public double floor, minPerFloor, dmgPerFloor, healPerFloor, regenPerFloor, bossS, acc, killsPerMin;
         public Dictionary<string, double> dmgSrc = new Dictionary<string, double>(), healSrc = new Dictionary<string, double>();
 
@@ -35,6 +36,9 @@ namespace Depths.Playtest
             }
             double mins = runs.Sum(r => (double)r.ticks) / hz / 60;
             s.n = runs.Count;
+            s.qPresses = runs.Sum(r => r.qPresses);
+            s.actives = runs.Sum(r => r.actives);
+            s.maskedHits = runs.Sum(r => r.maskedHits);
             s.floor = Median(runs.Select(r => (double)r.floor));
             s.deaths = runs.Count(r => r.end == "death");
             s.stuck = runs.Count(r => r.end == "stuck");
@@ -72,16 +76,22 @@ namespace Depths.Playtest
             ("bossS", "boss fight, seconds", s => s.bossS, false),
             ("acc", "accuracy", s => s.acc, false),
             ("killsPerMin", "kills per minute", s => s.killsPerMin, false),
+            ("qPresses", "Q presses when low (all runs)", s => s.qPresses, true),
+            ("actives", "  of which healed", s => s.actives, true),
+            ("maskedHits", "hits hidden by a same-tick heal (counted)", s => s.maskedHits, true),
         };
 
-        static string Fmt(string key, double v, bool isInt) =>
-            key == "acc" ? Pct(v) : isInt ? ((int)v).ToString(Inv) : F1(v);
+        // a profile a label did not play has no numbers, not zeros
+        static string Fmt(string key, Stats s, double v, bool isInt) =>
+            s.n == 0 ? "n/a" : key == "acc" ? Pct(v) : isInt ? ((int)v).ToString(Inv) : F1(v);
 
-        static string Delta(string key, double a, double b, bool isInt)
+        // as the JS: every non-accuracy delta in f1, "=" under the noise floor
+        static string Delta(string key, Stats sa, Stats sb, double a, double b)
         {
+            if (sa.n == 0 || sb.n == 0) return "n/a";
             double d = b - a;
             if (Math.Abs(d) < (key == "acc" ? 0.005 : 0.05)) return "=";
-            return (d > 0 ? "+" : "") + (key == "acc" ? Math.Floor(d * 100 + 0.5).ToString("0", Inv) + "%" : isInt ? ((int)d).ToString(Inv) : F1(d));
+            return (d > 0 ? "+" : "") + (key == "acc" ? Math.Floor(d * 100 + 0.5).ToString("0", Inv) + "%" : F1(d));
         }
 
         public static string Build(IReadOnlyList<Batch> sets)
@@ -106,7 +116,7 @@ namespace Depths.Playtest
                 var cols = groups.Select(g => St(sets[0], g)).ToList();
                 sb.Append("\n| | all | ").Append(string.Join(" | ", profiles)).Append(" |\n|---|").Append(string.Concat(Enumerable.Repeat("---:|", groups.Count))).Append('\n');
                 foreach (var (key, name, get, isInt) in Metrics)
-                    sb.Append("| ").Append(name).Append(" | ").Append(string.Join(" | ", cols.Select(c => Fmt(key, get(c), isInt)))).Append(" |\n");
+                    sb.Append("| ").Append(name).Append(" | ").Append(string.Join(" | ", cols.Select(c => Fmt(key, c, get(c), isInt)))).Append(" |\n");
             }
             else
             {
@@ -115,8 +125,8 @@ namespace Depths.Playtest
                     var a = St(sets[0], g); var b = St(sets[1], g);
                     sb.Append("\n## ").Append(g ?? "All profiles").Append("\n\n| | ").Append(sets[0].label).Append(" | ").Append(sets[1].label).Append(" | change |\n|---|---:|---:|---:|\n");
                     foreach (var (key, name, get, isInt) in Metrics)
-                        sb.Append("| ").Append(name).Append(" | ").Append(Fmt(key, get(a), isInt)).Append(" | ").Append(Fmt(key, get(b), isInt))
-                          .Append(" | ").Append(Delta(key, get(a), get(b), isInt)).Append(" |\n");
+                        sb.Append("| ").Append(name).Append(" | ").Append(Fmt(key, a, get(a), isInt)).Append(" | ").Append(Fmt(key, b, get(b), isInt))
+                          .Append(" | ").Append(Delta(key, a, b, get(a), get(b))).Append(" |\n");
                 }
             }
 
@@ -128,27 +138,32 @@ namespace Depths.Playtest
             foreach (var s in sets)
             {
                 int hz = s.tickHz > 0 ? s.tickHz : 210;
-                sb.Append("\n## Runs: ").Append(s.label).Append("\n\n");
+                sb.Append("\n## Runs: ").Append(s.label).Append("\n\n| profile | seed | floor | end | cause | min | dmg | healed (regen) | Q (healed) | items |\n|---|---:|---:|---|---|---:|---:|---:|---:|---|\n");
                 foreach (var r in s.runs)
-                {
-                    sb.Append("- ").Append(r.profile).Append(" seed ").Append(r.seed).Append(": floor ").Append(r.floor).Append(", ").Append(r.end);
-                    if (r.end == "death" && r.cause != null) sb.Append(" (").Append(CauseText(r.cause)).Append(')');
-                    sb.Append(", ").Append(F1(r.ticks / (double)hz / 60)).Append(" min, dmg ").Append(F1(r.floors.Sum(f => f.dmg)))
-                      .Append(", healed ").Append(F1(r.healed)).Append(" (regen ").Append(F1(r.regenHealed)).Append(')');
-                    if (r.items.Count > 0) sb.Append(", items ").Append(string.Join(" ", r.items));
-                    sb.Append('\n');
-                    if (r.end == "stuck") sb.Append("  - STUCK: ").Append(Json.Text(r.cause)).Append('\n');
-                    foreach (var e in r.errors.Take(1)) sb.Append("  - ERROR: ").Append(e).Append('\n');
-                }
+                    sb.Append("| ").Append(r.profile).Append(" | ").Append(r.seed).Append(" | ").Append(r.floor).Append(" | ").Append(r.end)
+                      .Append(" | ").Append(CauseText(r)).Append(" | ").Append(F1(r.ticks / (double)hz / 60)).Append(" | ").Append(F1(r.floors.Sum(f => f.dmg)))
+                      .Append(" | ").Append(F1(r.healed)).Append(" (").Append(F1(r.regenHealed)).Append(") | ").Append(r.qPresses).Append(" (").Append(r.actives)
+                      .Append(") | ").Append(string.Join(" ", r.items)).Append(" |\n");
+                foreach (var r in s.runs.Where(r => r.errors.Count > 0))
+                    sb.Append("\n- ERROR ").Append(r.profile).Append(" seed ").Append(r.seed).Append(": ").Append(r.errors[0]).Append('\n');
             }
             return sb.ToString();
         }
 
-        static string CauseText(object cause)
+        /// <summary>The cause column: the top damage source for a death, what the room held for a stuck run.</summary>
+        static string CauseText(RunResult r)
         {
-            // [source, hp] after a JSON round trip is a JsonElement array
-            var t = Json.Text(cause);
-            return t.Trim('[', ']').Replace("\"", "");
+            if (r.end == "error") return "see below";
+            if (r.cause == null) return "";
+            using var doc = JsonDocument.Parse(Json.Text(r.cause));   // [source, hp] or the stuck object, before or after a round trip
+            var c = doc.RootElement;
+            if (c.ValueKind == JsonValueKind.Array) return c[0].GetString() + " " + F1(c[1].GetDouble()) + " hp";
+            if (c.ValueKind != JsonValueKind.Object) return c.ToString();
+            string Get(string k) => c.TryGetProperty(k, out var v) ? v.ToString() : "?";
+            var pk = c.TryGetProperty("pickups", out var arr) ? string.Join(" ", arr.EnumerateArray().Select(x => x.GetString())) : "";
+            return Get("room") + " room " + Get("cell") + ", " + Get("enemies") + " enemies, pickups: " + (pk.Length > 0 ? pk : "none") +
+                   (Get("silver") == "True" ? ", silver key" : "") + (Get("gold") == "True" ? ", gold key" : "") +
+                   ", boss door " + (Get("bossUnlocked") == "True" ? "open" : "locked") + ", item door " + (Get("itemUnlocked") == "True" ? "open" : "locked");
         }
 
         static void Sources(StringBuilder sb, Batch s, List<string> profiles, Func<Batch, string?, Stats> st, bool dmg)
