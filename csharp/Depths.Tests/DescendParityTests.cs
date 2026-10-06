@@ -214,12 +214,10 @@ namespace Depths.Tests
                an exit and a heart: after the descent the old room still holds 2, the new start room
                holds 0.
 
-               This port keeps the current room's pickups on the run, so it cannot express "the old
-               room still has them" - the list here is standing in for the new room's, which is empty
-               in the game and stale here. That is the `enterRoom` gap, named in `Descend`. What IS
-               assertable, and what this test is actually for, is that the phase stopped: had it fallen
-               through, it would have run the boss-exit check against the floor the player just
-               arrived on. */
+               The port stashes the old room's pickups on the room in Descend (ExitPickupTests checks it),
+               and the run's list stands for the new start room, which is empty. What this test is for
+               is that the phase stopped: had it fallen through, it would have run the boss-exit check
+               against the floor the player just arrived on. */
             Assert.That(run.floor, Is.EqualTo(2), "the descent happened");
             Assert.That(run.CurrentRoom!.ExitOpen, Is.False,
                 "the boss-exit check must not run on the floor the player just arrived on");
