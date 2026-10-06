@@ -524,7 +524,14 @@ namespace Depths
                 e.anim = mv > Balance.MoveEps ? e.anim + mv / Balance.Stride : 0;
                 Movement.Clamp(e);
                 double cy = edy - Balance.PlayerHitDy;
-                if (System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR)
+                // off the JS rate the body's move this tick is swept in JS-tick parts, as Substeps does for shells
+                bool touching = System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR;
+                for (int k = 1, sub = Balance.Substeps; !touching && k < sub; k++)
+                {
+                    double qx = HitboxX - (ox + (e.x - ox) * k / sub), qy = HitboxY - Balance.PlayerHitDy - (oy + (e.y - oy) * k / sub);
+                    touching = System.Math.Sqrt(qx * qx + qy * qy) < e.r + Balance.PlayerHitR;
+                }
+                if (touching)
                 {
                     // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
                     bool brunch = e.kind == BodyKind.Brunch;
@@ -603,7 +610,7 @@ namespace Depths
         public static void TickProjectiles(RunState run)
         {
             var ps = run.projectiles;
-            int sub = Balance.ShellSubsteps;
+            int sub = Balance.Substeps;
             double f = 1.0 / sub;
             for (int i = ps.Count - 1; i >= 0; i--)
                 for (int s = 0; s < sub; s++)

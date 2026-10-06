@@ -181,7 +181,7 @@ namespace Depths.Tests
             ["Balance.LungeTrack"] = U.Ease, ["Balance.LungeCd"] = U.Sec, ["Balance.LungeWindup"] = U.Sec,
             ["Balance.LungeSpeed"] = U.PerSec, ["Balance.LungeRecover"] = U.Sec, ["Balance.LungerNear"] = U.PerSec,
             ["Balance.LungerFar"] = U.PerSec, ["Balance.LungerSpread"] = U.PerSec, ["Balance.SwerveDecay"] = U.PerSec,
-            ["Balance.CastTime"] = U.Sec, ["Balance.ShellSubsteps"] = U.Substeps,
+            ["Balance.CastTime"] = U.Sec, ["Balance.Substeps"] = U.Substeps,
             ["Weapons.MuzzleTicks"] = U.Sec, ["Bodies.BrunchWalk"] = U.PerSec, ["Bodies.BrunchRun"] = U.PerSec,
             ["RunState.FadeDescend"] = U.Sec,
         };
@@ -468,6 +468,30 @@ namespace Depths.Tests
             Assert.That(c60.one, Is.EqualTo(c210.one).Within(step), "ground closed in a second, px");
             Assert.That(c60.speed, Is.EqualTo(c210.speed).Within(1e-6 * c210.speed), "chase speed after a second, px/s");
             Assert.That(c210.speed, Is.EqualTo(273).Within(1), "and it is the far approach speed");
+        }
+
+        [Test]
+        public void ALungeThatGrazesThePlayerConnectsAtEitherRate()
+        {
+            // a lunge moves 14.7 px a tick at 60 Hz, more than the chord of a grazing pass: the move is swept
+            var (h60, h210) = Both(() =>
+            {
+                int hits = 0;
+                for (double off = 20; off < 24; off += 0.5)
+                for (double phase = 0; phase < 15; phase += 1)   // where the lunge starts, against the 14.7 px step
+                {
+                    var run = Started();
+                    TickOrder.HitboxX = run.player.lagX; TickOrder.HitboxY = run.player.lagY;
+                    var e = Enemy.Of(BodyKind.Lunger, TickOrder.HitboxX - 120 - phase, TickOrder.HitboxY - Balance.PlayerHitDy + off);
+                    e.lungeState = "lunge"; e.lungeDx = 1; e.lungeDy = 0; e.lungeT = 1000000;
+                    run.enemies.Add(e);
+                    for (int t = 0; t < Balance.TickHz && run.dmgTaken == 0; t++) TickOrder.TickBodies(run);
+                    if (run.dmgTaken > 0) hits++;
+                }
+                return hits;
+            });
+            Assert.That(h210, Is.EqualTo(8 * 15), "every offset inside the 24px contact connects at the JS rate");
+            Assert.That(h60, Is.EqualTo(h210));
         }
 
         static Enemy HeldLunger(RunState run, double x, double y)
