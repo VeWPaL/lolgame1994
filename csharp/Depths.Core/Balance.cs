@@ -237,6 +237,10 @@ namespace Depths
     // armour at full weight. Pickups come whole (2) or half (1).
     public const double ArmorTake = 0.6;
     public const int HeartHeal = 2, HalfHeal = 1;
+    // The regenerating heart: the last of the starting 8 HP. After RegenDelay without taking damage,
+    // while the room has live bodies, it refills 1 HP, then 1 HP every RegenStep until full.
+    public const int RegenHp = 2;
+    public static readonly int RegenDelay = Sec(4), RegenStep = Sec(1);
     /// <summary>
     /// The JS game's damage rules (fractional hits, armour 1:1, no half pickups), for the parity tests
     /// whose recordings hold them. Never true in the game.

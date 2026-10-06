@@ -11,8 +11,9 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  407/407, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
-  `js-final`, C# differs from the JS on purpose: whole-number HP and the placeholder items (below).
+  438/438, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
+  `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
+  placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
   real seeded run with placeholder shapes: pause (Esc), death summary, floor banner.
@@ -47,6 +48,12 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   splits each band: 9% half heart, 9% heart, 4% half armour, 4% armour (a quarter less healing per
   kill, same drop rate). Unity: placeholder heart sprites for pickups and a heart row above the room.
   Not yet checked in the Unity editor (no Unity in the cloud session).
+- **Regenerating heart** (done 2026-10-06, owner's request): the 4th starting heart is its own layer,
+  6 red + 2 regen = 8. Damage order: armour, regen, red. Refills in a fight only: 4s without a hit,
+  then +1 HP, then +1 HP per second; an empty room pauses the clock, only a hit resets it. Pickups,
+  Tin Cup and Vigor touch red only. Rose-violet in the HUD. Dials: `Balance.RegenHp`, `RegenDelay`,
+  `RegenStep`. Owner questions: should an empty room reset the clock instead of pausing it? Should
+  it also refill between fights (much more healing)?
 - **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
   curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
   area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,

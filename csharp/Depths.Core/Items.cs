@@ -105,7 +105,7 @@ namespace Depths
         public static void ApplyVitals(RunState run)
         {
             var p = run.player;
-            double max = System.Math.Max(1, run.stats.Value("vigor"));
+            double max = System.Math.Max(1, run.stats.Value("vigor") - p.regenHeartMax);   // Vigor counts the regenerating heart
             if (max != p.maxHp) { p.maxHp = max; if (p.hp > max) p.hp = max; }
         }
 

@@ -47,8 +47,9 @@ namespace Depths
         /// <summary>
         /// src/40-combat.js damagePlayer. Returns whether the hit landed. Order matters and is the
         /// game's: i-frames refuse it; an unspent blink grace forgives it (knockback and the momentum
-        /// cost still apply, no i-frames); otherwise armour absorbs first, momentum keeps 55%, the
-        /// knock is applied and i-frames start. The lab cannot die.
+        /// cost still apply, no i-frames); otherwise armour absorbs first (at ArmorCost, the rest
+        /// passing on at full weight), then the regenerating heart, then the red; the regen clock
+        /// restarts, momentum keeps 55%, the knock is applied and i-frames start. The lab cannot die.
         /// </summary>
         public static bool DamagePlayer(RunState run, double amount, double kx, double ky, double force, bool fromBoss = false)
         {
@@ -73,7 +74,9 @@ namespace Depths
                 p.armor -= paid;
                 rem = System.Math.Ceiling(amount * (cost - paid) / cost);
             }
+            if (rem > 0 && p.regenHeart > 0) { double r = System.Math.Min(p.regenHeart, rem); p.regenHeart -= r; rem -= r; }
             if (rem > 0) p.hp -= rem;
+            p.regenHeartT = 0;   // any hit that lands, armour-only included, restarts the refill clock
             if (p.hp < 0 && p.hp > -1e-6) p.hp = 0;   // a float epsilon is not a death
             if (run.state == "dev" && p.hp < 1) p.hp = 1;
             p.momentum *= Balance.MomentumHitKeep;

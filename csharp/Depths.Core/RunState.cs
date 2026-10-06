@@ -108,7 +108,9 @@ namespace Depths
             dungeon = Dungeon.FromSeed(rng);
             planner = new WavePlanner(rng);
             curX = Map.Start; curY = Map.Start;
-            player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY, hp = 8, maxHp = 8 };
+            int regen = Balance.JsReference ? 0 : Balance.RegenHp;   // the last heart regenerates; the JS has none
+            player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY,
+                                  hp = 8 - regen, maxHp = 8 - regen, regenHeart = regen, regenHeartMax = regen };
             enemies.Clear(); pickups.Clear(); projectiles.Clear(); hookFields.Clear();
             loadout.Clear(); stats.Reset();   // Items.reset: a new run starts from nothing
             floor = 1; floorTicks = 0; ticks = 0; kills = 0; hits = 0; shots = 0; dmgTaken = 0; secret = false;
@@ -258,7 +260,7 @@ namespace Depths
         /// <item>the player, to the room centre (400, 355) with the lagged hitbox moved WITH it -
         /// leaving lag behind would make the gunners aim at where the player was a floor ago</item>
         /// <item>all velocity and knockback, to zero</item>
-        /// <item>the blink: charges back to 2, regen to 0, grace to 0</item>
+        /// <item>the blink: charges back to 2, blinkRegen to 0, grace to 0</item>
         /// <item>every per-floor flag: boss and item unlocked, secret found, boss warned, the
         /// transition, the armed door and its timer</item>
         /// <item>the shells in flight - a projectile from the old floor must not arrive in the new

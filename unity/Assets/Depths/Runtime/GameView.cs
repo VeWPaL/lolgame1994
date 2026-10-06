@@ -25,7 +25,7 @@ namespace Depths.Unity
         RunState _run;
         InputAction _move, _cast, _blast, _blink, _active, _pause;
         int _lastShots, _lastHits, _lastKills;
-        double _lastHp;
+        double _lastHp, _lastDmg;
         RoomPainter _painter;
         Label _hud;
         double _acc;
@@ -65,7 +65,7 @@ namespace Depths.Unity
             {
                 _run = new RunState(new Rng(seed));
                 _run.Start(seed);
-                _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
+                _lastShots = _lastHits = _lastKills = 0; _lastHp = _run.player.hp; _lastDmg = 0;
                 return;
             }
             _run = new RunState(new Rng(seed)) { dungeon = Dungeon.FromSeed(new Rng(seed)) };
@@ -73,8 +73,9 @@ namespace Depths.Unity
             _run.readyT = 0; _run.fadeT = 0;
             var p = _run.player;
             p.x = p.lagX = Balance.MidX; p.y = p.lagY = Balance.MidY + 120;
-            p.hp = p.maxHp = 8;
-            _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
+            p.regenHeart = p.regenHeartMax = Balance.RegenHp;   // the same body a real run starts with
+            p.hp = p.maxHp = 8 - Balance.RegenHp;
+            _lastShots = _lastHits = _lastKills = 0; _lastHp = _run.player.hp; _lastDmg = 0;
             _run.enemies.Clear();
             if (_bossRoom)
             {
@@ -194,6 +195,7 @@ namespace Depths.Unity
             string build = (act != null ? "   Q: " + Items.Def(act.Id).Name + (act.Charges == int.MaxValue ? "" : " x" + act.Charges) : "") +
                            (_run.loadout.Count > (act != null ? 1 : 0) ? "   carrying: " + string.Join(", ", _run.loadout.Where(s => s.Slot != Items.ActiveSlot).Select(s => Items.Def(s.Id).Name)) : "");
             string stats = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
+                           (pl.regenHeartMax > 0 ? " + regen " + pl.regenHeart.ToString("0") + "/" + pl.regenHeartMax.ToString("0") : "") +
                            "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   kills " + _run.kills + build;
             if (RealRun)
             {
@@ -217,9 +219,10 @@ namespace Depths.Unity
             if (_run.shots > _lastShots) Depths.Unity.Audio.SoundEngine.Play("shot");
             if (_run.hits > _lastHits) Depths.Unity.Audio.SoundEngine.Play("hit");
             if (_run.kills > _lastKills) Depths.Unity.Audio.SoundEngine.Play("kill");
-            if (p.hp + p.armor < _lastHp) Depths.Unity.Audio.SoundEngine.Play("hurt");
+            // dmgTaken grows on every landed hit, so a hit is heard even on the tick the regen heart refills
+            if (_run.dmgTaken > _lastDmg) Depths.Unity.Audio.SoundEngine.Play("hurt");
             if (_run.state != "playing" && _lastHp > 0 && p.hp <= 0) Depths.Unity.Audio.SoundEngine.Play("over");
-            _lastShots = _run.shots; _lastHits = _run.hits; _lastKills = _run.kills; _lastHp = p.hp + p.armor;
+            _lastShots = _run.shots; _lastHits = _run.hits; _lastKills = _run.kills; _lastHp = p.hp; _lastDmg = _run.dmgTaken;
         }
 
         // Screenshot mode: strafe and shoot at the nearest target, so a still frame shows the sim running.
@@ -417,8 +420,11 @@ namespace Depths.Unity
             DrawHearts(g, pl);
         }
 
+        // the regenerating heart is a rose-violet: the red's family, a step toward purple, so it reads
+        // as a different kind of heart without shouting
         static readonly Color HeartRed = new Color32(230, 57, 90, 255), ArmourGray = new Color32(170, 176, 186, 255),
-                              HeartEmpty = new Color32(58, 37, 48, 255);
+                              HeartEmpty = new Color32(58, 37, 48, 255),
+                              RegenRose = new Color32(205, 78, 150, 255), RegenEmpty = new Color32(70, 38, 64, 255);
 
         // a heart of half-width s centred on c: two lobes and a point; half = the left half only
         static void Heart(Painter2D g, Vector2 c, float s, Color col, bool half = false)
@@ -436,7 +442,8 @@ namespace Depths.Unity
             g.ClosePath(); g.Fill();
         }
 
-        // the health row above the room: one heart per 2 HP (dark when empty), then armour in gray
+        // the health row above the room: one heart per 2 HP (dark when empty), the regenerating heart,
+        // then armour in gray
         static void DrawHearts(Painter2D g, Player pl)
         {
             const float s = 10, step = 26;
@@ -446,6 +453,12 @@ namespace Depths.Unity
             {
                 Heart(g, at, s, HeartEmpty);
                 if (hp >= 2 * i + 1) Heart(g, at, s, HeartRed, hp == 2 * i + 1);
+            }
+            int regenSlots = (int)Math.Ceiling(pl.regenHeartMax / 2), rg = (int)Math.Round(pl.regenHeart);
+            for (int i = 0; i < regenSlots; i++, at.x += step)
+            {
+                Heart(g, at, s, RegenEmpty);
+                if (rg >= 2 * i + 1) Heart(g, at, s, RegenRose, rg == 2 * i + 1);
             }
             int ar = (int)Math.Round(pl.armor);
             for (int i = 0; 2 * i < ar; i++, at.x += step) Heart(g, at, s, ArmourGray, ar == 2 * i + 1);

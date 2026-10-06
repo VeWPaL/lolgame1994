@@ -1072,6 +1072,7 @@ namespace Depths
             Blast.TickFields(run);
             Blast.TickHookResist(run);
             if (p.iframes > 0) p.iframes--;
+            TickRegen(run);
             if (run.blinkGrace > 0) run.blinkGrace--;   // its own clock, not folded into iframes
             if (p.muzzleTimer > 0) p.muzzleTimer--;
             if (p.shootSlow > 0) p.shootSlow = System.Math.Max(0, p.shootSlow - Balance.ShootSlowRecover);
@@ -1098,6 +1099,17 @@ namespace Depths
         /// exception, live in <see cref="TickPlayer"/> because they need the room and the mid-point.
         /// </summary>
         internal static void ClampPlayer(RunState run) => Rooms.ClampPlayer(run);
+
+        /// <summary>The regen heart's clock: counts only in a live fight (an empty room pauses it, a hit
+        /// resets it); at RegenDelay it refills 1 HP, then 1 HP per RegenStep. Runs inside TickPlayer.</summary>
+        public static void TickRegen(RunState run)
+        {
+            var p = run.player;
+            if (p.regenHeart >= p.regenHeartMax || run.enemies.Count == 0) return;
+            p.regenHeartT++;
+            if (p.regenHeartT >= Balance.RegenDelay && (p.regenHeartT - Balance.RegenDelay) % Balance.RegenStep == 0)
+                p.regenHeart = System.Math.Min(p.regenHeartMax, p.regenHeart + 1);
+        }
 
         /// <summary>
         /// Whether the player is standing in a doorway on side <paramref name="d"/> of the room.

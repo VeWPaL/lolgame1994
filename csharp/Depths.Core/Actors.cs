@@ -21,6 +21,10 @@ namespace Depths
         public double x, y, vx, vy, kvx, kvy;
         public double hp, maxHp;
         public double armor;   // fractional: armour absorbs a 1.8 shell from 2 and keeps 0.2, as in the game
+        /// <summary>The regenerating heart (C# only): drained after armour, before red; refills in a live
+        /// fight once regenHeartT (ticks of fighting since the last hit) reaches RegenDelay.</summary>
+        public double regenHeart, regenHeartMax;
+        public int regenHeartT;
         /// <summary>
         /// Weapon cooldowns in ticks, and iframes in ticks.
         /// <para>
