@@ -3,24 +3,20 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-06, autonomous session (sweep, playtest bot, Brunch variants, Unity skeleton + menu).
-Full write-up: `docs/report-2026-10-06.html`._
+_Last updated: 2026-10-06 (Brunch A+ chosen, `js-final` tagged, placeholder items). The previous
+session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
 
 ## Where things are
 
-- **JS (`depths.html`, `src/`)**: frozen reference, **not yet tagged** - `js-final` waits on the owner's
-  Brunch choice (A / B / A+, playable as `?brunch=`). Suite 246/246. `.\verify.ps1` green (~3 min).
-- **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity local package (`com.depths.core`,
-  build output in `obj~`/`bin~`). 351/351. Ported: RNG, balance, world gen, spawn plan, room phase +
-  Descend, player phase (now with held fire), pack assembly, `BrunchArcSlot`, the projectile phase (not
-  blast/hook), the four guns, the lunger. Not ported: Brunch/shooter/gunner/boss movement, `explode`,
-  items/stats, room transitions (`enterRoom`). Unported paths throw.
-- **Unity (`unity/`)**: 6000.3.25f1 project. Main menu (Start / Options / Quit), Options = layout
-  presets + per-key rebinding + Master/Music/SFX sliders on a generated mixer, all saved. Sound engine
-  (the 12 JS voices, synthesised). Game scene = a playable sandbox room on the ported core: move,
-  shoot, lungers, loot. 12/12 EditMode tests. Built player verified by screenshot.
-- **Playtest bot**: `tools/playtest.js` + `tools/playtest-report.js`; baseline worktree `ab/baseline`
-  (tag `pre-features-2026-10-06`). See CONVENTIONS "Gameplay changed?".
+- **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
+  behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
+- **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
+  394/394, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
+  `js-final`, C# may differ from the JS on purpose: so far only the placeholder items (below).
+- **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
+  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner.
+- **Playtest bot**: `tools/playtest.js` + `tools/playtest-report.js`; baseline tag `pre-features-2026-10-06`.
+- Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
 
 ## Unity commands (batch mode, no editor window needed)
 
@@ -33,24 +29,32 @@ Full write-up: `docs/report-2026-10-06.html`._
 
 | # | Session | Effort | State |
 |---|---|---|---|
-| 1 | Cleanup and freeze the JS | Low | done; `js-final` after the Brunch choice |
-| 2 | Unity skeleton: layout, Depths.Core as a package, Input System, AudioMixer groups | Medium | done |
-| 3 | Main menu: Start / Options / Quit; key binds with presets + rebinding; volume sliders | Medium | done (gamepad + display options later) |
-| 4 | Finish the port: `tickBodies`, then `tickProjectiles`; allocation-free hot paths | High | in progress: projectiles (not blast/hook), guns, lunger done. Next: shooter/gunner (aim + clearShot), `explode`, Brunch (after the A/B/A+ choice), boss, room transitions |
-| 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | |
-| 6 | New sound engine: event-based, sample assets, mixer | Medium | started: `SoundEngine.Play(name, pan)`, the 12 JS voices synthesised, pool of 12 on the Sfx group, menu sounds. Next: master compressor, samples, music |
+| 1 | Cleanup and freeze the JS | Low | done, `js-final` tagged |
+| 2 | Unity skeleton | Medium | done |
+| 3 | Main menu: Start / Options / Quit, key binds, volume | Medium | done (gamepad + display options later) |
+| 4 | Finish the port | High | done |
+| 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | next (heart values first, see below) |
+| 6 | New sound engine: event-based, sample assets, mixer | Medium | started: `SoundEngine.Play(name, pan)`, 12 voices, Sfx pool. Next: compressor, samples, music |
 
-## Open questions / known issues
+## Owner decisions
 
-- **Owner decisions**: Brunch A/B/A+; heart values (texts fixed, numbers unchanged); difficulty
-  (bot never dies: healing ~ damage per floor); items whose effect is missing (Brass Compass INT,
-  Hunter's Mark reveal). Details in the report.
-- **Port hazards found by the sweep** (fix during session 4): `Intercept.cs` is an older aiming model
-  (its test checks a stale hash); `TickRoom` will descend every tick once rooms exist (exit stays under
-  the player); `DoorPassable`/`ClampPlayer` are stubs; `AssemblePacks` allocates per tick;
-  `TickOrderTests` phase log and `ProjectileRecordTests` are tautologies.
+- **Brunch**: A+ (decided 2026-10-06).
+- **Heart values**: proposal awaiting the owner. Integer HP, 1 HP = half a heart, 8 HP base; round
+  enemy damage (shooter 1.8->2, gunner 3.6->4, Warden shell 1.44->1, sweep 2.02->2; contact 1, Warden
+  contact 2 unchanged). Heart pickup and Tin Cup stay a fixed +2 HP. Best done together with session 5.
+- **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
+  curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
+  area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,
+  consumables) load-bearing. Bot data: healing ~ damage per floor, bots reach floors 13-18.
+- **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
+  (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
+  still `unimplemented` (not loot).
+
+## Known issues
+
+- C# leftovers: `Intercept.cs` is unused (older aiming model, stale test hash); `Pickup.shown` is set
+  by Hunter's Mark and read by nothing; `run.unlocked` from the compass is not ported (nothing read it).
 - JS, left as found (reference behaviour): Brunch scan throttle is dead (`pickShield` every tick); stale
   `packSlot` skews a shrinking wall; boss can spawn on the player; body-contact hitbox is 20px off the
   shot hitbox; Lab eats the first S press.
-- Node is at `C:\Program Files\nodejs`; shells opened before 2026-10-06 need it on PATH.
-- Headless Chromium on Linux fails one drawing test (font); fine on the Windows gate.
+- Node is at `C:\Program Files\nodejs` on the owner's machine; shells opened before 2026-10-06 need it on PATH.
