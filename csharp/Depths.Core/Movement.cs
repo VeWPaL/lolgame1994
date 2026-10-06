@@ -193,5 +193,51 @@ namespace Depths
                 a.stun = System.Math.Max(a.stun, shove); b.stun = System.Math.Max(b.stun, shove);
             }
         }
+
+        static readonly double[] SweepOffsets = { 0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.42, -0.42 };
+
+        /// <summary>
+        /// clearShot: the first angle, sweeping out from the wanted one, whose line to the player passes
+        /// no body of ours (its own guards excepted) - or null, and the shooter waits.
+        /// </summary>
+        public static double? ClearShot(RunState run, Enemy e, double want)
+        {
+            double tx = run.player.x, ty = run.player.y, reach = Hyp(tx - e.x, ty - e.y);
+            foreach (var off in SweepOffsets)
+            {
+                double a = want + off, dx = System.Math.Cos(a), dy = System.Math.Sin(a);
+                bool clear = true;
+                foreach (var o in run.enemies)
+                {
+                    if (o == e) continue;
+                    if (e.shieldGuardFor != null && e.shieldGuardFor.Contains(o)) continue;
+                    double ox = o.x - e.x, oy = o.y - e.y, along = ox * dx + oy * dy;
+                    if (along <= 0 || along >= reach) continue;
+                    if (System.Math.Abs(ox * dy - oy * dx) < o.r + e.pr) { clear = false; break; }
+                }
+                if (clear) return a;
+            }
+            return null;
+        }
+
+        /// <summary>The gunner sidesteps a bolt that is actually coming, half the time, on a cooldown.</summary>
+        public static void GunnerDodge(RunState run, Enemy e)
+        {
+            if (e.dodgeCd > 0) { e.dodgeCd--; return; }
+            Projectile? threat = null;
+            foreach (var p in run.projectiles)
+            {
+                if (!p.friendly || p.owner == e) continue;
+                double dx = e.x - p.x, dy = e.y - p.y;
+                if (Hyp(dx, dy) < Balance.GunnerDodgeSight && dx * p.vx + dy * p.vy > 0) { threat = p; break; }
+            }
+            if (threat == null || run.rng.Jitter() >= Balance.GunnerDodgeChance) return;
+            double sp = Hyp(threat.vx, threat.vy);
+            if (sp == 0) sp = 1;
+            double side = run.rng.Jitter() < 0.5 ? 1 : -1;
+            e.kvx += -threat.vy / sp * side * Balance.GunnerDodgeKick;
+            e.kvy += threat.vx / sp * side * Balance.GunnerDodgeKick;
+            e.dodgeCd = Balance.GunnerDodgeCd;
+        }
     }
 }

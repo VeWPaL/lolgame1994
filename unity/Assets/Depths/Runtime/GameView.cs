@@ -10,7 +10,7 @@ namespace Depths.Unity
     /// <summary>
     /// The playable sandbox: one room driven by Depths.Core at the game's 210 Hz tick. The player
     /// moves (TickPlayer), shoots (Weapons.Fire), shells resolve (TickProjectiles), and loot is
-    /// picked up (TickRoom), and lungers hunt and lunge (TickBodies) - all ported with parity. Other
+    /// picked up (TickRoom), and lungers hunt and lunge and shooters and gunners hold their standoff and cast (TickBodies) - all ported with parity. Other
     /// kinds join as their movement is ported. This class only reads input and draws.
     /// Esc: menu. 1-4: guns. R: a fresh room.
     /// </summary>
@@ -21,7 +21,7 @@ namespace Depths.Unity
 
         const double StepMs = 1000.0 / 210;
         static readonly Vector2 Offset = new Vector2(640 - 400, 360 - 355);   // room centre to screen centre
-        static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Lunger, BodyKind.Lunger };
+        static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
         RunState _run;
         InputAction _move, _cast, _pause;
@@ -63,10 +63,11 @@ namespace Depths.Unity
 
         void SpawnDummy(int k)
         {
-            double x = Balance.RoomLeft + 120 + k * 230, y = Balance.RoomTop + 90 + (k % 2) * 60;
+            double x = Balance.RoomLeft + 110 + k * 160, y = Balance.RoomTop + 90 + (k % 2) * 60;
             var e = Enemy.Of(DummyKinds[k % DummyKinds.Length], x, y);
             e.flank = k * 2.399963229728653;   // the game's golden-angle flank cursor
             e.noticeTimer = 60 + k * 25;        // a beat before they move, as a spawn has
+            e.shootCd = e.cdMin;                 // and before a ranged body's first cast
             _run.enemies.Add(e);
         }
 
@@ -83,6 +84,9 @@ namespace Depths.Unity
                 root.Add(_painter);
                 _hud = new Label();
                 _hud.AddToClassList("game-text");
+                _hud.style.top = 600;   // below the room, which fills the middle of the screen
+                _hud.style.left = 290;
+                _hud.style.width = 720;
                 root.Add(_hud);
             }
             var kb = Keyboard.current;
@@ -126,7 +130,7 @@ namespace Depths.Unity
             _hud.text = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
                         "   armour " + pl.armor.ToString("0.#") + "   shots " + _run.shots + "  hits " + _run.hits + "  kills " + _run.kills +
                         (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                        "\nSandbox on the ported core: movement, guns, shells, lungers, loot.\nOther enemies join as they are ported." +
+                        "\nSandbox on the ported core: movement, guns, shells, lungers, shooters, gunners, loot.\nBrunch packs and the Warden join as they are ported." +
                         "\n\n1-4 guns    R new room    Esc menu";
         }
 

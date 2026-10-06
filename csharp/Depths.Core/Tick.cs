@@ -275,6 +275,55 @@ namespace Depths
         /// </summary>
         static readonly List<Enemy> Snapshot = new List<Enemy>();
 
+        /// <summary>
+        /// A shooter or gunner in sight of the player: hold a standoff that shrinks as the room empties
+        /// (longer while guarded), walk (a gunner roots while casting), then cast at an intercept - the
+        /// player's CURRENT velocity trusted by how settled they look, solved from where the muzzle WILL be
+        /// for a walking shooter - with a swerve-widened jitter, swept clear of our own bodies.
+        /// </summary>
+        static void StepRanged(RunState run, Enemy e, double edx, double edy, double dist, double sm, double roomPress)
+        {
+            var p = run.player;
+            bool guarded = e.shieldGuardFor != null && e.shieldGuardFor.Count > 0;
+            double standoff = (guarded ? e.far * Balance.GuardStandoffMult : e.far) - (e.far - e.close) * roomPress * Balance.PressureClosure;
+            bool roots = e.kind == BodyKind.Gunner;
+            if (e.castT <= 0 || !roots)
+            {
+                if (dist < e.close) { e.x -= edx / dist * e.speed * sm; e.y -= edy / dist * e.speed * sm; }
+                else if (dist > standoff) { e.x += edx / dist * e.speed * sm; e.y += edy / dist * e.speed * sm; }
+            }
+            e.shootCd--;
+            if (e.castT > 0 || e.castReady) { FireCommittedShot(run, e, roomPress); return; }
+            if (e.shootCd > 0) return;
+            double dz = Balance.SwerveDeadzone(), reach = System.Math.Max(0, System.Math.Min(1, (dist - dz) / (Balance.SwerveFull() - dz)));
+            double conf = System.Math.Max(0, 1 - p.swerve * (roots ? Balance.SwerveTrustRooted : Balance.SwerveTrustWalking));
+            double bvx = p.vx * conf, bvy = p.vy * conf, ty = HitboxY + Balance.PlayerHitDy;
+            double mx = e.x, my = e.y;
+            if (!roots)
+            {
+                double step = Balance.CastTime / 24.0, v = e.speed * sm * step;
+                for (double t = step; t <= Balance.CastTime + 0.5; t += step)
+                {
+                    double px = HitboxX + bvx * t, py = ty + bvy * t, ax = px - mx, ay = py - my;
+                    double ad = System.Math.Sqrt(ax * ax + ay * ay);
+                    if (ad == 0) ad = 1;
+                    if (ad < e.close) { mx -= ax / ad * v; my -= ay / ad * v; }
+                    else if (ad > standoff) { mx += ax / ad * v; my += ay / ad * v; }
+                }
+            }
+            double sx = HitboxX - mx, sy = ty - my;
+            for (int k = 0; k < 14; k++)
+            {
+                double need = Balance.CastTime + System.Math.Sqrt(sx * sx + sy * sy) / e.pspd;
+                sx = HitboxX + bvx * need - mx;
+                sy = ty + bvy * need - my;
+            }
+            double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * (0.02 + Balance.SwerveAim * p.swerve * reach);
+            var shot = Movement.ClearShot(run, e, want);
+            if (shot.HasValue) { e.castAim = shot.Value; e.castT = Balance.CastTime; }
+            else e.shootCd = e.cdMin * 0.25;
+        }
+
         public static void TickBodies(RunState run)
         {
             AssemblePacks(run);
@@ -282,10 +331,14 @@ namespace Depths
             Snapshot.Clear();
             Snapshot.AddRange(list);   // iterate a snapshot, as the game does (r.enemies.slice()), without a per-tick allocation
             int aggro = Balance.AggroRange(Balance.Room.Standard);
+            int live = 0;
+            foreach (var b in list) if (b.hp > 0) live++;
+            double roomPress = Balance.RoomPressure(live);
             foreach (var e in Snapshot)
             {
                 if (e.hp <= 0) continue;   // killed earlier this tick
-                if (e.kind != BodyKind.Lunger)
+                bool ranged = e.kind == BodyKind.Shooter || e.kind == BodyKind.Gunner;
+                if (e.kind != BodyKind.Lunger && !ranged)
                     throw new System.NotSupportedException("tickBodies: " + e.kind + " movement is not ported yet");
                 if (e.hitFlash > 0) e.hitFlash--;
                 if (e.kvx != 0 || e.kvy != 0)
@@ -305,6 +358,7 @@ namespace Depths
                     {
                         e.lungeState = "approach"; e.lungeT = 0; e.lungeLen = 0; e.lungeCd = Balance.LungeCd;
                     }
+                    if (ranged) FireCommittedShot(run, e, roomPress);   // a finished cast still leaves, stunned or not
                     e.stun--;
                     e.anim = 0;
                     Movement.Clamp(e);
@@ -312,11 +366,17 @@ namespace Depths
                 }
                 if (e.noticeTimer > 0) { e.noticeTimer--; e.anim = 0; continue; }
                 double ox = e.x, oy = e.y;
+                if (e.kind == BodyKind.Gunner) Movement.GunnerDodge(run, e);
                 double edx = HitboxX - e.x, edy = HitboxY - e.y, dist = System.Math.Sqrt(edx * edx + edy * edy);
                 if (dist == 0) dist = 1;
-                if (dist < aggro) e.aggroTimer = Balance.AggroTime;
-                else if (e.aggroTimer > 0) e.aggroTimer--;
-                if (e.aggroTimer > 0) Movement.StepLunge(run, e, edx / dist, edy / dist, dist, sm);
+                if (!ranged)
+                {
+                    if (dist < aggro) e.aggroTimer = Balance.AggroTime;
+                    else if (e.aggroTimer > 0) e.aggroTimer--;
+                    if (e.aggroTimer > 0) Movement.StepLunge(run, e, edx / dist, edy / dist, dist, sm);
+                    else Movement.IdleWander(run, e);
+                }
+                else if (e.alerted || dist < e.sense) StepRanged(run, e, edx, edy, dist, sm, roomPress);
                 else Movement.IdleWander(run, e);
                 double mv = System.Math.Sqrt((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy));
                 e.anim = mv > 0.05 ? e.anim + mv / Balance.Stride : 0;

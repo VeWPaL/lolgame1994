@@ -214,6 +214,19 @@ namespace Depths
     public const double KnockMax = 5, KnockTrade = 0.09;    // a hit shoves, never launches; below this speed no trade
     public const int KnockStun = 88;                        // KNOCK_STUN
     public const int WanderTicks = 210;                     // WANDER_TICKS
+    public const int PressureSpan = 4;                      // PRESSURE_SPAN
+    public const double PressureFloor = 0.25;               // PRESSURE_FLOOR
+    // GUNNER_DODGE: a gunner sees a bolt coming within `sight`, sidesteps half the time, on a cooldown
+    public const double GunnerDodgeSight = 250, GunnerDodgeChance = 0.5, GunnerDodgeKick = 0.6;
+    public const int GunnerDodgeCd = 126;
+
+    /// <summary>roomPressure: 1 with one body or none, easing to PRESSURE_FLOOR at PRESSURE_SPAN+1 bodies.</summary>
+    public static double RoomPressure(int live)
+    {
+        if (live <= 1) return 1;
+        if (live >= PressureSpan + 1) return PressureFloor;
+        return PressureFloor + (1 - PressureFloor) * (PressureSpan + 1 - live) / (double)PressureSpan;
+    }
 
     /// <summary>
     /// How often, in ticks, an UNGUARDED pack looks for a body to shield. Read out of the

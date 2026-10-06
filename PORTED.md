@@ -26,7 +26,7 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | `Frame.cs` | the camera and world frame in `70-view.js` | `RoomBounds` clamp; the oversized-room branch must be exercised |
 | `World.cs` | `20-world.js` — `Dir`, `RoomKind`, `Room`, `Map`, `Dungeon` | Signature must match byte for byte |
 | `SpawnPlan.cs` | `spawnPlan()` in `20-world.js` | Position, distance, and the **draw count** |
-| `Movement.cs` | `stepLunge`, `solveIntercept`, `idleWander` in `30-enemies.js`; `knockEnemy`, `clampEnemy`, `separateBodies` in `40-combat.js` | The lunger, draw for draw on the jitter stream. `LungerParityTests`, trajectories from `tools/lunger-parity.js`. Separation is a double loop: the game's 96px grid (8+ bodies) is not ported |
+| `Movement.cs` | `stepLunge`, `solveIntercept`, `idleWander` in `30-enemies.js`; `knockEnemy`, `clampEnemy`, `separateBodies`, `clearShot` in `40-combat.js`; the gunner dodge | The lunger, draw for draw on the jitter stream. `LungerParityTests`, trajectories from `tools/lunger-parity.js`. Separation is a double loop: the game's 96px grid (8+ bodies) is not ported |
 | `Weapons.cs` | `WEAPONS` in `00-balance.js` + `fireWeapon` in `40-combat.js` | Every shell of every gun, draw for draw on the jitter stream; never the run stream. `FireParityTests`, from `tools/fire-parity.js`. Strength and precision are parameters until stats are ported |
 | `Area.cs` | `areaForFloor()` in `00-balance.js` | Same thresholds. Takes a floor argument on both sides |
 | `Combat.cs` | `40-combat.js` + `50-run.js` + `10-art.js` — `falloffMult`, `alertEnemy`, `slowEnemy`, `damagePlayer`, `killEnemy`, `dropLoot` | On `Enemy`, the live body. `killEnemy` drops loot (one run draw per kill) and takes the Warden's wall with it |
@@ -106,9 +106,9 @@ gunner intercept solves against the position the player is visually leaving.
     tickProjectiles()    160   PARTIAL - TickOrder.TickProjectiles: all but alt shells (blast/hook call
                                 explode, unported, so they throw). ProjectilePhaseParityTests, from
                                 tools/proj-parity.js, 2026-10-06
-    tickBodies()         697   PARTIAL - AssemblePacks + TickOrder.TickBodies for the LUNGER (knock
-                                drift, clocks, aggro, stepLunge/wander, contact, separation). Every
-                                other kind throws until its movement is ported, 2026-10-06
+    tickBodies()         697   PARTIAL - AssemblePacks + TickOrder.TickBodies for the LUNGER, SHOOTER
+                                and GUNNER (standoff, intercept cast, clearShot, dodge;
+                                RangedParityTests). Brunch and the boss throw until ported, 2026-10-06
     tickRoom()           109   PORTED - TickOrder.TickRoom
 
 `TickPlayer` is the second, and porting it found a **pre-existing defect in `TickMomentum`**: the C# had
