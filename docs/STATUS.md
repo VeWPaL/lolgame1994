@@ -11,11 +11,12 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  556/556, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  558/558, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
-  bit-identical to the JS one, so the parity rows are untouched; `RateTests` (20) compares key
-  behaviours at both rates. At 60 Hz a shell moves in 4 sub-steps (`ShellSubsteps`). After
+  bit-identical to the JS one, so the parity rows are untouched; `RateTests` (22) compares key
+  behaviours at both rates and checks every rate dial by unit. At 60 Hz shells and body contact are
+  cut into 4 sub-steps (`Substeps`). After
   `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
@@ -31,12 +32,11 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   root (its JSON lands here and its header names its commit), play `current`, `report baseline
   current`, then `git worktree remove --force ../depths-base` (steps in CONVENTIONS "Gameplay changed?").
   A baseline from before the 60 Hz switch (8f322e6 and older) plays at 210: give the current side `--hz 210`.
-  Default matrix at 60 Hz: 18 of 18 time out on floor 7, 0 deaths, damage 9.7 vs healing 10.3 hp a
-  floor, boss 35 s. The numbers below are the 210 Hz baseline. Default-matrix numbers (2026-10-06, with the won-fight refill): at 20 min 16 of 18 runs time out on
-  floor 7 (about 3 min a floor), 2 deaths, 0 stuck, 0 errors, damage 9.8 vs healing 10.3 hp per
-  floor. The 20-min default caps the median floor; use `--minutes 60` for difficulty: median floor 17
-  (novice 15), 7 deaths (5 novice), damage 14.2 vs healing 14.1 per floor, boss 45 s. 18 runs are too
-  few for deaths: the wide matrix (seeds 101-300) is the reference, see the regen heart entry below.
+  Default matrix (60 Hz, 2026-10-06): at 20 min 17 of 18 runs time out on floor 7 (3.0 min a floor),
+  1 death, 0 stuck, 0 errors, damage 8.9 vs healing 9.5 hp a floor, boss 34 s, accuracy 84%. The 20-min
+  default caps the median floor; use `--minutes 60` for difficulty: median floor 17 (novice 16), 3
+  deaths (all novice), damage 14.4 vs healing 14.4 a floor, boss 46 s. 18 runs are too few for deaths:
+  the wide matrix (seeds 101-300) is the reference, see the 60 Hz entry below.
   Q-when-low almost never heals: the bot takes every item, so Tin Cup is usually replaced. The JS bot (`tools/playtest.js`, baseline tag
   `pre-features-2026-10-06`) plays only the frozen JS.
 - Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
@@ -57,7 +57,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 | 2 | Unity skeleton | Medium | done |
 | 3 | Main menu: Start / Options / Quit, key binds, volume | Medium | done (gamepad + display options later) |
 | 4 | Finish the port | High | done |
-| 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | done (branch `hz60-a`, see below) |
+| 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | done (see the 60 Hz entry below) |
 | 6 | New sound engine: event-based, sample assets, mixer | Medium | started: `SoundEngine.Play(name, pan)`, 12 voices, Sfx pool. Next: compressor, samples, music |
 
 ## Owner decisions
@@ -83,19 +83,30 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   significant alone (p = 0.06, 0.29). It pays ~2 HP a floor, mostly HP the clock
   would have refilled early in the next fight, so net healing barely moves (+0.1 to +0.4 HP a floor),
   but every fight starts with the shield up. A real easing, clearest for novices.
-- **60 Hz switch** (2026-10-06): wide matrix, seeds 101-300 x 3 profiles, 210 vs 60 Hz. 20 min:
-  min/floor 3.1 / 3.1, damage 10.5 / 10.0, healing 11.0 / 10.5, boss 37.1 / 37.8 s, accuracy 84 / 85%,
-  kills/min 28.3 / 28.0, deaths 14 / 10. 60 min: min/floor 3.6 / 3.6, damage 15.2 / 14.5, healing
-  15.2 / 14.6, boss 46.5 / 47.3 s, accuracy 85 / 86%, kills/min 28.0 / 27.9, deaths 105 / 74 (novice
-  68 / 56, average 24 / 7, skilled 13 / 11). Runs diverge between rates, so deaths are not paired; the
-  drop follows hostile shells landing less often (shot damage about 9% lower an hour; contact 3%):
-  per-tick hit sampling with a player that moves 4.9 px a tick. Sub-stepping shells halved that gap;
-  bodies (a lunge moves 14.7 px a tick) and the player are not sub-stepped. Owner: decide whether
-  60 Hz deaths need a retune or body sub-steps (measure with the wide matrix).
+- **60 Hz switch** (2026-10-06). Wide matrix, seeds 101-300 x 3 profiles, 600 runs a cell, 210 (the JS
+  rate, reference) / 60 Hz. 20 min: min/floor 3.1 / 3.1, damage 10.5 / 10.2, healing 11.0 / 10.7, boss
+  37.1 / 36.9 s, accuracy 84 / 84%, kills/min 28.3 / 28.5, deaths 14 / 15. 60 min: min/floor 3.6 /
+  3.5, damage 15.2 / 14.8, healing 15.2 / 14.9, boss 46.5 / 46.4 s, accuracy 85 / 86%, kills/min
+  28.0 / 28.2, deaths 105 / 79 (novice 68 / 62, average 24 / 6, skilled 13 / 11). Runs diverge between
+  rates, so deaths are not paired. What 60 Hz still does differently, each measured:
+  - Shot damage an hour is 7% lower (100 vs 108 hp at 60 min; contact is 155 vs 152). Fire rate is
+    2% lower (the cast cycle: the cooldown rounds up to a whole tick and the shell leaves the tick
+    after the cast, 1/60 s against 1/210 s); in a controlled strafe test the hit rate per shell is
+    equal within noise. Sweeping shells against the moving hitbox (100.2) and leading the extra cast
+    tick (100.1) did not move it, so they were not kept.
+  - Deaths at 60 min are 25% lower. They track the low-HP tail, not mean damage (net HP a floor is
+    equal at both rates): runs that pressed Q when low fell 153 -> 115, and Q presses a run 1.5 -> 1.1
+    at 60 min, 0.3 -> 0.2 at 20 min (a press needs HP at 1-2, so it counts the same near-death
+    moments; a few runs carry most presses, up to 40 in one).
+  - Each wait in whole ticks (`Sec`) is within half a tick, 8 ms. A lunge ends up to one step past its
+    mark (14.7 px at 60 Hz against 4.2).
+  Fixed on the way: knock slides (exact coast distance), held fire (the cooldown carries its overrun:
+  the Bolt was 2% slow, the Beam 7%), shells (4 sub-steps at 60 Hz) and body contact (swept the same
+  way: contact damage went 145 -> 155 an hour). Owner: decide whether the 60 Hz deaths want a retune.
 - **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
   curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
   area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,
-  consumables) load-bearing. Bot data (C#, 60 min, seeds 101-300, with the won-fight refill):
+  consumables) load-bearing. Bot data (C#, 210 Hz, 60 min, seeds 101-300, with the won-fight refill):
   healing = damage per floor (15.2 hp), median floor 17, 105 of 600 runs die (68 of them novice).
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
