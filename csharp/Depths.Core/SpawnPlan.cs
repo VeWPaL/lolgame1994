@@ -38,6 +38,8 @@ namespace Depths
         public int PackId;
 
         public int PackSlot;
+        /// <summary>The band trait rolled for a ranged body (0 none, 1 hold, 2 close); applied by Spawn.Body.</summary>
+        public int Trait;
     }
 
     /// <summary>A whole wave, as data: the slots, and the bodies those slots become.</summary>
@@ -254,7 +256,7 @@ namespace Depths
         /// one and the shapes are still the shapes on floor twelve.
         /// </para>
         /// </summary>
-        public WavePlan PlanWave(int floor, Dir fromDir, Area area = Area.Area1)
+        public WavePlan PlanWave(int floor, Dir fromDir, Area area = Area.Area1, int weaponIdx = 0)
         {
             var mix = Bodies.MixFor(area);
             var rolled = 2 + (int)(_rng.Run() * (2 + Balance.PressureRate));
@@ -321,11 +323,12 @@ namespace Depths
                and the count would then be wrong in the other direction - which is the trap in fixing a
                parity gap by adding a call rather than by finding where the call belongs.
 
-               `Bodies.TraitFor(kind, rng)` consumes the draw and picks the trait from the same weights
+               `Spawn.RollTrait(rng, weaponIdx)` consumes the draw by the HELD GUN (it used to be
+               Bodies.TraitFor, which indexed the gun table by body kind), and the spawn applies it
                the game uses, so the two draws are spent here exactly as they are spent there. */
-            if (s.Kind == BodyKind.Shooter || s.Kind == BodyKind.Gunner)
-                Bodies.TraitFor(s.Kind, _rng);
-            plan.Bodies.Add(new PlannedBody { X = s.X, Y = s.Y, Kind = s.Kind });
+            // rollTrait reads the gun the PLAYER holds (TRAIT_TABLE by weapon), not the body's kind
+            int trait = s.Kind == BodyKind.Shooter || s.Kind == BodyKind.Gunner ? Spawn.RollTrait(_rng, weaponIdx) : 0;
+            plan.Bodies.Add(new PlannedBody { X = s.X, Y = s.Y, Kind = s.Kind, Trait = trait });
                     continue;
                 }
 

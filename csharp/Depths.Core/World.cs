@@ -89,6 +89,10 @@ namespace Depths
 
         /// <summary>Holds the silver key. Exactly one room per floor.</summary>
         public bool KeyReward;
+        public bool Armed;   // a live room hands back the cooldowns once, on first entry
+        // what the room holds while the player is elsewhere (the run's lists are the current room's)
+        public readonly List<Enemy> Enemies = new List<Enemy>();
+        public readonly List<Pickup> Pickups = new List<Pickup>();
 
         /// <summary>Holds the gold key. Exactly one room per floor.</summary>
         public bool GoldReward;

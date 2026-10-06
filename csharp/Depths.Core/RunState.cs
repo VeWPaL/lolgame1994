@@ -78,6 +78,37 @@ namespace Depths
         /// <summary>FLANK_CURSOR: the golden-angle flank handed to each walker spawned this run.</summary>
         public double flankCursor;
 
+        /// <summary>Whether the boss / item door on this floor has been paid for (bossUnlocked, itemUnlocked).</summary>
+        public bool bossUnlocked, itemUnlocked;
+        /// <summary>The lock being worked (unlockDoor), and for how long.</summary>
+        public Dir? unlockDir;
+        public Room? unlockRoom;
+        public int unlockT;
+        /// <summary>The blink bar filling across a room arrival (player.blinkRestore): from, ticks left, span.</summary>
+        public double blinkRestoreFrom;
+        public int blinkRestoreT, blinkRestoreSpan;
+
+        /// <summary>
+        /// startGame: reseed, generate floor 1 FROM THE RUN STREAM (as the game does, so every later
+        /// draw lines up), stand in the start room with a fresh body, and play.
+        /// </summary>
+        public void Start(uint root)
+        {
+            rng.Set(root);
+            rootSeed = root;
+            dungeon = Dungeon.FromSeed(rng);
+            planner = new WavePlanner(rng);
+            curX = Map.Start; curY = Map.Start;
+            player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY, hp = 8, maxHp = 8 };
+            enemies.Clear(); pickups.Clear(); projectiles.Clear();
+            floor = 1; floorTicks = 0; ticks = 0; kills = 0; hits = 0; shots = 0; dmgTaken = 0; secret = false;
+            blinkCharges = 2; blinkGrace = 0; graceSpent = false; blinkRestoreT = 0;
+            flankCursor = 0; bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;
+            trans = null; readyT = 0; bossWarnT = 0; bossWarned = false;
+            roomFade = 1; fadeTicks = Balance.Sec(0.4); fadeT = fadeTicks;
+            state = "playing";
+        }
+
         /// <summary>
         /// The bodies in the room being fought, and the pickups on its floor. Both are needed by
         /// <c>killEnemy</c> (which splices a body out and pushes a drop) and neither existed on the
@@ -241,8 +272,14 @@ namespace Depths
             floorTicks = 0;
             roomsThisFloor = 0;
 
+            // the old room keeps what it held; the new floor is generated from the run stream itself,
+            // as the game does, so the draws after it line up
+            var oldRoom = CurrentRoom;
+            if (oldRoom != null) { oldRoom.Enemies.Clear(); oldRoom.Enemies.AddRange(enemies); oldRoom.Pickups.Clear(); oldRoom.Pickups.AddRange(pickups); }
+            enemies.Clear(); pickups.Clear();
             rng.Set(Rng.FloorSeed(rootSeed, floor));
-            dungeon = Dungeon.FromSeed(new Rng(Rng.FloorSeed(rootSeed, floor)));
+            dungeon = Dungeon.FromSeed(rng);
+            bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;
 
             curX = Map.Start;
             curY = Map.Start;

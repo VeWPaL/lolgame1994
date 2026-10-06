@@ -87,7 +87,11 @@ namespace Depths.Tests
         public void TheTransitionTicksTimeAndFadesOutThenReleases()
         {
             var run = PlayingRun();
-            run.trans = new Trans { t = 0, nx = 2, ny = 3, from = "W" };
+            // a real floor and a real neighbour of the start room: releasing the transition now ENTERS it
+            run.dungeon = Dungeon.FromSeed(new Rng(42u));
+            Dir way = System.Linq.Enumerable.First(run.CurrentRoom!.Doors);
+            var dest = run.dungeon.Neighbour(run.CurrentRoom!, way)!;
+            run.trans = new Trans { t = 0, nx = dest.X, ny = dest.Y, from = "W" };
             TickOrder.Update(run, Input.None);
             Assert.That(run.ticks, Is.EqualTo(1), "transition ticks are run time");
             Assert.That(run.trans!.t, Is.EqualTo(1), "the transition ages one tick per call");

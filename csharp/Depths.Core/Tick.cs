@@ -265,6 +265,16 @@ namespace Depths
         /// </summary>
         public static void Update(RunState run, Input input)
         {
+            // the blink bar fills across a room arrival (player.blinkRestore), ahead of every gate
+            if (run.blinkRestoreT > 0)
+            {
+                run.blinkRestoreT--;
+                double held = run.blinkRestoreFrom + (2 - run.blinkRestoreFrom) * (1 - (double)run.blinkRestoreT / run.blinkRestoreSpan);
+                int whole = (int)System.Math.Min(2, System.Math.Floor(held));
+                run.blinkCharges = whole;
+                run.player.blinkRegen = (held - whole) * Balance.BlinkRecharge;
+                if (run.blinkRestoreT <= 0) { run.blinkCharges = 2; run.player.blinkRegen = 0; }
+            }
             // roomFade is progress-driven, and it runs ABOVE the state gate for the same reason
             // it does in the original: a fade has to finish when the simulation is stopped.
             if (run.fadeT > 0 && run.trans == null)
@@ -290,14 +300,15 @@ namespace Depths
                 run.roomFade = Smooth(System.Math.Min(1, (double)run.trans.t / Balance.FadeOut));
                 if (run.trans.t >= Balance.FadeOut)
                 {
-                    // enterRoom in the original also restarts the arrival fade; the constants
-                    // line up: fadeT counts down across the arrival, roomFade eases out of black.
+                    var t = run.trans;
                     run.trans = null;
-                    run.fadeT = run.fadeTicks;
+                    Rooms.EnterRoom(run, t.nx, t.ny, (Dir)System.Enum.Parse(typeof(Dir), t.from));
                 }
                 return;
             }
             if (run.readyT > 0) { run.readyT--; return; }
+            if (run.bossWarnT > 0) run.bossWarnT--;
+            if (!TickPlayer(run, input)) return;
 
             /* THE ORDER GATE, AND THE ORDER WAS WRONG.
 
@@ -914,6 +925,7 @@ namespace Depths
         public static bool TickPlayer(RunState run, Input input,
             double moveSpeedBonus = Balance.MoveSpeedBonusBase)
         {
+            Rooms.TickUnlock(run);
             var p = run.player;
 
             // --- input, normalised so a diagonal is not faster than a straight line.
@@ -1034,10 +1046,10 @@ namespace Depths
                 bool inGapX = System.Math.Abs(p.x - Balance.MidX) < Balance.DoorWidth / 2;
                 bool inGapY = System.Math.Abs(p.y - Balance.MidY) < Balance.DoorWidth / 2;
 
-                if (p.y <= Balance.RoomTop + p.r && !(DoorPassable(room, Dir.N) && inGapX)) p.vy = 0;
-                if (p.y >= Balance.RoomBottom - p.r && !(DoorPassable(room, Dir.S) && inGapX)) p.vy = 0;
-                if (p.x <= Balance.RoomLeft + p.r && !(DoorPassable(room, Dir.W) && inGapY)) p.vx = 0;
-                if (p.x >= Balance.RoomRight - p.r && !(DoorPassable(room, Dir.E) && inGapY)) p.vx = 0;
+                if (p.y <= Balance.RoomTop + p.r && !(DoorPassable(run, room, Dir.N) && inGapX)) p.vy = 0;
+                if (p.y >= Balance.RoomBottom - p.r && !(DoorPassable(run, room, Dir.S) && inGapX)) p.vy = 0;
+                if (p.x <= Balance.RoomLeft + p.r && !(DoorPassable(run, room, Dir.W) && inGapY)) p.vx = 0;
+                if (p.x >= Balance.RoomRight - p.r && !(DoorPassable(run, room, Dir.E) && inGapY)) p.vx = 0;
             }
 
             /* MOMENTUM IS EARNED FROM DISPLACEMENT, NOT FROM VELOCITY, and the knockback is
@@ -1083,19 +1095,7 @@ namespace Depths
         /// Keeps the player inside the room. Position only - the velocity clamp, and its door-gap
         /// exception, live in <see cref="TickPlayer"/> because they need the room and the mid-point.
         /// </summary>
-        internal static void ClampPlayer(RunState run)
-        {
-            var p = run.player;
-            double minX = Balance.RoomLeft + p.r, maxX = Balance.RoomRight - p.r;
-            double minY = Balance.RoomTop + p.r, maxY = Balance.RoomBottom - p.r;
-            // The upper bound is applied first: on an oversized room the two can cross, and doing it
-            // in this order means the player ends up against the far wall rather than teleported to
-            // the near one.
-            if (p.x > maxX) p.x = maxX;
-            if (p.x < minX) p.x = minX;
-            if (p.y > maxY) p.y = maxY;
-            if (p.y < minY) p.y = minY;
-        }
+        internal static void ClampPlayer(RunState run) => Rooms.ClampPlayer(run);
 
         /// <summary>
         /// Whether the player is standing in a doorway on side <paramref name="d"/> of the room.
@@ -1105,11 +1105,7 @@ namespace Depths
         /// it is what lets the wall clamp exempt a player who is in a gap.
         /// </para>
         /// </summary>
-        public static bool DoorPassable(Room room, Dir d)
-        {
-            if (!room.Doors.Contains(d)) return false;
-            return true;
-        }
+        public static bool DoorPassable(RunState run, Room room, Dir d) => Rooms.DoorPassable(run, room, d);
 
 
         /// <summary>
@@ -1129,10 +1125,7 @@ namespace Depths
         /// wall is never teleported into the next room by a stub.
         /// </para>
         /// </summary>
-        public static bool CheckDoorTransition(RunState run)
-        {
-            return false;
-        }
+        public static bool CheckDoorTransition(RunState run) => Rooms.CheckDoorTransition(run);
 
 
         /// <summary>

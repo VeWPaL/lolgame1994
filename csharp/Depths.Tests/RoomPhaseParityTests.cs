@@ -235,8 +235,10 @@ namespace Depths.Tests
 
             Assert.That(run.floor, Is.EqualTo(1 + expectedFloors));
             Assert.That(descended, Is.EqualTo(expectedFloors == 1));
-            Assert.That(run.pickups.Count, Is.EqualTo(1),
-                "descend() returns out of the loop; it does not remove the portal");
+            // descend() returns out of the loop and does not remove the portal: it stays in the OLD room.
+            // With rooms holding their own contents, the new floor's start room begins empty.
+            Assert.That(run.pickups.Count, Is.EqualTo(expectedFloors == 1 ? 0 : 1),
+                "after a descent the current room is the new floor's start room, which holds nothing");
         }
 
         /// <summary>

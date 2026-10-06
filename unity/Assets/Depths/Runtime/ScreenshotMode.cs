@@ -35,13 +35,13 @@ namespace Depths.Unity
         IEnumerator Start()
         {
             for (int i = 0; i < 10; i++) yield return null;
-            if (_view == "game" || _view == "boss") SceneManager.LoadScene("Game");
+            if (_view == "game" || _view == "boss" || _view == "sandbox") SceneManager.LoadScene("Game");
             else
             {
                 var m = FindAnyObjectByType<MainMenuController>();
                 if (m != null) m.ShowView(_view);
             }
-            for (int i = 0; i < (_view == "boss" ? 420 : _view == "game" ? 150 : 20); i++) yield return null;   // the game view needs time to play
+            for (int i = 0; i < (_view == "boss" ? 420 : _view == "game" || _view == "sandbox" ? 150 : 20); i++) yield return null;   // the game view needs time to play
             ScreenCapture.CaptureScreenshot(_path);
             for (int i = 0; i < 10; i++) yield return null;
             Application.Quit();

@@ -232,6 +232,10 @@ namespace Depths
     public static string BrunchVariant = "A";
     public const double BrunchGuardLeash = 420;
 
+    // Doors and rooms, read from the game 2026-10-06.
+    public static readonly int UnlockTime = Sec(0.5), FadeClear = Sec(0.15);   // 105, 32
+    public const double UnlockRange = 64;
+
     // The Warden, read from the game 2026-10-06.
     public const int BossVolleyN = 3, BossVolleyGap = 116, BossWallHp = 5, BossWallLife = 2940;   // sec(14)
     public const double BossSweepDist = 150, BossShellDmg = 1.44;

@@ -12,7 +12,8 @@ namespace Depths
         const double TraitHoldScale = 1.45, TraitCloseScale = 0.72, TraitChance = 0.5;
         const double TraitFarCeil = 0.78, TraitFarFloor = 90, TraitBandMin = 40;
 
-        public static Enemy Body(RunState run, BodyKind kind, double x, double y)
+        // trait: one the wave planner already rolled (no draw here); null rolls it, as a lone spawn does
+        public static Enemy Body(RunState run, BodyKind kind, double x, double y, int? trait = null)
         {
             var e = Enemy.Of(kind, x, y);
             double tough = Balance.DepthTough(run.floor), rate = Balance.DepthRate(run.floor);
@@ -30,8 +31,16 @@ namespace Depths
             }
             e.cdMin /= rate; e.cdVar /= rate;
             e.shootCd = e.cdMin + run.rng.Jitter() * e.cdVar;
-            ApplyTrait(run, e);
+            ApplyTrait(e, trait ?? RollTrait(run.rng, run.player.weaponIdx));
             return e;
+        }
+
+        /// <summary>spawnEnemy with no position: a random point inside the spawn margin (x then y, run stream).</summary>
+        public static Enemy BodyAnywhere(RunState run, BodyKind kind)
+        {
+            double x = Balance.RoomLeft + Balance.SpawnMargin + run.rng.Run() * (Balance.RoomRight - Balance.RoomLeft - Balance.SpawnMargin * 2);
+            double y = Balance.RoomTop + Balance.SpawnMargin + run.rng.Run() * (Balance.RoomBottom - Balance.RoomTop - Balance.SpawnMargin * 2);
+            return Body(run, kind, x, y);
         }
 
         /// <summary>bossInit: phase 1, idle, a first cooldown, and the gunner-like ranged kit.</summary>
@@ -47,14 +56,19 @@ namespace Depths
         // TRAIT_TABLE by the gun the player holds: (trait, weight)
         static readonly (int trait, double weight)[] Traits = { (2, 0.50), (1, 0.70), (1, 0.62), (2, 0.50) };
 
-        static void ApplyTrait(RunState run, Enemy e)
+        /// <summary>rollTrait: one run draw against the held gun's weight; 0 (none), 1 (hold) or 2 (close).</summary>
+        public static int RollTrait(Rng rng, int weaponIdx)
         {
-            int w = run.player.weaponIdx;
-            if (w < 0 || w >= Traits.Length) return;
-            var row = Traits[w];
-            if (!(run.rng.Run() < TraitChance * row.weight)) return;
-            e.trait = row.trait;
-            double k = row.trait == 1 ? TraitHoldScale : TraitCloseScale, cap = e.sense * TraitFarCeil;
+            if (weaponIdx < 0 || weaponIdx >= Traits.Length) return 0;
+            var row = Traits[weaponIdx];
+            return rng.Run() < TraitChance * row.weight ? row.trait : 0;
+        }
+
+        static void ApplyTrait(Enemy e, int trait)
+        {
+            if (trait == 0) return;
+            e.trait = trait;
+            double k = trait == 1 ? TraitHoldScale : TraitCloseScale, cap = e.sense * TraitFarCeil;
             double far = e.far * k, close = e.close * k;
             if (far > cap) far = cap;
             if (far < TraitFarFloor) far = TraitFarFloor;

@@ -8,11 +8,10 @@ using UnityEngine.UIElements;
 namespace Depths.Unity
 {
     /// <summary>
-    /// The playable sandbox: one room driven by Depths.Core at the game's 210 Hz tick. The player
-    /// moves (TickPlayer), shoots (Weapons.Fire), shells resolve (TickProjectiles), and loot is
-    /// picked up (TickRoom), and lungers hunt and lunge and shooters and gunners hold their standoff and cast (TickBodies) - all ported with parity. Other
-    /// kinds join as their movement is ported. This class only reads input and draws.
-    /// Esc: menu. 1-4: guns. R: a fresh room.
+    /// The game, on Depths.Core at the game's 210 Hz tick: a seeded run of rooms, doors, keys, waves,
+    /// the Warden and the way down (TickOrder.Update), all ported with parity. F1 swaps to the sandbox
+    /// (one room of every enemy), B to a Warden arena. This class only reads input and draws.
+    /// Esc: menu. 1-4: guns. R: a new run (or room).
     /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class GameView : MonoBehaviour
@@ -48,16 +47,26 @@ namespace Depths.Unity
             int i = Array.IndexOf(args, "-depthsView");
             _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss");
             _bossRoom = i >= 0 && i + 1 < args.Length && args[i + 1] == "boss";
+            _sandbox = i >= 0 && i + 1 < args.Length && args[i + 1] == "sandbox";
+            _demo |= _sandbox;
             NewRun();
         }
 
         void OnDestroy() { controls?.FindActionMap("Gameplay")?.Disable(); }
 
-        bool _bossRoom;
+        bool _bossRoom, _sandbox;
+        bool RealRun => !_sandbox && !_bossRoom;
 
         void NewRun()
         {
             uint seed = (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+            if (RealRun)
+            {
+                _run = new RunState(new Rng(seed));
+                _run.Start(seed);
+                _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
+                return;
+            }
             _run = new RunState(new Rng(seed)) { dungeon = Dungeon.FromSeed(new Rng(seed)) };
             _run.state = "playing";
             _run.readyT = 0; _run.fadeT = 0;
@@ -123,7 +132,8 @@ namespace Depths.Unity
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
                 if (kb.rKey.wasPressedThisFrame) NewRun();
-                if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; NewRun(); }
+                if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; NewRun(); }
+                if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; NewRun(); }
                 if (kb.vKey.wasPressedThisFrame)   // cycle the Brunch guard rule under test
                     Balance.BrunchVariant = Balance.BrunchVariant == "A" ? "B" : Balance.BrunchVariant == "B" ? "A+" : "A";
             }
@@ -150,24 +160,36 @@ namespace Depths.Unity
             {
                 // keys are -1/0/1 per axis in the game, and screen y points down
                 var input = new Input(Math.Sign(mv.x), -Math.Sign(mv.y), fire: fire, alt: alt, aimX: aim.x, aimY: aim.y);
-                if (_run.state == "playing")
+                if (RealRun) TickOrder.Update(_run, input);   // gates, transitions, then player, shells, bodies, room
+                else if (_run.state == "playing")
                 {
                     TickOrder.TickPlayer(_run, input);
+                    _run.trans = null;   // the sandbox is one room: a door leads nowhere
                     TickOrder.TickProjectiles(_run);
                     TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
+                    if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); } }
                 }
-                if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); } }
                 _acc -= StepMs;
             }
             PlayEvents();
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
-            _hud.text = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
-                        "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   shots " + _run.shots + "  hits " + _run.hits + "  kills " + _run.kills +
-                        (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                        "\nSandbox on the ported core: movement, guns, shells, lungers, shooters, gunners, Brunch packs, the Warden, loot.\nBrunch guard rule: " + Balance.BrunchVariant + " (V to switch)" +
-                        "\n\n1-4 guns    right-click blast    Shift blink    B Warden arena    R new room    Esc menu";
+            string stats = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
+                           "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   kills " + _run.kills;
+            if (RealRun)
+            {
+                var room = _run.CurrentRoom;
+                _hud.text = stats + "   " + (pl.hasSilver ? "[silver key] " : "") + (pl.hasGold ? "[gold key] " : "") +
+                            (_run.state == "playing" ? "" : "\nYOU DIED on floor " + _run.floor + " - R for a new run") +
+                            "\nFloor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room: " + (room != null ? room.Type.ToString() : "?") +
+                            "   seed " + Rng.Encode(_run.rootSeed) + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                            "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc menu";
+            }
+            else
+                _hud.text = stats + (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
+                            "\n" + (_bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core.   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                            "\n\n1-4 guns   right-click blast   Shift blink   R new room   F1 real run   B Warden arena   Esc menu";
         }
 
         // The simulation makes no sound; the view hears what changed since the last frame.
@@ -189,7 +211,7 @@ namespace Depths.Unity
             var p = _run.player;
             var t = _run.enemies.OrderBy(e => (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y)).FirstOrDefault();
             if (t != null) aim = new Vector2((float)t.x, (float)t.y);
-            mv = new Vector2((_demoT / 40) % 2 == 0 ? 1 : -1, 0);
+            mv = RealRun ? new Vector2(0, 1) : new Vector2((_demoT / 40) % 2 == 0 ? 1 : -1, 0);
             fire = true;
             if (_demoT == 30) p.weaponIdx = 1;
         }
@@ -222,6 +244,36 @@ namespace Depths.Unity
             }
         }
 
+        static Color PickupColor(string kind)
+        {
+            switch (kind)
+            {
+                case "heart": return new Color32(230, 70, 90, 255);
+                case "armor": return new Color32(120, 170, 230, 255);
+                case "key": return new Color32(205, 210, 220, 255);
+                case "goldkey": return new Color32(235, 195, 70, 255);
+                case "exit": return new Color32(160, 110, 255, 255);
+                case "weapon": return new Color32(90, 200, 255, 255);
+                default: return new Color32(80, 220, 190, 255);
+            }
+        }
+
+        // the floor so far: rooms walked, the current one bright, top-right of the screen
+        static void DrawMinimap(Painter2D g, RunState run)
+        {
+            if (run.dungeon == null) return;
+            const float cell = 14, x0 = 1060, y0 = 140;
+            foreach (var r in run.dungeon.AllRooms)
+            {
+                if (!r.Visited) continue;
+                bool here = r.X == run.curX && r.Y == run.curY;
+                Color c = here ? new Color32(232, 232, 236, 255) : r.Type == RoomKind.Boss ? new Color32(179, 65, 47, 255)
+                        : r.Type == RoomKind.Item ? new Color32(192, 138, 82, 255) : new Color32(72, 80, 95, 255);
+                var p = new Vector2(x0 + r.X * cell, y0 + r.Y * cell);
+                Rect(g, p, p + new Vector2(cell - 3, cell - 3), c);
+            }
+        }
+
         static void Disc(Painter2D g, Vector2 c, float r, Color col)
         {
             g.fillColor = col;
@@ -247,9 +299,24 @@ namespace Depths.Unity
             var b = W(Balance.RoomRight, Balance.RoomBottom);
             Rect(g, a - new Vector2(6, 6), b + new Vector2(6, 6), Wall);
             Rect(g, a, b, Floor);
+            var room = run.CurrentRoom;
+            if (room != null)
+                foreach (var d in room.Doors)
+                {
+                    // open: floor; sealed: the colour of what is behind it; shut by a fight: bars
+                    Color c = Rooms.DoorPassable(run, room, d) ? Floor
+                        : Rooms.DoorSealed(run, room, d) ? (run.dungeon.Neighbour(room, d)?.Type == RoomKind.Boss ? new Color32(179, 65, 47, 255) : new Color32(192, 138, 82, 255))
+                        : new Color32(72, 80, 95, 255);
+                    float h = Balance.DoorWidth / 2f;
+                    var (dx, dy) = Rooms.DoorPoint(d);
+                    var cp = W(dx, dy);
+                    bool vertical = d == Dir.E || d == Dir.W;
+                    Rect(g, cp - (vertical ? new Vector2(7, h) : new Vector2(h, 7)), cp + (vertical ? new Vector2(7, h) : new Vector2(h, 7)), c);
+                }
+            DrawMinimap(g, run);
 
             foreach (var pk in run.pickups)
-                Disc(g, W(pk.x, pk.y), (float)pk.r * 0.7f, pk.kind == "heart" ? (Color)new Color32(230, 70, 90, 255) : new Color32(120, 170, 230, 255));
+                Disc(g, W(pk.x, pk.y), (float)pk.r * 0.7f, PickupColor(pk.kind));
 
             foreach (var e in run.enemies)
             {
@@ -278,6 +345,7 @@ namespace Depths.Unity
             }
 
             var pl = run.player;
+            if (run.roomFade > 0.01) Rect(g, a - new Vector2(6, 6), b + new Vector2(6, 6), new Color(0.04f, 0.05f, 0.07f, (float)run.roomFade));
             bool flicker = pl.iframes > 0 && (pl.iframes / 14) % 2 == 0;
             Disc(g, W(pl.x, pl.y), (float)pl.r, flicker ? new Color(1, 1, 1, 0.5f) : PlayerC);
         }
