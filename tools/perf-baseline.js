@@ -27,7 +27,7 @@ const PORT = process.env.DEPTHS_PORT || 8791;
   const b=await pw.chromium.launch({channel:'msedge'});
   const p=await b.newPage({viewport:{width:1280,height:720}});
   await p.goto(`http://127.0.0.1:${PORT}/depths.html`,{waitUntil:'load',timeout:60000});
-  await p.waitForFunction('typeof startGame==="function"',{timeout:60000});
+  await p.waitForFunction('typeof startGame==="function"',null,{timeout:60000});
   await p.waitForTimeout(1500);
   const out=await p.evaluate(()=>{
     /* PLAYER TOP SPEED, measured the way a chase experiences it. The naive `PLAYER_MOVE` is the

@@ -32,7 +32,7 @@ const pw=require('C:/Users/neefloW/AppData/Local/hermes/hermes-agent/node_module
   const errs=[];
   p.on('pageerror',e=>errs.push('PAGEERROR: '+String(e).slice(0,260)));
   await p.goto(`http://127.0.0.1:${process.env.DEPTHS_PORT||8791}/depths.html`,{waitUntil:'load',timeout:60000});
-  await p.waitForFunction('typeof startGame==="function"',{timeout:60000});
+  await p.waitForFunction('typeof startGame==="function"',null,{timeout:60000});
   await p.waitForTimeout(1500);
 
   /* A PER-SUBSYSTEM PROBE SET, FOR THE PLACES A FUZZER CANNOT REACH.

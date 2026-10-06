@@ -50,7 +50,7 @@ catch(e){
   const errs=[];
   p.on('pageerror',e=>errs.push(e.message));
   await p.goto((process.env.DEPTHS_URL||'http://127.0.0.1:8791/depths.html')+'?parity',{waitUntil:'load',timeout:60000});
-  await p.waitForFunction('window.__parityTable!==undefined',{timeout:120000});
+  await p.waitForFunction('window.__parityTable!==undefined',null,{timeout:120000});
   const live=await p.evaluate(()=>window.__parityTable);
   await b.close();
   if(errs.length){ console.log('THE PAGE THREW:\n'+errs.join('\n')); process.exit(1); }

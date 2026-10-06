@@ -22,6 +22,17 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $failures = New-Object System.Collections.ArrayList
 
+# One port for the gate and every script in tools/, which all default to 8791.
+$port = 8791
+
+# Under 'Stop', PowerShell 5.1 turns any line node writes to stderr into a terminating error, so a
+# failing audit aborted the whole gate before its own Bad() could report it. Relaxed locally only.
+function Invoke-Node($script) {
+  $ErrorActionPreference = 'Continue'
+  $out = & node $script 2>&1 | ForEach-Object { "$_" } | Out-String
+  return $out
+}
+
 function Note($msg) { if (-not $Quiet) { Write-Host $msg } }
 function Bad($msg) {
   $script:failures.Add($msg) | Out-Null
@@ -91,22 +102,22 @@ foreach ($cf in @("$root\src\70-view.js", "$root\src\80-ui.js")) {
 if ($canary -lt 10) { Bad "only $canary middle dots survive - the encoding is wrong somewhere" }
 
 # ---------------------------------------------------------------- 3. the JavaScript suite
-# Needs the local server on 8731. Started here if it is not already up, because a gate that
+# Needs the local server on $port. Started here if it is not already up, because a gate that
 # silently skips itself when a background process died is not a gate.
 Note ""
 Note "3. the JavaScript suite"
 $serverUp = $false
 try {
-  $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8731/depths.html' -UseBasicParsing -TimeoutSec 3
+  $r = Invoke-WebRequest -Uri "http://127.0.0.1:$port/depths.html" -UseBasicParsing -TimeoutSec 3
   $serverUp = ($r.StatusCode -eq 200)
 } catch { $serverUp = $false }
 if (-not $serverUp) {
-  Note "   server not answering on 8731 - starting it"
+  Note "   server not answering on $port - starting it"
   $sh = Join-Path $env:TEMP 'depths-server.ps1'
   # THE ROOT IS PASSED IN, not guessed. This used to derive itself as `Split-Path -Parent $PSScriptRoot`
   # and fall back to `$PSScriptRoot` - but it lives in %TEMP%, so the first is the parent of TEMP and
   # the second is TEMP itself, and neither can contain depths.html. It therefore hit its own
-  # Write-Error every time and the gate reported "the local server is not answering on 8731" while
+  # Write-Error every time and the gate reported "the local server is not answering on $port" while
   # the real fault was three lines of path arithmetic. A gate that cannot start its own dependency
   # gets muted, and a muted gate is worse than no gate.
   $body = @"
@@ -116,7 +127,7 @@ if (-not (Test-Path (Join-Path `$root 'depths.html'))) {
   exit 1
 }
 `$listener = New-Object System.Net.HttpListener
-`$listener.Prefixes.Add("http://127.0.0.1:8731/")
+`$listener.Prefixes.Add("http://127.0.0.1:$port/")
 `$listener.Start()
 while (`$listener.IsListening) {
   `$ctx = `$listener.GetContext()
@@ -140,15 +151,15 @@ while (`$listener.IsListening) {
   [System.IO.File]::WriteAllText($sh, ($body -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
   Start-Process powershell -ArgumentList '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $sh -WindowStyle Hidden
   Start-Sleep -Milliseconds 1500
-  try { $r = Invoke-WebRequest -Uri 'http://127.0.0.1:8731/depths.html' -UseBasicParsing -TimeoutSec 4; $serverUp = ($r.StatusCode -eq 200) } catch { }
+  try { $r = Invoke-WebRequest -Uri "http://127.0.0.1:$port/depths.html" -UseBasicParsing -TimeoutSec 4; $serverUp = ($r.StatusCode -eq 200) } catch { }
 }
 if (-not $serverUp) {
-  Bad "the local server is not answering on 8731, so the JavaScript suite could not run"
+  Bad "the local server is not answering on $port, so the JavaScript suite could not run"
 } else {
   $src = [System.IO.File]::ReadAllText("$root\src\99-tests.js")
   $total = ([regex]::Matches($src, "(?m)^\s*test\('")).Count + ([regex]::Matches($src, "(?m)^\s*results\.push\(\{name:'")).Count
   Note "   server up; the source declares about $total checks (the run below is authoritative)"
-  Note "   open http://127.0.0.1:8731/depths.html?test to read the list"
+  Note "   open http://127.0.0.1:$port/depths.html?test to read the list"
 }
 
 # ---------------------------------------------------------------- 4. the C# suite
@@ -195,7 +206,7 @@ Note "   (the run above is authoritative - if these disagree, CONVENTIONS.md is 
 
 # ---------------------------------------------------------------- 6. the JavaScript suite, RUN
 # This is the step the script existed without. For its whole life step 3 printed "open
-# http://127.0.0.1:8731/depths.html?test to read the list" and the verdict added that the suite
+# http://127.0.0.1:$port/depths.html?test to read the list" and the verdict added that the suite
 # "still has to be read in the browser - this script cannot run it, because the suite executes at
 # page load and needs a real canvas."
 #
@@ -250,14 +261,14 @@ let claimedTotal=0;
   for(const [w,h] of vps){
     const p=await browser.newPage({viewport:{width:w,height:h}});
     try{
-      await p.goto('http://127.0.0.1:8731/depths.html?test',{waitUntil:'load',timeout:60000});
-      await p.waitForFunction('window.__testResults!==undefined',{timeout:300000});
+      await p.goto('http://127.0.0.1:$port/depths.html?test',{waitUntil:'commit',timeout:60000});
+      await p.waitForFunction('window.__testResults!==undefined',null,{timeout:300000});
       // AND THEN FOR THE ASYNCHRONOUS TESTS. One test is `async` because it renders audio waveforms
       // through OfflineAudioContext, and the suite publishes its results before that resolves. Waiting
       // only for `!==undefined` reads a PARTIAL suite and counts it - which is how CONVENTIONS.md came
       // to say 236 checks when the suite has 237. `settled` is set once every async test has recorded.
       // A `//` comment and not a `#` one, because this is inside a JavaScript here-string.
-      await p.waitForFunction('window.__testResults.settled===true',{timeout:300000});
+      await p.waitForFunction('window.__testResults.settled===true',null,{timeout:300000});
       const r=await p.evaluate(()=>({pass:window.__testResults.pass,total:window.__testResults.total,
         fails:window.__testResults.results.filter(x=>!x.ok).map(x=>x.name+' :: '+x.msg)}));
       out.push(w+'x'+h+' '+r.pass+'/'+r.total+(r.fails.length?(' FAIL '+r.fails.length):''));
@@ -274,7 +285,7 @@ let claimedTotal=0;
 })();
 "@
     [System.IO.File]::WriteAllText($runner, ($runnerBody -replace "`r`n", "`n"), (New-Object System.Text.UTF8Encoding($false)))
-    $jsOut = & node $runner 2>&1 | Out-String
+    $jsOut = Invoke-Node $runner
     if ($jsOut -match 'WORSTFAILURES\s+(\d+)') {
       $worst = [int]$Matches[1]
       $claimedTotal = 0
@@ -367,7 +378,7 @@ if (-not (Test-Path $manifest)) {
     # prevent, introduced by the check for it.
     Note "   node is unavailable, so the parity audit did NOT run and the tables are UNVERIFIED"
   } else {
-    $auditOut = & node $auditScript 2>&1 | Out-String
+    $auditOut = Invoke-Node $auditScript
     if ($LASTEXITCODE -ne 0) {
       Bad ("the parity audit could not run (exit $LASTEXITCODE): " +
            ($auditOut -replace "`r?`n", " " ).Trim())
@@ -419,7 +430,7 @@ if (-not (Test-Path $manifest)) {
   } elseif (-not $serverUp) {
     Note "   SKIPPED - no static server, so the game's values cannot be read. The constants are UNVERIFIED, not passing."
   } else {
-    $constOut = & node $constScript 2>&1 | Out-String
+    $constOut = Invoke-Node $constScript
     $verdict = [regex]::Match($constOut, '(\d+) compared, (\d+) mismatch, (\d+) missing')
     if ($verdict.Success) {
       $cmp = [int]$verdict.Groups[1].Value

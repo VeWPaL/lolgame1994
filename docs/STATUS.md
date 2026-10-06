@@ -9,7 +9,7 @@ _Last updated: 2026-10-06, session 1 (cleanup and freeze)._
 
 - **JS (`depths.html`, `src/`)**: frozen reference, **not yet tagged** - `js-final` is set after the
   Brunch guard-leash fix. Playable. Tests and the parity page load only with `?test` / `?parity`.
-  Suite: 238/239 (see known issues).
+  Suite: 239/239. `.erify.ps1` is fully green (about 3 minutes).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1. Ported: RNG, balance, world gen, spawn plan,
   room phase + Descend, player phase, pack assembly, `BrunchArcSlot`. Not ported: Brunch/enemy
   movement in `tickBodies`, `tickProjectiles` (14 cases banked in `tools/proj-parity.js`).
@@ -31,15 +31,10 @@ _Last updated: 2026-10-06, session 1 (cleanup and freeze)._
 - **Brunch guard leash**: a comment in `tickBodies` describes `BRUNCH_GUARD_LEASH` (packs stop
   guarding a shooter the player is far from), but the constant does not exist and the code never
   checks distance. Reported bug "Brunch don't chase" may still be live. Needs a Medium-effort check.
-- **JS test hang (pre-existing at 2f516b2)**: "a suspended audio context can always be brought
-  back" never settles in headless Edge and fails on its 240s watchdog. Same result on HEAD and
-  the cleanup tree (238/239). Most likely from the AudioContext-on-gesture change. Fix: Low/Medium.
-- **verify.ps1 tooling bugs** (the gate cannot go green until fixed, Low):
-  `p.waitForFunction(expr, {timeout})` passes options as `arg` (Playwright takes them third), so
-  the 30s default applies and step 6 always times out; the same bug is in `tools/parity-audit.js`.
-  Steps 6c/6d need a server on 8791 but the gate starts one on 8731 (`constant-audit.js` hard-codes
-  8791; `parity-audit.js` honours `DEPTHS_URL`). Run by hand on 2026-10-06: parity 0 differences
-  across 5 tables, constants 47 compared / 0 mismatch.
+- Gate fixed 2026-10-06: one port (8791) for the gate and every `tools/` script; Playwright
+  `waitForFunction` options passed third; node stderr no longer aborts the gate before it reports.
+  The audio hang (238/239) was `whenAudible`/`whenIdle` never polling - fixed in 0cf88f4.
+- Unity 6000.3.25f1 runs in batchmode on this machine (licence resolves; a new project takes ~10 min).
 - Node is installed at `C:\Program Files\nodejs` (2026-10-06); shells opened before that need it
   added to PATH.
 - Headless Chromium on Linux fails one drawing test (descent banner legibility), most likely a font
