@@ -1347,7 +1347,9 @@ function render(){
 // run as many fixed TICK_HZ ticks as the elapsed time covers; returns how many ran
 function advance(dt){
   /* panel the player READS, and a fight that keeps running underneath numbers they are trying to read is a fight they lose for having tried to... [h:70-view-89] */
-  if(paused||devOpen){acc=0;return 0;}
+  // An overlay that takes the player's input stops the fight too (Tab, H, the bug list, the seed
+  // sheet): it used to block input while the room kept running, and a reader was hit for free.
+  if(paused||devOpen||uiHoldsInput()){acc=0;return 0;}
   acc+=Math.min(dt,MAX_CATCHUP_MS);
   let n=0;
   while(acc>=STEP_MS-STEP_TOL){update();acc-=STEP_MS;n++;}

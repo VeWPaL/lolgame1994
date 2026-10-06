@@ -4059,6 +4059,42 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        'between shells');
   });
 
+  test('the seed on the title is the dungeon you get, by key and by click',()=>{
+    // The bug: the title drew Rnd.seedText and promised "the seed decides this dungeon", then any
+    // key or click called startGame() with no argument, which rolls a fresh seed.
+    for(const how of ['key','click']){
+      Rnd.set(123456+(how==='click'?1:0)); state='start'; paused=false; devOpen=false;
+      const shown=Rnd.seedText;
+      if(how==='key') window.dispatchEvent(new KeyboardEvent('keydown',{key:'x'}));
+      else window.dispatchEvent(new MouseEvent('mousedown',{button:0}));
+      window.dispatchEvent(new KeyboardEvent('keyup',{key:'x'}));
+      window.dispatchEvent(new MouseEvent('mouseup',{button:0}));
+      eq(state,'playing','a '+how+' on the title did not start a run');
+      eq(Rnd.encode(run.rootSeed),shown,'the title showed '+shown+' and a '+how+' started '+Rnd.encode(run.rootSeed));
+    }
+    releaseButtons(); paused=false;
+  });
+
+  test('an overlay that takes the input stops the fight: Tab, H and the bug list',()=>{
+    // The bug: Tab opened the character sheet without pausing. Input was suppressed but advance()
+    // kept ticking, so an alerted lunger walked over and hit a player who could not move.
+    const opens=[['tab',()=>toggleSheet(),()=>closeCharSheet()],
+                 ['h',()=>toggleControls(),()=>toggleControls()]];
+    for(const [name,open,close] of opens){
+      startGame(7); devOpen=false; paused=false;
+      const r=currentRoom(); r.enemies.length=0; projectiles.length=0; readyT=0; fadeT=0;
+      const e=spawnEnemy(false,r,player.x+150,player.y,'lunger'); r.enemies.push(e); alertEnemy(e);
+      open();
+      const x0=e.x, hp0=player.hp; let n=0;
+      for(let i=0;i<60;i++) n+=advance(167);
+      close();
+      eq(n,0,name+': '+n+' ticks ran behind an overlay that blocks every input');
+      ok(e.x===x0&&player.hp===hp0,name+': the room kept fighting behind the overlay (body moved '+
+         (e.x-x0).toFixed(0)+'px, player lost '+(hp0-player.hp)+')');
+    }
+    paused=false; acc=0;
+  });
+
   test('the Warden\'s wall dies with it, so the way out opens on the kill',()=>{
     startGame(42);
     const room=currentRoom(); room.enemies.length=0; room.pickups.length=0; projectiles.length=0;

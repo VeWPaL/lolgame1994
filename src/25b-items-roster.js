@@ -17,7 +17,7 @@ Items.define('weighted_rod',{
 Items.define('tin_cup',{
   name:'Tin Cup', use:'active', charges:3, rarity:'common', tags:['survival'],
   glyph:'TC', color:'#c9d3e0',
-  blurb:'Q. Drink: two hearts back. Three in it, so it is a resource you spend on a bad room rather than a spare.',
+  blurb:'Q. Drink: one heart back. Three in it, so it is a resource you spend on a bad room rather than a spare.',
   fx:{hooks:{heal_self:2}}
 });
 
@@ -31,7 +31,7 @@ Items.define('bone_whistle',{
 Items.define('iron_ribs',{
   name:'Iron Ribs', use:'passive', slot:'sigil', rarity:'common', tags:['survival'],
   glyph:'IR', color:'#7f8a99',
-  blurb:'+2 Vigor. Two more hearts to lose, which is a slower fight rather than an easier one.',
+  blurb:'+2 Vigor. One more heart to lose, which is a slower fight rather than an easier one.',
   fx:{stats:{vigor:2}}
 });
 

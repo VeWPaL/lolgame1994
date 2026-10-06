@@ -15,7 +15,7 @@ const Stats=(function(){
     /* earned, not given. There is no item that hands you Momentum, and that is the point: it is the
        only stat on the sheet that measures what you did rather than what you picked up. */
     momentum:{label:'MOMENTUM',kind:'meter',base:0,cap:1,
-      blurb:'Charges while you move under pressure. Bleeds if you stand still. A hit costs most of it.'},
+      blurb:'Charges while you move under pressure. Bleeds if you stand still. A hit costs close to half of it.'},
 
     /* arcana keys, not a damage stat. [h:06-stats-4] */
     intelligence:{label:'INTELLIGENCE',kind:'key',base:0,cap:Infinity,
@@ -30,7 +30,7 @@ const Stats=(function(){
     /* health. Without it, health items have nowhere to attach and half of a roster's worth of
        consumables would have to be smuggled in as flat healing. */
     vigor:{label:'VIGOR',kind:'add',base:0,cap:Infinity,
-      blurb:'Maximum health, and how much a heart returns.'},
+      blurb:'Maximum health. Two points is one heart.'},
 
     /* PRECISION: how narrowly a shot leaves the wand. [h:06-stats-5] */
     precision:{label:'PRECISION',kind:'add',base:0,cap:Infinity,

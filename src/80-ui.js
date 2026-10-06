@@ -700,7 +700,7 @@ window.addEventListener('keydown',e=>{
     if(e.altKey||e.ctrlKey||e.metaKey) return;
     if(k==='alt'||k==='control'||k==='shift'||k==='meta'||k==='os'||k==='capslock') return;
     if(k==='dead'||k==='unidentified') return;
-    startGame();
+    startGame(Rnd.seed);   // the seed on the title tag, not a new one: "the seed decides this dungeon"
     return;
   }
   if(!first) return;
@@ -751,7 +751,7 @@ window.addEventListener('mousedown',e=>{
     return;
   }
   if(uiHoldsInput()) return;
-  if(state==='start'){startGame();return;}
+  if(state==='start'){startGame(Rnd.seed);return;}   // the seed the title is showing
   if(paused){setPaused(false);return;}   // the resume click does not cast
   if(e.button===0||e.button===2) trackButton(e.button,true);
 });
