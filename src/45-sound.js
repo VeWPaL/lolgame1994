@@ -188,10 +188,6 @@ const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss a
       live.splice(oldest,1);
     }
   }
-  /* STOP EVERYTHING, for one sound's worth of nodes. This is the shape `track` alone did not have. */
-  function stopAll(nodes){
-    for(const v of nodes){ try{ if(v.stop) v.stop(); }catch(e){ /* not a source */ } }
-  }
   /* ---- the sounds ------------------------------------------------------------------------------ */
   /* Each entry builds its own nodes and returns a tracked source. [h:45-sound-24] */
   const VOICES={

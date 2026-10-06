@@ -21,7 +21,6 @@ const Lab=(function(){
   let on=false, frozen=true, dropper=0;
   let numbers=[];          // the floating damage readouts, which the game does not have
   let lastHp=new Map();    // body -> the health it had last tick, which is how damage is derived
-  const hpSeen=e=>{ lastHp.set(e,e.hp); return e.hp; };
 
   /* ------------------------------------------------------------------ the room -------------- */
 

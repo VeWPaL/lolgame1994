@@ -166,9 +166,6 @@ const Items=(function(){
     }
     return out;
   }
-  function rollItem(n,exclude){
-    return pool(n||1,rollRarity(Stats.value('luck')),exclude)[0]||null;
-  }
 
   /* THE ACTIVE SLOT, and the only two questions anyone asks about it. [h:25-items-16] */
 const ACTIVE_SLOT=0;
@@ -197,7 +194,7 @@ function useActive(){
   }
 
   return {define:define,validate:validate,give:give,remove:remove,use:use,useActive:useActive,
-          rebuild:rebuild,equipped:equipped,rollRarity:rollRarity,rollItem:rollItem,pool:pool,
+          rebuild:rebuild,equipped:equipped,rollRarity:rollRarity,pool:pool,
           active:active,reset:reset,ACTIVE_SLOT:ACTIVE_SLOT,RARITY:RARITY};
 })();
 

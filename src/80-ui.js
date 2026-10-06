@@ -27,7 +27,6 @@ const FIXES={
   'R restarts only while paused or after a run':['frame and input','R wiped a live run by accident'],
   'Space blinks like Shift':['frame and input','the second blink key was documented and not implemented'],
   'releasing both buttons at once cannot leave the wand firing':['frame and input','a fast click-and-drag latched the wand on permanently'],
-  'mouse maps to canvas pixels inside the 2px border':['frame and input','the aim was offset by the frame thickness, so shots landed next to the cursor'],
 
   /* ---- weapons and damage ---- */
   'weapons: every gun kills a lunger fast at the range it is meant to be used at':['weapons and damage','every gun used to be usable everywhere, which is the same as no gun being right anywhere'],

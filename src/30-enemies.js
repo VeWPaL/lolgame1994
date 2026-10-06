@@ -211,7 +211,7 @@ function enterRoom(nx,ny,fromDir){
       /* THE ITEM HALF OF THE LOOT POOL, which did not exist until now. [h:30-enemies-18] */
       const held=Content.all('item').filter(id=>Items.equipped(id));
       let ids=Items.pool(2,Items.rollRarity(Stats.value('luck')),held);
-      if(ids.length<2) ids=ids.concat(Items.pool(2-ids.length,null,held));
+      if(ids.length<2) ids=ids.concat(Items.pool(2-ids.length,null,held.concat(ids)));   // not the one just chosen: a thin rarity offered the same item twice
       ids.forEach((id,i)=>r.pickups.push({x:MIDX+(i?-85:85),y:MIDY,r:16,kind:'item',id}));
     }
   }

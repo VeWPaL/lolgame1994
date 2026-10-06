@@ -4059,6 +4059,23 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        'between shells');
   });
 
+  test('an item room never offers the same item twice, even when the rolled rarity runs thin',()=>{
+    // The bug: when the rolled rarity had fewer than two unheld items, the top-up pool excluded what
+    // was held but not what had just been chosen, so both pedestals could carry the same item.
+    const realRoll=Items.rollRarity; let dup=0, rooms2=0;
+    try{
+      Items.rollRarity=()=>'legendary';
+      for(let s=1;s<=40;s++){
+        startGame(s); Items.give('glass_wands');
+        const r=goTo('item');
+        const ids=r.pickups.filter(p=>p.kind==='item').map(p=>p.id);
+        if(ids.length===2){ rooms2++; if(ids[0]===ids[1]) dup++; }
+      }
+    } finally { Items.rollRarity=realRoll; }
+    ok(rooms2>=30,'only '+rooms2+' of 40 item rooms offered two items, so the check saw too little');
+    eq(dup,0,dup+' of '+rooms2+' item rooms offered the same item on both pedestals');
+  });
+
   test('the seed on the title is the dungeon you get, by key and by click',()=>{
     // The bug: the title drew Rnd.seedText and promised "the seed decides this dungeon", then any
     // key or click called startGame() with no argument, which rolls a fresh seed.

@@ -18,7 +18,7 @@ const Rnd=(function(){
   /* A short readable seed. base36 keeps it typable and copyable, and seven characters is 78
      billion possibilities, which is far more than a player will exhaust and far fewer than they
      will mistype. Fixed width, so a seed is always the same shape on screen. */
-  const WIDTH=7, ALPHABET='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const WIDTH=7;
   const encode=n=>{let s=(n>>>0).toString(36).toUpperCase();while(s.length<WIDTH)s='0'+s;return s;};
   /* THE SEED SPACE IS 32 BITS, AND A SEED THAT DOES NOT FIT IS REJECTED RATHER THAN WRAPPED. [h:05-rng-3] */
   function decode(text){

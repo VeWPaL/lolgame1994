@@ -213,8 +213,6 @@ function update(){
   if(state!=='playing'&&state!=='dev') return;
   /* THE DEATH BACKSTOP. [h:60-tick-16] */
   if(player.hp<=0){ endRun(false); return; }
-  /* The backstop. [h:60-tick-17] */
-  if(player.hp<=0){ endRun(false); return; }
   run.ticks++;
   /* The per-floor clock, alongside the run clock and for the same reason: [h:60-tick-18] */
   run.floorTicks++;
@@ -342,8 +340,6 @@ function tickPlayer(){
   player.lagY+=(player.y-player.lagY)*HITBOX_LAG_EASE;
   /* PUBLISH THE LAGGED HITBOX. [h:60-tick-30] */
   hitbox.x=player.lagX; hitbox.y=player.lagY;
-  /* THE LAGGED HITBOX THE GUNNERS AIM AT IS HANDED ON THROUGH MODULE STATE, not through a local. [h:60-tick-31] */
-  hx=player.lagX; hy=player.lagY;
 }
 
 /* ---- projectiles: movement, collisions, the hook ---- */
@@ -739,9 +735,8 @@ function tickRoom(){
     r.pickups.splice(i,1);
   }
 
-  // death wins ties: a bullet that lands on the frame the boss dies still ends the run as a death
-  if(player.hp<=0) endRun(false);
-  else if(r.type==='boss' && r.enemies.length===0){
+  // death already returned above, so a bullet on the boss-kill frame still ends the run as a death
+  if(r.type==='boss' && r.enemies.length===0){
     /* The boss no longer ends the run the instant it dies. [h:60-tick-82] */
     if(!r.exitOpen){
       r.exitOpen=true;
