@@ -3,6 +3,25 @@ const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
 ctx.imageSmoothingEnabled=false;
 
 const W=960, H=600;
+
+/* PLAYTEST VARIANTS: opt-in behaviour chosen by URL, e.g. depths.html?brunch=B. The default is the
+   reference behaviour, so the tests, the parity tables and the C# port never see a variant.
+   brunch: A = guard the shooter wherever the player is; B = leash, chase when the player is far
+   from it; A+ = keep guarding, but advance the wall as a formation when the player leaves its range.
+   In a URL '+' arrives as a space, so ?brunch=A+ reads "A "; A%2B and Aplus work too. */
+const VARIANT=(()=>{
+  const v={brunch:'A'};
+  try{
+    const raw=new URLSearchParams(location.search).get('brunch');
+    if(raw!==null){
+      const t=raw.trim().toUpperCase();
+      const b=(raw==='A '||t==='A+'||t==='APLUS')?'A+':t;
+      if(b==='A'||b==='B'||b==='A+') v.brunch=b;
+    }
+  }catch(e){ /* no location (a worker, a test page): the reference behaviour */ }
+  return v;
+})();
+const BRUNCH_GUARD_LEASH=420;   // variant B: past this many px from its target, a pack drops the guard
 /* pacing ---------- The sim used to tick at a fixed 60Hz. [h:00-balance-2] */
 const SPEEDUP=3.5, TICK_HZ=Math.round(60*SPEEDUP);
 const sec=s=>Math.round(s*TICK_HZ);

@@ -436,6 +436,22 @@ function tickProjectiles(){
   /* Iterate a SNAPSHOT, not the live array. [h:60-tick-38] */
 }
 
+/* WHERE A GUARDING PACK FORMS ITS WALL, by playtest variant (VARIANT.brunch). null = not guarding:
+   the pack chases. A is the reference: the wall stays on its target wherever the player is. */
+function brunchGuardAnchor(tgt){
+  const v=VARIANT.brunch;
+  if(v==='A') return tgt;
+  const d=Math.hypot(player.x-tgt.x,player.y-tgt.y)||1;
+  if(v==='B') return d>BRUNCH_GUARD_LEASH?null:tgt;
+  // A+: inside the target's reach, the same wall as A. Past it, the anchor walks out toward the
+  // player - 1.5px per px the player retreats, never nearer than 150 - so the wall advances whole
+  // and herds the player back into the line of fire instead of standing guard over nothing.
+  const reach=tgt.range||BRUNCH_GUARD_LEASH;
+  if(d<=reach) return tgt;
+  const out=Math.min((d-reach)*1.5,d-150), u=out/d;
+  return {x:tgt.x+(player.x-tgt.x)*u,y:tgt.y+(player.y-tgt.y)*u};
+}
+
 /* ---- bodies: packs, Brunch, gunners, separation ---- */
 function tickBodies(){
   /* `r` WAS A LOCAL OF update() AND EVERY PHASE READ IT. [h:60-tick-39] */
@@ -554,8 +570,9 @@ function tickBodies(){
           let mdx=edx,mdy=edy;
           /* A PACK WITH A SHIELD TARGET FORMS THE ARC IN FRONT OF THAT TARGET, and this branch comes FIRST - it is the whole point of the change. [h:60-tick-50] */
           const tgt=e.shieldTarget;
-          if(tgt&&tgt.hp>0&&pc&&pc.n>=BRUNCH_SHIELD_MIN){
-            const slotPt=brunchArcSlot(tgt.x,tgt.y,player.x,player.y,pc.n,e.packSlot||0,tgt.r);
+          const anchor=(tgt&&tgt.hp>0&&pc&&pc.n>=BRUNCH_SHIELD_MIN)?brunchGuardAnchor(tgt):null;
+          if(anchor){
+            const slotPt=brunchArcSlot(anchor.x,anchor.y,player.x,player.y,pc.n,e.packSlot||0,tgt.r);
             if(slotPt){ mdx=slotPt.x-e.x; mdy=slotPt.y-e.y; }
           } else if(pc&&pc.n>=BRUNCH_WALL_MIN){
             /* NOTHING TO SHIELD, SO NOTHING TO ASSEMBLE. [h:60-tick-51] */
@@ -567,7 +584,7 @@ function tickBodies(){
           const tx=reachable?edx:mdx, ty=reachable?edy:mdy;
           const td=Math.hypot(tx,ty)||1;
           /* TWO SPEEDS, PICKED BY ROLE. [h:60-tick-54] */
-          const shielding=!!(tgt&&tgt.hp>0&&pc&&pc.n>=BRUNCH_SHIELD_MIN);
+          const shielding=!!anchor;
           const desired=shielding?BRUNCH_SHIELD_SPEED:e.curSpeed;
           const dvx=tx/td*desired, dvy=ty/td*desired;
           /* Close a fixed FRACTION of the remaining gap per tick, which is the shape that eases a body into its slot instead of snapping at the last pixel. [h:60-tick-55] */

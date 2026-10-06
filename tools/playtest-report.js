@@ -3,7 +3,7 @@
    node tools/playtest-report.js current                 one build
    node tools/playtest-report.js baseline current        A/B: B is compared against A
 
-   Writes playtest/report.html (self-contained: thumbnails are inlined). The page leads with the
+   Writes playtest/report-<labels>.html (self-contained: thumbnails are inlined). The page leads with the
    numbers that answer "is it more fun / fairer / harder", then the per-run detail and filmstrips. */
 const fs=require('fs'), path=require('path');
 const DIR=path.join(__dirname,'..','playtest');
@@ -57,8 +57,8 @@ const METRICS=[
 ];
 function cell(a,b,k,fmt){
   if(b===undefined) return `<td>${fmt(a[k])}</td>`;
-  const d=b[k]-a[k], tag=Math.abs(d)<1e-9?'':d>0?' up':' down';
-  return `<td>${fmt(a[k])}</td><td>${fmt(b[k])}</td><td class="d${tag}">${Math.abs(d)<1e-9?'=':(d>0?'+':'')+(k==='acc'?Math.round(d*100)+'%':f1(d))}</td>`;
+  const d=b[k]-a[k], same=Math.abs(d)<(k==='acc'?0.005:0.05);
+  return `<td>${fmt(a[k])}</td><td>${fmt(b[k])}</td><td class="d${same?'':' moved'}">${same?'=':(d>0?'+':'')+(k==='acc'?Math.round(d*100)+'%':f1(d))}</td>`;
 }
 const AB=table.length===2;
 function summary(pick){
@@ -90,8 +90,8 @@ const html=`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta nam
 main{max-width:980px;margin:0 auto;padding:24px 16px 64px}h1{margin:0 0 4px;font-size:24px}h2{margin:32px 0 8px;font-size:18px;color:var(--acc)}
 .meta{color:var(--mute);font-size:13px}table{border-collapse:collapse;width:100%;background:var(--card);margin:8px 0}
 th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums}th:first-child{text-align:left;font-weight:500}
-table.small{font-size:13px}.d.up{color:var(--up)}.d.down{color:var(--down)}.bad{color:var(--down);font-weight:600}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
+table.small{font-size:13px}.d.moved{color:var(--acc);font-weight:600}.bad{color:var(--down);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:16px}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
 .bars{display:flex;flex-direction:column;gap:4px;font-size:13px}.bar{display:grid;grid-template-columns:120px 1fr 40px;gap:8px;align-items:center}
 .bt{background:var(--line);height:10px;border-radius:5px;overflow:hidden}.bf{display:block;height:100%;background:var(--bar)}.bv{text-align:right;color:var(--mute)}
 details{background:var(--card);border:1px solid var(--line);border-radius:8px;margin:6px 0;padding:6px 10px}summary{cursor:pointer}
@@ -108,6 +108,6 @@ ${sets.some(s=>s.pageErrors.length)?`<p class="bad">page errors: ${esc(sets.flat
 <h2>Where the healing comes from</h2><div class="grid">${table.map(t=>{const tot=Object.values(t.all.healSrc).reduce((a,b)=>a+b,0)||1;return `<div class="card"><b>${esc(t.label)}</b>${bars(t.all.healSrc,tot)}</div>`;}).join('')}</div>
 ${sets.map(s=>`<h2>Runs: ${esc(s.label)}</h2>${runsDetail(s)}`).join('')}
 </main></body></html>`;
-const out=path.join(DIR,'report.html');
+const out=path.join(DIR,'report-'+labels.join('-vs-')+'.html');
 fs.writeFileSync(out,html);
 console.log('wrote '+path.relative(process.cwd(),out)+' ('+Math.round(html.length/1024)+' KB)');

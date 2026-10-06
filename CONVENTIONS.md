@@ -84,7 +84,7 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 
 ## Current state
 
-- JS suite (`depths.html?test`, frozen reference): **245 checks**.
+- JS suite (`depths.html?test`, frozen reference): **246 checks**.
 - C# `Depths.Tests` has **286 checks**, parity-verified against the JavaScript.
 - `verify.ps1` asserts both numbers above; keep them current.
 

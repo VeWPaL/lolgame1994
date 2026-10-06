@@ -681,6 +681,11 @@ THE SCAN RUNS EVERY TICK, NOT ONLY WHEN THE CURRENT TARGET DIES.
       it is "not in another part of the room" - and breaking it costs the pack nothing it was using,
       because the only thing it gives up is guarding a fight that is not happening.
 
+      Correction, 2026-10-06: the code has no leash (the text above describes one): a pack
+      with a live target guards it wherever the player is (variant A). B (a BRUNCH_GUARD_LEASH of 420px)
+      and A+ (the wall advances as a formation once the player leaves the target's reach) exist as
+      opt-in playtest variants, ?brunch=B / ?brunch=A+, decided by the owner. See brunchGuardAnchor.
+
 ## [h:60-tick-44]
 near: `const stale=!tgt||tgt.hp<=0||!r.enemies.includes(tgt);`
 

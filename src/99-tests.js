@@ -4307,6 +4307,31 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     run=undefined;
   });
 
+  test('Brunch guard variants: A guards anywhere, B leashes, A+ advances the wall; A is the default',()=>{
+    eq(VARIANT.brunch,'A','the test page is not running the reference Brunch behaviour');
+    const saved=VARIANT.brunch;
+    try{
+      startGame(5);
+      const room=currentRoom(); room.enemies.length=0;
+      const sh=spawnEnemy(false,room,MIDX,MIDY,'shooter'); room.enemies.push(sh);
+      const at=d=>{ player.x=sh.x+d; player.y=sh.y; return brunchGuardAnchor(sh); };
+      VARIANT.brunch='A';
+      ok(at(100)===sh&&at(900)===sh,'A: the wall must stay on its target wherever the player is');
+      VARIANT.brunch='B';
+      ok(at(BRUNCH_GUARD_LEASH-1)===sh,'B: inside the leash the pack still guards');
+      eq(at(BRUNCH_GUARD_LEASH+1),null,'B: past the leash the pack must drop the guard and chase');
+      VARIANT.brunch='A+';
+      const reach=sh.range;
+      ok(reach>0,'the shooter has no range, so A+ has nothing to measure against');
+      ok(at(reach-1)===sh,'A+: inside the shooter\'s reach the wall is the same as A');
+      const near=at(reach+1), far=at(reach+300);
+      ok(Math.hypot(near.x-sh.x,near.y-sh.y)<3,'A+: the anchor jumps at the edge of reach instead of moving smoothly');
+      const gap=Math.hypot(player.x-far.x,player.y-far.y), out=Math.hypot(far.x-sh.x,far.y-sh.y);
+      ok(out>300&&gap>=150-1e-9,'A+: 300px past reach the wall walked out '+out.toFixed(0)+'px and stands '+
+        gap.toFixed(0)+'px from the player; it should advance more than the player retreated and stop 150px short');
+    } finally { VARIANT.brunch=saved; }
+  });
+
   test('a Brunch pack switches to the chase when the enemy it was guarding dies',()=>{
     let checked=0;
     for(const seed of [1,2,3,11,22,33,44]){
