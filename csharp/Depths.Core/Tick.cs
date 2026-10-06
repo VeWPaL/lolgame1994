@@ -1079,7 +1079,9 @@ namespace Depths
             p.anim = sp > Balance.PlayerAnimEps ? p.anim + sp / Balance.Stride : 0;
 
             TickBlink(run);
-            if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1);
+            // off the JS rate the cooldown keeps the fraction it overran by for one tick, so held fire is exact in seconds
+            if (Balance.TickHz == Balance.JsHz) { if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1); }
+            else p.cooldown = p.cooldown > 0 ? p.cooldown - 1 : 0;
             if (p.altCooldown > 0) p.altCooldown--;
             Blast.TickFields(run);
             Blast.TickHookResist(run);

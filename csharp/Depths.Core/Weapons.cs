@@ -74,7 +74,8 @@ namespace Depths
                 });
             }
             run.shots += w.Count;
-            p.cooldown = w.Cooldown / Balance.TempoRate;
+            if (Balance.TickHz == Balance.JsHz) p.cooldown = w.Cooldown / Balance.TempoRate;
+            else p.cooldown = w.Cooldown / Balance.TempoRate + System.Math.Min(0, p.cooldown);   // carry the overrun (TickPlayer)
             p.muzzleTimer = MuzzleTicks;
             p.shootSlow = System.Math.Min(ShootSlowMax, p.shootSlow + ShootSlowMain);
         }

@@ -150,16 +150,127 @@ namespace Depths.Tests
             Assert.That(offT, Is.Empty);
         }
 
+        enum U { PerSec, Sec, SecF, Ease, Decay, Knock, KnockP, Substeps }
+
+        // Every rate-derived static dial, by unit. A static int/double property that is not listed fails
+        // the test below, so a new dial cannot skip the 60 Hz check.
+        static readonly Dictionary<string, U> Dials = new Dictionary<string, U>
+        {
+            ["Balance.PlayerMove"] = U.PerSec, ["Balance.MomentumStallDecay"] = U.PerSec, ["Balance.MomentumMoveFloor"] = U.PerSec,
+            ["Balance.BossCdMin"] = U.Sec, ["Balance.BossCdVar"] = U.Sec, ["Balance.BossRecover"] = U.Sec,
+            ["Balance.FadeOut"] = U.Sec, ["Balance.Ready"] = U.Sec, ["Balance.HitFlash"] = U.Sec, ["Balance.Iframes"] = U.Sec,
+            ["Balance.BrunchAbsorbFlash"] = U.Sec, ["Balance.KnockMax"] = U.Knock, ["Balance.KnockTrade"] = U.Knock,
+            ["Balance.KnockStun"] = U.Sec, ["Balance.WanderTicks"] = U.Sec, ["Balance.GunnerDodgeChance"] = U.Ease,
+            ["Balance.GunnerDodgeKick"] = U.Knock, ["Balance.GunnerDodgeCd"] = U.Sec, ["Balance.AltCooldown"] = U.Sec,
+            ["Balance.AltSpeed"] = U.PerSec, ["Balance.RegenDelay"] = U.Sec, ["Balance.RegenStep"] = U.Sec,
+            ["Balance.MarkTicks"] = U.Sec, ["Balance.UnlockTime"] = U.Sec, ["Balance.FadeClear"] = U.Sec,
+            ["Balance.BossVolleyGap"] = U.Sec, ["Balance.BossWallLife"] = U.Sec, ["Balance.BossShotSpeed"] = U.PerSec,
+            ["Balance.HookSpeed"] = U.PerSec, ["Balance.HookSuck"] = U.PerSec, ["Balance.HookHold"] = U.Sec,
+            ["Balance.HookField"] = U.Sec, ["Balance.HookForget"] = U.Sec, ["Balance.HookEarlyMin"] = U.Sec,
+            ["Balance.HookFieldStun"] = U.SecF, ["Balance.HookFieldFlash"] = U.SecF, ["Balance.BlinkIframes"] = U.Sec,
+            ["Balance.BlinkGrace"] = U.Sec, ["Balance.DashTrail"] = U.Sec, ["Balance.BrunchScanTicks"] = U.Sec,
+            ["Balance.BrunchShieldSpeed"] = U.PerSec, ["Balance.BrunchAccel"] = U.Ease, ["Balance.BrunchDecel"] = U.Ease,
+            ["Balance.BrunchRun"] = U.PerSec, ["Balance.BrunchWalkSpeed"] = U.PerSec, ["Balance.BossWarnTime"] = U.Sec,
+            ["Balance.KnockCut"] = U.Knock, ["Balance.KnockPCut"] = U.KnockP, ["Balance.KnockPFriction"] = U.Decay,
+            ["Balance.KnockPScale"] = U.KnockP, ["Balance.LungeBeliefTrack"] = U.Ease, ["Balance.PlayerSpeedEps"] = U.PerSec,
+            ["Balance.MoveEps"] = U.PerSec, ["Balance.PlayerAnimEps"] = U.PerSec, ["Balance.BlinkDirEps"] = U.PerSec,
+            ["Balance.BrunchStill"] = U.PerSec, ["Balance.ShootSlowRecover"] = U.PerSec, ["Balance.SlowEase"] = U.Ease,
+            ["Balance.BlinkRecharge"] = U.Sec, ["Balance.HitboxLagEase"] = U.Ease, ["Balance.AggroTime"] = U.Sec,
+            ["Balance.HitSlowTicks"] = U.Sec, ["Balance.BlinkBoost"] = U.Sec, ["Balance.KnockFriction"] = U.Decay,
+            ["Balance.KnockScale"] = U.Knock, ["Balance.WanderSpeed"] = U.PerSec, ["Balance.BrunchRamp"] = U.Sec,
+            ["Balance.LungeTrack"] = U.Ease, ["Balance.LungeCd"] = U.Sec, ["Balance.LungeWindup"] = U.Sec,
+            ["Balance.LungeSpeed"] = U.PerSec, ["Balance.LungeRecover"] = U.Sec, ["Balance.LungerNear"] = U.PerSec,
+            ["Balance.LungerFar"] = U.PerSec, ["Balance.LungerSpread"] = U.PerSec, ["Balance.SwerveDecay"] = U.PerSec,
+            ["Balance.CastTime"] = U.Sec, ["Balance.ShellSubsteps"] = U.Substeps,
+            ["Weapons.MuzzleTicks"] = U.Sec, ["Bodies.BrunchWalk"] = U.PerSec, ["Bodies.BrunchRun"] = U.PerSec,
+            ["RunState.FadeDescend"] = U.Sec,
+        };
+
+        // the dials that live in tables and on fresh bodies rather than as static properties
+        static IEnumerable<(string name, U unit, Func<double> read)> TableDials()
+        {
+            for (int i = 0; i < Weapons.All.Length; i++)
+            {
+                int w = i;
+                yield return ("weapon " + w + " cooldown", U.SecF, () => Weapons.All[w].Cooldown);
+                yield return ("weapon " + w + " speed", U.PerSec, () => Weapons.All[w].Speed);
+            }
+            foreach (BodyKind k in Enum.GetValues(typeof(BodyKind)))
+            {
+                var kind = k;
+                yield return (k + " walk", U.PerSec, () => Bodies.Of(kind).Walk ?? 0);
+                yield return (k + " run", U.PerSec, () => Bodies.Of(kind).Run ?? 0);
+                yield return (k + " base", U.PerSec, () => Bodies.Of(kind).Base ?? 0);
+                yield return (k + " shot speed", U.PerSec, () => Bodies.Of(kind).PShotSpeed ?? 0);
+                yield return (k + " cdMin", U.Sec, () => Bodies.Of(kind).CdMin ?? 0);
+                yield return (k + " cdVar", U.Sec, () => Bodies.Of(kind).CdVar ?? 0);
+            }
+            yield return ("player speed", U.PerSec, () => new Player().speed);
+        }
+
+        static string? Wrong(U unit, double v60, double v210)
+        {
+            static bool Rel(double a, double b, double tol) => Math.Abs(a - b) <= tol * Math.Max(Math.Abs(a), Math.Abs(b));
+            switch (unit)
+            {
+                case U.PerSec: return Rel(v60 * 60, v210 * 210, 1e-12) ? null : "per second " + v60 * 60 + " vs " + v210 * 210;
+                case U.SecF: return Rel(v60 / 60, v210 / 210, 1e-12) ? null : "seconds " + v60 / 60 + " vs " + v210 / 210;
+                case U.Sec: return Math.Abs(v60 / 60 - v210 / 210) <= 0.5 / 60 + 0.5 / 210 ? null : "seconds " + v60 / 60 + " vs " + v210 / 210;
+                case U.Ease: return Rel(Math.Pow(1 - v60, 60), Math.Pow(1 - v210, 210), 1e-9) ? null : "left after a second " + Math.Pow(1 - v60, 60) + " vs " + Math.Pow(1 - v210, 210);
+                case U.Decay: return Rel(Math.Pow(v60, 60), Math.Pow(v210, 210), 1e-9) ? null : "kept after a second " + Math.Pow(v60, 60) + " vs " + Math.Pow(v210, 210);
+                case U.Substeps: return v60 * 60 >= 210 && (v60 - 1) * 60 < 210 && v210 == 1 ? null : "steps " + v60 + " / " + v210;
+                default:
+                    // a knock speed, read as the distance it coasts: v / (1 - friction)
+                    double f60, f210;
+                    if (unit == U.Knock) { Balance.TickHz = 60; f60 = Balance.KnockFriction; Balance.TickHz = 210; f210 = Balance.KnockFriction; }
+                    else { Balance.TickHz = 60; f60 = Balance.KnockPFriction; Balance.TickHz = 210; f210 = Balance.KnockPFriction; }
+                    return Rel(v60 / (1 - f60), v210 / (1 - f210), 1e-9) ? null : "coast " + v60 / (1 - f60) + " vs " + v210 / (1 - f210);
+            }
+        }
+
+        [Test]
+        public void EveryRateDialMeansTheSameInSecondsAtSixty()
+        {
+            var off = new List<string>();
+            var seen = new HashSet<string>();
+            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState) })
+                foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+                {
+                    if (prop.Name == nameof(Balance.TickHz) || (prop.PropertyType != typeof(int) && prop.PropertyType != typeof(double))) continue;
+                    string name = t.Name + "." + prop.Name;
+                    var (v60, v210) = Both(() => Convert.ToDouble(prop.GetValue(null)));
+                    if (!Dials.TryGetValue(name, out var unit))
+                    {
+                        if (v60 != v210) off.Add(name + " changes with the rate but is not in the dial table");
+                        continue;
+                    }
+                    seen.Add(name);
+                    var why = Wrong(unit, v60, v210);
+                    if (why != null) off.Add(name + " (" + unit + "): " + why);
+                }
+            foreach (var name in Dials.Keys) if (!seen.Contains(name)) off.Add(name + " is in the table but is no longer a static property");
+            foreach (var (name, unit, read) in TableDials())
+            {
+                var (v60, v210) = Both(read);
+                if (v60 == 0 && v210 == 0) continue;   // a kind without that field
+                var why = Wrong(unit, v60, v210);
+                if (why != null) off.Add(name + " (" + unit + "): " + why);
+            }
+            Assert.That(off, Is.Empty);
+        }
+
         // ---------------------------------------------------------------- the player
 
         [Test]
         public void EachWeaponFiresAsOftenPerSecond()
         {
-            // held fire shoots when the cooldown has run out, so a period is the cooldown rounded up to whole ticks
+            // held fire: at 210 the period is the cooldown rounded up to whole ticks (the JS); off it the
+            // overrun is carried, so over ten seconds the mean period is the cooldown in seconds to within
+            // one tick spread over the shots - tight enough to fail the old rounding (Bolt +2%, Beam +7%)
             for (int w = 0; w < Weapons.All.Length; w++)
             {
                 int weapon = w;
-                var (p60, p210) = Both(() =>
+                var (r60, r210) = Both(() =>
                 {
                     var run = Started();
                     run.player.weaponIdx = weapon;
@@ -170,9 +281,11 @@ namespace Depths.Tests
                         TickOrder.TickPlayer(run, new Input(0, 0, fire: true, aimX: Balance.RoomRight, aimY: Balance.MidY));
                         if (run.shots != shots) { shots = run.shots; fired.Add(t); }
                     }
-                    return Seconds(fired[fired.Count - 1] - fired[0]) / (fired.Count - 1);
+                    return (period: Seconds(fired[fired.Count - 1] - fired[0]) / (fired.Count - 1), n: fired.Count);
                 });
-                Assert.That(p60, Is.EqualTo(p210).Within(OneTickEach), Weapons.All[w].Name + ": seconds between shots");
+                double exact = Weapons.All[w].CooldownS / Balance.TempoRate;
+                Assert.That(r60.period, Is.EqualTo(exact).Within(Tick60 / (r60.n - 1) + 1e-12), Weapons.All[w].Name + ": seconds between shots at 60 Hz");
+                Assert.That(r210.period, Is.EqualTo(exact).Within(Tick210), Weapons.All[w].Name + ": at 210 Hz, rounded up as the JS rounds");
             }
         }
 

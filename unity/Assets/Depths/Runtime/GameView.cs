@@ -83,7 +83,7 @@ namespace Depths.Unity
             {
                 // the Warden, spawned the way the game spawns it (its own draws, its kit)
                 var w = Spawn.Body(_run, BodyKind.Boss, Balance.MidX, Balance.RoomTop + 120);
-                w.noticeTimer = 90;
+                w.noticeTimer = Balance.Sec(0.43);
                 _run.enemies.Add(w);
                 return;
             }
@@ -97,7 +97,7 @@ namespace Depths.Unity
             for (int i = 0; i < 4; i++)
             {
                 var e = Enemy.Of(BodyKind.Brunch, Balance.RoomLeft + 300 + (i % 2) * 18, Balance.RoomTop + 200 + (i / 2) * 18);
-                e.packId = 1; e.packSlot = i; e.noticeTimer = 90;
+                e.packId = 1; e.packSlot = i; e.noticeTimer = Balance.Sec(0.43);
                 _run.enemies.Add(e);
             }
         }
@@ -107,7 +107,7 @@ namespace Depths.Unity
             double x = Balance.RoomLeft + 110 + k * 160, y = Balance.RoomTop + 90 + (k % 2) * 60;
             var e = Enemy.Of(DummyKinds[k % DummyKinds.Length], x, y);
             e.flank = k * 2.399963229728653;   // the game's golden-angle flank cursor
-            e.noticeTimer = 60 + k * 25;        // a beat before they move, as a spawn has
+            e.noticeTimer = Balance.Sec(0.29 + 0.12 * k);   // a beat before they move, as a spawn has
             e.shootCd = e.cdMin;                 // and before a ranged body's first cast
             _run.enemies.Add(e);
         }
