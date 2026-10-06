@@ -211,8 +211,21 @@ namespace Depths.Unity
             var p = _run.player;
             var t = _run.enemies.OrderBy(e => (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y)).FirstOrDefault();
             if (t != null) aim = new Vector2((float)t.x, (float)t.y);
-            mv = RealRun ? new Vector2(0, 1) : new Vector2((_demoT / 40) % 2 == 0 ? 1 : -1, 0);
-            fire = true;
+            mv = new Vector2((_demoT / 40) % 2 == 0 ? 1 : -1, 0);
+            var room = _run.CurrentRoom;
+            if (RealRun && t == null && room != null)
+            {
+                // a quiet room: walk out through the first open door (screen y is up for the move action)
+                foreach (var d in room.Doors)
+                {
+                    if (!Rooms.DoorPassable(_run, room, d)) continue;
+                    var (dx, dy) = Rooms.DoorPoint(d);
+                    double tx = dx + Math.Sign(dx - Balance.MidX) * 40, ty = dy + Math.Sign(dy - Balance.MidY) * 40;
+                    mv = new Vector2(Math.Sign(Math.Round(tx - p.x)), -Math.Sign(Math.Round(ty - p.y)));
+                    break;
+                }
+            }
+            fire = t != null;
             if (_demoT == 30) p.weaponIdx = 1;
         }
     }

@@ -41,7 +41,11 @@ namespace Depths.Unity
                 var m = FindAnyObjectByType<MainMenuController>();
                 if (m != null) m.ShowView(_view);
             }
-            for (int i = 0; i < (_view == "boss" ? 420 : _view == "game" || _view == "sandbox" ? 150 : 20); i++) yield return null;   // the game view needs time to play
+            // the game views play for a while in real time (frame counts depend on the frame rate)
+            if (_view == "game") yield return new WaitForSecondsRealtime(5f);
+            else if (_view == "boss") yield return new WaitForSecondsRealtime(4f);
+            else if (_view == "sandbox") yield return new WaitForSecondsRealtime(1.5f);
+            else for (int i = 0; i < 20; i++) yield return null;
             ScreenCapture.CaptureScreenshot(_path);
             for (int i = 0; i < 10; i++) yield return null;
             Application.Quit();
