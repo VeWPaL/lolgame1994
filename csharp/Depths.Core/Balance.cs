@@ -227,9 +227,9 @@ namespace Depths
     /// <summary>
     /// The Brunch guard rule, as the JS playtest flag ?brunch= (A: guard the shooter wherever the
     /// player is; B: leash at BrunchGuardLeash; A+: the wall advances once the player leaves the
-    /// target's reach). A is the reference until the owner chooses.
+    /// target's reach). A+ is the game (owner's choice 2026-10-06); A and B are for comparison only.
     /// </summary>
-    public static string BrunchVariant = "A";
+    public static string BrunchVariant = "A+";
     public const double BrunchGuardLeash = 420;
 
     // Doors and rooms, read from the game 2026-10-06.

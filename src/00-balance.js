@@ -4,13 +4,13 @@ ctx.imageSmoothingEnabled=false;
 
 const W=960, H=600;
 
-/* PLAYTEST VARIANTS: opt-in behaviour chosen by URL, e.g. depths.html?brunch=B. The default is the
-   reference behaviour, so the tests, the parity tables and the C# port never see a variant.
-   brunch: A = guard the shooter wherever the player is; B = leash, chase when the player is far
-   from it; A+ = keep guarding, but advance the wall as a formation when the player leaves its range.
+/* PLAYTEST VARIANTS: behaviour chosen by URL, e.g. depths.html?brunch=B. The default is the game.
+   brunch: A+ (default, owner's choice 2026-10-06) = guard the shooter, but advance the wall as a
+   formation when the player leaves its range; A = guard wherever the player is; B = leash, chase
+   when the player is far from it. A and B stay for comparison playtests only.
    In a URL '+' arrives as a space, so ?brunch=A+ reads "A "; A%2B and Aplus work too. */
 const VARIANT=(()=>{
-  const v={brunch:'A'};
+  const v={brunch:'A+'};
   try{
     const raw=new URLSearchParams(location.search).get('brunch');
     if(raw!==null){
