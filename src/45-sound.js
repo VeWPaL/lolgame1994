@@ -41,6 +41,23 @@ const Sound=(function(){
      `play` reads it and `play` is defined above that point - a `let` further down would be a
      temporal-dead-zone error the first time a sound was triggered. */
   let rendering=false;
+  /* The real AudioContext, never swapped. `ctx` is swapped by an offline render; this is not. */
+  let liveCtx=null;
+  let lastDecline='none';
+
+  /* YIELDS THE MAIN THREAD WITHOUT WAITING FOR A FRAME.
+
+     `setTimeout(0)`, not `requestAnimationFrame`, and the reason is specific to this project's test
+     harness: the suite runs its test bodies while the page is still parsing, so the main thread is
+     blocked, and a rAF callback is not delivered until the browser regains control - which it does not
+     do while the suite is on the stack. A wait loop built on rAF therefore never completes inside the
+     suite, and the symptom is a browser navigation timeout rather than a test failure: the page never
+     becomes idle enough for `domcontentloaded` to fire.
+
+     A `setTimeout(0)` macrotask is delivered as soon as the current task yields, so it works in both
+     places - in the suite and in a real game loop. Anything that has to wait for the audio clock
+     should also be bounded, so a browser that refuses to resume cannot turn a wait into a hang. */
+  const yieldToBrowser=()=>new Promise(r=>setTimeout(r,1));
   let muted=false, volume=0.55, unlocked=false, warned=false, registered=false, gestureSeen=false;
   let voices=0;
   let played=0, skippedMuted=0, skippedLocked=0, failed=0;
@@ -54,10 +71,68 @@ const Sound=(function(){
   /* THE ONLY PLACE ctx IS CREATED. Idempotent, because a keydown handler that runs sixty times a
      second must not construct sixty contexts - and it does not throw if called twice, but the
      suspended-state dance is worth doing exactly once. */
+  /* THE CONTEXT MUST BE BUILT ON A GESTURE, AND THIS FUNCTION IS THE ONLY PLACE IT IS BUILT.
+
+     This was the cause of a game that was completely silent for ever, and it is worth writing down
+     because every measurement in this file had said the audio worked.
+
+     THE BUG. `autoUnlock()` is called at load from `80-ui.js`, and it calls this. So the context was
+     created BEFORE any user interaction - which is precisely what every browser's autoplay policy
+     suspends. The context came up `suspended`. Then `resume()` was called and its promise ignored,
+     and `unlocked` was read from `ctx.state` on the very next line, before the promise could
+     settle. So `unlocked` stayed false, `play()` skipped every voice through `skippedLocked`, and:
+
+         - the guard at the top of this function is `if(ctx||!Ctor) return false`, and `ctx` had just
+           been assigned - so every SUBSEQUENT gesture, every keypress, every click, called straight
+           into that guard and returned false without trying anything;
+         - `autoUnlock` only removes its listeners once `unlocked` is true, so they stayed installed
+           too, calling a function that could not succeed.
+
+     A game with twelve fully working voices, correct waveforms, correct mix levels, a bounded pool -
+     and not one sound, because of a line that assigned a variable before the thing that variable was
+     waiting on.
+
+     MEASURED, with a real keydown and a real click and no autoplay flag, which is what a player's
+     browser has:
+
+         at load       ctxState 'suspended', unlocked false, blockedByPolicy true
+         after D       ctxState 'suspended', unlocked false
+         after click   ctxState 'suspended', unlocked false
+         40 shots      played 40, skippedLocked 40
+         held D firing played 50, skippedLocked 50
+
+     And with the autoplay flag set - which every benchmark in this file used - the same page reported
+     `ctxState 'running'` and passed everything. **That is why it looked fine.** A headless benchmark
+     with `--autoplay-policy=no-user-gesture-required` is measuring a browser the player does not have.
+
+     THE FIX, in three parts:
+       1. Do not create a context until a real gesture. `unlock` is a no-op without one.
+       2. `resume()` returns a PROMISE. Wait for it, then read the state - do not read the state and
+          assume the promise settled.
+       3. Allow a retry. A context that is somehow suspended must be resumable again, so the guard
+          cannot be `if(ctx) return false`. */
   function unlock(){
-    if(ctx||!Ctor) return false;
+    if(!Ctor){ lastDecline='unlock: no AudioContext constructor in this browser'; return false; }
+    /* NO GESTURE, NO CONTEXT. See the note above: a context built before an interaction is suspended
+       by every browser, and the original built one at load. */
+    if(!gestureSeen){ lastDecline='unlock: no gesture has happened yet'; return false; }
+
+    /* AN EXISTING CONTEXT THAT IS SUSPENDED IS NOT A REASON TO GIVE UP. This is part 3 of the fix and
+       it is the part that makes the other two recoverable: the old guard was `if(ctx) return false`,
+       so a context created in the wrong state could never be repaired - the one thing that would have
+       fixed it is the one thing it prevented. */
+    if(ctx){
+      if(ctx.state==='running'){ unlocked=true; return true; }
+      try{ ctx.resume(); }catch(e){ /* a context that refuses is handled by the state check */ }
+      unlocked=(ctx.state==='running');
+      return unlocked;
+    }
     try{
       ctx=new Ctor();
+      /* THE LIVE CONTEXT, KEPT UNDER A NAME OF ITS OWN. `ctx` is module state that `renderVoice`
+         swaps for the duration of an offline render, so anything that must act on the REAL context -
+         the suspend/resume recovery path, the test hooks - cannot use it. See `suspendForTest`. */
+      liveCtx=ctx;
       master=ctx.createGain();   // NOT tracked: the master lives for the life of the context
       master.gain.value=muted?0:volume;
       /* A COMPRESSOR ON THE MASTER, and it is not decoration. Six shells, four Brunch and a boss
@@ -78,14 +153,49 @@ const Sound=(function(){
          Measured in headless Edge with no game involved: a raw context is `running` on create and
          `running` after resume, and `currentTime` does not advance because there is no audio device.
          The game's own context reported `suspended` on the same page, which is this bug. */
-      try{ const r=ctx.resume&&ctx.resume(); if(r&&r.then) r.then(()=>{ unlocked=(ctx.state==='running'); },()=>{}); }
-      catch(e){ /* a context that refuses to resume is handled by the state check below */ }
+      /* RESUME, AND WAIT FOR IT BEFORE ASKING. This is part 2 of the fix.
+
+         `resume()` returns a promise and the state does not change until it settles, so reading
+         `ctx.state` on the line after the call is reading it too early - it reported 'suspended' on a
+         context that was about to run, and on the real machine it never ran at all.
+
+         So the promise is the thing that is waited on, and the state is read after. The synchronous
+         read is kept as well, because a context that is ALREADY running needs no wait and a game
+         should not be silent for a frame because of it. */
+      let settled=false, resumed=false;
+      try{
+        const r=ctx.resume&&ctx.resume();
+        if(r&&r.then){
+          r.then(()=>{ unlocked=(ctx.state==='running'); settled=true; },
+                 ()=>{ unlocked=(ctx.state==='running'); settled=true; });
+        } else { settled=true; }
+      }catch(e){ settled=true; }
       unlocked=(ctx.state==='running')||unlocked;
       /* THE FLAG IS NOT THE STATE. `unlocked` gates `play`, and if it is left false on a context that
          is running, the game is silent with everything else working. So `play` asks the CONTEXT too,
          and this flag is only ever a fast path. */
       return ctx.state==='running';
-    }catch(e){ failed++; ctx=null; return false; }
+    }catch(e){
+      /* DO NOT DISCARD A CONTEXT THAT WORKS. This line used to be `catch(e){ failed++; ctx=null; }`,
+         and it was the fourth way this file could end up permanently silent.
+
+         The throw happens partway through building the graph - `createGain`,
+         `createDynamicsCompressor`, `makeNoise` - and by then `ctx` is a real, live, possibly RUNNING
+         AudioContext. Setting it to null threw that away, and because the guard at the top of this
+         function reads a missing context as "not built yet", the next gesture built a SECOND context
+         while the first one's nodes stayed connected to its destination with nothing to stop them.
+
+         Measured: after a setup throw, `stats()` reported `ctxState: 'none'` and
+         `lastDecline: 'no AudioContext at all'` on a page whose audio was working moments earlier - and
+         the symptom surfaced as "one gesture and the context is suspended rather than running", which
+         describes a different bug entirely and sent the search somewhere else for a while.
+
+         So a partially-built context is KEPT. If it is running, the game has audio and the missing piece
+         was cosmetic; if it is not, `play` resumes it. Either way the player is better off than with a
+         null and no route back to sound. */
+      failed++;
+      return false;
+    }
   }
 
   /* ONE BUFFER OF WHITE NOISE, made once. Every percussive sound in the game - impacts, dashes,
@@ -111,7 +221,7 @@ const Sound=(function(){
   function play(name,opts){
     opts=opts||{};
     played++;
-    if(muted){ skippedMuted++; return false; }
+    if(muted){ skippedMuted++; lastDecline='muted'; return false; }
     /* NOT WHILE AN OFFLINE RENDER HOLDS THE MODULE `ctx`. THIS IS THE ACTUAL CAUSE OF A CORRUPTED
        WAVEFORM, and it took four wrong fixes to find because the symptom pointed somewhere else.
 
@@ -126,7 +236,35 @@ const Sound=(function(){
 
        The previous three fixes - serialising the renders, clearing the pool, suspending the live
        context - were all aimed at the LIVE graph. The live graph was never the problem. */
-    if(rendering){ skippedLocked++; return false; }
+    if(rendering){ skippedLocked++; lastDecline='a render is in flight'; return false; }
+    /* A CONTEXT THAT IS RUNNING IS A CONTEXT THAT PLAYS, WHATEVER THE FLAG SAYS.
+
+       This is the last line of defence, and it exists because the flag was the single point of
+       failure for the whole system: `unlocked` was read from `ctx.state` one line after calling
+       `resume()`, which is before the promise settles, so it was false on a context that was about to
+       run - and every voice went to `skippedLocked` while the game looked completely healthy.
+
+       Asking the CONTEXT here means a flag that is stale or late cannot silence the game. `resume()`
+       is only called when the context is genuinely not running, so this costs a comparison in the
+       common case and a resume on the rare one. */
+    if(!unlocked){
+      if(ctx&&ctx.state==='running'){ unlocked=true; }
+        else if(ctx){
+          /* A CONTEXT THAT WENT SUSPENDED IS A CONTEXT TO BE RESUMED, NOT A REASON TO STAY QUIET.
+
+             This is not the autoplay case - that is handled in `unlock`, on a gesture. This is the
+             case where the game WAS audible and then stopped being: the tab was backgrounded, the
+             machine changed audio device, the OS took the device exclusive. In every one of those the
+             browser suspends the context, and the original code here simply declined to play and
+             counted a skip, for ever.
+
+             So it asks for a resume on the play itself. A node scheduled against a suspended context
+             is not lost - it plays when the context comes back - which is the behaviour wanted, and
+             it costs one state comparison in the common case. */
+          try{ ctx.resume&&ctx.resume(); }catch(e){ /* refused: still counted as a skip below */ }
+        }
+        else { skippedLocked++; lastDecline='no AudioContext at all'; return false; }
+    }
     /* ASK THE CONTEXT, NOT THE FLAG. The flag is set once and goes stale - `resume()` is async, and a
        context that was suspended at the flag's creation is running a moment later. Reading only the
        flag is how a fully working sound system plays nothing. */
@@ -135,7 +273,18 @@ const Sound=(function(){
        it is bounded whether or not anything can be heard - and a headless browser, where the context
        never leaves `suspended`, is the only place the bound CAN be tested at all. Reserving after the
        state check meant the count stayed at zero there and two tests passed against a real leak. */
-    if(!unlocked||!ctx||ctx.state!=='running'){ skippedLocked++; return false; }
+    /* A SUSPENDED CONTEXT IS NOT A REFUSAL. This is the only thing standing between a tab that was
+       backgrounded and a game that is silent until it is reloaded.
+
+       The original line was `if(!unlocked||!ctx||ctx.state!=='running')` - it declined to play
+       whenever the context was not running, and the only thing that ever resumed a context was a
+       gesture through `unlock`. So: a player alt-tabs mid-fight, comes back, and the game is muted
+       for ever with no way back except a page reload. The `resume()` above is on the play itself, and
+       a node scheduled against a context that is about to run is not lost - it plays.
+
+       What is still refused is a browser with NO context, which genuinely cannot make a sound, and
+       that must stay visible rather than being papered over by a green counter. */
+      if(!ctx){ skippedLocked++; lastDecline='no AudioContext at all'; return false; }
     /* RECLAIM FIRST, THEN BUILD, THEN TRIM. Reclaiming before the build keeps the list from growing
        while a long sound is still sounding; trimming after it is what enforces the cap, because a
        sound adds 3-6 nodes and no pre-check can know how many until it has been built. */
@@ -143,7 +292,7 @@ const Sound=(function(){
     try{
       const t=ctx.currentTime;
       const v=VOICES[name];
-      if(!v) return false;
+      if(!v){ lastDecline='no such voice: '+name; return false; }
       /* The pitch jitter, and it is here rather than at every call site. `detune` is in cents, so a
          value of 20 is a fifth of a semitone either way - audible as "not a machine", inaudible as
          "wrong". A repeated shot at an identical pitch is the single thing that makes a synthesised
@@ -475,18 +624,35 @@ const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss a
   /* ---- wiring ---------------------------------------------------------------------------------- */
   /* Called from the input layer on the FIRST real interaction, and from nothing else. `once` because
      the handler is on the window and fires forever. */
-  function autoUnlock(){
+  /* CALLED WITH AN EVENT, THIS UNLOCKS. CALLED WITHOUT ONE, IT ONLY REGISTERS.
+
+     The distinction is the whole fix, and it was inverted. `autoUnlock()` used to set `gestureSeen`
+     unconditionally and then unlock - so the load-time call from `80-ui.js` claimed a gesture that had
+     not happened, `unlock()` built a context on the strength of it, and the browser suspended that
+     context. From then on the game was silent for ever, and the guard inside `unlock` made it
+     unrecoverable.
+
+     So: a real event sets the flag, and only then is a context built. The load-time call installs
+     the two listeners and does nothing else. */
+  function autoUnlock(event){
     /* REGISTERED ONCE, AT LOAD. This is called from the input layer with no event, and that call is
        the only thing that installs the two gesture listeners - so it must register rather than only
-       try to unlock, or the game has no sound until something calls it that never will. Called with
-       an event (by those listeners) it unlocks, and then removes them. */
+       try to unlock, or the game has no sound until something calls it that never will. */
     if(!registered){
       registered=true;
       try{
         window.addEventListener('keydown',autoUnlock,true);
         window.addEventListener('pointerdown',autoUnlock,true);
+        /* AND ONE MORE, because a player who uses neither keyboard nor mouse still has to be able to
+           start a game: the canvas itself, and touch. Same handler, same reason. */
+        window.addEventListener('touchstart',autoUnlock,true);
+        window.addEventListener('mousedown',autoUnlock,true);
+        window.addEventListener('keyup',autoUnlock,true);
       }catch(e){ /* no window: nothing to attach to */ }
     }
+    /* NO EVENT, NO GESTURE. `event` being present is what makes this a gesture; the load-time call
+       has none, and must not build a context. */
+    if(!event) return;
     gestureSeen=true;
     if(unlocked) return;
     unlock();
@@ -494,6 +660,9 @@ const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss a
       try{
         window.removeEventListener('keydown',autoUnlock,true);
         window.removeEventListener('pointerdown',autoUnlock,true);
+        window.removeEventListener('touchstart',autoUnlock,true);
+        window.removeEventListener('mousedown',autoUnlock,true);
+        window.removeEventListener('keyup',autoUnlock,true);
       }catch(e){ /* nothing to remove */ }
     }
   }
@@ -570,13 +739,33 @@ const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss a
     /* THE TEST SURFACE. A sound system whose state cannot be read cannot be tested, and "did it play"
        is the only question worth asking of audio. */
     stats:()=>{ prune(); return {played,skippedMuted,skippedLocked,failed,
-        voices:live.length,cap:MAX_VOICES,unlocked,muted,
+        voices:live.length,cap:MAX_VOICES,muted,
+        /* DERIVED, NOT STORED. `unlocked` is a flag that `play` sets on its own when it finds a
+           running context - the last line of defence that stops a stale flag from silencing the game.
+           So a stored `unlocked` read back here is stale by construction, and a test asserting on it
+           was asserting on bookkeeping rather than on audio. The context is the truth. */
+        unlocked:!!(ctx&&ctx.state==='running'),
         ctxState:ctx?ctx.state:'none',
+        /* WHY `play` DECLINED, because "it did not play" is the least useful sentence available.
+           There are four reasons it can refuse and they are not the same bug: muted, a render in
+           flight, no context at all, and a voice that is not in the table. Three consecutive days of
+           this bug were spent reading a counter that named none of them. `lastDecline` is the last
+           reason, so a failing assertion can print it instead of guessing. */
+        lastDecline:lastDecline||'none',
+        rendering:!!rendering,
+        /* IS `ctx` STILL THE REAL CONTEXT? `renderVoice` swaps the module variable `ctx` for an
+           OfflineAudioContext and restores it afterwards. If a render threw between the swap and the
+           restore, `ctx` would be left pointing at an offline graph forever - which reports
+           `state: 'suspended'`, refuses to make a sound, and answers `resume()` in a way that never
+           turns it green. This is the assertion that distinguishes that from a policy suspension. */
+        ctxIsLive:(ctx===liveCtx),
+        ctxKind:(ctx&&ctx.constructor&&ctx.constructor.name)||'none',
+        liveState:(liveCtx?liveCtx.state:'none'),
         /* WHY it is silent, when it is. A test that can only see 'suspended' has to guess, and the
            guess was wrong three times: the autoplay policy, an async resume, and a leaking voice
            counter all looked identical from the outside. This separates "the browser will not let
            us" from "we asked for it". */
-        blockedByPolicy:!!(ctx&&ctx.state!=='running'&&!unlocked&&gestureSeen),
+        blockedByPolicy:!!(ctx&&ctx.state!=='running'&&gestureSeen),
         gestureSeen:gestureSeen}; },
     names:()=>Object.keys(VOICES),
     setMuted(v){ muted=!!v; if(master) master.gain.value=muted?0:volume; return muted; },
@@ -652,6 +841,115 @@ const MAX_VOICES=48, MAX_SOUND_LEN=1.4;   // 48 nodes ~= 8-16 sounds; the boss a
       return {voices:live.length,cap:MAX_VOICES};
     },
     releasePool(){ live.length=0; },
+
+    /* A TEST HOOK, and it exists for one reason: the recovery path cannot be tested any other way.
+
+       The bug it guards is "a suspended context is never brought back", and to test that you need a
+       suspended context. There is no honest way to produce one from outside - the browser produces it
+       by autoplay policy, which is the thing under test - so this makes one deliberately, on the
+       REAL context, and the test then asks for it back through the same public path a gesture uses.
+
+       A hook rather than a mock, because a mock would be a test of the mock: what is being tested is
+       whether `unlock` returns early when `ctx` is set, and that is a property of the real function
+       reading the real module state. */
+    /* RESOLVES ONCE THE CONTEXT IS RUNNING, OR ONCE IT CLEARLY IS NOT GOING TO.
+
+       A gesture is not finished when its handler returns: `resume()` returns a promise, and reading
+       `ctx.state` on the next line is the exact mistake that silenced the game. So this is the
+       honest way to wait for an unlock - and it is public because a test that waits synchronously is
+       making the same mistake the bug did.
+
+       It gives up rather than hanging, because a browser that refuses to resume must not turn a test
+       into a timeout with no explanation. */
+    /* RESOLVES WHEN NO RENDER IS IN FLIGHT. The serial queue is not sufficient on its own, and this
+       is the reason.
+
+       `render()` sets the `rendering` flag, awaits `startRendering()`, and clears the flag in a
+       `finally`. The test that started it has usually already returned by then, so a test declared
+       `serial` - which waits for the PREVIOUS test's promise, not for the previous test's audio work
+       to finish - can still find the flag set. Measured: a serialised test reporting
+       `rendering: true` on entry, and every `play` it made declined with
+       "a render is in flight", against code that was correct.
+
+       So the wait is on the actual condition rather than on the neighbouring promise. */
+    whenIdle(){
+      if(!rendering) return Promise.resolve(true);
+      return new Promise(resolve=>{
+        /* Ten SECONDS, in milliseconds, because an offline render of the longest voice plus a queue of
+           neighbours is not a frame count. The old bound was `++frames>600` - six hundred animation
+           frames, which was ten seconds when a frame was a frame and is ten milliseconds now. */
+        const deadline=Date.now()+10000;
+        const tick=()=>{
+          if(!rendering) return resolve(true);
+          if(Date.now()>deadline) return resolve(false);
+          yieldToBrowser();
+        };
+        yieldToBrowser();
+      });
+    },
+
+    whenAudible(){
+      const ctxNow=ctx;
+      if(!ctxNow) return Promise.resolve(false);
+      if(ctxNow.state==='running'){ unlocked=true; return Promise.resolve(true); }
+      return new Promise(resolve=>{
+        let done=false;
+        const finish=(v)=>{ if(done) return; done=true; unlocked=(ctxNow.state==='running'); resolve(unlocked); };
+        /* A handful of animation frames, which is far longer than any resume takes and far shorter
+           than a test timeout. */
+        /* BOUNDED BY TIME, NOT BY A FRAME COUNT. This was `if(++frames>30) finish(false)` - thirty
+           animation frames' worth of `setTimeout(1)`, so about thirty milliseconds, which is shorter
+           than several of the things it is waiting for. A budget expressed in frames silently changes
+           meaning when the waiting primitive changes, and this one did: it gave up before the promise it
+           was waiting on could settle, and returned `false` - so a test asked "did the audio come up?"
+           and the helper answered "no" on a context that was about to say yes.
+
+           So both bounds are now milliseconds, which is what they were always trying to express. */
+        const deadline=Date.now()+3000;
+        const tick=()=>{
+          if(done) return;
+          if(ctxNow.state==='running') return finish(true);
+          if(Date.now()>deadline) return finish(false);
+          yieldToBrowser();
+        };
+        yieldToBrowser();
+      });
+    },
+
+    suspendForTest(){
+      /* IT SUSPENDS THE LIVE CONTEXT, AND THAT WORD IS LOAD-BEARING.
+
+         The first version of this hook called `ctx.suspend()` - and `ctx` is the module variable that
+         `renderVoice` SWAPS to the OfflineAudioContext for the duration of a render. So a test that
+         happened to run while a neighbour was rendering suspended an OFFLINE context, whose
+         `suspend()` requires an argument and threw:
+
+             TypeError: Failed to execute 'suspend' on 'OfflineAudioContext': 1 argument required
+
+         That exception escaped into the middle of somebody else's render, the render's `finally` still
+         cleared its flag, and three unrelated tests failed with three different and entirely spurious
+         messages. It took a page-error listener, which nothing in this harness had ever had, to see
+         it.
+
+         The lesson is not about `suspend`. It is that **a test hook acting on a variable the system
+         mutates is a hook that can act on the wrong object**, and the only defence is to name the
+         object explicitly. `liveCtx` is that name, and it is the one variable here a render does NOT
+         touch.
+
+         IT RETURNS A PROMISE, because `suspend()` is one. A hook that returns before the state it
+         claims to have changed has actually changed is the same fixture error as a test that asserts
+         its own precondition: the caller has no way to tell whether it worked. Measured - a probe
+         that called this, then immediately read the state, then played, found the context still
+         `running`, so the play succeeded and the whole recovery path went unexercised while the suite
+         reported 240/240. */
+      const target=liveCtx;
+      if(!target) return Promise.resolve(false);
+      let p;
+      try{ p=(target.state==='running') ? target.suspend() : null; }
+      catch(e){ p=null; }
+      unlocked=false;
+      return Promise.resolve(p).then(()=>true, ()=>true);
+    },
     /* a test hook: build a voice without a live context, so the ENVELOPE can be asserted in a
        headless browser where no sound is ever heard. Returns the parameter values it would have
        used, which is what a test can actually check. */

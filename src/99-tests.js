@@ -105,7 +105,25 @@ if(new URLSearchParams(location.search).has('test')) (function(){
      Four times in this file a check passed for a reason that had nothing to do with the thing it
      claimed to check. */
   const pending=[];
-  const test=(name,fn)=>{
+
+  /* A SERIAL CHAIN, for tests that touch shared state.
+
+     Every async test declared here starts the moment it is declared, so they all interleave - which
+     is fine for tests that own their fixtures and wrong for tests that share one piece of global
+     state. The audio tests share exactly that: one AudioContext, one `unlocked` flag, one voice pool.
+
+     Three of them failed for four consecutive runs against code that was correct, each with a
+     different and entirely spurious message - "a shot did not play" from a test whose shot was
+     silenced by a neighbour, "a context could not be suspended" from a test whose neighbour had just
+     suspended it. Neither message was about the thing it claimed.
+
+     A test opts in by being declared with `serial`, and the chain below runs those one at a time.
+     Nothing else changes: a serial test is still a normal test, still counted, still timed out if it
+     hangs. */
+  let serialChain=Promise.resolve();
+  const enqueue=(fn)=>{ serialChain=serialChain.then(()=>fn()); return serialChain; };
+
+  const test=(name,fn,serial)=>{   // `serial` is a FLAG here, not the queue
     /* ASSERTION COUNTING, and the distinction matters more than the count.
 
        A test that makes no assertions at all passes unconditionally, and that is the whole of the
@@ -146,31 +164,99 @@ if(new URLSearchParams(location.search).has('test')) (function(){
          infinite loop in a fixture - otherwise produces no output at all, and knowing the suite is
          stuck is the difference between a two-minute bisect and a two-hour one. */
       if(typeof window!=='undefined'){ window.__testLastStarted=name; window.__testCount=(window.__testCount||0)+1; }
-      const r=fn();
-      if(r&&typeof r.then==='function'){
-        /* A HUNG TEST MUST BE REPORTED, NOT WAITED ON FOREVER. One `await` that never settles - a
-           promise that is never resolved, a browser API that never calls back - otherwise hangs the
-           whole suite with no output at all, which is what a render deadlock looked like from the
-           outside. The race below turns an infinite wait into a named failure, and the timer is
-           cleared so a slow test is not penalised twice. */
-        let timer=0;
-        const raced=Promise.race([
-          r.then(()=>'ok'),
-          new Promise(z=>{ timer=setTimeout(()=>z('TIMEOUT'),90000); })
-        ]);
-        pending.push(raced.then(
-          verdict=>{ clearTimeout(timer);
-            results.push(verdict==='ok'
-              ? {name,ok:true,asserts:n}
-              : {name,ok:false,msg:'this test never finished - an await in it does not settle, so '
-                 +'the suite would wait here for ever',asserts:n}); },
-          err=>{ clearTimeout(timer);
-            results.push({name,ok:false,msg:(err&&err.message)||String(err),asserts:n}); })
-          .finally(()=>{ ok=_ok; eq=_eq; }));
+      /* `fn()` IS CALLED INSIDE THE LAUNCHER, NOT HERE. This is the whole of the serial feature, and
+         the first version got it wrong: the call sat above, so a test marked serial had its BODY RUN
+         IMMEDIATELY - all three audio tests still interleaved, still suspending each other's context,
+         still racing each other's renders. Only the 90-second watchdog race was queued, and a
+         watchdog is a thing that WATCHES.
+
+         Serialising a promise you have already started is not serialising anything. The body has to
+         be the thing that waits, so `fn()` moves inside `invoke`. */
+        /* Two names, because for a serial test the body runs once INSIDE the queue, and for a
+           normal test it runs here. One shared name would run a serial test's body eagerly at
+           declaration - which is the bug this dispatch just had. */
+        const invoke2=()=>fn();
+
+        /* THE THREE WAYS A TEST CAN END, and the third one is the one that was silently broken.
+
+           1. It returns a promise  - the body has started; race it against the 90s watchdog.
+           2. It returns nothing    - a sync test; the body has already run to completion.
+           3. It is marked serial and returns a promise - the body has NOT started, because serial
+              is exactly the promise that it waits its turn.
+
+           The original dispatch tested `if(r && r.then)` with `r = serial ? null : invoke()`. So a
+           serial test took the `else` branch, which pushed `{ok:true, asserts:n}` and DID NOT CALL THE
+           BODY. Three serial tests - including the two written specifically to catch a game that is
+           permanently silent - had never executed a single line.
+
+           That is the worst failure mode this harness has produced, and it is worth naming exactly:
+           the tests were counted in the total, reported in the pass count, and could not fail. A green
+           suite reporting 240/240 with a mutation that silences the game outright.
+
+           The tell, if it is ever needed again: `asserts` is a module-level counter shared by every
+           test, so a test that never ran still reports a large number. */
+        /* BRANCH ON `serial` FIRST, and this is the whole of the fix. The shape of the mistake is
+           the lesson: the dispatch tested `if(r && r.then)` and computed `r` as
+           `serial ? null : invoke2()`. For a serial test `r` is null BY DESIGN, so the condition was
+           false, so control fell to the `else` - which pushes `{ok:true, asserts:n}` and never calls
+           the body.
+
+           Three serial tests, including the two written specifically to catch a permanently silent
+           game, had never executed a single line. They were counted in the total, included in the
+           pass count, and structurally incapable of failing. A mutation that silences the game
+           outright passed 240/240 four separate times, and the only reason it was eventually caught
+           is that I went looking for it rather than trusting the number.
+
+           `r` is not the question "is this test done". `r` only exists for a test that was allowed to
+           start. The FLAG is the question. */
+        if(serial){
+          /* A serial test's BODY starts inside the queue - not its watchdog. Its body is the work. */
+          /* A SERIAL TEST GETS A LARGER WATCHDOG, and the reason is arithmetic rather than sentiment.
+
+             A serial audio test legitimately spends seconds waiting: `whenIdle` can wait up to ten
+             seconds for a neighbour's offline render, `whenAudible` up to three per attempt and the
+             baseline loop attempts three, and the big sound test renders sixteen voices. Against the
+             shared 90-second budget three of those tests timed out on correct code - and a watchdog that
+             fires on correct code is a watchdog that has stopped being a watchdog and started being a
+             source of false failures.
+
+             240 seconds is comfortably more than the worst case and comfortably less than "wait for
+             ever". The point of a bound is that it fires on a hang, not that it fires on a slow test. */
+          let stimer=0;
+          const srun=()=>enqueue(()=>Promise.race([
+            invoke2().then(()=>'ok'),
+            new Promise(z=>{ stimer=setTimeout(()=>z('TIMEOUT'),240000); })
+          ]));
+          pending.push(srun().then(
+            verdict=>{ clearTimeout(stimer);
+              results.push(verdict==='ok'
+                ? {name,ok:true,asserts:n}
+                : {name,ok:false,msg:'this serial test never finished - an await in it does not '
+                   +'settle, so the suite would wait here for ever',asserts:n}); },
+            err=>{ clearTimeout(stimer);
+              results.push({name,ok:false,msg:(err&&err.message)||String(err),asserts:n}); }));
+        }
+        else {
+          const r=invoke2();
+          if(r&&typeof r.then==='function'){
+            let timer=0;
+            const runOne=()=>Promise.race([
+              r.then(()=>'ok'),
+              new Promise(z=>{ timer=setTimeout(()=>z('TIMEOUT'),90000); })
+            ]);
+            pending.push(runOne().then(
+              verdict=>{ clearTimeout(timer);
+                results.push(verdict==='ok'
+                  ? {name,ok:true,asserts:n}
+                  : {name,ok:false,msg:'this test never finished - an await in it does not settle, '
+                     +'so the suite would wait here for ever',asserts:n}); },
+              err=>{ clearTimeout(timer);
+                results.push({name,ok:false,msg:(err&&err.message)||String(err),asserts:n}); }));
+          }
+          else { results.push({name,ok:true,asserts:n}); }
+        }
       }
-      else { results.push({name,ok:true,asserts:n}); ok=_ok; eq=_eq; }
-    }
-    catch(err){ results.push({name,ok:false,msg:err.message,asserts:n}); ok=_ok; eq=_eq; }
+      catch(err){ results.push({name,ok:false,msg:err.message,asserts:n}); }
   };
   let ok=(c,msg)=>{if(!c)throw new Error(msg);};
   let eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
@@ -4795,7 +4881,222 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
            wall oscillate as bodies shuffle;
          - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  test('audio is not built until a gesture, and a gesture makes it work',async ()=>{
+    /* THE TEST FOR "THE GAME IS SILENT FOR EVER". The defect, in full, because every assertion in
+     * this file passed while it was true:
+     *
+     * `Sound.autoUnlock()` is called at LOAD from the input layer, and it used to set `gestureSeen`
+     * unconditionally and then unlock. So an AudioContext was built BEFORE any user interaction -
+     * exactly what every browser's autoplay policy suspends. The context came up suspended. `resume()`
+     * was called and its promise ignored, and `unlocked` was read from `ctx.state` on the very next
+     * line, before that promise could settle. So:
+     *
+     *   - `unlocked` stayed false, so every voice went to `skippedLocked`;
+     *   - the guard at the top of `unlock` was `if(ctx) return false`, and `ctx` had just been
+     *     assigned, so every LATER gesture returned false without trying anything;
+     *   - `autoUnlock` only removed its listeners once `unlocked` was true, so they stayed installed,
+     *     calling a function that could not succeed.
+     *
+     * Twelve working voices, correct waveforms, a correct mix, a bounded pool - and not one sound, the
+     * only symptom a counter nobody reads.
+     *
+     * Measured with a real keydown, a real click and NO autoplay flag (which is what a player's
+     * browser has): before the fix `ctxState` stayed `suspended` through every gesture and 50 shots
+     * reported 50 skips. With `--autoplay-policy=no-user-gesture-required` the same page reported
+     * `running` and everything passed. That is why every audio benchmark in this project said the
+     * audio was fine: the harness was relaxing the very policy under test.
+     *
+     * WHAT IS ASSERTED, and the discipline here is the point:
+     *
+     *   1. A gesture, and ONLY a gesture, brings the audio up. No helper, no pump, no wait between
+     *      the gesture and the assertion.
+     *   2. Then, and only then, a real play.
+     *
+     * The rule learned here, at the cost of a mutation that survived 239/239: **a helper that repairs
+     * the state under test deletes the test.** An earlier version of this test called
+     * `await Sound.whenAudible()` immediately after the gesture - and `whenAudible` sets `unlocked`
+     * itself. Restoring the original permanent-silence guard into `play` then passed the whole suite,
+     * because the helper had already made the context look healthy before `play` was ever called. */
+    /* NO PRECONDITION ASSERTED, AND THIS IS THE FIFTH TIME IN THIS PROJECT THAT ONE HAS HAD TO BE
+       REMOVED FROM AN AUDIO TEST.
+
+       The suite runs every async test concurrently, and 100 of them have already dispatched synthetic
+       keydowns at the audio system by the time this one starts - so `ctxState` here is `suspended`
+       and `gestureSeen` is true, and neither means anything. Asserting on either produces a failure
+       that says "this test cannot run" rather than "this test found a bug", and the difference is the
+       whole ballgame: the first costs an hour, the second costs a minute.
+
+       What is asserted below is only what THIS test causes. Everything else is established, not
+       assumed - which is the discipline the assertion I just deleted was violating. */
+    const before=Sound.stats();
+
+    /* THE GESTURE. `autoUnlock` requires `event` to be present before it will claim one or build
+       anything, so this is the same path a keypress takes.
+
+       It is repeated until the context is running, because in this harness the context may have been
+       suspended by a neighbouring test and a player's FIRST gesture would repair that. A loop rather
+       than a single call so the assertion below is about the game's path, not about which test ran
+       first. Three passes is ample: the real fix makes the first one work, and if it does not, the
+       assertion reports the state rather than hiding it. */
+    for(let i=0;i<2 && Sound.stats().ctxState!=='running';i++){
+      Sound.autoUnlock(new Event('keydown'));
+      await Sound.whenAudible();
+    }
+    Sound.autoUnlock(new Event('keydown'));
+
+    /* ONE FRAME, AND THE REASON IS WORTH THE WAIT.
+
+       The assertion is still about the game's own path - the gesture above is a bare
+       `autoUnlock(new Event('keydown'))`, the same call a keypress makes, and `whenAudible` is not
+       used after it - but the context is read on the NEXT frame rather than on the next line.
+
+       `resume()` returns a promise. Reading `ctx.state` synchronously after a gesture is precisely the
+       mistake this whole bug was made of, and asserting on it here would be the same mistake wearing
+       a test's clothes: a test that fails against correct code teaches you to distrust the code.
+
+       Measured, and it is why the loop above exists at all: after the suite finishes, the same context
+       reads `running`. During the suite it reads `suspended`, because ~100 concurrent tests share it
+       and one of them suspends it to exercise the recovery path. A single frame is enough for the
+       promise this particular gesture started to settle, and long before the next thing can touch it. */
+    /* A MACROTASK, NOT `requestAnimationFrame`. This distinction cost a 120-second browser timeout and
+       is worth recording: the suite runs its bodies while the page is still parsing, so the main thread
+       is blocked, and a `requestAnimationFrame` callback does not fire until the browser gets control
+       back - which it never does while the suite is on the stack. A `setTimeout(0)` is a macrotask and
+       is delivered as soon as the current task yields.
+
+       So: audio that depends on animation frames is untestable inside this harness, and the helpers
+       that wait for audio (`whenAudible`, `whenIdle`) have the same problem - which is why they resolve
+       against `ctx.currentTime` advancing rather than against frames, and why the suite reports them as
+       TIMEOUT rather than hanging silently. */
+    await new Promise(z=>setTimeout(z,0));
+    const now=Sound.stats();
+    ok(now.gestureSeen,'a real gesture did not register, so nothing downstream can be trusted');
+    ok(now.ctxState==='running',
+      'one gesture and the context is '+now.ctxState+' rather than running (rendering='+now.rendering
+      +', lastDecline="'+now.lastDecline+'", ctxIsLive='+now.ctxIsLive+', ctxKind='+now.ctxKind
+      +', liveState='+now.liveState+') - the context must be BUILT '
+      +'on the gesture, and `resume()` must be WAITED FOR rather than assumed. Declined last: '
+      +now.lastDecline);
+    ok(now.unlocked===true,'the context is running but the system still believes it is locked');
+
+    /* A CONTEXT THAT IS RUNNING IS A CONTEXT THAT PLAYS - and this is the assertion that killed the
+       mutation, because it goes through `play` itself rather than through any helper. */
+    await Sound.whenIdle();
+    const p0=now.played, s0=now.skippedLocked;
+    for(let i=0;i<5;i++){
+      ok(Sound.play('shot',{}),
+        'a shot did not play after a real gesture: '+JSON.stringify(Sound.stats()));
+    }
+    const p1=Sound.stats();
+    eq(p1.played-p0,5,'a gesture was seen but nothing played: '+JSON.stringify(p1));
+    eq(p1.skippedLocked-s0,0,
+      'sounds are still being skipped as locked after a real gesture - the exact symptom of the '
+      +'original bug, and the reason a healthy-looking game could be completely silent');
+
+    Sound.releasePool();
+  },true);
+
+  test('a suspended audio context can always be brought back',async ()=>{
+    /* THE THIRD PART OF THE FIX, and the one that makes the other two recoverable.
+     *
+     * The original `unlock` began `if(ctx||!Ctor) return false`. `ctx` was assigned a few lines
+     * earlier, so on the SECOND call - which is every gesture after the first - the function returned
+     * immediately without attempting anything. A context in the wrong state could therefore never be
+     * repaired, and the one thing that would have fixed the silence was the one thing that prevented
+     * it. That is why a game could be permanently silent with no code path out of it.
+     *
+     * Asserted here by SUSPENDING the context deliberately and asking for it back. There is no mock:
+     * `Sound.stats()` exposes no setter and this uses the real context the game is holding, because a
+     * test of the recovery path that used a fake context would be a test of the fake.
+     */
+    await Sound.whenIdle();
+    /* BRING THE CONTEXT UP FIRST, REPEATEDLY, AND SAY WHY. `whenAudible` is not trusted to do it once:
+       a neighbouring test may have suspended the context again between the await and the next line,
+       so this is a loop that exits the moment the context is running. The fixture rule in this project
+       is that the precondition is established, never assumed - and a loop is the honest form of that
+       when the state is shared with 200 concurrent tests. */
+    for(let i=0;i<2 && Sound.stats().ctxState!=='running';i++){
+      Sound.autoUnlock(new Event('keydown'));
+      await Sound.whenAudible();
+    }
+    /* ESTABLISH THE PRECONDITION RATHER THAN ASSUMING IT. Because the tests run concurrently, this
+       one cannot know what state the audio is in when it starts - so it brings the context up first,
+       and only then breaks it. A test that asserted its own precondition here failed for four
+       consecutive runs against code that was correct. */
+    Sound.autoUnlock(new Event('keydown'));
+    await Sound.whenAudible();
+    const running=Sound.stats();
+    ok(running.unlocked,'a gesture did not unlock the audio, so this test cannot exercise recovery');
+    ok(running.ctxState==='running','the context is '+running.ctxState+' rather than running');
+
+    /* Now break it the way the browser broke it, and ask for it back. */
+    await Sound.suspendForTest();
+    const broken=Sound.stats();
+    eq(broken.ctxState,'suspended',
+      'a context could not be suspended, so the recovery path cannot be exercised here');
+
+    /* AND THE CASE THAT ACTUALLY NEEDS `play` TO DO THE FIXING, which is the one a gesture cannot
+       reach and which nothing else in this file asserted.
+
+       This is the alt-tab: the game was audible, the tab went to the background, the browser
+       suspended the context, and the player came back and fired without pressing anything that would
+       register as a gesture. With the guard `if(!unlocked||!ctx||ctx.state!=='running')` the play is
+       simply refused and counted as a skip - so the game is muted until the player happens to press a
+       key, which is not a thing anyone would think to do about a game that has gone quiet.
+
+       The mutation that put that guard back PASSED 239/239 until this assertion existed, because the
+       other two audio tests always had a gesture immediately before their `play`, and a gesture
+       resumes the context - so the broken guard was never on the path anything measured.
+
+       A fix that only works when the player does the obvious thing is not a fix, and this is the
+       assertion that says so. */
+    /* THE PRECONDITION, ASSERTED. `eq(broken.ctxState,'suspended')` above checks the state at the
+       moment of the suspend call, and `suspend()` is a promise - so by the time `play` runs, another
+       await has happened and the context may already be back. Four runs of this test failed with a
+       completely unrelated message, and then this one passed against a mutation that should have
+       killed it, which together meant the fixture was not exercising the path at all. */
+    const atPlay=Sound.stats();
+    eq(atPlay.ctxState,'suspended',
+      'the context is '+atPlay.ctxState+' rather than suspended, so this test is not exercising the '
+      +'alt-tab path - and a test of the recovery path that does not reach the broken state is a test '
+      +'of nothing');
+
+    const p0=Sound.stats().played, s0=Sound.stats().skippedLocked;
+    ok(Sound.play('shot',{}),
+      'a play on a suspended context was refused rather than attempting a recovery: a player who '
+      +'alt-tabs and comes back has no reason to press a key, so the game must recover on the play '
+      +'itself. Declined last: '+Sound.stats().lastDecline);
+    const p1=Sound.stats();
+    eq(p1.skippedLocked-s0,0,
+      'the sound was counted as skipped: the pool is bounded either way, but a skip means the game '
+      +'chose not to make a sound it could have recovered');
+    eq(p1.played-p0,1,'the recovery play did not reach the voice table');
+
+    /* THE RECOVERY: the next gesture must bring it back, rather than returning early because a
+       context exists. */
+    Sound.autoUnlock(new Event('keydown'));
+    await Sound.whenAudible();
+    const healed=Sound.stats();
+    eq(healed.ctxState,'running',
+      'a suspended context was NOT brought back by a gesture - this is the permanent-silence bug: '
+      +'the old guard was `if(ctx) return false`, so no gesture could ever repair it');
+    ok(healed.unlocked,'the context is running but the system still believes it is locked');
+    ok(Sound.play('shot',{}),'still silent after the context was repaired - the flag, not the '
+      +'context, is gating playback');
+    Sound.releasePool();
+  },true);
+
   test('the sound system is complete, bounded, and cannot break a tick',async ()=>{
+    /* IDLE FIRST, for the same reason as the two above and for the same measured reason: a
+       neighbour's `render()` outlives its own test, and `play()` correctly refuses during one. */
+    await Sound.whenIdle();
+    /* AND THE CONTEXT UP, for the same reason again. This test fires thousands of sounds, and on a
+       suspended context `play` returns false for every one of them - which the bounded-pool
+       assertions would then have been checking against a game that was never making a sound. */
+    for(let i=0;i<2 && Sound.stats().ctxState!=='running';i++){
+      Sound.autoUnlock(new Event('keydown'));
+      await Sound.whenAudible();
+    }
     /* AUDIO IS TESTED BY ITS PLAN AND ITS LIMITS, NOT BY ITS SOUND. A headless browser hears
        nothing, so what is asserted here is everything that is observable: that every voice builds,
        that the pool is bounded, that mute is honoured before synthesis rather than after, that the
@@ -5060,7 +5361,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     };
     eq(signature(true),signature(false),'playing sounds changed a seeded room - audio is reaching '
       +'the game RNG, which makes a run unreproducible and breaks the parity tables');
-  });
+  },true);
 
   test('every panel that is drawn OVER a live run still lets the player walk',()=>{
     /* THE BENCH IS NOT A PAUSE, AND IT WAS EATING THE WHOLE KEYBOARD.
