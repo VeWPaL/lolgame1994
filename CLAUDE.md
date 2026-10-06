@@ -22,8 +22,7 @@ Update `docs/STATUS.md` before ending any session.
 
 ## Session plan (details in docs/STATUS.md)
 Done: JS frozen and tagged `js-final` (Brunch rule A+), Unity skeleton, main menu, the full port.
-1. **Next:** heart values (owner to confirm the integer half-heart proposal in STATUS), then
-   switch C# to 60 Hz with per-second units; re-baseline tests (Medium).
+1. **Next:** check the heart row in the Unity editor (written blind), then switch C# to 60 Hz with per-second units; re-baseline tests (Medium).
 2. New sound engine in Unity: event-based (`play("hit", pan)`), sample assets, mixer (Medium).
 3. Later: item overhaul (two items run on placeholders), difficulty curve (owner's direction in STATUS).
 

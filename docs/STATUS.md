@@ -34,7 +34,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 | 2 | Unity skeleton | Medium | done |
 | 3 | Main menu: Start / Options / Quit, key binds, volume | Medium | done (gamepad + display options later) |
 | 4 | Finish the port | High | done |
-| 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | next (heart values first, see below) |
+| 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | next |
 | 6 | New sound engine: event-based, sample assets, mixer | Medium | started: `SoundEngine.Play(name, pan)`, 12 voices, Sfx pool. Next: compressor, samples, music |
 
 ## Owner decisions
