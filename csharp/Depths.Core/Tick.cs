@@ -603,103 +603,112 @@ namespace Depths
         public static void TickProjectiles(RunState run)
         {
             var ps = run.projectiles;
-            var en = run.enemies;
+            int sub = Balance.ShellSubsteps;
+            double f = 1.0 / sub;
             for (int i = ps.Count - 1; i >= 0; i--)
+                for (int s = 0; s < sub; s++)
+                    if (StepShell(run, i, f, s == 0)) break;
+        }
+
+        // One shell over a fraction f of a tick; true once it is gone (or done for the tick).
+        static bool StepShell(RunState run, int i, double f, bool first)
+        {
+            var ps = run.projectiles;
+            var en = run.enemies;
+            var p = ps[i];
+            if (p.alt)
             {
-                var p = ps[i];
-                if (p.alt)
+                // stop on the point, not past it
+                if (Dist(p.tx - p.x, p.ty - p.y) <= p.speed * f)
                 {
-                    // stop on the point, not past it
-                    if (Dist(p.tx - p.x, p.ty - p.y) <= p.speed)
-                    {
-                        p.x = p.tx; p.y = p.ty;
-                        Blast.Explode(run, p.tx, p.ty, p.mode);
-                        ps.RemoveAt(i);
-                        continue;
-                    }
-                }
-                p.age++;
-                p.x += p.vx;
-                p.y += p.vy;
-                if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
-                    || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
-                {
-                    if (p.alt) Blast.Explode(run, p.x, p.y, p.mode);   // on the mode it was cast with
+                    p.x = p.tx; p.y = p.ty;
+                    Blast.Explode(run, p.tx, p.ty, p.mode);
                     ps.RemoveAt(i);
-                    continue;
+                    return true;
                 }
-                if (p.alt && p.phase) continue;   // the hook flies through bodies and acts only at its point
-                if (p.friendly)
-                {
-                    int best = -1;
-                    double bestA = double.PositiveInfinity;
-                    for (int j = en.Count - 1; j >= 0; j--)
-                    {
-                        var e = en[j];
-                        if (p.hit != null && p.hit.Contains(e)) continue;
-                        if (Dist(p.x - e.x, p.y - e.y) >= p.r + e.r) continue;
-                        if (p.pierce == 0) { best = j; break; }
-                        double a = (e.x - p.ox) * p.dx + (e.y - p.oy) * p.dy;
-                        if (a < bestA) { bestA = a; best = j; }
-                    }
-                    if (best < 0) continue;
-                    if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); continue; }   // the blast goes off on the first body
-                    var t = en[best];
-                    t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale;
-                    t.hitFlash = Balance.HitFlash;
-                    run.hits++;
-                    Combat.AlertEnemy(t);
-                    Combat.SlowEnemy(t);
-                    if (t.hp <= 0) Kills.KillEnemy(run, best);
-                    if (p.pierce > 0)
-                    {
-                        p.pierce--;
-                        p.scale *= Balance.PierceFalloff;
-                        (p.hit ??= new List<Enemy>()).Add(t);
-                    }
-                    else ps.RemoveAt(i);
-                    continue;
-                }
-                bool hitSomething = false;
+            }
+            if (first) p.age++;
+            p.x += p.vx * f;
+            p.y += p.vy * f;
+            if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
+                || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
+            {
+                if (p.alt) Blast.Explode(run, p.x, p.y, p.mode);   // on the mode it was cast with
+                ps.RemoveAt(i);
+                return true;
+            }
+            if (p.alt && p.phase) return false;   // the hook flies through bodies and acts only at its point
+            if (p.friendly)
+            {
+                int best = -1;
+                double bestA = double.PositiveInfinity;
                 for (int j = en.Count - 1; j >= 0; j--)
                 {
-                    var b = en[j];
-                    if (b.kind != BodyKind.Brunch || b.hp <= 0) continue;
-                    if (p.owner != null && b.shieldTarget == p.owner) continue;   // a Brunch spares its own shooter's fire
-                    if (Dist(p.x - b.x, p.y - b.y) < p.r + b.r)
+                    var e = en[j];
+                    if (p.hit != null && p.hit.Contains(e)) continue;
+                    if (Dist(p.x - e.x, p.y - e.y) >= p.r + e.r) continue;
+                    if (p.pierce == 0) { best = j; break; }
+                    double a = (e.x - p.ox) * p.dx + (e.y - p.oy) * p.dy;
+                    if (a < bestA) { bestA = a; best = j; }
+                }
+                if (best < 0) return false;
+                if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); return true; }   // the blast goes off on the first body
+                var t = en[best];
+                t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale;
+                t.hitFlash = Balance.HitFlash;
+                run.hits++;
+                Combat.AlertEnemy(t);
+                Combat.SlowEnemy(t);
+                if (t.hp <= 0) Kills.KillEnemy(run, best);
+                if (p.pierce > 0)
+                {
+                    p.pierce--;
+                    p.scale *= Balance.PierceFalloff;
+                    (p.hit ??= new List<Enemy>()).Add(t);
+                }
+                else { ps.RemoveAt(i); return true; }
+                return false;
+            }
+            bool hitSomething = false;
+            for (int j = en.Count - 1; j >= 0; j--)
+            {
+                var b = en[j];
+                if (b.kind != BodyKind.Brunch || b.hp <= 0) continue;
+                if (p.owner != null && b.shieldTarget == p.owner) continue;   // a Brunch spares its own shooter's fire
+                if (Dist(p.x - b.x, p.y - b.y) < p.r + b.r)
+                {
+                    b.hitFlash = System.Math.Max(b.hitFlash, Balance.BrunchAbsorbFlash);
+                    hitSomething = true;
+                    break;
+                }
+            }
+            if (!hitSomething)
+            {
+                for (int j = en.Count - 1; j >= 0; j--)
+                {
+                    var e2 = en[j];
+                    if (e2 == p.owner || e2.kind != BodyKind.Lunger) continue;
+                    if (Dist(p.x - e2.x, p.y - e2.y) < p.r + e2.r)
                     {
-                        b.hitFlash = System.Math.Max(b.hitFlash, Balance.BrunchAbsorbFlash);
+                        e2.hp -= 1;
+                        e2.hitFlash = Balance.HitFlash;
+                        Combat.AlertEnemy(e2);
+                        Combat.SlowEnemy(e2);
                         hitSomething = true;
+                        if (e2.hp <= 0) Kills.KillEnemy(run, j);
                         break;
                     }
                 }
-                if (!hitSomething)
-                {
-                    for (int j = en.Count - 1; j >= 0; j--)
-                    {
-                        var e2 = en[j];
-                        if (e2 == p.owner || e2.kind != BodyKind.Lunger) continue;
-                        if (Dist(p.x - e2.x, p.y - e2.y) < p.r + e2.r)
-                        {
-                            e2.hp -= 1;
-                            e2.hitFlash = Balance.HitFlash;
-                            Combat.AlertEnemy(e2);
-                            Combat.SlowEnemy(e2);
-                            hitSomething = true;
-                            if (e2.hp <= 0) Kills.KillEnemy(run, j);
-                            break;
-                        }
-                    }
-                }
-                if (!hitSomething && Hit.PlayerHit(p.x, p.y, p.r, run.player.lagX, run.player.lagY))
-                {
-                    double pn = Dist(p.vx, p.vy);
-                    if (pn == 0) pn = 1;
-                    Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
-                    hitSomething = true;
-                }
-                if (hitSomething) ps.RemoveAt(i);
             }
+            if (!hitSomething && Hit.PlayerHit(p.x, p.y, p.r, run.player.lagX, run.player.lagY))
+            {
+                double pn = Dist(p.vx, p.vy);
+                if (pn == 0) pn = 1;
+                Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
+                hitSomething = true;
+            }
+            if (hitSomething) ps.RemoveAt(i);
+            return hitSomething;
         }
 
         /// <summary>

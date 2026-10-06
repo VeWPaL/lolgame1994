@@ -70,6 +70,9 @@ namespace Depths
             return digits < 0 ? x : System.Math.Round(x, System.Math.Min(15, digits));
         }
 
+        /// <summary>Moves a shell makes per tick: never longer than a JS tick's, so it cannot step over a hitbox.</summary>
+        public static int ShellSubsteps => TickHz >= JsHz ? 1 : (JsHz + TickHz - 1) / TickHz;
+
         static double _knockFriction, _knockPFriction, _knockScale, _knockPScale;
 
         static void Recompute()

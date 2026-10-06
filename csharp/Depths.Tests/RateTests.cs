@@ -306,6 +306,28 @@ namespace Depths.Tests
             Assert.That(b60.cleared, Is.EqualTo(b210.cleared).Within(OneTickEach), "a charge in a cleared room, s");
         }
 
+        [Test]
+        public void AGrazingShellLandsAtEitherRate()
+        {
+            // a shell steps no further per move than a JS tick carried it, so it cannot hop a hitbox's edge
+            var (h60, h210) = Both(() =>
+            {
+                int hits = 0;
+                for (double off = 0; off < 15; off += 0.25)
+                {
+                    var run = Started();
+                    var p = run.player;
+                    double y = p.lagY + Balance.PlayerHitDy + off;
+                    run.projectiles.Add(new Projectile { x = p.lagX - 150, y = y, vx = Balance.PerSec(462), r = 5, dmg = 2 });
+                    while (run.projectiles.Count > 0) TickOrder.TickProjectiles(run);
+                    if (run.dmgTaken > 0) hits++;
+                }
+                return hits;
+            });
+            Assert.That(h210, Is.EqualTo(60), "every offset inside the 15px contact lands at the JS rate");
+            Assert.That(h60, Is.EqualTo(h210));
+        }
+
         // ---------------------------------------------------------------- bodies
 
         [Test]
