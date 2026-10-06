@@ -52,9 +52,10 @@ seconds or per-second units and converted for the rate (`Sec`, `SecF`, `PerSec`,
 each converted dial is bit-identical to the literal the rows were recorded with (`RateTests` pins the
 list). The bot's default matrix played with `--hz 210` matches the pre-switch build byte for byte.
 What changes at 60 Hz is only discrete-time error (a wait rounded to whole ticks, one step of travel),
-measured by `RateTests` and by the bot (STATUS has the wide-matrix comparison). Three such errors are
-corrected off the JS rate only, so 210 stays exact: held fire carries its cooldown overrun, and shells
-and body contact are cut into `Substeps` (4 at 60 Hz) so nothing steps over a hitbox.
+measured by `RateTests` and by the bot (STATUS has the wide-matrix comparison). These errors are
+corrected off the JS rate only, so 210 stays exact: held fire and the enemy and Warden cooldowns carry
+their overrun, and shells and body contact are cut into `Substeps` (4 at 60 Hz) so nothing steps over
+a hitbox.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 

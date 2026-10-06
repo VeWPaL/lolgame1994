@@ -115,7 +115,7 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **558 checks**, parity-verified against the JavaScript except the 170 in
+- C# `Depths.Tests` has **559 checks**, parity-verified against the JavaScript except the 171 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests`,
   `PlaytestToolTests` and `RateTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
   `verify.ps1` skips when it counts parity rows). Parity tests whose recordings take player damage run
