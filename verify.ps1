@@ -340,7 +340,10 @@ if (-not (Test-Path $manifest)) {
     $claimedRows = [int]$m.Groups[1].Value
     $actualRows = 0
     Get-ChildItem "$root\csharp\Depths.Tests\*.cs" | ForEach-Object {
-      $actualRows += ([regex]::Matches([System.IO.File]::ReadAllText($_.FullName), '\[TestCase\(')).Count
+      $text = [System.IO.File]::ReadAllText($_.FullName)
+      # C#-only fixtures (rules written after js-final) are not parity rows
+      if ($text -match 'Category\("csharp-only"\)') { return }
+      $actualRows += ([regex]::Matches($text, '\[TestCase\(')).Count
     }
     if ($claimedRows -ne $actualRows) {
       Bad "PORTED.md says the parity tables pin $claimedRows rows; the test project has $actualRows - either the document is stale or the tables grew without the cost being recorded"

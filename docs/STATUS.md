@@ -35,6 +35,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   replaced (60 min: 24 presses, 3 heals). The JS bot (`tools/playtest.js`, baseline tag
   `pre-features-2026-10-06`) plays only the frozen JS.
 - Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
+  `verify.ps1` is Windows-only (backslash paths): under Linux `pwsh` it stops at step 2.
 
 ## Unity commands (batch mode, no editor window needed)
 

@@ -8,7 +8,7 @@ namespace Depths.Tests
     /// marks the room so it takes more damage, and the Brass Compass opens the floor's fake wall when
     /// carried into its room. The JS has neither, so these are assertions, not parity rows.
     /// </summary>
-    [TestFixture]
+    [TestFixture, Category("csharp-only")]
     public sealed class PlaceholderItemTests
     {
         static RunState Run()
