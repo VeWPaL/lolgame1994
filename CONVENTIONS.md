@@ -35,10 +35,12 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 
 ## Working rules
 
-- **Gameplay changed? Playtest it A/B before committing.** `node tools/playtest.js --label current`
-  against `--root ab/baseline --label baseline` (or `--query flag=value` for a variant), then
-  `node tools/playtest-report.js baseline current`. The bot is deterministic, so any difference is the
-  change. It answers "harder, fairer, longer?"; "more fun?" still needs a person and the URL variant.
+- **Gameplay changed? Playtest it A/B before committing.** On the C# game:
+  `dotnet run --project csharp/Depths.Playtest -c Release -- play --label current` on the change and
+  `--label baseline` on the commit before (a second worktree), then `... -- report baseline current`
+  (`--brunch A|B|A+` for the guard variants; Linux: prefix `DOTNET_ROLL_FORWARD=Major`). The bot is
+  deterministic, so any difference is the change. It answers "harder, fairer, longer?"; "more fun?"
+  still needs a person. The JS bot (`tools/playtest.js`) plays only the frozen JS.
 - **Drawing changed? Verify pixels, not data.** Assert on meaning ("the lit heart is at x 43"),
   sample the framebuffer, and pin directions and orders explicitly.
 - **Write the test from the specification, never from what the code currently does.**
@@ -89,9 +91,9 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **438 checks**, parity-verified against the JavaScript except the 50 in
-  `PlaceholderItemTests`, `HeartTests` and `RegenHeartTests` (C#-only rules written after
-  `js-final`). Parity tests whose
+- C# `Depths.Tests` has **443 checks**, parity-verified against the JavaScript except the 55 in
+  `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests` and `PlaytestBotTests` (C#-only, written
+  after `js-final`). Parity tests whose
   recordings take player damage run with `Balance.JsReference = true` (the JS damage rules).
 - `verify.ps1` asserts both numbers above; keep them current.
 

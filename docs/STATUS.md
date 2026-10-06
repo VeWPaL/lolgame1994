@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-06 (Brunch A+ chosen, `js-final` tagged, placeholder items). The previous
+_Last updated: 2026-10-06 (C# playtest bot; before that Brunch A+, `js-final`, placeholder items). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
 
 ## Where things are
@@ -11,13 +11,18 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  438/438, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
+  443/443, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
   `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
   real seeded run with placeholder shapes: pause (Esc), death summary, floor banner.
-- **Playtest bot**: `tools/playtest.js` + `tools/playtest-report.js`; baseline tag `pre-features-2026-10-06`.
+- **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core (6 seeds x 3 profiles x 20 min
+  in seconds) and writes `playtest/<label>.json`:
+  `DOTNET_ROLL_FORWARD=Major dotnet run --project csharp/Depths.Playtest -c Release -- play --label X
+  [--seeds 1,7] [--profiles novice,skilled] [--minutes 20] [--brunch A+]`, then `... -- report X [Y]`
+  (Markdown, also saved as `playtest/report-X[-vs-Y].md`). A/B: run it on two worktrees. The JS bot
+  (`tools/playtest.js`, baseline tag `pre-features-2026-10-06`) plays only the frozen JS.
 - Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
 
 ## Unity commands (batch mode, no editor window needed)
@@ -63,6 +68,12 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   still `unimplemented` (not loot).
 
 ## Known issues
+
+- **Crash on the way down (found by the C# bot, not fixed)**: `TickRoom` calls `run.Descend()` for the
+  exit and `continue`s its backwards pickup loop, but `Descend` clears `run.pickups`, so any other
+  pickup left in the boss room (e.g. a heart at full HP) throws `ArgumentOutOfRangeException`. All 18
+  default bot runs end there (floors 2-4). Unity survives it (the frame's tick loop aborts after the
+  descent). Likely fix: `break` instead of `continue` after `Descend()`; owner to confirm.
 
 - C# leftovers: `Intercept.cs` is unused (older aiming model, stale test hash); `Pickup.shown` is set
   by Hunter's Mark and read by nothing; `run.unlocked` from the compass is not ported (nothing read it).
