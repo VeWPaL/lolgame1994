@@ -266,6 +266,40 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void AnItemIsBookedOnceWhenTakenAndNeverForLeavingTheRoom()
+        {
+            // tick 0: an item under the player (taken) and one across the room (left); tick 1 leaves the
+            // room through a finishing transition, so the far item drops out of the run's list untaken
+            var run = Ticks(3, (r, t) =>
+            {
+                var p = r.player;
+                if (t == 0)
+                {
+                    r.pickups.Add(new Pickup { x = p.x, y = p.y, kind = "item", id = "iron_ribs" });
+                    r.pickups.Add(new Pickup { x = Balance.RoomLeft + 30, y = Balance.RoomTop + 30,
+                                               kind = "item", id = "lucky_coin" });
+                }
+                if (t == 1)
+                {
+                    var start = r.CurrentRoom!;
+                    var d = new[] { Dir.N, Dir.E, Dir.S, Dir.W }.First(x => start.Doors.Contains(x));
+                    var n = r.dungeon.Neighbour(start, d)!;
+                    var back = d == Dir.N ? Dir.S : d == Dir.S ? Dir.N : d == Dir.E ? Dir.W : Dir.E;
+                    r.trans = new Trans { t = Balance.FadeOut - 1, nx = n.X, ny = n.Y, from = back.ToString() };
+                }
+            });
+            Assert.That(run.Run.curX != 3 || run.Run.curY != 3, Is.True, "fixture: the room did not change");
+            Assert.That(run.Result.items, Is.EqualTo(new[] { "iron_ribs@1" }));
+        }
+
+        [Test]
+        public void TheWeaponIsTheOneHeldAtTheEnd()
+        {
+            var run = OneTick(r => r.player.weaponIdx = 2);
+            Assert.That(run.Result.weapon, Is.EqualTo("Arcane Beam"));
+        }
+
+        [Test]
         public void ADeathNamesItsSource()
         {
             var run = OneTick(r =>
@@ -414,6 +448,11 @@ namespace Depths.Tests
                 }
             }
             // the counters a player would see
+            Assert.That(r.floors[0].hpIn, Is.EqualTo(8), "a run starts on 8 HP: 6 red and the 2 HP regenerating heart");
+            Assert.That(r.floors[0].maxHpIn, Is.EqualTo(8));
+            Assert.That(r.floors.Sum(f => f.regen), Is.EqualTo(r.regenHealed));
+            Assert.That(r.healBy["regen"], Is.EqualTo(r.regenHealed));
+            Assert.That(r.weapon, Is.EqualTo(Weapons.All[run.Run.player.weaponIdx].Name).And.Not.Empty);
             Assert.That(r.items, Is.Not.Empty.And.All.Match(@"^[a-z_]+@\d+$"));
             Assert.That(r.blinks, Is.GreaterThan(0), "seven minutes of fights with no dodge blink");
             Assert.That(r.dodgeBlinks, Is.EqualTo(r.blinks));

@@ -35,10 +35,11 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 
 ## Working rules
 
-- **Gameplay changed? Playtest it A/B before committing.** The C# bot measures commits that contain
-  it with its build stamp: this branch from 22ebe4c on, and on the main branch from the merge that
-  lands it. Older baselines are not supported. From the change's worktree root (Linux: prefix each
-  `dotnet` with `DOTNET_ROLL_FORWARD=Major`):
+- **Gameplay changed? Playtest it A/B before committing.** The C# bot measures any commit whose
+  `csharp/Depths.Playtest` stamps its commit (its `.csproj` has the `StampGitCommit` target); older
+  baselines are not supported. `<baseline commit>` is the commit to compare against, usually the one
+  before the change. From the change's worktree root (Linux: prefix each `dotnet` with
+  `DOTNET_ROLL_FORWARD=Major`):
   1. `git worktree add ../depths-base <baseline commit>`
   2. `dotnet run --project ../depths-base/csharp/Depths.Playtest -c Release -- play --label baseline`
      (the JSON lands in THIS worktree's `playtest/`; its header names the commit it was built from)
@@ -100,7 +101,7 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **516 checks**, parity-verified against the JavaScript except the 128 in
+- C# `Depths.Tests` has **520 checks**, parity-verified against the JavaScript except the 132 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests` and
   `PlaytestToolTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
   `verify.ps1` skips when it counts parity rows). Parity tests whose recordings take player damage run

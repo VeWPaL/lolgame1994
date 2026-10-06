@@ -324,6 +324,47 @@ namespace Depths.Tests
             Assert.That(faster, Does.Contain("Warning: tick rates differ: 210 vs 60"));
         }
 
+        [Test]
+        public void TheReportReadsTheTickRateBackFromTheHeader()
+        {
+            // a 60 Hz batch, written and read back: 7200 ticks of floor are 2 minutes at 60, not 0.6 at 210
+            var b = Json.Read(Json.Write(Hand("a", "novice", 2, 60)), "a.json");
+            Assert.That(b.tickHz, Is.EqualTo(60));
+            Assert.That(Row(Report.Build(new[] { b }), "minutes per cleared floor"), Does.EndWith("| 2.0 | 2.0 |"));
+        }
+
+        [Test]
+        public void PlayWritesTheHeaderItWasAskedFor()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "depths-playtest-" + Guid.NewGuid().ToString("N"));
+            string brunch = Balance.BrunchVariant;
+            var outw = Console.Out;
+            try
+            {
+                Console.SetOut(TextWriter.Null);
+                int code = Program.Main(new[] { "play", "--label", "e2e", "--seeds", "3", "--profiles", "novice",
+                                                "--minutes", "0.25", "--brunch", "B", "--out", dir });
+                Console.SetOut(outw);
+                Assert.That(code, Is.EqualTo(0));
+                var b = Json.Read(File.ReadAllText(Path.Combine(dir, "e2e.json")), "e2e.json");
+                Assert.That(b.label, Is.EqualTo("e2e"));
+                Assert.That(b.tickHz, Is.EqualTo(Balance.TickHz));
+                Assert.That(b.minutes, Is.EqualTo(0.25));
+                Assert.That(b.seeds, Is.EqualTo(new uint[] { 3 }));
+                Assert.That(b.profiles, Is.EqualTo(new[] { "novice" }));
+                Assert.That(b.brunch, Is.EqualTo("B"), "--brunch did not reach the game or the header");
+                Assert.That(b.commit, Is.EqualTo(BuildInfo.Commit),
+                    "the header does not name the build (null only without git)");
+                Assert.That(b.runs.Single().ticks, Is.EqualTo((int)Math.Round(0.25 * 60 * Balance.TickHz)));
+            }
+            finally
+            {
+                Console.SetOut(outw);
+                Balance.BrunchVariant = brunch;   // the switch is process-wide; the CLI owns its process, a test does not
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            }
+        }
+
         // ---- the command line
 
         [TestCase("play", "--seeds", "-1")]
@@ -379,6 +420,9 @@ namespace Depths.Tests
             Head + "[null]}",
             Head + "[{\"profile\":\"novice\",\"end\":\"death\",\"floors\":null}]}",
             Head + "[{\"profile\":\"novice\",\"end\":\"death\",\"floors\":[null]}]}",
+            Head + "[{\"profile\":\"novice\",\"end\":\"death\",\"floors\":[],\"cause\":[\"x\"]}]}",
+            Head + "[{\"profile\":\"novice\",\"end\":\"death\",\"floors\":[],\"cause\":[1,2]}]}",
+            Head + "[{\"profile\":\"novice\",\"end\":\"death\",\"floors\":[],\"cause\":\"x\"}]}",
         };
 
         static void MainOnBadInput()

@@ -35,7 +35,19 @@ namespace Depths.Playtest
                 if (r == null || r.profile == null || r.end == null || r.floors == null || r.floors.Contains(null!)
                     || r.dmgBySource == null || r.healBy == null || r.items == null || r.errors == null)
                     throw new UsageException(name + " is not a playtest file (a run is missing fields)");
+                else if (!CauseOk(r.cause))
+                    throw new UsageException(name + " is not a playtest file (a cause is not [source, hp] or an object)");
             return b;
+        }
+
+        // a run's cause is null, [source, hp] (a death) or an object (what a stuck room held)
+        static bool CauseOk(object? cause)
+        {
+            if (cause == null) return true;
+            if (!(cause is JsonElement c)) return false;
+            return c.ValueKind == JsonValueKind.Null || c.ValueKind == JsonValueKind.Object
+                || (c.ValueKind == JsonValueKind.Array && c.GetArrayLength() == 2
+                    && c[0].ValueKind == JsonValueKind.String && c[1].ValueKind == JsonValueKind.Number);
         }
     }
 

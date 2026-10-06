@@ -42,7 +42,8 @@
     </Exec>
     <PropertyGroup>
       <DepthsCommit Condition="'$(DepthsCommitExit)' != '0'"></DepthsCommit>
-      <DepthsCommit Condition="'$(DepthsCommit)' != '' And '$(DepthsDirty)$(DepthsUntracked)' != ''">$(DepthsCommit)+dirty</DepthsCommit>
+      <DepthsCommit Condition="'$(DepthsCommit)' != '' And '$(DepthsDirty)$(DepthsUntracked)' != ''"
+        >$(DepthsCommit)+dirty</DepthsCommit>
     </PropertyGroup>
     <ItemGroup Condition="'$(DepthsCommit)' != ''">
       <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
