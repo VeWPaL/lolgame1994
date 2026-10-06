@@ -35,12 +35,19 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 
 ## Working rules
 
-- **Gameplay changed? Playtest it A/B before committing.** On the C# game:
-  `dotnet run --project csharp/Depths.Playtest -c Release -- play --label current` on the change and
-  `--label baseline` on the commit before (a second worktree), then `... -- report baseline current`
-  (`--brunch A|B|A+` for the guard variants; Linux: prefix `DOTNET_ROLL_FORWARD=Major`). The bot is
-  deterministic, so any difference is the change. It answers "harder, fairer, longer?"; "more fun?"
-  still needs a person. The JS bot (`tools/playtest.js`) plays only the frozen JS.
+- **Gameplay changed? Playtest it A/B before committing.** From the change's worktree root (Linux:
+  prefix each `dotnet` with `DOTNET_ROLL_FORWARD=Major`):
+  1. `git worktree add ../depths-base <commit before the change>` (it needs `csharp/Depths.Playtest`;
+     for an older commit, copy that folder in).
+  2. `dotnet run --project ../depths-base/csharp/Depths.Playtest -c Release -- play --label baseline`
+     writes `playtest/baseline.json` HERE (output follows the working directory); its header records
+     the commit the bot was built from, so it names the baseline.
+  3. `dotnet run --project csharp/Depths.Playtest -c Release -- play --label current`, then
+     `... -- report baseline current` (also `playtest/report-baseline-vs-current.md`; it warns when
+     seeds, minutes, tick rate or Brunch variant differ). 4. `git worktree remove ../depths-base`.
+  Same `--seeds/--minutes/--brunch` on both sides. The bot is deterministic, so any difference is the
+  change. Use `--minutes 60` for difficulty (20 min caps the median floor at 7). It answers "harder,
+  fairer, longer?"; "more fun?" still needs a person. The JS bot (`tools/playtest.js`) plays only the JS.
 - **Drawing changed? Verify pixels, not data.** Assert on meaning ("the lit heart is at x 43"),
   sample the framebuffer, and pin directions and orders explicitly.
 - **Write the test from the specification, never from what the code currently does.**
@@ -91,8 +98,9 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **452 checks**, parity-verified against the JavaScript except the 64 in
-  `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests` and `PlaytestBotTests` (C#-only, after
+- C# `Depths.Tests` has **478 checks**, parity-verified against the JavaScript except the 90 in
+  `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests` and
+  `PlaytestToolTests` (C#-only, after
   `js-final`). Parity tests whose
   recordings take player damage run with `Balance.JsReference = true` (the JS damage rules).
 - `verify.ps1` asserts both numbers above; keep them current.

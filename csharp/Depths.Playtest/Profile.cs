@@ -12,13 +12,16 @@ namespace Depths.Playtest
         public double Dodge;       // chance factor for a dodge blink
         public double BandMin, BandMax;
         public double Blast;       // chance to throw the alt into a crowd of 3+
-        public double Heal;        // red HP at or under which Q is tried
+        public double Heal;        // HP (red + regen, the JS bot's hp) at or under which Q is tried
 
         public static readonly IReadOnlyList<Profile> All = new[]
         {
-            new Profile { Name = "novice", React = 55, AimErr = 0.14, Dodge = 0.2, BandMin = 110, BandMax = 220, Blast = 0.25, Heal = 1 },
-            new Profile { Name = "average", React = 38, AimErr = 0.07, Dodge = 0.55, BandMin = 150, BandMax = 260, Blast = 0.55, Heal = 2 },
-            new Profile { Name = "skilled", React = 24, AimErr = 0.03, Dodge = 0.9, BandMin = 170, BandMax = 280, Blast = 0.85, Heal = 2 },
+            new Profile { Name = "novice", React = 55, AimErr = 0.14, Dodge = 0.2,
+                          BandMin = 110, BandMax = 220, Blast = 0.25, Heal = 1 },
+            new Profile { Name = "average", React = 38, AimErr = 0.07, Dodge = 0.55,
+                          BandMin = 150, BandMax = 260, Blast = 0.55, Heal = 2 },
+            new Profile { Name = "skilled", React = 24, AimErr = 0.03, Dodge = 0.9,
+                          BandMin = 170, BandMax = 280, Blast = 0.85, Heal = 2 },
         };
 
         public static Profile Get(string name)

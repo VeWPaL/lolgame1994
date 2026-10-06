@@ -14,7 +14,8 @@ namespace Depths.Playtest
         public static BotAction None => new BotAction(Input.None);
     }
 
-    /// <summary>A player: reads the run, returns an action. It never writes to the run; the runner applies the action.</summary>
+    /// <summary>A player: reads the run, returns an action. It never writes to the run; the runner
+    /// applies the action.</summary>
     public interface IPolicy
     {
         BotAction Decide(RunState run, int t);
@@ -32,7 +33,8 @@ namespace Depths.Playtest
         readonly int _react;
 
         // when the bot first SAW each hostile shot: its reaction clock
-        readonly Dictionary<Projectile, int> _born = new Dictionary<Projectile, int>(ReferenceEqualityComparer.Instance);
+        readonly Dictionary<Projectile, int> _born =
+            new Dictionary<Projectile, int>(ReferenceEqualityComparer.Instance);
         readonly HashSet<Room> _tookItemIn = new HashSet<Room>(ReferenceEqualityComparer.Instance);
         readonly List<Projectile> _prune = new List<Projectile>();
 
@@ -44,7 +46,8 @@ namespace Depths.Playtest
 
         // route scratch, reused
         readonly Queue<Room> _q = new Queue<Room>();
-        readonly Dictionary<Room, (Room? from, Dir d)> _prev = new Dictionary<Room, (Room?, Dir)>(ReferenceEqualityComparer.Instance);
+        readonly Dictionary<Room, (Room? from, Dir d)> _prev =
+            new Dictionary<Room, (Room?, Dir)>(ReferenceEqualityComparer.Instance);
         readonly List<Room> _reach = new List<Room>();
 
         public Profile Profile => _p;
@@ -183,13 +186,14 @@ namespace Depths.Playtest
         }
 
         BotAction Steer(Player pl, double tx, double ty, double stop) =>
-            new BotAction(new Input(Axis(tx - pl.x, stop), Axis(ty - pl.y, stop), aimX: _aimX ?? pl.x + 200, aimY: _aimY ?? pl.y));
+            new BotAction(new Input(Axis(tx - pl.x, stop), Axis(ty - pl.y, stop),
+                                    aimX: _aimX ?? pl.x + 200, aimY: _aimY ?? pl.y));
 
         /// <summary>
         /// BFS over the floor through doors that exist and are open or that the bot holds the key for.
         /// Goals in a careful first-timer's order: unvisited rooms, the item room with a key, the boss.
         /// </summary>
-        Dir? Route(RunState run)
+        internal Dir? Route(RunState run)
         {
             var start = run.CurrentRoom!;
             _q.Clear(); _prev.Clear(); _reach.Clear();
@@ -206,9 +210,14 @@ namespace Depths.Playtest
                     _prev[n] = (r, d); _reach.Add(n); _q.Enqueue(n);
                 }
             }
-            Room? pick = _reach.Find(x => !x.Visited && x.Type != RoomKind.Boss)
-                      ?? _reach.Find(x => x.Type == RoomKind.Item && !_tookItemIn.Contains(x))
-                      ?? _reach.Find(x => x.Type == RoomKind.Boss);
+            Room? unvisited = null, item = null, boss = null;
+            foreach (var x in _reach)
+            {
+                if (unvisited == null && !x.Visited && x.Type != RoomKind.Boss) unvisited = x;
+                if (item == null && x.Type == RoomKind.Item && !_tookItemIn.Contains(x)) item = x;
+                if (boss == null && x.Type == RoomKind.Boss) boss = x;
+            }
+            var pick = unvisited ?? item ?? boss;
             if (pick == null || pick == start) return null;
             var step = pick;
             while (_prev[step].from != start) step = _prev[step].from!;

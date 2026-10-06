@@ -9,9 +9,11 @@ namespace Depths.Playtest
     {
         public int floor, ticks, rooms, cleared, bossTicks;
         public double dmg, healed, regen;   // regen: HP the regenerating heart refilled on this floor
-        public bool bossKilled;
+        public bool bossKilled;        // set on the actual descent (the JS set it while walking to the exit)
         public double hpIn, maxHpIn;   // hearts: red + regenerating, as the JS bot's hp
-        public double? hpOut;
+        public double? hpOut;          // after the step that left the floor (or at the run's end)
+        public double armorIn;
+        public double? armorOut;
     }
 
     public sealed class RunResult
@@ -22,12 +24,13 @@ namespace Depths.Playtest
         public string end = "timeout";   // death, timeout, stuck, error
         public object? cause;            // death: [source, hp]; stuck: what the room held
         public List<FloorRecord> floors = new List<FloorRecord>();
-        public SortedDictionary<string, double> dmgBySource = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        public SortedDictionary<string, double> dmgBySource =
+            new SortedDictionary<string, double>(StringComparer.Ordinal);
         public double healed, regenHealed;
         public SortedDictionary<string, double> healBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
         public int hits, shots, kills, blinks, dodgeBlinks, secrets;
         public int qPresses, actives;   // Q pressed when low; actives: presses that raised HP (the JS rule)
-        public int maskedHits;          // ticks where a heal on the same layer hid a hit from the HP deltas
+        public int maskedHits;          // ticks where a same-layer heal hid (part of) a hit from the HP deltas
         public double maskedHp;
         public List<string> items = new List<string>();
         public string weapon = "";

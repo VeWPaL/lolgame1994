@@ -11,22 +11,28 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  452/452, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
+  478/478, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
   `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
   real seeded run with placeholder shapes: pause (Esc), death summary, floor banner.
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core (6 seeds x 3 profiles x 20 min
-  in seconds) and writes `playtest/<label>.json`:
+  in about 5 s) and writes `playtest/<label>.json`:
   `DOTNET_ROLL_FORWARD=Major dotnet run --project csharp/Depths.Playtest -c Release -- play --label X
   [--seeds 1,7] [--profiles novice,skilled] [--minutes 20] [--brunch A+]`, then `... -- report X [Y]`
-  (Markdown, also saved as `playtest/report-X[-vs-Y].md`). A/B: run it on two worktrees.
-  Default matrix (2026-10-06, after the exit-crash fix a264e45, which the bot found): 17 of 18 runs
-  reach floor 7 in 20 min, 1 death (average/42, floor 6), 0 stuck, 0 errors; damage ~ healing per
-  floor (9.8 vs 10.3 hp). Q-when-low never heals: the bot takes every item, so Bone Whistle and
-  others replace Tin Cup (21 presses, 0 heals); the report shows this row. The JS bot
-  (`tools/playtest.js`, baseline tag `pre-features-2026-10-06`) plays only the frozen JS.
+  (Markdown, also saved as `playtest/report-X[-vs-Y].md`). A/B against another commit: play the
+  baseline with `--project <other worktree>/csharp/Depths.Playtest` from THIS worktree's root, so
+  its JSON lands in this `playtest/`; its header names the commit it was built from (full recipe in
+  CONVENTIONS "Gameplay changed?").
+  Numbers (2026-10-06, after the exit-crash fix a264e45, which the bot found): at 20 min, 17 of 18 runs
+  time out on floor 7 (about 3 min a floor), 1 death (average/42, floor 6), 0 stuck, 0 errors, damage
+  9.8 vs healing 10.3 hp per floor. The 20-min default caps the median floor, so its A/B signal is
+  deaths, damage/healing per floor and boss seconds; use `--minutes 60` for difficulty: median floor
+  17 (novice 15.5), 6 deaths (5 novice, between floors 15 and 17), damage 14.5 = healing 14.5 per
+  floor, boss 46 s. Q-when-low almost never heals: the bot takes every item, so Tin Cup is usually
+  replaced (60 min: 24 presses, 3 heals). The JS bot (`tools/playtest.js`, baseline tag
+  `pre-features-2026-10-06`) plays only the frozen JS.
 - Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
 
 ## Unity commands (batch mode, no editor window needed)
@@ -66,7 +72,8 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
   curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
   area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,
-  consumables) load-bearing. Bot data: healing ~ damage per floor, bots reach floors 13-18.
+  consumables) load-bearing. Bot data (C#, 60 min): healing = damage per floor (14.5 hp),
+  median floor 17, novices die on floors 15-17.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).

@@ -11,10 +11,39 @@
     <IsPackable>false</IsPackable>
     <RootNamespace>Depths.Playtest</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- one JIT tier, no PGO: inlining, and so an error's recorded frame, is the same on every run -->
+    <TieredCompilation>false</TieredCompilation>
+    <TieredPGO>false</TieredPGO>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Depths.Core\Depths.Core.csproj" />
+    <InternalsVisibleTo Include="Depths.Tests" />
   </ItemGroup>
+
+  <!-- Stamp the commit this bot is built from (with +dirty for uncommitted tracked changes) into the
+       assembly, so a baseline built in another worktree records its own commit. No git: no stamp. -->
+  <Target Name="StampGitCommit" BeforeTargets="GetAssemblyAttributes">
+    <Exec Command="git rev-parse --short HEAD" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true"
+          IgnoreExitCode="true" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="DepthsCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="DepthsCommitExit" />
+    </Exec>
+    <Exec Command="git status --porcelain --untracked-files=no" WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true" IgnoreExitCode="true" ContinueOnError="true"
+          StandardOutputImportance="low" StandardErrorImportance="low" Condition="'$(DepthsCommitExit)' == '0'">
+      <Output TaskParameter="ConsoleOutput" PropertyName="DepthsDirty" />
+    </Exec>
+    <PropertyGroup>
+      <DepthsCommit Condition="'$(DepthsCommitExit)' != '0'"></DepthsCommit>
+      <DepthsCommit Condition="'$(DepthsCommit)' != '' And '$(DepthsDirty)' != ''">$(DepthsCommit)+dirty</DepthsCommit>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(DepthsCommit)' != ''">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>GitCommit</_Parameter1>
+        <_Parameter2>$(DepthsCommit)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
 
 </Project>

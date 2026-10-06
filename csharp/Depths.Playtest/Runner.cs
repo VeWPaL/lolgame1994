@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace Depths.Playtest
 {
@@ -18,7 +19,14 @@ namespace Depths.Playtest
         // per-step snapshots, reused so the loop does not allocate
         readonly List<Pickup> _pk0 = new List<Pickup>();
         readonly List<Projectile> _shots0 = new List<Projectile>();
-        readonly List<(BodyKind kind, double x, double y, double r)> _bodies0 = new List<(BodyKind, double, double, double)>();
+        readonly List<(BodyKind kind, double x, double y, double r)> _bodies0 =
+            new List<(BodyKind, double, double, double)>();
+        double _hp0, _ar0, _rg0, _taken0;
+        int _rgT0, _live0, _floor0, _cx0, _cy0;
+
+        // a scratch run the game's own regen and damage functions are replayed on; the real run is never touched
+        readonly RunState _probe = new RunState(new Rng(0));
+        readonly Enemy _probeBody = Enemy.Of(BodyKind.Lunger, 0, 0);
 
         public Runner(uint seed, string profile, double minutes, IPolicy? policy = null)
         {
@@ -34,8 +42,15 @@ namespace Depths.Playtest
         void NewFloor()
         {
             var p = Run.player;
-            _f = new FloorRecord { floor = Run.floor, hpIn = Hearts(p), maxHpIn = p.maxHp + p.regenHeartMax };
+            _f = new FloorRecord { floor = Run.floor, hpIn = Hearts(p), maxHpIn = p.maxHp + p.regenHeartMax,
+                                   armorIn = p.armor };
             Result.floors.Add(_f);
+        }
+
+        // closed after the descending step, so that step's damage and the HP out are on the same floor
+        void CloseFloor()
+        {
+            _f.hpOut = Hearts(Run.player); _f.armorOut = Run.player.armor;
         }
 
         public RunResult Play()
@@ -66,7 +81,7 @@ namespace Depths.Playtest
                 if (t - lastProgress > _stuck) { o.end = "stuck"; o.cause = StuckCause(r); break; }
 
                 int floorBefore = Run.floor;
-                double hpBefore = Hearts(Run.player);
+                string where = "game";   // who threw: the bot's decision, or the game's own code
                 try
                 {
                     if (Run.trans != null) { Step(Input.None); continue; }
@@ -74,13 +89,15 @@ namespace Depths.Playtest
                     foreach (var e in Run.enemies) if (e.hp > 0) { live = true; break; }
                     if (!live && r.Cleared && Run.enemies.Count == 0 && lastCleared != r) { lastCleared = r; _f.cleared++; }
 
+                    where = "bot";
                     var act = _policy.Decide(Run, t);
+                    where = "game";
                     if (act.UseActive && Run.state == "playing") UseActive();
                     if (act.Input.blink && TickOrder.TryBlink(Run, act.Input)) { o.blinks++; o.dodgeBlinks++; }
                     Step(act.Input);
                     if (Run.floor != floorBefore)
                     {
-                        _f.hpOut = hpBefore; _f.bossKilled = true;
+                        _f.bossKilled = true; CloseFloor();
                         NewFloor();
                         lastProgress = t;
                     }
@@ -88,8 +105,8 @@ namespace Depths.Playtest
                 catch (Exception e)
                 {
                     // a step that threw after the descent still went down: close the floor it left
-                    if (Run.floor != floorBefore) { _f.hpOut = hpBefore; _f.bossKilled = true; }
-                    o.errors.Add(Trim(e.GetType().Name + ": " + e.Message + " @ " + TopFrame(e)));
+                    if (Run.floor != floorBefore) _f.bossKilled = true;
+                    o.errors.Add(ErrorText(where, e));
                     o.end = "error";
                     break;
                 }
@@ -99,7 +116,7 @@ namespace Depths.Playtest
             o.secrets = Run.secret ? 1 : 0;
             o.weapon = Weapons.All[Run.player.weaponIdx].Name;
             if (o.cause == null && o.end == "death") o.cause = TopSource(o.dmgBySource);
-            _f.hpOut ??= Hearts(Run.player);
+            if (_f.hpOut == null) CloseFloor();
             return o;
         }
 
@@ -121,8 +138,8 @@ namespace Depths.Playtest
         void Step(Input input)
         {
             var p = Run.player;
-            double hp0 = p.hp, ar0 = p.armor, rg0 = p.regenHeart, taken0 = Run.dmgTaken;
-            int floor0 = Run.floor, cx0 = Run.curX, cy0 = Run.curY;
+            _hp0 = p.hp; _ar0 = p.armor; _rg0 = p.regenHeart; _rgT0 = p.regenHeartT; _taken0 = Run.dmgTaken;
+            _live0 = Run.enemies.Count; _floor0 = Run.floor; _cx0 = Run.curX; _cy0 = Run.curY;
             _pk0.Clear(); _pk0.AddRange(Run.pickups);
             _shots0.Clear();
             foreach (var s in Run.projectiles) if (!s.friendly) _shots0.Add(s);
@@ -130,59 +147,66 @@ namespace Depths.Playtest
             foreach (var e in Run.enemies) _bodies0.Add((e.kind, e.x, e.y, e.r));
 
             try { TickOrder.Update(Run, input); }
-            finally { Observe(hp0, ar0, rg0, taken0, floor0, cx0, cy0); }   // a step that throws is still counted
+            finally { Observe(); }   // a step that throws is still counted
         }
 
-        /// <summary>The HP layers a hit of <paramref name="amount"/> should cost, read off the game's own
-        /// armour rule; the lower of the boss and non-boss cost, so it never overstates.</summary>
-        static double ExpectedLoss(double amount, double armor)
-        {
-            if (armor <= 0 || Balance.JsReference) return amount;
-            double best = double.PositiveInfinity;
-            foreach (bool boss in new[] { false, true })
-            {
-                double cost = Combat.ArmorCost(amount, boss), paid = Math.Min(armor, cost);
-                best = Math.Min(best, paid + Math.Ceiling(amount * (cost - paid) / cost));
-            }
-            return best;
-        }
-
-        void Observe(double hp0, double ar0, double rg0, double taken0, int floor0, int cx0, int cy0)
+        void Observe()
         {
             var p = Run.player;
-            double dHp = p.hp - hp0, dAr = p.armor - ar0, dRg = p.regenHeart - rg0;
-            double lost = Math.Max(0, -dHp) + Math.Max(0, -dAr) + Math.Max(0, -dRg);
-            // a hit and a heal on one layer in one tick cancel in the deltas; the game's dmgTaken
-            // (one landed hit per tick at most, i-frames) shows the part they hid
-            double hidden = 0;
-            if (Run.dmgTaken > taken0) hidden = Math.Max(0, ExpectedLoss(Run.dmgTaken - taken0, ar0) - lost);
-            if (lost + hidden > 0)
+            bool sameRoom = Run.floor == _floor0 && Run.curX == _cx0 && Run.curY == _cy0;
+            string? by = null;   // the heal pickup that left the floor this step, if one did
+            if (sameRoom)
+                foreach (var pk in _pk0)
+                {
+                    if (Run.pickups.Contains(pk)) continue;
+                    bool heals = pk.kind == "heart" || pk.kind == "halfheart" || pk.kind == "armor" || pk.kind == "halfarmor";
+                    if (heals) by ??= pk.kind;
+                    if (pk.kind == "item") Result.items.Add(pk.id + "@" + _floor0);
+                }
+
+            // the tick runs regen, then at most one landed hit (i-frames), then pickups; with a hit,
+            // the first two are replayed on the probe and what is left over is the pickups
+            double hpX = _hp0, arX = _ar0, rgX = _rg0, hit = 0;
+            string? src = null;
+            if (Run.dmgTaken > _taken0)
             {
-                string src = Source();
-                Result.dmgBySource[src] = Result.dmgBySource.TryGetValue(src, out var v) ? v + lost + hidden : lost + hidden;
-                _f.dmg += lost + hidden;
+                src = Source();
+                var q = _probe.player;
+                q.hp = _hp0; q.maxHp = p.maxHp; q.armor = _ar0; q.regenHeart = _rg0; q.regenHeartMax = p.regenHeartMax;
+                q.regenHeartT = _rgT0; q.iframes = 0;
+                _probe.blinkGrace = 0; _probe.graceSpent = false; _probe.state = "playing";
+                _probe.enemies.Clear();
+                if (_live0 > 0) _probe.enemies.Add(_probeBody);
+                TickOrder.TickRegen(_probe);
+                double refill = q.regenHeart - _rg0;
+                if (refill > 0) Regen(refill);
+                double h0 = q.hp, a0 = q.armor, r0 = q.regenHeart;
+                bool boss = src.EndsWith(":boss", StringComparison.Ordinal);   // the Warden's hits cost armour in full
+                Combat.DamagePlayer(_probe, Run.dmgTaken - _taken0, 0, 0, 0, boss);
+                hit = (h0 - q.hp) + (a0 - q.armor) + (r0 - q.regenHeart);
+                hpX = q.hp; arX = q.armor; rgX = q.regenHeart;
+                double lost = Math.Max(0, _hp0 - p.hp) + Math.Max(0, _ar0 - p.armor) + Math.Max(0, _rg0 - p.regenHeart);
+                if (hit > lost + 1e-9) { Result.maskedHits++; Result.maskedHp += hit - lost; }
             }
-            if (dRg > 0) { Heal("regen", dRg); _f.regen += dRg; Result.regenHealed += dRg; }
-            double gain = Math.Max(0, dHp) + Math.Max(0, dAr);
-            bool sameRoom = Run.floor == floor0 && Run.curX == cx0 && Run.curY == cy0;
-            string? by = null;
-            foreach (var pk in _pk0)
+            // what the hit (if any) does not explain: gains are pickups or regen, losses are damage
+            double dHp = p.hp - hpX, dAr = p.armor - arX, dRg = p.regenHeart - rgX;
+            double dmg = hit + Math.Max(0, -dHp) + Math.Max(0, -dAr) + Math.Max(0, -dRg);
+            if (dmg > 0)
             {
-                if (sameRoom && Run.pickups.Contains(pk)) continue;
-                if (!sameRoom) break;
-                if (pk.kind == "heart" || pk.kind == "halfheart" || pk.kind == "armor" || pk.kind == "halfarmor") by ??= pk.kind;
-                if (pk.kind == "item") Result.items.Add(pk.id + "@" + floor0);
+                src ??= Source();
+                Result.dmgBySource[src] = Result.dmgBySource.TryGetValue(src, out var v) ? v + dmg : dmg;
+                _f.dmg += dmg;
             }
-            // nothing left the floor: a drop that landed under the player and was taken on the same tick
-            if (gain > 0 && by == null) by = dAr > 0 ? (dAr >= 2 ? "armor" : "halfarmor") : dHp > 0 ? (dHp >= 2 ? "heart" : "halfheart") : "other";
-            if (gain > 0) Heal(by!, gain);
-            if (hidden > 0)
-            {
-                Result.maskedHits++; Result.maskedHp += hidden;
-                string hb = by ?? (rg0 < p.regenHeartMax ? "regen" : "unseen");
-                if (hb == "regen") { _f.regen += hidden; Result.regenHealed += hidden; }
-                Heal(hb, hidden);
-            }
+            if (dRg > 0) Regen(dRg);
+            // no pickup left the floor: a drop spawned and taken in the same tick; only its layer is known
+            if (dHp > 0) Heal(by ?? "unseen:red", dHp);
+            if (dAr > 0) Heal(by ?? "unseen:armour", dAr);
+        }
+
+        void Regen(double hp)
+        {
+            Heal("regen", hp);
+            _f.regen += hp; Result.regenHealed += hp;
         }
 
         void Heal(string by, double gain)
@@ -198,12 +222,12 @@ namespace Depths.Playtest
             var p = Run.player;
             double best = 40;
             Projectile? near = null;
+            double sx = p.lagX, sy = p.lagY + Balance.PlayerHitDy;   // shells land on the lagged hitbox
             foreach (var s in _shots0)
             {
                 if (Run.projectiles.Contains(s)) continue;
-                // shells land on the lagged hitbox, which can trail the body by 40px after a blink
                 double d = Math.Min(Math.Sqrt((s.x - p.x) * (s.x - p.x) + (s.y - p.y) * (s.y - p.y)),
-                                    Math.Sqrt((s.x - p.lagX) * (s.x - p.lagX) + (s.y - p.lagY - Balance.PlayerHitDy) * (s.y - p.lagY - Balance.PlayerHitDy)));
+                                    Math.Sqrt((s.x - sx) * (s.x - sx) + (s.y - sy) * (s.y - sy)));
                 if (d < best) { best = d; near = s; }
             }
             if (near != null) return "shot:" + (near.owner != null ? Name(near.owner.kind) : "?");
@@ -250,17 +274,21 @@ namespace Depths.Playtest
             return k == null ? null : new object[] { k, v };
         }
 
-        // the innermost game or bot frame, without the machine's paths
-        static string TopFrame(Exception e)
+        /// <summary>"game: Type: message @ Class.Method": who threw, and the first frame in that side's
+        /// assembly by name only (no paths, offsets or line numbers).</summary>
+        static string ErrorText(string where, Exception e)
         {
-            var frames = (e.StackTrace ?? "").Split('\n');
-            string pick = frames[0];
-            foreach (var f in frames) if (f.Contains("Depths.")) { pick = f; break; }
-            pick = pick.Trim();
-            int at = pick.IndexOf(" in ", StringComparison.Ordinal);
-            return at < 0 ? pick : pick.Substring(0, at);
+            var asm = where == "bot" ? typeof(Runner).Assembly : typeof(RunState).Assembly;
+            string frame = "?";
+            foreach (var f in new StackTrace(e, false).GetFrames())
+            {
+                var m = f.GetMethod();
+                if (m?.DeclaringType == null || m.DeclaringType.Assembly != asm) continue;
+                frame = m.DeclaringType.Name + "." + m.Name;
+                break;
+            }
+            string s = where + ": " + e.GetType().Name + ": " + e.Message + " @ " + frame;
+            return s.Length > 300 ? s.Substring(0, 300) : s;
         }
-
-        static string Trim(string s) => s.Length > 300 ? s.Substring(0, 300) : s;
     }
 }

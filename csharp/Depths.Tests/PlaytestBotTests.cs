@@ -6,7 +6,8 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>The C# playtest bot (csharp/Depths.Playtest): deterministic, honest about damage, and never loops forever.</summary>
+    /// <summary>The C# playtest bot's runner (csharp/Depths.Playtest): deterministic, honest about damage,
+    /// and never loops forever.</summary>
     [TestFixture]
     public sealed class PlaytestBotTests
     {
@@ -75,7 +76,8 @@ namespace Depths.Tests
             var run = OneTick(r => r.projectiles.Add(ShellOnHitbox(r.player, BodyKind.Gunner)));
             Assert.That(run.Run.dmgTaken, Is.EqualTo(2), "the scripted shell did not land");
             Assert.That(run.Result.dmgBySource, Is.EqualTo(new Dictionary<string, double> { ["shot:gunner"] = 2 }));
-            Assert.That(run.Result.floors[0].dmg, Is.EqualTo(run.Run.dmgTaken), "with no armour the layers must equal dmgTaken");
+            Assert.That(run.Result.floors[0].dmg, Is.EqualTo(run.Run.dmgTaken),
+                "with no armour the layers must equal dmgTaken");
         }
 
         [Test]
@@ -88,9 +90,29 @@ namespace Depths.Tests
                 var p = r.player;
                 r.enemies.Add(Enemy.Of(BodyKind.Lunger, p.lagX, p.lagY + 20));
                 r.enemies.Add(Enemy.Of(BodyKind.Brunch, p.lagX, p.lagY - Balance.PlayerHitDy - 13));
+                // and a live shell flying past, 30px off: still in the air, so not the source
+                var past = ShellOnHitbox(p, BodyKind.Shooter);
+                past.x = p.x + 30; past.y = p.y; past.vx = 3;
+                r.projectiles.Add(past);
             });
             Assert.That(run.Run.dmgTaken, Is.EqualTo(1), "the scripted contact did not land");
             Assert.That(run.Result.dmgBySource, Is.EqualTo(new Dictionary<string, double> { ["contact:brunch"] = 1 }));
+        }
+
+        [Test]
+        public void AContactIsMeasuredToTheBodysEdge()
+        {
+            // a gunner (r 22) touches the contact point from 28px; a shooter (r 14) 26px off is nearer
+            // by centre but does not touch it
+            var run = OneTick(r =>
+            {
+                var p = r.player;
+                double hy = p.lagY - Balance.PlayerHitDy;
+                r.enemies.Add(Enemy.Of(BodyKind.Shooter, p.lagX, hy + 26));
+                r.enemies.Add(Enemy.Of(BodyKind.Gunner, p.lagX, hy - 28));
+            });
+            Assert.That(run.Run.dmgTaken, Is.EqualTo(1), "the scripted contact did not land");
+            Assert.That(run.Result.dmgBySource, Is.EqualTo(new Dictionary<string, double> { ["contact:gunner"] = 1 }));
         }
 
         [Test]
@@ -129,7 +151,8 @@ namespace Depths.Tests
         {
             readonly Enemy _e;
             public FireAt(Enemy e) => _e = e;
-            public BotAction Decide(RunState run, int t) => new BotAction(new Input(0, 0, fire: true, aimX: _e.x, aimY: _e.y));
+            public BotAction Decide(RunState run, int t) =>
+                new BotAction(new Input(0, 0, fire: true, aimX: _e.x, aimY: _e.y));
         }
 
         static Runner DummyRoom(Func<Enemy, IPolicy> policy)
@@ -156,7 +179,8 @@ namespace Depths.Tests
 
         sealed class Throws : IPolicy
         {
-            public BotAction Decide(RunState run, int t) => t < 100 ? BotAction.None : throw new InvalidOperationException("boom");
+            public BotAction Decide(RunState run, int t) =>
+                t < 100 ? BotAction.None : throw new InvalidOperationException("boom");
         }
 
         [Test]
@@ -165,7 +189,64 @@ namespace Depths.Tests
             var r = new Runner(1, "novice", 1, new Throws()).Play();
             Assert.That(r.end, Is.EqualTo("error"));
             Assert.That(r.errors, Has.Count.EqualTo(1));
-            Assert.That(r.errors[0], Does.Contain("boom"));
+            Assert.That(r.errors[0], Does.StartWith("bot: InvalidOperationException: boom @ "));
+        }
+
+        [Test]
+        public void AGameExceptionIsBlamedOnTheGameNotTheBot()
+        {
+            // an item id the game does not know, under the player: Items.Give throws inside TickRoom
+            var run = OneTick(r =>
+                r.pickups.Add(new Pickup { x = r.player.x, y = r.player.y, kind = "item", id = "no_such_item" }));
+            Assert.That(run.Result.end, Is.EqualTo("error"));
+            Assert.That(run.Result.errors[0],
+                Does.StartWith("game: ArgumentException: no item called no_such_item @ "));
+            Assert.That(run.Result.errors[0], Does.Not.Contain("Runner").And.Not.Contain("/"));
+        }
+
+        [Test]
+        public void ABossHitOnArmourAndAHalfArmourOnTheSameTickAreBothCounted()
+        {
+            // the Warden's 3 HP shell costs armour 3 at full weight (an ordinary 3 would cost 1); the half
+            // armour taken in the same tick hides 1 of it from the armour delta
+            var run = OneTick(r =>
+            {
+                var p = r.player;
+                p.armor = 4;
+                r.pickups.Add(Pickup.Of("halfarmor", p.x, p.y, 16));
+                var shell = ShellOnHitbox(p, BodyKind.Boss);
+                shell.dmg = 3;
+                r.projectiles.Add(shell);
+            });
+            Assert.That(run.Run.player.armor, Is.EqualTo(2), "fixture: 4 - 3 + 1");
+            Assert.That(run.Result.dmgBySource, Is.EqualTo(new Dictionary<string, double> { ["shot:boss"] = 3 }));
+            Assert.That(run.Result.healBy, Is.EqualTo(new Dictionary<string, double> { ["halfarmor"] = 1 }));
+            Assert.That(run.Result.maskedHits, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void EachFloorIsClosedOnTheDescentAndItsHpBalances()
+        {
+            var run = new Runner(1, "skilled", 7);
+            var r = run.Play();
+            Assert.That(r.floors.Count, Is.GreaterThanOrEqualTo(3), "fixture: two floors left in 7 minutes");
+            Assert.That(r.floors.Skip(1).Any(f => f.dmg > 0), Is.True, "fixture: no damage after floor 1");
+            for (int i = 0; i < r.floors.Count; i++)
+            {
+                var f = r.floors[i];
+                Assert.That(f.floor, Is.EqualTo(i + 1));
+                Assert.That(f.hpOut, Is.Not.Null);
+                // every floor's own damage and healing explain its HP in and out
+                Assert.That(f.hpIn + f.armorIn + f.healed - f.dmg,
+                    Is.EqualTo(f.hpOut!.Value + f.armorOut!.Value).Within(1e-9),
+                    "floor " + f.floor + " books damage or healing that happened on another floor");
+                if (i + 1 < r.floors.Count)
+                {
+                    Assert.That(f.bossKilled, Is.True);
+                    Assert.That(f.bossTicks, Is.GreaterThan(0));
+                    Assert.That(r.floors[i + 1].hpIn, Is.EqualTo(f.hpOut));
+                }
+            }
         }
     }
 }
