@@ -389,7 +389,7 @@ namespace Depths
             var p = run.player;
             e.pursuit++;
             double gain = 1 + Balance.BrunchRampGain * System.Math.Min(1, e.pursuit / Balance.BrunchRamp);
-            e.curSpeed += (e.runSpeed - e.curSpeed) * Balance.LungerAccel * gain;
+            e.curSpeed += (e.runSpeed - e.curSpeed) * Balance.LungerAccel * gain * Balance.EaseK(Balance.LungerAccel * gain);
             PackCentroid? pc = null;
             if (e.packId.HasValue) Packs.TryGetValue(e.packId.Value, out pc);
             double mdx = edx, mdy = edy;
@@ -407,8 +407,8 @@ namespace Depths
             double share = desired > e.curSpeed ? Balance.BrunchAccel : Balance.BrunchDecel;
             e.vx += (tx / td * desired - e.vx) * share;
             e.vy += (ty / td * desired - e.vy) * share;
-            if (System.Math.Abs(e.vx) < 0.02) e.vx = 0;
-            if (System.Math.Abs(e.vy) < 0.02) e.vy = 0;
+            if (System.Math.Abs(e.vx) < Balance.BrunchStill) e.vx = 0;
+            if (System.Math.Abs(e.vy) < Balance.BrunchStill) e.vy = 0;
             e.x += e.vx * sm;
             e.y += e.vy * sm;
         }
@@ -521,7 +521,7 @@ namespace Depths
                 else if (e.alerted || dist < e.sense) StepRanged(run, e, edx, edy, dist, sm, roomPress);
                 else Movement.IdleWander(run, e);
                 double mv = System.Math.Sqrt((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy));
-                e.anim = mv > 0.05 ? e.anim + mv / Balance.Stride : 0;
+                e.anim = mv > Balance.MoveEps ? e.anim + mv / Balance.Stride : 0;
                 Movement.Clamp(e);
                 double cy = edy - Balance.PlayerHitDy;
                 if (System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR)
@@ -576,7 +576,7 @@ namespace Depths
             var p = run.player;
             double ux, uy, len = Dist(input.dx, input.dy);
             if (len > 0) { ux = input.dx / len; uy = input.dy / len; }
-            else if ((len = Dist(p.vx, p.vy)) > 0.1) { ux = p.vx / len; uy = p.vy / len; }
+            else if ((len = Dist(p.vx, p.vy)) > Balance.BlinkDirEps) { ux = p.vx / len; uy = p.vy / len; }
             else { double a = System.Math.Atan2(input.aimY - p.y, input.aimX - p.x); ux = System.Math.Cos(a); uy = System.Math.Sin(a); }
             double fromX = p.x, fromY = p.y;
             p.x += ux * Balance.BlinkDist;
@@ -958,13 +958,13 @@ namespace Depths
             double targetVy = len != 0 ? (dy / len) * spd : 0;
 
             /* THE ACCELERATION RAMP IS THE FEEL, and it is why this is not a velocity assignment.
-               `MoveAccel` closes 11.6% of the remaining gap per tick, so the player takes about 40
+               `MoveAccel` closes 11.6% of the remaining gap per JS tick (Ease converts it), so the player takes about 40
                ticks - about a fifth of a second - to reach top speed, and Momentum makes a charged
                player accelerate harder rather than merely faster. Measured in the browser: the
                terminal speed is 1.4025 and the first ten ticks are
                0.16269, 0.306508, 0.433643, 0.54603, 0.645381, 0.733207, 0.810845, 0.879477,
                0.940147, 0.99378. */
-            double accel = Balance.MoveAccel * (1 + p.momentum * Balance.MomentumAccel);
+            double accel = Balance.Ease(Balance.MoveAccel * (1 + p.momentum * Balance.MomentumAccel));
             p.vx += (targetVx - p.vx) * accel;
             p.vy += (targetVy - p.vy) * accel;
 
@@ -996,7 +996,7 @@ namespace Depths
                see the note on `Balance.SwerveDecay` - and nothing caught it, because nothing read
                the constant until now. */
             double msp = System.Math.Sqrt(targetVx * targetVx + targetVy * targetVy);
-            if (msp > 0.05)
+            if (msp > Balance.MoveEps)
             {
                 if (p.dirX != 0 || p.dirY != 0)
                 {
@@ -1015,8 +1015,8 @@ namespace Depths
             p.y += p.vy + p.kvy;
             p.kvx *= Balance.KnockPFriction;
             p.kvy *= Balance.KnockPFriction;
-            if (System.Math.Abs(p.kvx) < Balance.KnockCut) p.kvx = 0;
-            if (System.Math.Abs(p.kvy) < Balance.KnockCut) p.kvy = 0;
+            if (System.Math.Abs(p.kvx) < Balance.KnockPCut) p.kvx = 0;
+            if (System.Math.Abs(p.kvy) < Balance.KnockPCut) p.kvy = 0;
 
             ClampPlayer(run);
 
@@ -1067,7 +1067,7 @@ namespace Depths
             TickMomentum(run, System.Math.Max(0, moved - knk));
 
             // The walk cycle scales with distance covered, so a slow walk animates slowly.
-            p.anim = sp > 0.12 ? p.anim + sp / Balance.Stride : 0;
+            p.anim = sp > Balance.PlayerAnimEps ? p.anim + sp / Balance.Stride : 0;
 
             TickBlink(run);
             if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1);

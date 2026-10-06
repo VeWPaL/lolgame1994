@@ -71,7 +71,7 @@ namespace Depths
         /// the running game: 1.122. The tick's terminal speed is this times (1 + MoveSpeedBonus),
         /// which is 1.4025 in an empty room and 1.6045 against a pack with the meter full.
         /// </summary>
-        public double speed = 1.122;
+        public double speed = 0.935 * Balance.PlayerMove;   // px per tick, fixed when the body is made
 
         /// <summary>
         /// The firing slow-motion multiplier, eased toward 1 every tick. Starts at 1 - full speed -

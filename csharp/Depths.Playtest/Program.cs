@@ -95,12 +95,13 @@ namespace Depths.Playtest
         public List<string> Profiles = new List<string> { "novice", "average", "skilled" };
         public double Minutes = 20;
         public string? Brunch, Out;
+        public int? Hz;   // the sim's tick rate; the game's own when not given
         public List<string> Labels = new List<string>();
 
-        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out" };
+        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--out DIR]  |  report A [B] [--out DIR]";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--out DIR]  |  report A [B] [--out DIR]";
 
         static string Name(string s, string what)
         {
@@ -150,6 +151,11 @@ namespace Depths.Playtest
                         if (!double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out c.Minutes)
                             || !(c.Minutes > 0) || c.Minutes > 10000)
                             throw new UsageException("--minutes: '" + v + "' must be a number above 0 (at most 10000)");
+                        break;
+                    case "hz":
+                        if (!int.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out var hz) || hz < 1 || hz > 10000)
+                            throw new UsageException("--hz: '" + v + "' must be a whole number of ticks a second, 1 to 10000");
+                        c.Hz = hz;
                         break;
                     case "brunch":
                         if (v != "A" && v != "B" && v != "A+") throw new UsageException("--brunch is A, B or A+");
@@ -204,6 +210,7 @@ namespace Depths.Playtest
         {
             // the game's own comparison switch, recorded in the header
             if (c.Brunch != null) Balance.BrunchVariant = c.Brunch;
+            if (c.Hz != null) Balance.TickHz = c.Hz.Value;   // recorded in the header too
             string dir = OutDir(c);
             Directory.CreateDirectory(dir);
             var sw = Stopwatch.StartNew();

@@ -3,11 +3,12 @@ using System.Collections.Generic;
 
 namespace Depths.Playtest
 {
-    /// <summary>One stand-in player. The numbers are tools/playtest.js's, in ticks at 210 Hz.</summary>
+    /// <summary>One stand-in player. The numbers are tools/playtest.js's; its reaction ticks (at 210 Hz) are held in seconds.</summary>
     public sealed class Profile
     {
         public string Name = "";
-        public int React;          // ticks between decisions, and before a seen shot can be dodged
+        public double ReactS;      // seconds between decisions, and before a seen shot can be dodged
+        public int ReactTicks => Balance.Sec(ReactS);   // the JS bot's 55 / 38 / 24 at 210 Hz
         public double AimErr;      // radians of aim noise (scaled gaussian)
         public double Dodge;       // chance factor for a dodge blink
         public double BandMin, BandMax;
@@ -16,11 +17,11 @@ namespace Depths.Playtest
 
         public static readonly IReadOnlyList<Profile> All = new[]
         {
-            new Profile { Name = "novice", React = 55, AimErr = 0.14, Dodge = 0.2,
+            new Profile { Name = "novice", ReactS = 0.262, AimErr = 0.14, Dodge = 0.2,
                           BandMin = 110, BandMax = 220, Blast = 0.25, Heal = 1 },
-            new Profile { Name = "average", React = 38, AimErr = 0.07, Dodge = 0.55,
+            new Profile { Name = "average", ReactS = 0.181, AimErr = 0.07, Dodge = 0.55,
                           BandMin = 150, BandMax = 260, Blast = 0.55, Heal = 2 },
-            new Profile { Name = "skilled", React = 24, AimErr = 0.03, Dodge = 0.9,
+            new Profile { Name = "skilled", ReactS = 0.114, AimErr = 0.03, Dodge = 0.9,
                           BandMin = 170, BandMax = 280, Blast = 0.85, Heal = 2 },
         };
 

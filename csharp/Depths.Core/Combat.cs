@@ -59,7 +59,7 @@ namespace Depths
             {
                 run.blinkGrace = 0;
                 run.graceSpent = true;
-                if (force != 0) { p.kvx += kx * force; p.kvy += ky * force; }
+                if (force != 0) { p.kvx += kx * force * Balance.KnockPScale; p.kvy += ky * force * Balance.KnockPScale; }
                 p.momentum *= Balance.MomentumHitKeep;
                 return false;
             }
@@ -80,7 +80,7 @@ namespace Depths
             if (p.hp < 0 && p.hp > -1e-6) p.hp = 0;   // a float epsilon is not a death
             if (run.state == "dev" && p.hp < 1) p.hp = 1;
             p.momentum *= Balance.MomentumHitKeep;
-            if (force != 0) { p.kvx += kx * force; p.kvy += ky * force; }
+            if (force != 0) { p.kvx += kx * force * Balance.KnockPScale; p.kvy += ky * force * Balance.KnockPScale; }   // scaled as Knock scales a body's
             p.iframes = Balance.Iframes;
             return true;
         }
@@ -160,10 +160,10 @@ namespace Depths
                         e.hookCalm = 0;
                     }
                     double power = e.hookPower;
-                    e.stun = System.Math.Max(e.stun, 3 * power);
+                    e.stun = System.Math.Max(e.stun, Balance.HookFieldStun * power);
                     if (d > 1) { e.x += dx / d * Balance.HookSuck * power; e.y += dy / d * Balance.HookSuck * power; }
                     e.hp -= Balance.HookDps * power / Balance.TickHz * e.Vuln;
-                    e.hitFlash = System.Math.Max(e.hitFlash, power);
+                    e.hitFlash = System.Math.Max(e.hitFlash, Balance.HookFieldFlash * power);
                     Combat.AlertEnemy(e);
                     if (e.hp <= 0) Kills.KillEnemy(run, j);
                 }

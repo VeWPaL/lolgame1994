@@ -11,6 +11,7 @@ namespace Depths
         const double FlankStep = 2.399963229728653, Tau = 6.283185307179586;
         const double TraitHoldScale = 1.45, TraitCloseScale = 0.72, TraitChance = 0.5;
         const double TraitFarCeil = 0.78, TraitFarFloor = 90, TraitBandMin = 40;
+        const double NoticeS = 16 / 60.0;   // a fresh body notices the player within 16 frames at 60 fps
 
         // trait: one the wave planner already rolled (no draw here); null rolls it, as a lone spawn does
         public static Enemy Body(RunState run, BodyKind kind, double x, double y, int? trait = null)
@@ -19,7 +20,7 @@ namespace Depths
             double tough = Balance.DepthTough(run.floor), rate = Balance.DepthRate(run.floor);
             e.hp = e.maxHp = e.maxHp * tough;
             e.idleTimer = (int)(run.rng.Jitter() * Balance.WanderTicks);
-            e.noticeTimer = (int)(run.rng.Jitter() * 16 * Balance.Speedup);
+            e.noticeTimer = (int)(run.rng.Jitter() * Balance.SecF(NoticeS));
             e.speed *= rate;
             if (kind == BodyKind.Boss) { BossInit(e); e.aggroTimer = 9999; return e; }
             if (kind == BodyKind.Lunger || kind == BodyKind.Brunch)
@@ -50,7 +51,7 @@ namespace Depths
             e.volleyLeft = 0; e.volleyT = 0; e.wallT = 0;
             e.sense = 900; e.close = 140; e.far = 260;
             e.cdMin = Balance.BossCdMin; e.cdVar = Balance.BossCdVar;
-            e.dmg = Balance.JsReference ? Balance.JsBossShellDmg : Balance.BossShellDmg; e.pspd = 1.9; e.pr = 8;
+            e.dmg = Balance.JsReference ? Balance.JsBossShellDmg : Balance.BossShellDmg; e.pspd = Balance.BossShotSpeed; e.pr = 8;
         }
 
         // TRAIT_TABLE by the gun the player holds: (trait, weight)

@@ -238,8 +238,8 @@ namespace Depths
         /// <summary>Rooms entered on this floor. Reset by <see cref="Descend"/>.</summary>
         public int roomsThisFloor;
 
-        /// <summary>Ticks for the descent fade. Read out of the running game: 189.</summary>
-        public const int FadeDescend = 189;
+        /// <summary>Ticks for the descent fade: 0.9s (189 at the JS rate).</summary>
+        public static int FadeDescend => Balance.Sec(0.9);
 
         /// <summary>
         /// Goes down a floor. Ported from the original's <c>descend()</c>, with every value below

@@ -17,14 +17,14 @@ namespace Depths.Tests
         [Test]
         public void TheProfilesAreTheJsBotsTable()
         {
-            // tools/playtest.js: react, aimErr, dodge, band, blast, heal
+            // tools/playtest.js: react (ticks at its 210 Hz, which this suite runs at), aimErr, dodge, band, blast, heal
             var js = new (string, int, double, double, double, double, double, double)[]
             {
                 ("novice", 55, 0.14, 0.2, 110, 220, 0.25, 1),
                 ("average", 38, 0.07, 0.55, 150, 260, 0.55, 2),
                 ("skilled", 24, 0.03, 0.9, 170, 280, 0.85, 2),
             };
-            var table = Profile.All.Select(p => (p.Name, p.React, p.AimErr, p.Dodge, p.BandMin, p.BandMax, p.Blast, p.Heal));
+            var table = Profile.All.Select(p => (p.Name, p.ReactTicks, p.AimErr, p.Dodge, p.BandMin, p.BandMax, p.Blast, p.Heal));
             Assert.That(table, Is.EqualTo(js));
         }
 
@@ -55,7 +55,7 @@ namespace Depths.Tests
             return (run, new BotPolicy(Profile.Get(profile), 1));
         }
 
-        static int React(string profile) => Profile.Get(profile).React * Balance.TickHz / 210;
+        static int React(string profile) => Profile.Get(profile).ReactTicks;
 
         [Test]
         public void ADodgeWaitsForTheReactionTime()

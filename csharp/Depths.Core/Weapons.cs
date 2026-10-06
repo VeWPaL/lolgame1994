@@ -4,7 +4,9 @@ namespace Depths
     public sealed class WeaponDef
     {
         public string Name = "", Color = "";
-        public double Cooldown, Speed, Dmg, Spread, R = 5;
+        public double CooldownS, SpeedPs, Dmg, Spread, R = 5;   // seconds between shots (before tempo); px/s
+        public double Cooldown => Balance.SecF(CooldownS);       // in ticks at the current rate
+        public double Speed => Balance.PerSec(SpeedPs);          // px per tick
         public int Count = 1, Pierce;
         public bool Shrink, SpreadFromPrecision;
         public double? FNear;
@@ -20,21 +22,22 @@ namespace Depths
     /// </summary>
     public static class Weapons
     {
+        // Cooldowns as the JS wrote them: frames at its old 60 fps (38 x SPEEDUP ticks is 38/60 s), or sec(1.1).
         public static readonly WeaponDef[] All =
         {
-            new WeaponDef { Name = "Bolt", Color = "#c79bff", Cooldown = 133, Speed = 2.8, Dmg = 7, Spread = 0.05, R = 6,
+            new WeaponDef { Name = "Bolt", Color = "#c79bff", CooldownS = 38 / 60.0, SpeedPs = 588, Dmg = 7, Spread = 0.05, R = 6,
                             Shrink = true, FNear = 130, FFar = 400, FMin = 0.5 },
-            new WeaponDef { Name = "Scatter", Color = "#e8502a", Cooldown = 231, Speed = 2.4, Dmg = 3.9, Count = 8, Spread = 0.045,
+            new WeaponDef { Name = "Scatter", Color = "#e8502a", CooldownS = 1.1, SpeedPs = 504, Dmg = 3.9, Count = 8, Spread = 0.045,
                             FNear = 180, FFar = 320, FMin = 0.22, MuzzleJitter = 5, PelletAngle = 0.008, PelletSpeedVar = 0.25 },
-            new WeaponDef { Name = "Arcane Beam", Color = "#3fa9ff", Cooldown = 18.2, Speed = 4, Dmg = 0.5, Spread = 0.16, R = 4,
+            new WeaponDef { Name = "Arcane Beam", Color = "#3fa9ff", CooldownS = 5.2 / 60, SpeedPs = 840, Dmg = 0.5, Spread = 0.16, R = 4,
                             SpreadFromPrecision = true, FNear = 170, FFar = 470, FMin = 0.6 },
-            new WeaponDef { Name = "Voidball", Color = "#3f8a4a", Cooldown = 84, Speed = 3.2, Dmg = 3.4, Spread = 0.02,
+            new WeaponDef { Name = "Voidball", Color = "#3f8a4a", CooldownS = 24 / 60.0, SpeedPs = 672, Dmg = 3.4, Spread = 0.02,
                             FNear = 150, FFar = 440, FMin = 0.55, Pierce = 3 },
         };
 
         public const double PrecisionSpreadFloor = 0.04, PrecisionStep = 0.2;
         public const double ShootSlowMax = 0.7, ShootSlowMain = 0.35;
-        public static readonly int MuzzleTicks = Balance.Sec(0.1);
+        public static int MuzzleTicks => Balance.Sec(0.1);
 
         /// <summary>
         /// Fires the held weapon at a world point. Strength is added once per SHOT and split across the

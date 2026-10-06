@@ -29,13 +29,16 @@ namespace Depths.Playtest
 
         readonly Profile _p;
         readonly BotRng _rnd;
-        readonly double _k;   // ticks scale, so the 210 Hz numbers still mean the same time at another rate
         readonly int _react;
+        // the JS bot's windows, in seconds: a strafe holds 1-3 s; a shot is dodged inside 30 ticks, blinked inside 12 (at 210 Hz)
+        const double StrafeS = 1, DodgeLookS = 1 / 7.0, BlinkLookS = 2 / 35.0;
 
         // when the bot first SAW each hostile shot: its reaction clock
         readonly Dictionary<Projectile, int> _born =
             new Dictionary<Projectile, int>(ReferenceEqualityComparer.Instance);
         readonly HashSet<Room> _tookItemIn = new HashSet<Room>(ReferenceEqualityComparer.Instance);
+        Pickup? _itemGoal;   // the item last steered at, so a take is seen even when one tick's step skips the 2px band
+        Room? _itemGoalIn;
         readonly List<Projectile> _prune = new List<Projectile>();
 
         int _decideT, _strafe;
@@ -56,8 +59,7 @@ namespace Depths.Playtest
         {
             _p = profile;
             _rnd = new BotRng(seed, profile.Name);
-            _k = Balance.TickHz / 210.0;
-            _react = (int)Math.Round(profile.React * _k);
+            _react = profile.ReactTicks;
             _strafe = _rnd.Next() < 0.5 ? 1 : -1;
         }
 
@@ -97,7 +99,7 @@ namespace Depths.Playtest
                 // re-decide every `react` ticks, as a person does; hold the decision between
                 _decideT = t + _react;
                 _aimJ = _rnd.Gauss() * _p.AimErr;
-                if (t >= _strafeT) { _strafe = -_strafe; _strafeT = t + 210 * _k * (1 + _rnd.Next() * 2); }
+                if (t >= _strafeT) { _strafe = -_strafe; _strafeT = t + Balance.TickHz * StrafeS * (1 + _rnd.Next() * 2); }
                 double dx = target.x - pl.x, dy = target.y - pl.y, dist = Hyp(dx, dy);
                 if (dist == 0) dist = 1;
                 double ux = dx / dist, uy = dy / dist;
@@ -124,13 +126,13 @@ namespace Depths.Playtest
                 double rx = p.x - pl.x, ry = p.y - pl.y, vv = p.vx * p.vx + p.vy * p.vy;
                 if (vv == 0) continue;
                 double tc = -(rx * p.vx + ry * p.vy) / vv;
-                if (tc < 0 || tc > 30 * _k) continue;
+                if (tc < 0 || tc > Balance.SecF(DodgeLookS)) continue;   // tc is in ticks: shot speeds are px per tick
                 double cx = rx + p.vx * tc, cy = ry + p.vy * tc;
                 if (Hyp(cx, cy) < p.r + pl.r + 8)
                 {
                     double s = (cx * p.vy - cy * p.vx) > 0 ? 1 : -1, vn = Math.Sqrt(vv);
                     _mvX = -p.vy / vn * s * 2; _mvY = p.vx / vn * s * 2;
-                    if (tc < 12 * _k && run.blinkCharges > 0 && _rnd.Next() < _p.Dodge * 0.15) blink = true;
+                    if (tc < Balance.SecF(BlinkLookS) && run.blinkCharges > 0 && _rnd.Next() < _p.Dodge * 0.15) blink = true;
                     break;
                 }
             }
@@ -153,6 +155,8 @@ namespace Depths.Playtest
         {
             // the quiet room: pickups worth having, then the way on
             var pl = run.player;
+            if (_itemGoal != null && _itemGoalIn == r && !run.pickups.Contains(_itemGoal)) _tookItemIn.Add(r);
+            _itemGoal = null;
             Pickup? want = null, exit = null;
             foreach (var pk in run.pickups)
             {
@@ -164,6 +168,7 @@ namespace Depths.Playtest
             if (goal != null)
             {
                 if (goal.kind == "item" && Hyp(goal.x - pl.x, goal.y - pl.y) < goal.r + pl.r + 2) _tookItemIn.Add(r);
+                if (goal.kind == "item") { _itemGoal = goal; _itemGoalIn = r; }
                 return Steer(pl, goal.x, goal.y, 3);
             }
             var d = Route(run);
