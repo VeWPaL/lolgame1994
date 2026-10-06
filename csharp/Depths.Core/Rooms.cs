@@ -148,6 +148,7 @@ namespace Depths
             run.hookFields.Clear();   // clearTransient
             run.player.muzzleTimer = 0;
             Load(run, r);
+            Items.CompassOpens(run);
             if (!r.Spawned)
             {
                 r.Spawned = true;

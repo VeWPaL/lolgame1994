@@ -485,6 +485,7 @@ namespace Depths
                     if (System.Math.Abs(e.kvy) < Balance.KnockCut) e.kvy = 0;
                 }
                 if (e.slowT > 0) e.slowT--;
+                if (e.markT > 0) e.markT--;
                 if (e.slowT < 0) e.slowT = 0;
                 if (e.stun < 0) e.stun = 0;
                 double sm = e.slowT > 0 ? Balance.HitSlowMult : 1;
@@ -644,7 +645,7 @@ namespace Depths
                     if (best < 0) continue;
                     if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); continue; }   // the blast goes off on the first body
                     var t = en[best];
-                    t.hp -= p.dmg * Combat.FalloffMult(p) * t.armour * p.scale;
+                    t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale;
                     t.hitFlash = Balance.HitFlash;
                     run.hits++;
                     Combat.AlertEnemy(t);

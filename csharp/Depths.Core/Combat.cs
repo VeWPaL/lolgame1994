@@ -102,7 +102,7 @@ namespace Depths
                 if (!Caught.Contains(e)) continue;
                 double dist = System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y));
                 double t = System.Math.Min(1, dist / (aoe + e.r));
-                if (share != 0) { e.hp -= share * e.armour; e.hitFlash = Balance.HitFlash; }
+                if (share != 0) { e.hp -= share * e.Vuln; e.hitFlash = Balance.HitFlash; }
                 Combat.AlertEnemy(e);
                 Combat.SlowEnemy(e);
                 if (hook)
@@ -147,7 +147,7 @@ namespace Depths
                     double power = e.hookPower;
                     e.stun = System.Math.Max(e.stun, 3 * power);
                     if (d > 1) { e.x += dx / d * Balance.HookSuck * power; e.y += dy / d * Balance.HookSuck * power; }
-                    e.hp -= Balance.HookDps * power / Balance.TickHz * e.armour;
+                    e.hp -= Balance.HookDps * power / Balance.TickHz * e.Vuln;
                     e.hitFlash = System.Math.Max(e.hitFlash, power);
                     Combat.AlertEnemy(e);
                     if (e.hp <= 0) Kills.KillEnemy(run, j);
@@ -174,12 +174,19 @@ namespace Depths
             double px = d == Dir.E ? Balance.RoomRight : d == Dir.W ? Balance.RoomLeft : Balance.MidX;
             double py = d == Dir.S ? Balance.RoomBottom : d == Dir.N ? Balance.RoomTop : Balance.MidY;
             if (System.Math.Sqrt((x - px) * (x - px) + (y - py) * (y - py)) > Balance.AltAoe * 0.8) return false;
+            OpenSecret(run, room);
+            return true;
+        }
+
+        /// <summary>Open a room's fake wall, both sides, and count the secret found.</summary>
+        public static void OpenSecret(RunState run, Room room)
+        {
+            var d = room.Secret!.Value;
             var sec = run.dungeon.Neighbour(room, d);
             room.Secret = null;
             room.Doors.Add(d);
             if (sec != null) sec.Doors.Add(d == Dir.N ? Dir.S : d == Dir.S ? Dir.N : d == Dir.E ? Dir.W : Dir.E);
             run.secret = true;
-            return true;
         }
     }
 

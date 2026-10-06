@@ -228,6 +228,10 @@ namespace Depths
         // the hook's resistance: which field last charged this body, how many hooks it has taken, how
         // long since it was last in one, and the power the current field acts with
         public int hookMark, hookStacks, hookCalm;
+        /// <summary>Hunter's Mark (placeholder, C# only): ticks left marked; a marked body takes MarkVuln x damage.</summary>
+        public int markT;
+        /// <summary>What a player hit is multiplied by: armour, and the mark while it lasts.</summary>
+        public double Vuln => markT > 0 ? armour * Balance.MarkVuln : armour;
         public double hookPower;
         public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
 
@@ -365,7 +369,7 @@ namespace Depths
         public string id = "";
         /// <summary>Charges for an <c>item</c> pickup.</summary>
         public int? charges;   // an item's charges as it lies here; null: the definition's own
-        public bool shown;     // revealed by Hunter's Mark
+        public bool shown;     // set by Hunter's Mark; nothing reads it yet
         /// <summary>Suppress re-collection until the player steps off. See the note above.</summary>
         public bool hold;
 

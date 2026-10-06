@@ -232,6 +232,10 @@ namespace Depths
     public static string BrunchVariant = "A+";
     public const double BrunchGuardLeash = 420;
 
+    // Placeholder item effects (C# only, 2026-10-06; the item overhaul replaces them).
+    public static readonly int MarkTicks = Sec(5);   // Hunter's Mark: how long a body stays marked
+    public const double MarkVuln = 1.5;              // and the damage it takes meanwhile
+
     // Doors and rooms, read from the game 2026-10-06.
     public static readonly int UnlockTime = Sec(0.5), FadeClear = Sec(0.15);   // 105, 32
     public const double UnlockRange = 64;
