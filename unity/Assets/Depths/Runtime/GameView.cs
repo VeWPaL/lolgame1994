@@ -109,8 +109,12 @@ namespace Depths.Unity
             _run.enemies.Add(e);
         }
 
+        bool _paused;
+        int _bannerT, _lastFloor = 1;
+
         void Update()
         {
+            var kb = Keyboard.current;
             if (_painter == null)
             {
                 var root = GetComponent<UIDocument>().rootVisualElement?.Q("gameRoot");
@@ -127,12 +131,13 @@ namespace Depths.Unity
                 _hud.style.width = 900;
                 root.Add(_hud);
             }
-            var kb = Keyboard.current;
-            if (_pause.WasPressedThisFrame()) { SceneManager.LoadScene("MainMenu"); return; }
+            // Esc pauses, as in the game; M from the pause (or after a death) goes back to the menu
+            if (_pause.WasPressedThisFrame() && _run.state == "playing") _paused = !_paused;
+            if ((_paused || _run.state != "playing") && kb != null && kb.mKey.wasPressedThisFrame) { SceneManager.LoadScene("MainMenu"); return; }
             if (kb != null)
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
-                if (kb.rKey.wasPressedThisFrame) NewRun();
+                if (kb.rKey.wasPressedThisFrame) { NewRun(); _paused = false; _lastFloor = 1; }
                 if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; NewRun(); }
                 if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; NewRun(); }
                 if (kb.vKey.wasPressedThisFrame)   // cycle the Brunch guard rule under test
@@ -160,7 +165,7 @@ namespace Depths.Unity
             if (_active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
                 Depths.Unity.Audio.SoundEngine.Play("pickup");
 
-            _acc += Math.Min(Time.unscaledDeltaTime * 1000.0, 250.0);
+            _acc += _paused ? 0 : Math.Min(Time.unscaledDeltaTime * 1000.0, 250.0);
             while (_acc >= StepMs)
             {
                 // keys are -1/0/1 per axis in the game, and screen y points down
@@ -178,6 +183,11 @@ namespace Depths.Unity
                 _acc -= StepMs;
             }
             PlayEvents();
+            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerT = 180; Depths.Unity.Audio.SoundEngine.Play("door"); }
+            if (_bannerT > 0) _bannerT--;
+            _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"
+                : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / 210 / 60) + ":" + (_run.ticks / 210 % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
+                : _bannerT > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
             var act = Items.ActiveItem(_run);
@@ -192,12 +202,12 @@ namespace Depths.Unity
                             (_run.state == "playing" ? "" : "\nYOU DIED on floor " + _run.floor + " - R for a new run") +
                             "\nFloor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room: " + (room != null ? room.Type.ToString() : "?") +
                             "   seed " + Rng.Encode(_run.rootSeed) + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
-                            "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc menu";
+                            "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc pause";
             }
             else
                 _hud.text = stats + (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
                             "\n" + (_bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core.   Brunch rule " + Balance.BrunchVariant + " (V)" +
-                            "\n\n1-4 guns   right-click blast   Shift blink   R new room   F1 real run   B Warden arena   Esc menu";
+                            "\n\n1-4 guns   right-click blast   Shift blink   R new room   F1 real run   B Warden arena   Esc pause";
         }
 
         // The simulation makes no sound; the view hears what changed since the last frame.
@@ -242,6 +252,15 @@ namespace Depths.Unity
     sealed class RoomPainter : VisualElement
     {
         readonly Func<RunState> _run;
+        readonly Label _overlay = new Label();
+        public string Overlay
+        {
+            set
+            {
+                _overlay.text = value ?? "";
+                _overlay.style.display = string.IsNullOrEmpty(value) ? DisplayStyle.None : DisplayStyle.Flex;
+            }
+        }
         static readonly Color Floor = new Color32(20, 23, 32, 255), Wall = new Color32(122, 86, 50, 255),
             PlayerC = new Color32(199, 155, 255, 255), Hostile = new Color32(255, 77, 77, 255);
 
@@ -249,6 +268,15 @@ namespace Depths.Unity
         {
             _run = run;
             generateVisualContent += Paint;
+            _overlay.style.position = Position.Absolute;
+            _overlay.style.left = 290; _overlay.style.top = 250; _overlay.style.width = 700;
+            _overlay.style.unityTextAlign = TextAnchor.MiddleCenter;
+            _overlay.style.fontSize = 28;
+            _overlay.style.color = new Color(0.91f, 0.91f, 0.93f);
+            _overlay.style.backgroundColor = new Color(0.04f, 0.05f, 0.07f, 0.82f);
+            _overlay.style.paddingTop = 18; _overlay.style.paddingBottom = 18;
+            _overlay.style.display = DisplayStyle.None;
+            Add(_overlay);
         }
 
         static Vector2 W(double x, double y) => new Vector2((float)x + 240, (float)y + 5);
