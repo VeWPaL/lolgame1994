@@ -117,7 +117,7 @@ namespace Depths
             blinkCharges = 2; blinkGrace = 0; graceSpent = false; blinkRestoreT = 0;
             flankCursor = 0; bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;
             trans = null; readyT = 0; bossWarnT = 0; bossWarned = false;
-            roomFade = 1; fadeTicks = Balance.Sec(0.4); fadeT = fadeTicks;
+            roomFade = 1; fadeTicks = Balance.FadeStart; fadeT = fadeTicks;
             state = "playing";
         }
 
@@ -183,7 +183,7 @@ namespace Depths
             transients = new List<Pickup>();
             floor = 1;
             state = "start";
-            fadeTicks = Balance.Sec(0.4);   // JS fadeTicks=sec(0.4), src/50-run.js:109
+            fadeTicks = Balance.FadeStart;
         }
     
         /// <summary>
@@ -238,8 +238,8 @@ namespace Depths
         /// <summary>Rooms entered on this floor. Reset by <see cref="Descend"/>.</summary>
         public int roomsThisFloor;
 
-        /// <summary>Ticks for the descent fade. Read out of the running game: 189.</summary>
-        public const int FadeDescend = 189;
+        /// <summary>Ticks for the descent fade: 0.9s (189 at the JS rate).</summary>
+        public static int FadeDescend => Balance.Sec(0.9);
 
         /// <summary>
         /// Goes down a floor. Ported from the original's <c>descend()</c>, with every value below

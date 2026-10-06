@@ -71,7 +71,7 @@ namespace Depths
         /// the running game: 1.122. The tick's terminal speed is this times (1 + MoveSpeedBonus),
         /// which is 1.4025 in an empty room and 1.6045 against a pack with the meter full.
         /// </summary>
-        public double speed = 1.122;
+        public double speed = 0.935 * Balance.PlayerMove;   // px per tick, fixed when the body is made
 
         /// <summary>
         /// The firing slow-motion multiplier, eased toward 1 every tick. Starts at 1 - full speed -
@@ -155,6 +155,7 @@ namespace Depths
         // --- the committed shot: fireCommittedShot reads and writes these (src/60-tick.js:28-35)
         public double castAim;
         public double cdMin, cdVar, shootCd;
+        public double cdCarry;   // off the JS rate: the cooldown's overrun when the cast began, less CastLag, owed to the next cooldown
         public double pspd, pr, dmg;
 
         // --- boss move cadence: StepBoss's bag pick and cooldown (src/60-tick.js:159-180)

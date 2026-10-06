@@ -19,7 +19,7 @@ namespace Depths
             double tough = Balance.DepthTough(run.floor), rate = Balance.DepthRate(run.floor);
             e.hp = e.maxHp = e.maxHp * tough;
             e.idleTimer = (int)(run.rng.Jitter() * Balance.WanderTicks);
-            e.noticeTimer = (int)(run.rng.Jitter() * 16 * Balance.Speedup);
+            e.noticeTimer = (int)(run.rng.Jitter() * Balance.NoticeWindow);
             e.speed *= rate;
             if (kind == BodyKind.Boss) { BossInit(e); e.aggroTimer = 9999; return e; }
             if (kind == BodyKind.Lunger || kind == BodyKind.Brunch)
@@ -46,11 +46,11 @@ namespace Depths
         /// <summary>bossInit: phase 1, idle, a first cooldown, and the gunner-like ranged kit.</summary>
         public static void BossInit(Enemy e)
         {
-            e.phase = 1; e.move = "idle"; e.moveT = 0; e.bossCd = Balance.Sec(1.2);
+            e.phase = 1; e.move = "idle"; e.moveT = 0; e.bossCd = Balance.BossFirstCd;
             e.volleyLeft = 0; e.volleyT = 0; e.wallT = 0;
             e.sense = 900; e.close = 140; e.far = 260;
             e.cdMin = Balance.BossCdMin; e.cdVar = Balance.BossCdVar;
-            e.dmg = Balance.JsReference ? Balance.JsBossShellDmg : Balance.BossShellDmg; e.pspd = 1.9; e.pr = 8;
+            e.dmg = Balance.JsReference ? Balance.JsBossShellDmg : Balance.BossShellDmg; e.pspd = Balance.BossShotSpeed; e.pr = 8;
         }
 
         // TRAIT_TABLE by the gun the player holds: (trait, weight)

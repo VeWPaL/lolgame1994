@@ -56,10 +56,10 @@ namespace Depths
                         e.x += -System.Math.Sin(bearing) * side * Balance.LungerSpread;
                         e.y += System.Math.Cos(bearing) * side * Balance.LungerSpread;
                     }
-                    if (dist < Balance.LungeHold) e.curSpeed += (0 - e.curSpeed) * Balance.LungerAccel * 8;
+                    if (dist < Balance.LungeHold) e.curSpeed += (0 - e.curSpeed) * Balance.LungerAccel * 8 * Balance.EaseK(Balance.LungerAccel * 8);
                     else
                     {
-                        e.curSpeed += (ApproachSpeed(dist) * sm - e.curSpeed) * Balance.LungerAccel * 6;
+                        e.curSpeed += (ApproachSpeed(dist) * sm - e.curSpeed) * Balance.LungerAccel * 6 * Balance.EaseK(Balance.LungerAccel * 6);
                         e.x += ux * e.curSpeed;
                         e.y += uy * e.curSpeed;
                     }
@@ -105,7 +105,7 @@ namespace Depths
                     if (e.lungeState == "lunge" && e.lungeT <= 0) { e.lungeState = "recover"; e.lungeT = Balance.LungeRecover; }
                     break;
                 case "recover":
-                    e.curSpeed += (e.walkSpeed * 0.5 * sm - e.curSpeed) * Balance.LungerAccel * 4;
+                    e.curSpeed += (e.walkSpeed * 0.5 * sm - e.curSpeed) * Balance.LungerAccel * 4 * Balance.EaseK(Balance.LungerAccel * 4);
                     e.x += e.lungeDx * e.curSpeed;
                     e.y += e.lungeDy * e.curSpeed;
                     if (--e.lungeT <= 0) { e.lungeState = "approach"; e.lungeCd = Balance.LungeCd; }
@@ -141,8 +141,9 @@ namespace Depths
             double len = Hyp(dx, dy);
             if (len < 1) { double a = run.rng.Jitter() * 6.283; dx = System.Math.Cos(a); dy = System.Math.Sin(a); }
             else { dx /= len; dy /= len; }
-            e.kvx += dx * force / e.mass;
-            e.kvy += dy * force / e.mass;
+            // the force is a speed per JS tick; KnockScale keeps the distance it coasts at this rate
+            e.kvx += dx * force * Balance.KnockScale / e.mass;
+            e.kvy += dy * force * Balance.KnockScale / e.mass;
             double sp = Hyp(e.kvx, e.kvy);
             if (sp > Balance.KnockMax) { e.kvx *= Balance.KnockMax / sp; e.kvy *= Balance.KnockMax / sp; }
             e.stun = System.Math.Max(e.stun, Balance.KnockStun);

@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 namespace Depths.Unity
 {
     /// <summary>
-    /// The game, on Depths.Core at the game's 210 Hz tick: a seeded run of rooms, doors, keys, waves,
+    /// The game, on Depths.Core at its tick rate (Balance.TickHz, 60 Hz): a seeded run of rooms, doors, keys, waves,
     /// the Warden and the way down (TickOrder.Update), all ported with parity. F1 swaps to the sandbox
     /// (one room of every enemy), B to a Warden arena. This class only reads input and draws.
     /// Esc: menu. 1-4: guns. R: a new run (or room).
@@ -18,7 +18,7 @@ namespace Depths.Unity
     {
         public InputActionAsset controls;
 
-        const double StepMs = 1000.0 / 210;
+        static double StepMs => 1000.0 / Balance.TickHz;   // the sim's rate, whatever it is set to
         static readonly Vector2 Offset = new Vector2(640 - 400, 360 - 355);   // room centre to screen centre
         static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
@@ -83,7 +83,7 @@ namespace Depths.Unity
             {
                 // the Warden, spawned the way the game spawns it (its own draws, its kit)
                 var w = Spawn.Body(_run, BodyKind.Boss, Balance.MidX, Balance.RoomTop + 120);
-                w.noticeTimer = 90;
+                w.noticeTimer = Balance.Sec(0.43);
                 _run.enemies.Add(w);
                 return;
             }
@@ -97,7 +97,7 @@ namespace Depths.Unity
             for (int i = 0; i < 4; i++)
             {
                 var e = Enemy.Of(BodyKind.Brunch, Balance.RoomLeft + 300 + (i % 2) * 18, Balance.RoomTop + 200 + (i / 2) * 18);
-                e.packId = 1; e.packSlot = i; e.noticeTimer = 90;
+                e.packId = 1; e.packSlot = i; e.noticeTimer = Balance.Sec(0.43);
                 _run.enemies.Add(e);
             }
         }
@@ -107,13 +107,14 @@ namespace Depths.Unity
             double x = Balance.RoomLeft + 110 + k * 160, y = Balance.RoomTop + 90 + (k % 2) * 60;
             var e = Enemy.Of(DummyKinds[k % DummyKinds.Length], x, y);
             e.flank = k * 2.399963229728653;   // the game's golden-angle flank cursor
-            e.noticeTimer = 60 + k * 25;        // a beat before they move, as a spawn has
+            e.noticeTimer = Balance.Sec((60 + 25.0 * k) / Balance.JsHz);   // a beat before they move: 60 + 25k ticks at the JS rate
             e.shootCd = e.cdMin;                 // and before a ranged body's first cast
             _run.enemies.Add(e);
         }
 
         bool _paused;
-        int _bannerT, _lastFloor = 1;
+        float _bannerS;   // seconds the floor banner has left
+        int _lastFloor = 1;
 
         void Update()
         {
@@ -181,16 +182,16 @@ namespace Depths.Unity
                     TickOrder.TickProjectiles(_run);
                     TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
-                    if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
+                    if (_run.enemies.Count == 0 && ++_respawnT > Balance.Sec(2)) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
                 }
                 _acc -= StepMs;
             }
             PlayEvents();
-            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerT = 180; Depths.Unity.Audio.SoundEngine.Play("door"); }
-            if (_bannerT > 0) _bannerT--;
+            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = 3; Depths.Unity.Audio.SoundEngine.Play("door"); }
+            if (_bannerS > 0) _bannerS -= Time.unscaledDeltaTime;
             _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"
-                : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / 210 / 60) + ":" + (_run.ticks / 210 % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
-                : _bannerT > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
+                : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / Balance.TickHz / 60) + ":" + (_run.ticks / Balance.TickHz % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
+                : _bannerS > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
             var act = Items.ActiveItem(_run);
@@ -417,7 +418,7 @@ namespace Depths.Unity
 
             var pl = run.player;
             if (run.roomFade > 0.01) Rect(g, a - new Vector2(6, 6), b + new Vector2(6, 6), new Color(0.04f, 0.05f, 0.07f, (float)run.roomFade));
-            bool flicker = pl.iframes > 0 && (pl.iframes / 14) % 2 == 0;
+            bool flicker = pl.iframes > 0 && (pl.iframes / Math.Max(1, Balance.Sec(0.067))) % 2 == 0;   // IFRAME_FLICKER
             Disc(g, W(pl.x, pl.y), (float)pl.r, flicker ? new Color(1, 1, 1, 0.5f) : PlayerC);
             DrawHearts(g, pl);
         }

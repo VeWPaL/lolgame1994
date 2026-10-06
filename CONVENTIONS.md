@@ -17,8 +17,9 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 - **C# / Unity is the main game.** Target: Unity 6.3 LTS.
 - **The JavaScript is frozen** at git tag `js-final`. It is the reference the remaining port is
   checked against, and nothing new is built in it. Once the port matches it fully it moves to `legacy/`.
-- Still to port: `tickBodies` (enemy movement), `tickProjectiles`. Port at the JS tick rate (210 Hz)
-  for parity, **then** switch C# to a 60 Hz tick with per-second units in one step, re-baselining tests.
+- The port is complete. **C# runs at 60 Hz** (`Balance.TickHz`, `GameHz`); the parity rows stay at
+  the JS rate (`JsHz` 210), where every converted dial is bit-identical to the value they were
+  recorded with. See "Time is in seconds" below.
 - Sound, key binds and menus are built in Unity, not in the JS.
 - Status and next steps: `docs/STATUS.md`. Port boundary: `PORTED.md`.
 
@@ -40,6 +41,8 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
   baselines are not supported. `<baseline commit>` is the commit to compare against, usually the one
   before the change. From the change's worktree root (Linux: prefix each `dotnet` with
   `DOTNET_ROLL_FORWARD=Major`):
+  0. A baseline from before the 60 Hz switch plays at 210 Hz: add `--hz 210` to step 3 as well, or the
+     report mixes the two rates (it warns when they differ).
   1. `git worktree add ../depths-base <baseline commit>`
   2. `dotnet run --project ../depths-base/csharp/Depths.Playtest -c Release -- play --label baseline`
      (the JSON lands in THIS worktree's `playtest/`; its header names the commit it was built from)
@@ -86,6 +89,13 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 - **Content is data; behaviour is a named hook.**
 - **Overlays must be exempted from the input suppressor by name**, keys included.
 - **No per-tick allocations in C# hot paths** (Unity GC hitches). Reuse lists/arrays.
+- **Time is in seconds.** `Balance.TickHz` is the one rate (60 in the game). A duration is `Sec(s)` (or
+  `SecF` for a fractional counter), a speed `PerSec(px/s)`, a multiplicative per-tick factor is written
+  at the JS tick and converted with `Decay`/`Ease`/`EaseK`, a per-tick roll with `Chance`, a knock
+  impulse is scaled by `KnockScale` (its coast distance holds). No literal tick counts in `Depths.Core`,
+  and nothing rate-derived in a `static readonly` or `const`. The test suite runs at `JsHz` through the
+  assembly `[TickRate]`; a test that wants 60 says `[TickRate(60)]`. `RateTests` compares behaviours
+  at both rates and pins the 210 Hz values.
 
 ## Routine cleanup pass (when asked)
 
@@ -105,11 +115,11 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **536 checks**, parity-verified against the JavaScript except the 148 in
-  `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests` and
-  `PlaytestToolTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
+- C# `Depths.Tests` has **559 checks**, parity-verified against the JavaScript except the 171 in
+  `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests`,
+  `PlaytestToolTests` and `RateTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
   `verify.ps1` skips when it counts parity rows). Parity tests whose recordings take player damage run
-  with `Balance.JsReference = true` (the JS damage rules).
+  with `Balance.JsReference = true` (the JS damage rules); the whole suite runs at 210 Hz.
 - `verify.ps1` asserts both numbers above; keep them current.
 
 ## Archived design decisions (`docs/history/conventions-archive.md`)

@@ -1,6 +1,6 @@
 namespace Depths
 {
-    /// <summary>One row of the body table.</summary>
+    /// <summary>One row of the body table, in ticks and px per tick at the rate it was built for.</summary>
     public sealed class BodyRow
     {
         public double Mass, Radius, Armour, Hp;
@@ -31,11 +31,11 @@ namespace Depths
 
         // Every row names its Armour explicitly; a forgotten one reads 0.0. [h:Bodies-1]
         // Read from Balance, which the constant audit checks against the game. [h:Bodies-2]
-        public const double BrunchWalk = Balance.BrunchWalkSpeed;
-        public const double BrunchRun = Balance.BrunchRun;
+        public static double BrunchWalk => Balance.BrunchWalkSpeed;
+        public static double BrunchRun => Balance.BrunchRun;
 
         /// <summary>
-        /// The table. Built once, because it is constant - and built rather than written out, so the
+        /// The table, rebuilt only when the tick rate changes (its speeds and cadences are per tick) - and built rather than written out, so the
         /// derived numbers are computed the same way the JavaScript computes them instead of being
         /// frozen at whatever they happened to be when this was typed.
         ///
@@ -45,7 +45,19 @@ namespace Depths
         /// how two code paths end up disagreeing about what kind of body they are holding.
         /// </para>
         /// </summary>
-        public static readonly BodyRow[] Rows =
+        public static BodyRow[] Rows
+        {
+            get
+            {
+                if (_rows == null || _rowsHz != Balance.TickHz) { _rows = BuildRows(); _rowsHz = Balance.TickHz; }
+                return _rows;
+            }
+        }
+
+        static BodyRow[]? _rows;
+        static int _rowsHz;
+
+        static BodyRow[] BuildRows() => new[]
         {
             // lunger: the baseline body, and the only one that reads the player's position directly
             new BodyRow { Mass = 1, Radius = 14, Art = 2, Bar = 26, Hp = 15 * Tough, Armour = Armour,
@@ -59,26 +71,30 @@ namespace Depths
             // shooter: the committed shell. Walks while it charges, which is what makes it a body
             // rather than a turret
             new BodyRow { Mass = 0.8, Radius = 14, Art = 2, Bar = 26, Hp = 5.6 * Tough,
-                      Base = 0.45 * Balance.LungerPay, Sense = 600, Range = 520, Close = 150, Far = 250,
+                      Base = Balance.PerSec(94.5) * Balance.LungerPay, Sense = 600, Range = 520, Close = 150, Far = 250,
                       CdMin = Balance.Sec(0.5), CdVar = Balance.Sec(0.4), Dmg = ShotDmg,
-                      PShotSpeed = 2.2, PShotRadius = 5, Armour = Armour },
+                      PShotSpeed = Balance.PerSec(462), PShotRadius = 5, Armour = Armour },
 
             // gunner: the heavy shot. Roots itself to charge, so its accuracy is what it is
             new BodyRow { Mass = 2.4, Radius = 22, Art = 3, Bar = 32, Hp = 8 * Tough, Armour = Armour,
-                      Base = 0.3 * Balance.LungerPay, Sense = 700, Range = 600, Close = 120, Far = 200,
+                      Base = Balance.PerSec(63) * Balance.LungerPay, Sense = 700, Range = 600, Close = 120, Far = 200,
                       CdMin = Balance.Sec(0.8), CdVar = Balance.Sec(0.6), Dmg = ShotDmg * 2,
-                      PShotSpeed = 2.05, PShotRadius = 7 },
+                      PShotSpeed = Balance.PerSec(430.5), PShotRadius = 7 },
 
             // boss: the Warden. HP is sized from measured weapon DPS, which is the only way to size
             // a health bar. 343*TOUGH rather than 520*TOUGH because the boss now obeys ARMOUR like
             // every other body, and holding the effective pool fixed across that change is what keeps
             // it a repair to the rule rather than a 1.52x pacing change to every boss fight in the game
             new BodyRow { Mass = 4, Radius = 28, Art = 4, Bar = 40, Hp = 343 * Tough, Armour = Armour,
-                      Base = 0.6 * Balance.LungerPay,
+                      Base = Balance.PerSec(126) * Balance.LungerPay,
                       Walk = 0.42 * Balance.PlayerMove, Run = 0.72 * Balance.PlayerMove },
         };
 
         public static BodyRow Of(BodyKind kind) => Rows[(int)kind];
+
+        // the archetype's own spawn windows, as ported (24 and 135 ticks at the JS rate); a live spawn's are longer
+        public static double ArchNoticeWindow => Balance.SecF(4.0 / 35);
+        public static double ArchIdleWindow => Balance.SecF(9.0 / 14);
 
         /// <summary>
         /// Builds a body. The depth ladder is read HERE and nowhere else on this type, and it is read
@@ -116,8 +132,8 @@ namespace Depths
                 Armour = c.Armour,
 
                 // transients, drawn from jitter so they never touch the run stream
-                NoticeTimer = (int)(rng.Jitter() * 16 * Balance.TempoRate),
-                IdleTimer = (int)(rng.Jitter() * 90 * Balance.TempoRate),
+                NoticeTimer = (int)(rng.Jitter() * ArchNoticeWindow),
+                IdleTimer = (int)(rng.Jitter() * ArchIdleWindow),
                 IdleDir = new[] { rng.Jitter() * 2 - 1, rng.Jitter() * 2 - 1 },
                 Flank = rng.Jitter() * 6.283185307179586,
             };

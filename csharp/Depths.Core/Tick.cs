@@ -107,6 +107,7 @@ namespace Depths
             if (!e.castReady) return;
             e.castReady = false;
             e.shootCd = (e.cdMin + run.rng.Jitter() * e.cdVar) * (1 - Balance.PressureCadence * roomPress);
+            if (Balance.TickHz != Balance.JsHz) { e.shootCd += e.cdCarry; e.cdCarry = 0; }
             run.projectiles.Add(new Projectile
             {
                 x = e.x,
@@ -160,7 +161,9 @@ namespace Depths
             int n = 3 + (e.phase >= 2 ? 1 : 0) + (e.phase >= 3 ? 3 : 0);
             int k = (int)(run.rng.Run() * n);
             string pick = k < 2 ? "volley" : k == 2 ? "sweep" : k == 3 ? "wall" : k == 4 ? "volley" : "sweep";
+            double bossOver = e.bossCd;
             e.bossCd = (e.cdMin + run.rng.Jitter() * e.cdVar) * (1 - Balance.PressureCadence * Balance.RoomPressure(room.Count));
+            if (Balance.TickHz != Balance.JsHz) e.bossCd += bossOver;   // the overrun carried, as for a ranged body
             BeginBoss(run, e, pick);
         }
 
@@ -170,7 +173,7 @@ namespace Depths
             e.move = "idle";
             e.moveT = Balance.BossRecover;      // the phase change is itself a beat of recovery
             e.volleyLeft = 0;
-            e.bossCd = Balance.Sec(0.4);
+            e.bossCd = Balance.BossPhaseCd;
         }
 
         public static void BeginBoss(RunState run, Enemy e, string move)
@@ -389,7 +392,7 @@ namespace Depths
             var p = run.player;
             e.pursuit++;
             double gain = 1 + Balance.BrunchRampGain * System.Math.Min(1, e.pursuit / Balance.BrunchRamp);
-            e.curSpeed += (e.runSpeed - e.curSpeed) * Balance.LungerAccel * gain;
+            e.curSpeed += (e.runSpeed - e.curSpeed) * Balance.LungerAccel * gain * Balance.EaseK(Balance.LungerAccel * gain);
             PackCentroid? pc = null;
             if (e.packId.HasValue) Packs.TryGetValue(e.packId.Value, out pc);
             double mdx = edx, mdy = edy;
@@ -407,8 +410,8 @@ namespace Depths
             double share = desired > e.curSpeed ? Balance.BrunchAccel : Balance.BrunchDecel;
             e.vx += (tx / td * desired - e.vx) * share;
             e.vy += (ty / td * desired - e.vy) * share;
-            if (System.Math.Abs(e.vx) < 0.02) e.vx = 0;
-            if (System.Math.Abs(e.vy) < 0.02) e.vy = 0;
+            if (System.Math.Abs(e.vx) < Balance.BrunchStill) e.vx = 0;
+            if (System.Math.Abs(e.vy) < Balance.BrunchStill) e.vy = 0;
             e.x += e.vx * sm;
             e.y += e.vy * sm;
         }
@@ -458,8 +461,11 @@ namespace Depths
             }
             double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * (0.02 + Balance.SwerveAim * p.swerve * reach);
             var shot = Movement.ClearShot(run, e, want);
-            if (shot.HasValue) { e.castAim = shot.Value; e.castT = Balance.CastTime; }
-            else e.shootCd = e.cdMin * 0.25;
+            // off the JS rate the tick's overrun is kept, so a cadence is exact in seconds (held fire does the same)
+            double over = Balance.TickHz == Balance.JsHz ? 0 : e.shootCd;
+            if (shot.HasValue) { e.castAim = shot.Value; e.castT = Balance.CastTime; e.cdCarry = over - Balance.CastLag; }
+            else if (Balance.TickHz == Balance.JsHz) e.shootCd = e.cdMin * 0.25;
+            else e.shootCd = e.cdMin * 0.25 + over;
         }
 
         public static void TickBodies(RunState run)
@@ -521,10 +527,17 @@ namespace Depths
                 else if (e.alerted || dist < e.sense) StepRanged(run, e, edx, edy, dist, sm, roomPress);
                 else Movement.IdleWander(run, e);
                 double mv = System.Math.Sqrt((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy));
-                e.anim = mv > 0.05 ? e.anim + mv / Balance.Stride : 0;
+                e.anim = mv > Balance.MoveEps ? e.anim + mv / Balance.Stride : 0;
                 Movement.Clamp(e);
                 double cy = edy - Balance.PlayerHitDy;
-                if (System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR)
+                // off the JS rate the body's move this tick is swept in JS-tick parts, as Substeps does for shells
+                bool touching = System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR;
+                for (int k = 1, sub = Balance.Substeps; !touching && k < sub; k++)
+                {
+                    double qx = HitboxX - (ox + (e.x - ox) * k / sub), qy = HitboxY - Balance.PlayerHitDy - (oy + (e.y - oy) * k / sub);
+                    touching = System.Math.Sqrt(qx * qx + qy * qy) < e.r + Balance.PlayerHitR;
+                }
+                if (touching)
                 {
                     // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
                     bool brunch = e.kind == BodyKind.Brunch;
@@ -576,7 +589,7 @@ namespace Depths
             var p = run.player;
             double ux, uy, len = Dist(input.dx, input.dy);
             if (len > 0) { ux = input.dx / len; uy = input.dy / len; }
-            else if ((len = Dist(p.vx, p.vy)) > 0.1) { ux = p.vx / len; uy = p.vy / len; }
+            else if ((len = Dist(p.vx, p.vy)) > Balance.BlinkDirEps) { ux = p.vx / len; uy = p.vy / len; }
             else { double a = System.Math.Atan2(input.aimY - p.y, input.aimX - p.x); ux = System.Math.Cos(a); uy = System.Math.Sin(a); }
             double fromX = p.x, fromY = p.y;
             p.x += ux * Balance.BlinkDist;
@@ -603,103 +616,112 @@ namespace Depths
         public static void TickProjectiles(RunState run)
         {
             var ps = run.projectiles;
-            var en = run.enemies;
+            int sub = Balance.Substeps;
+            double f = 1.0 / sub;
             for (int i = ps.Count - 1; i >= 0; i--)
+                for (int s = 0; s < sub; s++)
+                    if (StepShell(run, i, f, s == 0)) break;
+        }
+
+        // One shell over a fraction f of a tick; true once it is gone (or done for the tick).
+        static bool StepShell(RunState run, int i, double f, bool first)
+        {
+            var ps = run.projectiles;
+            var en = run.enemies;
+            var p = ps[i];
+            if (p.alt)
             {
-                var p = ps[i];
-                if (p.alt)
+                // stop on the point, not past it
+                if (Dist(p.tx - p.x, p.ty - p.y) <= p.speed * f)
                 {
-                    // stop on the point, not past it
-                    if (Dist(p.tx - p.x, p.ty - p.y) <= p.speed)
-                    {
-                        p.x = p.tx; p.y = p.ty;
-                        Blast.Explode(run, p.tx, p.ty, p.mode);
-                        ps.RemoveAt(i);
-                        continue;
-                    }
-                }
-                p.age++;
-                p.x += p.vx;
-                p.y += p.vy;
-                if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
-                    || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
-                {
-                    if (p.alt) Blast.Explode(run, p.x, p.y, p.mode);   // on the mode it was cast with
+                    p.x = p.tx; p.y = p.ty;
+                    Blast.Explode(run, p.tx, p.ty, p.mode);
                     ps.RemoveAt(i);
-                    continue;
+                    return true;
                 }
-                if (p.alt && p.phase) continue;   // the hook flies through bodies and acts only at its point
-                if (p.friendly)
-                {
-                    int best = -1;
-                    double bestA = double.PositiveInfinity;
-                    for (int j = en.Count - 1; j >= 0; j--)
-                    {
-                        var e = en[j];
-                        if (p.hit != null && p.hit.Contains(e)) continue;
-                        if (Dist(p.x - e.x, p.y - e.y) >= p.r + e.r) continue;
-                        if (p.pierce == 0) { best = j; break; }
-                        double a = (e.x - p.ox) * p.dx + (e.y - p.oy) * p.dy;
-                        if (a < bestA) { bestA = a; best = j; }
-                    }
-                    if (best < 0) continue;
-                    if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); continue; }   // the blast goes off on the first body
-                    var t = en[best];
-                    t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale;
-                    t.hitFlash = Balance.HitFlash;
-                    run.hits++;
-                    Combat.AlertEnemy(t);
-                    Combat.SlowEnemy(t);
-                    if (t.hp <= 0) Kills.KillEnemy(run, best);
-                    if (p.pierce > 0)
-                    {
-                        p.pierce--;
-                        p.scale *= Balance.PierceFalloff;
-                        (p.hit ??= new List<Enemy>()).Add(t);
-                    }
-                    else ps.RemoveAt(i);
-                    continue;
-                }
-                bool hitSomething = false;
+            }
+            if (first) p.age++;
+            p.x += p.vx * f;
+            p.y += p.vy * f;
+            if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
+                || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
+            {
+                if (p.alt) Blast.Explode(run, p.x, p.y, p.mode);   // on the mode it was cast with
+                ps.RemoveAt(i);
+                return true;
+            }
+            if (p.alt && p.phase) return false;   // the hook flies through bodies and acts only at its point
+            if (p.friendly)
+            {
+                int best = -1;
+                double bestA = double.PositiveInfinity;
                 for (int j = en.Count - 1; j >= 0; j--)
                 {
-                    var b = en[j];
-                    if (b.kind != BodyKind.Brunch || b.hp <= 0) continue;
-                    if (p.owner != null && b.shieldTarget == p.owner) continue;   // a Brunch spares its own shooter's fire
-                    if (Dist(p.x - b.x, p.y - b.y) < p.r + b.r)
+                    var e = en[j];
+                    if (p.hit != null && p.hit.Contains(e)) continue;
+                    if (Dist(p.x - e.x, p.y - e.y) >= p.r + e.r) continue;
+                    if (p.pierce == 0) { best = j; break; }
+                    double a = (e.x - p.ox) * p.dx + (e.y - p.oy) * p.dy;
+                    if (a < bestA) { bestA = a; best = j; }
+                }
+                if (best < 0) return false;
+                if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); return true; }   // the blast goes off on the first body
+                var t = en[best];
+                t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale;
+                t.hitFlash = Balance.HitFlash;
+                run.hits++;
+                Combat.AlertEnemy(t);
+                Combat.SlowEnemy(t);
+                if (t.hp <= 0) Kills.KillEnemy(run, best);
+                if (p.pierce > 0)
+                {
+                    p.pierce--;
+                    p.scale *= Balance.PierceFalloff;
+                    (p.hit ??= new List<Enemy>()).Add(t);
+                }
+                else { ps.RemoveAt(i); return true; }
+                return false;
+            }
+            bool hitSomething = false;
+            for (int j = en.Count - 1; j >= 0; j--)
+            {
+                var b = en[j];
+                if (b.kind != BodyKind.Brunch || b.hp <= 0) continue;
+                if (p.owner != null && b.shieldTarget == p.owner) continue;   // a Brunch spares its own shooter's fire
+                if (Dist(p.x - b.x, p.y - b.y) < p.r + b.r)
+                {
+                    b.hitFlash = System.Math.Max(b.hitFlash, Balance.BrunchAbsorbFlash);
+                    hitSomething = true;
+                    break;
+                }
+            }
+            if (!hitSomething)
+            {
+                for (int j = en.Count - 1; j >= 0; j--)
+                {
+                    var e2 = en[j];
+                    if (e2 == p.owner || e2.kind != BodyKind.Lunger) continue;
+                    if (Dist(p.x - e2.x, p.y - e2.y) < p.r + e2.r)
                     {
-                        b.hitFlash = System.Math.Max(b.hitFlash, Balance.BrunchAbsorbFlash);
+                        e2.hp -= 1;
+                        e2.hitFlash = Balance.HitFlash;
+                        Combat.AlertEnemy(e2);
+                        Combat.SlowEnemy(e2);
                         hitSomething = true;
+                        if (e2.hp <= 0) Kills.KillEnemy(run, j);
                         break;
                     }
                 }
-                if (!hitSomething)
-                {
-                    for (int j = en.Count - 1; j >= 0; j--)
-                    {
-                        var e2 = en[j];
-                        if (e2 == p.owner || e2.kind != BodyKind.Lunger) continue;
-                        if (Dist(p.x - e2.x, p.y - e2.y) < p.r + e2.r)
-                        {
-                            e2.hp -= 1;
-                            e2.hitFlash = Balance.HitFlash;
-                            Combat.AlertEnemy(e2);
-                            Combat.SlowEnemy(e2);
-                            hitSomething = true;
-                            if (e2.hp <= 0) Kills.KillEnemy(run, j);
-                            break;
-                        }
-                    }
-                }
-                if (!hitSomething && Hit.PlayerHit(p.x, p.y, p.r, run.player.lagX, run.player.lagY))
-                {
-                    double pn = Dist(p.vx, p.vy);
-                    if (pn == 0) pn = 1;
-                    Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
-                    hitSomething = true;
-                }
-                if (hitSomething) ps.RemoveAt(i);
             }
+            if (!hitSomething && Hit.PlayerHit(p.x, p.y, p.r, run.player.lagX, run.player.lagY))
+            {
+                double pn = Dist(p.vx, p.vy);
+                if (pn == 0) pn = 1;
+                Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
+                hitSomething = true;
+            }
+            if (hitSomething) ps.RemoveAt(i);
+            return hitSomething;
         }
 
         /// <summary>
@@ -958,13 +980,13 @@ namespace Depths
             double targetVy = len != 0 ? (dy / len) * spd : 0;
 
             /* THE ACCELERATION RAMP IS THE FEEL, and it is why this is not a velocity assignment.
-               `MoveAccel` closes 11.6% of the remaining gap per tick, so the player takes about 40
+               `MoveAccel` closes 11.6% of the remaining gap per JS tick (Ease converts it), so the player takes about 40
                ticks - about a fifth of a second - to reach top speed, and Momentum makes a charged
                player accelerate harder rather than merely faster. Measured in the browser: the
                terminal speed is 1.4025 and the first ten ticks are
                0.16269, 0.306508, 0.433643, 0.54603, 0.645381, 0.733207, 0.810845, 0.879477,
                0.940147, 0.99378. */
-            double accel = Balance.MoveAccel * (1 + p.momentum * Balance.MomentumAccel);
+            double accel = Balance.Ease(Balance.MoveAccel * (1 + p.momentum * Balance.MomentumAccel));
             p.vx += (targetVx - p.vx) * accel;
             p.vy += (targetVy - p.vy) * accel;
 
@@ -996,7 +1018,7 @@ namespace Depths
                see the note on `Balance.SwerveDecay` - and nothing caught it, because nothing read
                the constant until now. */
             double msp = System.Math.Sqrt(targetVx * targetVx + targetVy * targetVy);
-            if (msp > 0.05)
+            if (msp > Balance.MoveEps)
             {
                 if (p.dirX != 0 || p.dirY != 0)
                 {
@@ -1015,8 +1037,8 @@ namespace Depths
             p.y += p.vy + p.kvy;
             p.kvx *= Balance.KnockPFriction;
             p.kvy *= Balance.KnockPFriction;
-            if (System.Math.Abs(p.kvx) < Balance.KnockCut) p.kvx = 0;
-            if (System.Math.Abs(p.kvy) < Balance.KnockCut) p.kvy = 0;
+            if (System.Math.Abs(p.kvx) < Balance.KnockPCut) p.kvx = 0;
+            if (System.Math.Abs(p.kvy) < Balance.KnockPCut) p.kvy = 0;
 
             ClampPlayer(run);
 
@@ -1067,10 +1089,12 @@ namespace Depths
             TickMomentum(run, System.Math.Max(0, moved - knk));
 
             // The walk cycle scales with distance covered, so a slow walk animates slowly.
-            p.anim = sp > 0.12 ? p.anim + sp / Balance.Stride : 0;
+            p.anim = sp > Balance.PlayerAnimEps ? p.anim + sp / Balance.Stride : 0;
 
             TickBlink(run);
-            if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1);
+            // off the JS rate the cooldown keeps the fraction it overran by for one tick, so held fire is exact in seconds
+            if (Balance.TickHz == Balance.JsHz) { if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1); }
+            else p.cooldown = p.cooldown > 0 ? p.cooldown - 1 : 0;
             if (p.altCooldown > 0) p.altCooldown--;
             Blast.TickFields(run);
             Blast.TickHookResist(run);
