@@ -11,11 +11,14 @@ Full write-up: `docs/report-2026-10-06.html`._
 - **JS (`depths.html`, `src/`)**: frozen reference, **not yet tagged** - `js-final` waits on the owner's
   Brunch choice (A / B / A+, playable as `?brunch=`). Suite 246/246. `.\verify.ps1` green (~3 min).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity local package (`com.depths.core`,
-  build output in `obj~`/`bin~`). 286/286. Ported: RNG, balance, world gen, spawn plan, room phase +
-  Descend, player phase, pack assembly, `BrunchArcSlot`. Not ported: `tickBodies`, `tickProjectiles`.
+  build output in `obj~`/`bin~`). 351/351. Ported: RNG, balance, world gen, spawn plan, room phase +
+  Descend, player phase (now with held fire), pack assembly, `BrunchArcSlot`, the projectile phase (not
+  blast/hook), the four guns, the lunger. Not ported: Brunch/shooter/gunner/boss movement, `explode`,
+  items/stats, room transitions (`enterRoom`). Unported paths throw.
 - **Unity (`unity/`)**: 6000.3.25f1 project. Main menu (Start / Options / Quit), Options = layout
-  presets + per-key rebinding + Master/Music/SFX sliders on a generated mixer, all saved. Game scene
-  is a placeholder that draws a Depths.Core floor. 9/9 EditMode tests. Built player verified by screenshot.
+  presets + per-key rebinding + Master/Music/SFX sliders on a generated mixer, all saved. Sound engine
+  (the 12 JS voices, synthesised). Game scene = a playable sandbox room on the ported core: move,
+  shoot, lungers, loot. 12/12 EditMode tests. Built player verified by screenshot.
 - **Playtest bot**: `tools/playtest.js` + `tools/playtest-report.js`; baseline worktree `ab/baseline`
   (tag `pre-features-2026-10-06`). See CONVENTIONS "Gameplay changed?".
 
@@ -33,7 +36,7 @@ Full write-up: `docs/report-2026-10-06.html`._
 | 1 | Cleanup and freeze the JS | Low | done; `js-final` after the Brunch choice |
 | 2 | Unity skeleton: layout, Depths.Core as a package, Input System, AudioMixer groups | Medium | done |
 | 3 | Main menu: Start / Options / Quit; key binds with presets + rebinding; volume sliders | Medium | done (gamepad + display options later) |
-| 4 | Finish the port: `tickBodies`, then `tickProjectiles`; allocation-free hot paths | High | next, after the Brunch choice |
+| 4 | Finish the port: `tickBodies`, then `tickProjectiles`; allocation-free hot paths | High | in progress: projectiles (not blast/hook), guns, lunger done. Next: shooter/gunner (aim + clearShot), `explode`, Brunch (after the A/B/A+ choice), boss, room transitions |
 | 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | |
 | 6 | New sound engine: event-based, sample assets, mixer | Medium | started: `SoundEngine.Play(name, pan)`, the 12 JS voices synthesised, pool of 12 on the Sfx group, menu sounds. Next: master compressor, samples, music |
 

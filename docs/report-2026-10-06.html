@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Depths Session Report</title>
+<style>
+:root{--bg:#f6f4ef;--fg:#1d1b18;--mute:#6b665d;--line:#d9d4c9;--card:#fff;--acc:#8a5a2b;--ok:#2f7d4f;--warn:#a8641a;--bad:#b3412f}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14151a;--fg:#e8e6e1;--mute:#9a968c;--line:#2c2e36;--card:#1c1e25;--acc:#e0b07a;--ok:#6fcf97;--warn:#f2b46b;--bad:#ff8a75}}
+:root[data-theme="dark"]{--bg:#14151a;--fg:#e8e6e1;--mute:#9a968c;--line:#2c2e36;--card:#1c1e25;--acc:#e0b07a;--ok:#6fcf97;--warn:#f2b46b;--bad:#ff8a75}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,sans-serif}
+main{max-width:900px;margin:0 auto;padding:28px 16px 80px}h1{margin:0;font-size:26px}h2{margin:36px 0 10px;font-size:19px;color:var(--acc)}
+h3{margin:18px 0 6px;font-size:16px}.meta{color:var(--mute);font-size:13px}code{font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+table{border-collapse:collapse;width:100%;background:var(--card);margin:8px 0;font-size:14px}th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 7px;border-radius:9px;border:1px solid currentColor}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin:10px 0}
+ul{padding-left:20px}li{margin:3px 0}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin:10px 0}
+.grid2 img{width:100%;border-radius:6px;border:1px solid var(--line);display:block}
+</style></head><body><main>
+<h1>Depths: autonomous session, 2026-10-06</h1>
+<p class="meta">Written as the work happened. Newest state wins; every number names how it was measured.
+Baseline for A/B: git tag <code>pre-features-2026-10-06</code>, checked out at <code>ab/baseline/</code>.</p>
+
+<h2>At a glance</h2>
+<table>
+<tr><th>Gate (<code>.\verify.ps1</code>)</th><td><span class="tag ok">green</span> JS 246/246 at 3 viewports, C# 351/351, parity 0 diffs, 145 parity rows, 47/47 constants. About 3 min; it used to time out.</td></tr>
+<tr><th>Bugs fixed</th><td>11 in the game, 4 in the port, 3 in the gate tooling. Each comes with a test that fails on the old code.</td></tr>
+<tr><th>Playtesting</th><td>A new bot plays 18 full runs in about 50s. It's deterministic and produces an A/B report. <code>node tools/playtest.js</code></td></tr>
+<tr><th>Unity</th><td><span class="tag ok">playable</span> A main menu with key binds and volume, a sound engine, and a sandbox room where you walk, shoot four guns and fight lungers. It all runs on the ported core.</td></tr>
+<tr><th>Port</th><td>New this session: the projectile phase (except blast and hook), the four guns, and the lunger. Each is checked against recordings from the running game.</td></tr>
+</table>
+
+<h2>1. Housekeeping and the gate</h2>
+<ul>
+<li>Deleted junk (<code>temp_check.txt</code>, a duplicate report, a stale page copy); <code>REPORT.md</code> moved to <code>docs/history/</code>.</li>
+<li>The gate could not go green: it waited 30s for a 5-minute suite (Playwright options passed in the wrong position), its audits looked for a server on a port it never started, and any stderr from node aborted it before it could report.</li>
+<li>The one red test was real: <code>Sound.whenAudible/whenIdle</code> never polled (a <code>.then(tick)</code> was lost in the last commit), so a suspended audio context hung for ever.</li>
+</ul>
+
+<h2>2. Code sweep: what was wrong</h2>
+<p class="meta">Three independent read-only reviewers (JS sim, JS support, C# port), then every claim checked against the running game before anything changed.</p>
+<table>
+<tr><th>Bug</th><th>What a player saw</th><th>Fix</th></tr>
+<tr><td>Boss tell never drained</td><td>The Warden's wind-up flash stayed lit for the whole fight after the first volley (5693 of 6705 idle ticks), so it warned of nothing.</td><td>Countdown to each shell, off between volleys.</td></tr>
+<tr><td>Projectile loop <code>break</code></td><td>When a bolt landed, every older projectile (enemy shells too) froze for that tick.</td><td><code>continue</code></td></tr>
+<tr><td>Boss wall outlived the boss</td><td>Kill the Warden while its wall is up and the exit stays shut until you shoot 5 statues.</td><td>The wall crumbles with it.</td></tr>
+<tr><td>Tab / H did not pause</td><td>Open the character sheet mid-fight: input blocked, room still running. Measured 5 HP lost while reading.</td><td>Any input-taking overlay stops the sim ("Pausing IS this sheet" was the design).</td></tr>
+<tr><td>Title seed ignored</td><td>The title shows a seed and says it decides the dungeon, then any key starts a different one.</td><td>Starts the seed on screen.</td></tr>
+<tr><td>Item room duplicates</td><td>Both pedestals could offer the same item when the rarity tier was thin.</td><td>Top-up excludes the first pick.</td></tr>
+<tr><td>4 wrong texts</td><td>Tin Cup / Iron Ribs said "two hearts" (they give one), Vigor and Momentum blurbs contradicted the code.</td><td>Text corrected (numbers left for you: see design notes).</td></tr>
+<tr><td>Port drift</td><td>C# lunger HP 24.3 vs game 20.25; Brunch speeds stale; seeds above 2^32 wrapped instead of refused. Tests had pinned the stale values by hand.</td><td>Fixed; values re-read from the game.</td></tr>
+</table>
+<p>Also removed: dead code (duplicate checks, an undeclared global, unused helpers, a duplicate FIXES key).</p>
+<h3>Found, not fixed (recorded for the port session)</h3>
+<ul id="not-fixed">
+<li>C# aiming model (<code>Intercept.cs</code>) is an older version of the JS one; its test checks a stale baked hash.</li>
+<li>C# <code>TickRoom</code> would descend every tick (exit stays under the player) once rooms are ported; door helpers are stubs.</li>
+<li>C# per-tick allocations in <code>AssemblePacks</code> (Dictionary, List per guard) break the Unity no-GC rule.</li>
+<li>Two C# tests are tautologies (<code>TickOrderTests</code> phase log, <code>ProjectileRecordTests</code>).</li>
+<li>JS: Brunch target scan throttle is dead (runs every tick); stale <code>packSlot</code> skews a shrinking wall; the boss can spawn on the player; body contact hitbox is offset 20px from the shot hitbox.</li>
+<li>Items that do nothing: Intelligence (Brass Compass) is read by nothing; Hunter's Mark "shows what is on the floor" is a no-op.</li>
+</ul>
+
+<h2>3. Playtesting, and how to use it</h2>
+<div class="card">
+<b>Bot playtest</b> (about 50s for 18 full runs):<br>
+<code>node tools/playtest.js --label current</code> plays 6 seeds &times; 3 profiles (novice / average / skilled) for up to 20 sim-minutes each.<br>
+<code>node tools/playtest.js --root ab/baseline --label baseline</code> plays the backed-up build.<br>
+<code>node tools/playtest-report.js baseline current</code> writes <code>playtest/report.html</code>: side-by-side numbers, damage and healing sources, per-floor tables, thumbnails.<br>
+<code>--query brunch=B</code> plays a URL variant.
+<br><br><b>By hand</b>: open <code>ab/baseline/depths.html</code> and <code>depths.html</code> next to each other; variants are URL flags.
+</div>
+<p>It is deterministic (two runs of the same build: 0 of 18 runs differ), so an A/B difference is the change, not noise.</p>
+<h3>What the first playtest says about the game</h3>
+<ul id="playtest-findings">
+<li><b>Nobody dies.</b> All three profiles, novice included, clear 6 floors in 20 sim-minutes; 0 deaths in 18 runs.</li>
+<li><b>Healing matches damage.</b> About 13 HP of damage per floor against 11 HP of healing, mostly armour drops. Floors usually end at full health, so damage within a floor does not carry.</li>
+<li><b>Skill barely matters.</b> Novice takes about twice the damage of skilled and still never dies: the difference is invisible to the player.</li>
+<li><b>Over an hour, runs do end.</b> With 60 sim-minutes per run, bots reach floors 13&ndash;18. Two of 18 died, both novice; the rest were still alive at the limit. The difficulty does climb, but slowly. A full run is long.</li>
+<li><b>Boss fights get longer with depth:</b> a median of 33s on floor 1, 44s on floor 8, 60s on floor 13 and 70s on floor 17. The Warden's health grows with no cap, so deep fights risk becoming a damage sponge. (These long fights first showed up as "stuck" runs. The bot now counts damage dealt as progress, so they no longer do.)</li>
+<li>Caveat: the bot sees every body perfectly and never panics. Read these as relative numbers.</li>
+</ul>
+
+<h2>4. Features</h2>
+<div id="features">
+<h3>4.1 Brunch guard: A, B and A+ side by side <span class="tag ok">done</span></h3>
+<p>The leash in the comments never existed: packs guard their shooter wherever you are (A). All three
+options now play from the same build, chosen by URL; the default is still A, so tests, parity and the
+C# port are untouched.</p>
+<table>
+<tr><th>Open</th><th>Behaviour</th><th>Bot: deaths / dmg per floor / Brunch share</th></tr>
+<tr><td><code>depths.html?brunch=A</code></td><td>Wall stays on its shooter, always (current).</td><td>0 / 10.6 / 25%</td></tr>
+<tr><td><code>depths.html?brunch=B</code></td><td>Leash: more than 420px between you and its shooter, the pack drops the guard and chases.</td><td>1 / 11.8 / 30%</td></tr>
+<tr><td><code>depths.html?brunch=A+</code></td><td>Keeps guarding; once you leave the shooter's range the wall walks out toward you as one formation, herding you back into the line of fire.</td><td>0 / 10.4 / 26%</td></tr>
+</table>
+<p><b>My read:</b> B is the most dangerous and the simplest to understand ("they come for you if you run").
+A+ only changes things for a player who disengages, which the bot never does, so it has to be felt by hand:
+retreat across a big room from a shooter with a pack. Reports: <code>playtest/report-brunch-A-vs-brunch-B.html</code>,
+<code>playtest/report-brunch-A-vs-brunch-Aplus.html</code>.</p>
+<h3>4.2 Unity skeleton and main menu <span class="tag ok">done</span></h3>
+<p>The project is in <code>unity/</code> (Unity 6000.3.25f1). Unity compiles <code>Depths.Core</code> from the same files the C# tests build, as a local package; one Unity test checks that it generates exactly the same floor as the JS game for a known seed. Scenes, the audio mixer and settings are generated by an editor script, so they can be rebuilt instead of hand-edited.</p>
+<div class="grid2"><img src="report-2026-10-06/unity-menu.png" alt="Main menu"><img src="report-2026-10-06/unity-controls.png" alt="Controls options"></div>
+<ul>
+<li><b>Key binds:</b> the default, Auto, follows key <i>position</i>, so WASD lands on ZQSD on AZERTY with no setup. The QWERTY, AZERTY and QWERTZ presets bind by the letter printed on the key, and Dvorak goes by position. Click any bind to change it. Everything is saved.</li>
+<li><b>Volume:</b> Master, Music and SFX sliders drive a real AudioMixer with those three channels. They're saved, and dragging a slider plays a preview sound.</li>
+<li><b>To play it:</b> build with the command in <code>docs/STATUS.md</code>, or open <code>unity/</code> in the Unity Hub and press Play in <code>Assets/Depths/Scenes/MainMenu</code>.</li>
+</ul>
+<div class="grid2"><img src="report-2026-10-06/unity-audio.png" alt="Audio options"><img src="report-2026-10-06/unity-game.png" alt="Sandbox"></div>
+
+<h3>4.3 Sound engine <span class="tag ok">started</span></h3>
+<p><code>SoundEngine.Play("hit", pan)</code> plays any of the game's 12 sounds. They're rebuilt by a small synthesizer from the exact JS definitions, then pooled and routed through the SFX channel. The tests compare each one with the JS game's own render: pitch matches within 20% for 11 of the 12 (the exception is explained in the test). <b>Next step:</b> add a compressor on Master. The JS game has one, and the sounds may feel spikier without it.</p>
+
+<h3>4.4 The port, and a playable sandbox <span class="tag ok">big step</span></h3>
+<table>
+<tr><th>Ported this session</th><th>Checked against the game by</th></tr>
+<tr><td>Projectile phase (all but blast and hook)</td><td>12 banked cases, plus "older shells keep moving", the loot draw and the boss wall</td></tr>
+<tr><td>The four guns (<code>Weapons.cs</code>)</td><td>48 shots: 4 seeds &times; 4 guns &times; 3 aims, every pellet to 1e-6, RNG draws exact</td></tr>
+<tr><td>Held fire</td><td>The tick each gun fires on: Bolt every 89, Scatter 154, Beam 13, Voidball 56</td></tr>
+<tr><td>The lunger (<code>Movement.cs</code>, <code>TickBodies</code>)</td><td>4 recorded fights, 200&ndash;420 ticks each, compared every 10 ticks to 1e-6</td></tr>
+</table>
+<p>The Unity <b>Game</b> scene is now a sandbox room on that core. You move and shoot with your saved binds, switch guns with 1&ndash;4, and three lungers notice you, hunt, wind up and lunge. They can kill you, and their kills drop hearts and armour you can pick up. Ranged enemies, Brunch packs and the boss join as their movement is ported. Anything not ported yet <i>refuses</i> to run instead of quietly misbehaving.</p>
+</div>
+
+<h2>5. Decisions waiting for you</h2>
+<ul id="decisions">
+<li><b>Brunch guard: A, B or A+?</b> Play each URL above. Once chosen, the winner becomes the default in JS
+(and goes into C# when <code>tickBodies</code> is ported), the flag is removed, and the JS gets its <code>js-final</code> tag.</li>
+<li><b>Heart values:</b> Tin Cup and Iron Ribs were written as "two hearts" and give one. I fixed the text. If two was the intent, the numbers (<code>heal_self</code> 2 to 4, Iron Ribs vigor 2 to 4) are the change, and that is a balance call.</li>
+<li><b>Difficulty:</b> no bot profile dies in 6 floors; healing (mostly armour drops) roughly equals damage per floor. Candidates to playtest, in order of how little they change: fewer armour drops; heal less on later floors; let the depth ladder keep rising after its cap. Each is a one-line variant I can add behind a flag like the Brunch one.</li>
+<li><b>Run length and the Warden:</b> a strong player is looking at an hour or more per run, and boss fights double in length by floor 17. Consider capping boss health growth, or adding a "win" floor (the code already has an unused win path). Either could be a flag to playtest.</li>
+<li><b>Sound:</b> listen to the menu sounds (rebinding a key, the volume sliders). If they feel harsh, a Master compressor is the fix.</li>
+<li><b>Items that promise and do nothing:</b> Brass Compass (Intelligence is read by nothing) and Hunter's Mark's "shows what is on the floor". Either give them their effect in the Unity build, or change their text now.</li>
+</ul>
+</main></body></html>
