@@ -93,7 +93,8 @@ namespace Depths
         public static BodyRow Of(BodyKind kind) => Rows[(int)kind];
 
         // the archetype's own spawn windows, as ported (24 and 135 ticks at the JS rate); a live spawn's are longer
-        const double ArchNoticeS = 4.0 / 35, ArchIdleS = 9.0 / 14;
+        public static double ArchNoticeWindow => Balance.SecF(4.0 / 35);
+        public static double ArchIdleWindow => Balance.SecF(9.0 / 14);
 
         /// <summary>
         /// Builds a body. The depth ladder is read HERE and nowhere else on this type, and it is read
@@ -131,8 +132,8 @@ namespace Depths
                 Armour = c.Armour,
 
                 // transients, drawn from jitter so they never touch the run stream
-                NoticeTimer = (int)(rng.Jitter() * Balance.SecF(ArchNoticeS)),
-                IdleTimer = (int)(rng.Jitter() * Balance.SecF(ArchIdleS)),
+                NoticeTimer = (int)(rng.Jitter() * ArchNoticeWindow),
+                IdleTimer = (int)(rng.Jitter() * ArchIdleWindow),
                 IdleDir = new[] { rng.Jitter() * 2 - 1, rng.Jitter() * 2 - 1 },
                 Flank = rng.Jitter() * 6.283185307179586,
             };

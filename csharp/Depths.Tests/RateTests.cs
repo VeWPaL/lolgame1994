@@ -150,7 +150,7 @@ namespace Depths.Tests
             Assert.That(offT, Is.Empty);
         }
 
-        enum U { PerSec, Sec, SecF, Ease, Decay, Knock, KnockP, Substeps }
+        enum U { PerSec, Sec, SecF, Ease, Decay, Knock, KnockP, Substeps, TickGap }
 
         // Every rate-derived static dial, by unit. A static int/double property that is not listed fails
         // the test below, so a new dial cannot skip the 60 Hz check.
@@ -181,7 +181,9 @@ namespace Depths.Tests
             ["Balance.LungeTrack"] = U.Ease, ["Balance.LungeCd"] = U.Sec, ["Balance.LungeWindup"] = U.Sec,
             ["Balance.LungeSpeed"] = U.PerSec, ["Balance.LungeRecover"] = U.Sec, ["Balance.LungerNear"] = U.PerSec,
             ["Balance.LungerFar"] = U.PerSec, ["Balance.LungerSpread"] = U.PerSec, ["Balance.SwerveDecay"] = U.PerSec,
-            ["Balance.CastTime"] = U.Sec, ["Balance.Substeps"] = U.Substeps,
+            ["Balance.CastTime"] = U.Sec, ["Balance.Substeps"] = U.Substeps, ["Balance.CastLag"] = U.TickGap,
+            ["Balance.BossFirstCd"] = U.Sec, ["Balance.BossPhaseCd"] = U.Sec, ["Balance.FadeStart"] = U.Sec,
+            ["Balance.NoticeWindow"] = U.SecF, ["Bodies.ArchNoticeWindow"] = U.SecF, ["Bodies.ArchIdleWindow"] = U.SecF,
             ["Weapons.MuzzleTicks"] = U.Sec, ["Bodies.BrunchWalk"] = U.PerSec, ["Bodies.BrunchRun"] = U.PerSec,
             ["RunState.FadeDescend"] = U.Sec,
         };
@@ -219,11 +221,11 @@ namespace Depths.Tests
                 case U.Ease: return Rel(Math.Pow(1 - v60, 60), Math.Pow(1 - v210, 210), 1e-9) ? null : "left after a second " + Math.Pow(1 - v60, 60) + " vs " + Math.Pow(1 - v210, 210);
                 case U.Decay: return Rel(Math.Pow(v60, 60), Math.Pow(v210, 210), 1e-9) ? null : "kept after a second " + Math.Pow(v60, 60) + " vs " + Math.Pow(v210, 210);
                 case U.Substeps: return v60 * 60 >= 210 && (v60 - 1) * 60 < 210 && v210 == 1 ? null : "steps " + v60 + " / " + v210;
+                // the part of a 60 Hz tick a JS tick does not cover, in ticks: (1/60 - 1/210) s
+                case U.TickGap: return Rel(v60 / 60, 1.0 / 60 - 1.0 / 210, 1e-12) && v210 == 0 ? null : "gap " + v60 + " / " + v210;
                 default:
                     // a knock speed, read as the distance it coasts: v / (1 - friction)
-                    double f60, f210;
-                    if (unit == U.Knock) { Balance.TickHz = 60; f60 = Balance.KnockFriction; Balance.TickHz = 210; f210 = Balance.KnockFriction; }
-                    else { Balance.TickHz = 60; f60 = Balance.KnockPFriction; Balance.TickHz = 210; f210 = Balance.KnockPFriction; }
+                    var (f60, f210) = Both(() => unit == U.Knock ? Balance.KnockFriction : Balance.KnockPFriction);   // Both restores the rate
                     return Rel(v60 / (1 - f60), v210 / (1 - f210), 1e-9) ? null : "coast " + v60 / (1 - f60) + " vs " + v210 / (1 - f210);
             }
         }
@@ -546,6 +548,41 @@ namespace Depths.Tests
             double dps = Balance.HookDps * Bodies.Armour;
             Assert.That(h210.burned, Is.EqualTo(dps * 1.8).Within(dps * Tick210 * 1.01));
             Assert.That(h60.burned, Is.EqualTo(h210.burned).Within(dps * OneTickEach));
+        }
+
+        [Test]
+        public void ARangedBodyFiresOnTheSameClock()
+        {
+            // the same draws per cycle at both rates. Off the JS rate the cooldown's overrun and the cast's late
+            // tick are carried, so the mean cycle is the JS one up to the JS side's own rounding (under a JS tick);
+            // without the carry each cycle at 60 Hz runs about 1.5 ticks (25 ms) long
+            foreach (var kind in new[] { BodyKind.Gunner, BodyKind.Shooter })
+            {
+                const int Shots = 40;
+                var (s60, s210) = Both(() =>
+                {
+                    var run = Started();
+                    var p = run.player;
+                    p.x = p.lagX = Balance.RoomLeft + 60; p.hp = 1e9;
+                    TickOrder.HitboxX = p.lagX; TickOrder.HitboxY = p.lagY;
+                    var e = Spawn.Body(run, kind, Balance.RoomLeft + 330, p.y);
+                    e.alerted = true; e.noticeTimer = 0;
+                    run.enemies.Add(e);
+                    var at = new List<double>();
+                    for (int t = 1; at.Count < Shots && t < 300 * Balance.TickHz; t++)
+                    {
+                        int n = run.projectiles.Count;
+                        TickOrder.TickBodies(run);
+                        if (run.projectiles.Count > n) at.Add(Seconds(t));
+                        run.projectiles.Clear();
+                        e.x = Balance.RoomLeft + 330; e.y = p.y;   // the harness pins it: this measures the clock, not the walk
+                    }
+                    return at;
+                });
+                Assert.That(s60.Count, Is.EqualTo(Shots));
+                double m60 = (s60[Shots - 1] - s60[0]) / (Shots - 1), m210 = (s210[Shots - 1] - s210[0]) / (Shots - 1);
+                Assert.That(m60, Is.EqualTo(m210).Within(Tick210), kind + ": mean seconds between shots");
+            }
         }
 
         [Test]

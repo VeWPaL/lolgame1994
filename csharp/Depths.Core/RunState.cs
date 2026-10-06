@@ -117,7 +117,7 @@ namespace Depths
             blinkCharges = 2; blinkGrace = 0; graceSpent = false; blinkRestoreT = 0;
             flankCursor = 0; bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;
             trans = null; readyT = 0; bossWarnT = 0; bossWarned = false;
-            roomFade = 1; fadeTicks = Balance.Sec(0.4); fadeT = fadeTicks;
+            roomFade = 1; fadeTicks = Balance.FadeStart; fadeT = fadeTicks;
             state = "playing";
         }
 
@@ -183,7 +183,7 @@ namespace Depths
             transients = new List<Pickup>();
             floor = 1;
             state = "start";
-            fadeTicks = Balance.Sec(0.4);   // JS fadeTicks=sec(0.4), src/50-run.js:109
+            fadeTicks = Balance.FadeStart;
         }
     
         /// <summary>

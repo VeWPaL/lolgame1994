@@ -155,6 +155,7 @@ namespace Depths
         // --- the committed shot: fireCommittedShot reads and writes these (src/60-tick.js:28-35)
         public double castAim;
         public double cdMin, cdVar, shootCd;
+        public double cdCarry;   // off the JS rate: the cooldown's overrun when the cast began, less CastLag, owed to the next cooldown
         public double pspd, pr, dmg;
 
         // --- boss move cadence: StepBoss's bag pick and cooldown (src/60-tick.js:159-180)

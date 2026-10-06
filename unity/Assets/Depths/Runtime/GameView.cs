@@ -107,7 +107,7 @@ namespace Depths.Unity
             double x = Balance.RoomLeft + 110 + k * 160, y = Balance.RoomTop + 90 + (k % 2) * 60;
             var e = Enemy.Of(DummyKinds[k % DummyKinds.Length], x, y);
             e.flank = k * 2.399963229728653;   // the game's golden-angle flank cursor
-            e.noticeTimer = Balance.Sec(0.29 + 0.12 * k);   // a beat before they move, as a spawn has
+            e.noticeTimer = Balance.Sec((60 + 25.0 * k) / Balance.JsHz);   // a beat before they move: 60 + 25k ticks at the JS rate
             e.shootCd = e.cdMin;                 // and before a ranged body's first cast
             _run.enemies.Add(e);
         }

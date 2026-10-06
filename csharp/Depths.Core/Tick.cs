@@ -107,6 +107,7 @@ namespace Depths
             if (!e.castReady) return;
             e.castReady = false;
             e.shootCd = (e.cdMin + run.rng.Jitter() * e.cdVar) * (1 - Balance.PressureCadence * roomPress);
+            if (Balance.TickHz != Balance.JsHz) { e.shootCd += e.cdCarry; e.cdCarry = 0; }
             run.projectiles.Add(new Projectile
             {
                 x = e.x,
@@ -160,7 +161,9 @@ namespace Depths
             int n = 3 + (e.phase >= 2 ? 1 : 0) + (e.phase >= 3 ? 3 : 0);
             int k = (int)(run.rng.Run() * n);
             string pick = k < 2 ? "volley" : k == 2 ? "sweep" : k == 3 ? "wall" : k == 4 ? "volley" : "sweep";
+            double bossOver = e.bossCd;
             e.bossCd = (e.cdMin + run.rng.Jitter() * e.cdVar) * (1 - Balance.PressureCadence * Balance.RoomPressure(room.Count));
+            if (Balance.TickHz != Balance.JsHz) e.bossCd += bossOver;   // the overrun carried, as for a ranged body
             BeginBoss(run, e, pick);
         }
 
@@ -170,7 +173,7 @@ namespace Depths
             e.move = "idle";
             e.moveT = Balance.BossRecover;      // the phase change is itself a beat of recovery
             e.volleyLeft = 0;
-            e.bossCd = Balance.Sec(0.4);
+            e.bossCd = Balance.BossPhaseCd;
         }
 
         public static void BeginBoss(RunState run, Enemy e, string move)
@@ -458,8 +461,11 @@ namespace Depths
             }
             double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * (0.02 + Balance.SwerveAim * p.swerve * reach);
             var shot = Movement.ClearShot(run, e, want);
-            if (shot.HasValue) { e.castAim = shot.Value; e.castT = Balance.CastTime; }
-            else e.shootCd = e.cdMin * 0.25;
+            // off the JS rate the tick's overrun is kept, so a cadence is exact in seconds (held fire does the same)
+            double over = Balance.TickHz == Balance.JsHz ? 0 : e.shootCd;
+            if (shot.HasValue) { e.castAim = shot.Value; e.castT = Balance.CastTime; e.cdCarry = over - Balance.CastLag; }
+            else if (Balance.TickHz == Balance.JsHz) e.shootCd = e.cdMin * 0.25;
+            else e.shootCd = e.cdMin * 0.25 + over;
         }
 
         public static void TickBodies(RunState run)

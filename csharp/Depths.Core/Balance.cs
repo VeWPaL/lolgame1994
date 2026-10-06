@@ -225,6 +225,8 @@ namespace Depths
         public static int BossCdMin => Sec(3.2);
         public static int BossCdVar => Sec(1.0);
         public static int BossRecover => Sec(1.1);
+        public static int BossFirstCd => Sec(1.2);   // the Warden's first move comes this soon
+        public static int BossPhaseCd => Sec(0.4);   // and the first after a phase change
         public const double BossPhase1 = 0.66, BossPhase2 = 0.33;   // fractions of max HP
 
         /// <summary>The fade out of a room transition, src/00-balance.js:251 (FADE_OUT).</summary>
@@ -232,6 +234,12 @@ namespace Depths
 
         /// <summary>The ready window after entering a room, src/00-balance.js:251 (READY).</summary>
         public static int Ready => Sec(0.75);
+
+        /// <summary>The fade in at the start of a run, src/50-run.js:109 (fadeTicks=sec(0.4)).</summary>
+        public static int FadeStart => Sec(0.4);
+
+        /// <summary>A fresh body notices the player within this many ticks: 16 frames at the JS's old 60 fps.</summary>
+        public static double NoticeWindow => SecF(16 / 60.0);
 
         /// <summary>
         /// DY slides the hit circle down onto the actual mass of the character - the chest and waist,
@@ -873,6 +881,12 @@ namespace Depths
         /// a tax.
         /// </summary>
         public static int CastTime => Sec(0.5);
+
+        /// <summary>
+        /// A cast's shell leaves the tick after the cast ends: 1/210 s at the JS rate, a whole 1/60 s at 60.
+        /// Off the JS rate a ranged body takes back the difference (in ticks) from its next cooldown.
+        /// </summary>
+        public static double CastLag => TickHz == JsHz ? 0 : 1 - (double)TickHz / JsHz;
 
         /// <summary>
         /// Iterations for the gunner's intercept. Fourteen, and the number is not arbitrary.
