@@ -844,11 +844,11 @@ namespace Depths
                 else if (pk.kind == "blast") { player.altMode = "blast"; run.hook = false; }
                 else if (pk.kind == "item")
                 {
-                    // NOT PORTED. See the summary: a silent no-op here is a behaviour change.
-                    throw new System.NotSupportedException(
-                        "tickRoom: the item pickup branch calls Items.give, which has no C# "
-                        + "counterpart. Collect it as a stub and the port looks finished while "
-                        + "playing differently - so it throws until Items lands.");
+                    // the item goes in the slot it declares; whatever was on that key is left where this lay
+                    var got = Items.Give(run, pk.id, pk.charges);
+                    if (!got.taken) continue;
+                    if (got.dropped != null)
+                        run.pickups.Add(new Pickup { x = pk.x, y = pk.y, r = 16, kind = "item", id = got.dropped, hold = true, charges = got.droppedCharges });
                 }
                 else continue;   // an unknown kind is left on the floor rather than eaten
 
@@ -922,7 +922,7 @@ namespace Depths
         /// </para>
         /// </summary>
         public static bool TickPlayer(RunState run, Input input,
-            double moveSpeedBonus = Balance.MoveSpeedBonusBase)
+            double? moveSpeedBonus = null)
         {
             Rooms.TickUnlock(run);
             var p = run.player;
@@ -948,7 +948,7 @@ namespace Depths
             // moveSpeedBonus() in the game: the speed STAT plus the Momentum meter's share, capped. The
             // momentum term was missing here, invisible to every test that ran in an empty room (where
             // momentum stays 0) until the blink parity walked a player past a body.
-            double bonus = System.Math.Min(Balance.MoveSpeedHardCap, moveSpeedBonus + p.momentum * Balance.MomentumSpeed);
+            double bonus = System.Math.Min(Balance.MoveSpeedHardCap, (moveSpeedBonus ?? run.stats.Value("speed")) + p.momentum * Balance.MomentumSpeed);
             double spd = p.speed * p.slowMult * (1 + bonus) * boostMult;
             double targetVx = len != 0 ? (dx / len) * spd : 0;
             double targetVy = len != 0 ? (dy / len) * spd : 0;
@@ -1075,7 +1075,7 @@ namespace Depths
             if (p.muzzleTimer > 0) p.muzzleTimer--;
             if (p.shootSlow > 0) p.shootSlow = System.Math.Max(0, p.shootSlow - Balance.ShootSlowRecover);
             // held fire shoots the moment the cooldown runs out (mouseDown in the game); the alt is not ported
-            if (input.fire && p.cooldown <= 0) Weapons.Fire(run, input.aimX, input.aimY);
+            if (input.fire && p.cooldown <= 0) Weapons.Fire(run, input.aimX, input.aimY, run.stats.Value("strength"), run.stats.Value("precision"));
             if (input.alt) Weapons.FireAlt(run, input.aimX, input.aimY);   // not gated here: fireAlt decides
 
             /* THE LAGGED HITBOX, and the publish. This trails the real position and catches up, so

@@ -23,7 +23,7 @@ namespace Depths.Unity
         static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
         RunState _run;
-        InputAction _move, _cast, _blast, _blink, _pause;
+        InputAction _move, _cast, _blast, _blink, _active, _pause;
         int _lastShots, _lastHits, _lastKills;
         double _lastHp;
         RoomPainter _painter;
@@ -41,6 +41,7 @@ namespace Depths.Unity
             _cast = map.FindAction("Cast", true);
             _blast = map.FindAction("Blast", true);
             _blink = map.FindAction("Blink", true);
+            _active = map.FindAction("Active", true);
             _pause = map.FindAction("Pause", true);
             map.Enable();
             var args = Environment.GetCommandLineArgs();
@@ -155,6 +156,10 @@ namespace Depths.Unity
             if (_blink.WasPressedThisFrame() && TickOrder.TryBlink(_run, new Input(Math.Sign(mv.x), -Math.Sign(mv.y), aimX: aim.x, aimY: aim.y)))
                 Depths.Unity.Audio.SoundEngine.Play("blink");
 
+            // Q uses the active item, between ticks like the game's key handler
+            if (_active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
+                Depths.Unity.Audio.SoundEngine.Play("pickup");
+
             _acc += Math.Min(Time.unscaledDeltaTime * 1000.0, 250.0);
             while (_acc >= StepMs)
             {
@@ -175,8 +180,11 @@ namespace Depths.Unity
             PlayEvents();
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
+            var act = Items.ActiveItem(_run);
+            string build = (act != null ? "   Q: " + Items.Def(act.Id).Name + (act.Charges == int.MaxValue ? "" : " x" + act.Charges) : "") +
+                           (_run.loadout.Count > (act != null ? 1 : 0) ? "   carrying: " + string.Join(", ", _run.loadout.Where(s => s.Slot != Items.ActiveSlot).Select(s => Items.Def(s.Id).Name)) : "");
             string stats = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
-                           "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   kills " + _run.kills;
+                           "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   kills " + _run.kills + build;
             if (RealRun)
             {
                 var room = _run.CurrentRoom;
@@ -267,6 +275,7 @@ namespace Depths.Unity
                 case "goldkey": return new Color32(235, 195, 70, 255);
                 case "exit": return new Color32(160, 110, 255, 255);
                 case "weapon": return new Color32(90, 200, 255, 255);
+                case "item": return new Color32(240, 200, 120, 255);
                 default: return new Color32(80, 220, 190, 255);
             }
         }

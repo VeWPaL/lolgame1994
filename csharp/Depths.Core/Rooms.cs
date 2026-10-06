@@ -10,9 +10,6 @@ namespace Depths
     ///
     /// A room keeps its own bodies and pickups (Room.Enemies/Pickups); the run's lists are the current
     /// room's, swapped on entry, so every phase reads run.enemies exactly as before.
-    /// The item pedestals of an item room need the item system, which is not ported: the weapon
-    /// pedestals are placed, the item ones are not, and the run stream diverges from the game after the
-    /// first item room. Named here rather than hidden.
     /// </summary>
     public static class Rooms
     {
@@ -174,6 +171,14 @@ namespace Depths
                     for (int i = ws.Count - 1; i > 0; i--) { int j = (int)(run.rng.Run() * (i + 1)); (ws[i], ws[j]) = (ws[j], ws[i]); }
                     run.pickups.Add(Pickup.Weapon(Balance.MidX - 255, Balance.MidY, ws[0]));
                     run.pickups.Add(Pickup.Weapon(Balance.MidX + 255, Balance.MidY, ws[1]));
+                    // the item half: two of the rolled rarity (luck-weighted), topped up from any rarity
+                    // without the one just chosen; nothing already carried
+                    var held = new List<string>();
+                    foreach (var d in Items.All) if (Items.Equipped(run, d.Id) != null) held.Add(d.Id);
+                    var ids = Items.Pool(run.rng, 2, Items.RollRarity(run.rng, run.stats.Value("luck")), held);
+                    if (ids.Count < 2) { var ex = new List<string>(held); ex.AddRange(ids); ids.AddRange(Items.Pool(run.rng, 2 - ids.Count, null, ex)); }
+                    for (int i = 0; i < ids.Count; i++)
+                        run.pickups.Add(new Pickup { x = Balance.MidX + (i == 1 ? -85 : 85), y = Balance.MidY, r = 16, kind = "item", id = ids[i] });
                 }
             }
             var p = run.player;

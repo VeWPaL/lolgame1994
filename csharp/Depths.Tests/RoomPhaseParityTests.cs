@@ -433,12 +433,42 @@ namespace Depths.Tests
         /// port that looks finished and plays differently; a crash is a gap you cannot miss.
         /// </summary>
         [Test]
-        public void AnItemPickupThrowsUntilItemsIsPorted()
+        public void AnItemPickupGivesTheItemAndSwapsTheActive()
+        {
+            // the spec (src/60-tick.js tickRoom + 25-items.js give): a passive raises its stat and is
+            // gone from the floor; a second active takes the one slot and the first is left where the
+            // new one lay, holding the charges it had, and cannot be picked straight back up
+            var run = Room();
+            run.pickups.Add(new Pickup { x = 400, y = 355, r = 16, kind = "item", id = "weighted_rod" });
+            TickOrder.TickRoom(run);
+            Assert.That(run.stats.Value("strength"), Is.EqualTo(5), "Weighted Rod is +2 on the base 3");
+            Assert.That(run.pickups, Is.Empty);
+
+            Items.Give(run, "tin_cup");
+            Items.ActiveItem(run)!.Charges = 1;   // a half-spent cup
+            run.pickups.Add(new Pickup { x = 400, y = 355, r = 16, kind = "item", id = "hunters_mark" });
+            TickOrder.TickRoom(run);
+            Assert.That(Items.ActiveItem(run)!.Id, Is.EqualTo("hunters_mark"));
+            Assert.That(run.pickups, Has.Count.EqualTo(1));
+            var cup = run.pickups[0];
+            Assert.That(cup.id, Is.EqualTo("tin_cup"));
+            Assert.That(cup.charges, Is.EqualTo(1), "the dropped cup keeps the charge it had");
+            Assert.That(cup.hold, Is.True, "a just-dropped item cannot be taken back on the same spot");
+            Assert.That(run.stats.Value("luck"), Is.EqualTo(1), "Hunter's Mark carries +1 Luck");
+        }
+
+        [Test]
+        public void UsingTheActiveSpendsAChargeOnlyWhenItDoesSomething()
         {
             var run = Room();
-            run.pickups.Add(new Pickup { x = 400, y = 355, r = 16, kind = "item", id = "heart", charges = 1 });
-
-            Assert.Throws<System.NotSupportedException>(() => TickOrder.TickRoom(run));
+            Items.Give(run, "tin_cup");
+            run.player.hp = 8;
+            Assert.That(Items.UseActive(run), Is.False, "a full-health drink does nothing and costs nothing");
+            Assert.That(Items.ActiveItem(run)!.Charges, Is.EqualTo(3));
+            run.player.hp = 3;
+            Assert.That(Items.UseActive(run), Is.True);
+            Assert.That(run.player.hp, Is.EqualTo(5), "Tin Cup heals 2 (one heart)");
+            Assert.That(Items.ActiveItem(run)!.Charges, Is.EqualTo(2));
         }
 
         /// <summary>

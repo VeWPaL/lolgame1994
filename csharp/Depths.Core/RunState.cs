@@ -81,6 +81,10 @@ namespace Depths
         /// <summary>A hook's ground spell (hookFields): where, how big, and how long it has left.</summary>
         public sealed class HookField { public double x, y, r; public int life, max, id; }
         public readonly List<HookField> hookFields = new List<HookField>();
+
+        /// <summary>The build: the items carried, and the stats they make.</summary>
+        public readonly List<ItemSlot> loadout = new List<ItemSlot>();
+        public readonly Stats stats = new Stats();
         public int hookFieldId;
 
         /// <summary>Whether the boss / item door on this floor has been paid for (bossUnlocked, itemUnlocked).</summary>
@@ -106,6 +110,7 @@ namespace Depths
             curX = Map.Start; curY = Map.Start;
             player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY, hp = 8, maxHp = 8 };
             enemies.Clear(); pickups.Clear(); projectiles.Clear(); hookFields.Clear();
+            loadout.Clear(); stats.Reset();   // Items.reset: a new run starts from nothing
             floor = 1; floorTicks = 0; ticks = 0; kills = 0; hits = 0; shots = 0; dmgTaken = 0; secret = false;
             blinkCharges = 2; blinkGrace = 0; graceSpent = false; blinkRestoreT = 0;
             flankCursor = 0; bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;

@@ -364,7 +364,8 @@ namespace Depths
         /// <summary>Item id for an <c>item</c> pickup.</summary>
         public string id = "";
         /// <summary>Charges for an <c>item</c> pickup.</summary>
-        public int charges;
+        public int? charges;   // an item's charges as it lies here; null: the definition's own
+        public bool shown;     // revealed by Hunter's Mark
         /// <summary>Suppress re-collection until the player steps off. See the note above.</summary>
         public bool hold;
 
