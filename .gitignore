@@ -23,3 +23,7 @@ opencode.json
 # OS junk
 Thumbs.db
 .DS_Store
+
+# A/B: a worktree of the pre-features tag, and playtest output
+ab/
+playtest/
