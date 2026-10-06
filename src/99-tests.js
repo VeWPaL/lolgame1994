@@ -1,83 +1,26 @@
-/* ==============================================================================================
-   99-tests  -  the 94 checks: an executable specification, not a safety net
-
-   Larger than the game itself, and the most valuable thing in the repo. Seeded with mulberry32, so
-   a green run is a real contract rather than a lucky sample.
-
-   84 of the 94 bodies assert on the simulation alone and port to a headless NUnit suite unchanged.
-   The other 10 assert on drawing, and one of those is only "every screen renders without throwing" -
-   a smoke test that belongs on the engine side, not in a headless suite. That 84/10 split is why
-   the port is measurable rather than hopeful.
-   ============================================================================================== */
+/* 99-tests - the 94 checks: [h:99-tests-1] */
 /* ---------- regression tests: open depths.html?test (this block does nothing otherwise) ----------
    Seeded and synchronous, well under a second. Results go to the console, an on-page panel and
    window.__testResults. Saved records are backed up first and restored after, so real progress is untouched. */
 if(new URLSearchParams(location.search).has('test')) (function(){
-  /* Every record key has to be listed here, and the list is the only thing standing between a test
-     that writes a record and every test after it. depths_deepest was left off when the floor ladder
-     landed, so a test that reached floor 6 wrote it to storage, clearRecords() did not remove it,
-     loadRecords() read it straight back, and a later test asserting a depth of 4 saw 6 - a test
-     failing on a record another test had set, which is exactly the class of bug this list prevents.
-
-     RECORDS_KEY is in the list for the same reason and one generation later: the records moved from
-     four flat keys to a single JSON key, and this list is what makes the suite back up and restore the
-     live one. Leaving it out would restore nothing while `clearRecords` deleted it, which is the
-     mirror image of the depths_deepest bug - a test quietly destroying real progress instead of
-     inheriting another test's. The legacy keys stay listed because a player (or an earlier test) may
-     still have written them. */
+  /* Every record key has to be listed here, and the list is the only thing standing between a test that writes a record and every test after it. [h:99-tests-2] */
   const REC_KEYS=[RECORDS_KEY,'depths_best','depths_fastest','depths_wins','depths_deepest',TICK_KEY],
   saved={};
-  /* WHAT IS ACTUALLY ON DISK, read back through the game's own loader. Every assertion about a saved
-     record should go through this rather than reading a key directly: it is the only way to test what
-     a RELOAD would see, which is the thing that matters, and it stays correct across the move from
-     flat keys to a single JSON value without every test being rewritten when that happens again.
-     loadRecords writes into the global `records`, so this saves and restores it rather than
-     clobbering whatever the test around it was asserting. */
+  /* WHAT IS ACTUALLY ON DISK, read back through the game's own loader. [h:99-tests-3] */
   const storedRecords=()=>{ const keep=records; loadRecords(); const out=records;
     records=keep; return {rooms:out.rooms,fastest:out.fastest,wins:out.wins,deepest:out.deepest}; };
   for(const k of REC_KEYS){try{saved[k]=localStorage.getItem(k);}catch(e){}}
   const realRandom=Math.random;
-  /* The game draws from three named streams, so the suite seeds those rather than hijacking
-     Math.random. Two things follow, and both are worth more than the seeding itself.
-
-     ISOLATION. Every test starts from the identical world. Before this, one Math.random closure
-     was shared by every test, so the dungeon a test saw depended on how many tests ran before it.
-     That is deterministic as a SET and useless individually: a test that failed could not be run
-     on its own to find out why, and inserting a test silently changed every test after it. Now a
-     test's world is the same every time - which is most of what a test suite is for.
-
-     A TRIPWIRE. Math.random is replaced by a counter rather than simply removed, and the suite
-     asserts the count is still zero at the end. The alternative is a comment asking people not to
-     use Math.random, and that decays within a month. This fails loudly the first time somebody
-     adds a stray call, which is the only kind of rule that survives contact with a real codebase. */
+  /* The game draws from three named streams, so the suite seeds those rather than hijacking Math.random. [h:99-tests-4] */
   let strayRandom=0;
   Math.random=function(){ strayRandom++; return 0.5; };
   const TEST_SEED=12345;
   Rnd.set(TEST_SEED);
-  /* `Rnd.fresh` IS STUBBED, and it has to be, because `startGame()` now calls it.
-
-     startGame takes an optional seed and reseeds before it builds anything - that is the fix for
-     pressing R producing a different dungeon under the same code. With no argument it asks
-     `Rnd.fresh()` for a seed, which reads `crypto.getRandomValues`.
-
-     So every one of the ~100 fixtures that says `startGame()` - meaning "start a run from the seed
-     this test already established" - was quietly getting a RANDOM dungeon, and the suite went
-     flaky rather than red: six consecutive runs gave 197, 197, 197, 197, 195, 197. A test suite that
-     fails at random is worse than one that fails always, because people learn to re-run it.
-
-     Stubbing `fresh` puts the ambient seed back: a bare `startGame()` means TEST_SEED, exactly as it
-     did before startGame learned to reseed. Fixtures that care about a particular seed pass it. */
+  /* `Rnd.fresh` IS STUBBED, and it has to be, because `startGame()` now calls it. [h:99-tests-5] */
   const realFresh=Rnd.fresh;
   Object.defineProperty(Rnd,'fresh',{value:()=>TEST_SEED,configurable:true});
   const results=[];
-  /* Every test starts from the same world: the same seed, the same locked meter, and the same UI
-     state. The UI part was added after watching three unrelated tests fail because the four before
-     them had left a character sheet open - a test that throws leaves whatever it had set up, and
-     `test()` catches the throw and carries on, so the damage lands on tests that have nothing to do
-     with it. A failure should cost exactly one red line, not a cascade that hides the real one.
-
-     This is the same lesson as the shared-RNG problem, one layer out: a harness that carries state
-     between cases reports confident wrong answers rather than failures. */
+  /* Every test starts from the same world: [h:99-tests-6] */
   const resetUI=()=>{
     try{ closeCharSheet(); }catch(e){}
     try{ seedClose(); }catch(e){}
@@ -88,140 +31,41 @@ if(new URLSearchParams(location.search).has('test')) (function(){
     paused=false; keys={}; releaseButtons(); mouseDown=false; altMouseDown=false;
     // the build too: startGame resets it, but a test that only pokes Stats directly never would
     if(typeof Items!=='undefined') Items.reset();
-    /* And the HELD meter. Momentum.hold() is the measuring instrument, and an instrument left on is
-       worse than one that is missing: a test that holds the meter at 0 to compare against a held 1
-       throws partway, never releases, and every test after it reads a frozen 0 - which is how three
-       unrelated checks were failing at once about a bar and a trail and a dodge. Release belongs
-       here, beside the other reset, because "every test starts from a known state" is the property
-       and the meter is part of that state. */
+    /* And the HELD meter. [h:99-tests-7] */
     try{ Momentum.release(); }catch(e){}
   };
-  /* PROMISES FROM ASYNCHRONOUS TESTS, drained before the results are published. A test declared
-     `async` - which anything asserting on `Sound.render` must be, because `startRendering()` is a
-     promise - was previously run and forgotten: the harness called `fn()`, took the returned promise,
-     and immediately pushed `{ok:true}`. Every assertion in such a test ran after the verdict was
-     already recorded, so the suite reported a green waveform check that had never looked at a
-     waveform, and the mutation that proved it - a voice made to ring on for three seconds - passed.
-     Four times in this file a check passed for a reason that had nothing to do with the thing it
-     claimed to check. */
+  /* PROMISES FROM ASYNCHRONOUS TESTS, drained before the results are published. [h:99-tests-8] */
   const pending=[];
 
-  /* A SERIAL CHAIN, for tests that touch shared state.
-
-     Every async test declared here starts the moment it is declared, so they all interleave - which
-     is fine for tests that own their fixtures and wrong for tests that share one piece of global
-     state. The audio tests share exactly that: one AudioContext, one `unlocked` flag, one voice pool.
-
-     Three of them failed for four consecutive runs against code that was correct, each with a
-     different and entirely spurious message - "a shot did not play" from a test whose shot was
-     silenced by a neighbour, "a context could not be suspended" from a test whose neighbour had just
-     suspended it. Neither message was about the thing it claimed.
-
-     A test opts in by being declared with `serial`, and the chain below runs those one at a time.
-     Nothing else changes: a serial test is still a normal test, still counted, still timed out if it
-     hangs. */
+  /* A SERIAL CHAIN, for tests that touch shared state. [h:99-tests-9] */
   let serialChain=Promise.resolve();
   const enqueue=(fn)=>{ serialChain=serialChain.then(()=>fn()); return serialChain; };
 
   const test=(name,fn,serial)=>{   // `serial` is a FLAG here, not the queue
-    /* ASSERTION COUNTING, and the distinction matters more than the count.
-
-       A test that makes no assertions at all passes unconditionally, and that is the whole of the
-       `eq(FRAME,FRAME)` shape this file keeps warning about. A test whose assertions all PASS is
-       obviously not the same thing - that is what a passing test looks like - so nothing here tries to
-       detect it by outcome.
-
-       What IS worth detecting is an assertion that can never fail, and the only sound way to find one
-       is to watch it fail: run the suite, then re-run each test with a deliberately broken world and
-       see which still pass. That is a mutation harness, not a counter, and it is the correct tool. The
-       counts recorded here are kept because they are cheap and because `asserts===0` is a real and
-       sufficient signal on its own - a test with no assertions is dead, full stop.
-
-       An earlier version of this counted assertions that evaluated true and listed every test where
-       all of them did. That flagged 194 of 229 tests, including every correct one, because a passing
-       assertion evaluates true by definition. The number was not a finding; it was the definition of
-       passing. */
+    /* ASSERTION COUNTING, and the distinction matters more than the count. [h:99-tests-10] */
     let n=0;
     const _ok=ok, _eq=eq;
     const countingOk=(c,msg)=>{ n++; return _ok(c,msg); };
     const countingEq=(a,b,msg)=>{ n++; return _eq(a,b,msg); };
     ok=countingOk; eq=countingEq;
-    /* ASYNCHRONOUS TESTS ARE AWAITED, and this was the fourth silent pass in one file.
-
-       `fn()` was called and its result thrown away, so a test declared `async` ran all of its
-       assertions after this harness had already pushed `{ok:true}`. Every one of them was skipped, the
-       mutation that proved it - a voice made to ring on for three seconds - passed, and the suite
-       reported a green waveform check that had never looked at a waveform.
-
-       The tell was in the shape of the code: `Sound.render` is async because `startRendering()` is,
-       so any test asserting on it must be async, and a harness that cannot await cannot host it.
-
-       Results are now collected as promises and drained once at the end. A synchronous test still
-       resolves immediately, so nothing else in the file changes behaviour. */
+    /* ASYNCHRONOUS TESTS ARE AWAITED, and this was the fourth silent pass in one file. [h:99-tests-11] */
     try{
       Rnd.set(TEST_SEED); Momentum.lock(); resetUI();
       /* THE LAST TEST TO START, published as it goes. A hang - a promise that never settles, an
          infinite loop in a fixture - otherwise produces no output at all, and knowing the suite is
          stuck is the difference between a two-minute bisect and a two-hour one. */
       if(typeof window!=='undefined'){ window.__testLastStarted=name; window.__testCount=(window.__testCount||0)+1; }
-      /* `fn()` IS CALLED INSIDE THE LAUNCHER, NOT HERE. This is the whole of the serial feature, and
-         the first version got it wrong: the call sat above, so a test marked serial had its BODY RUN
-         IMMEDIATELY - all three audio tests still interleaved, still suspending each other's context,
-         still racing each other's renders. Only the 90-second watchdog race was queued, and a
-         watchdog is a thing that WATCHES.
-
-         Serialising a promise you have already started is not serialising anything. The body has to
-         be the thing that waits, so `fn()` moves inside `invoke`. */
+      /* `fn()` IS CALLED INSIDE THE LAUNCHER, NOT HERE. [h:99-tests-12] */
         /* Two names, because for a serial test the body runs once INSIDE the queue, and for a
            normal test it runs here. One shared name would run a serial test's body eagerly at
            declaration - which is the bug this dispatch just had. */
         const invoke2=()=>fn();
 
-        /* THE THREE WAYS A TEST CAN END, and the third one is the one that was silently broken.
-
-           1. It returns a promise  - the body has started; race it against the 90s watchdog.
-           2. It returns nothing    - a sync test; the body has already run to completion.
-           3. It is marked serial and returns a promise - the body has NOT started, because serial
-              is exactly the promise that it waits its turn.
-
-           The original dispatch tested `if(r && r.then)` with `r = serial ? null : invoke()`. So a
-           serial test took the `else` branch, which pushed `{ok:true, asserts:n}` and DID NOT CALL THE
-           BODY. Three serial tests - including the two written specifically to catch a game that is
-           permanently silent - had never executed a single line.
-
-           That is the worst failure mode this harness has produced, and it is worth naming exactly:
-           the tests were counted in the total, reported in the pass count, and could not fail. A green
-           suite reporting 240/240 with a mutation that silences the game outright.
-
-           The tell, if it is ever needed again: `asserts` is a module-level counter shared by every
-           test, so a test that never ran still reports a large number. */
-        /* BRANCH ON `serial` FIRST, and this is the whole of the fix. The shape of the mistake is
-           the lesson: the dispatch tested `if(r && r.then)` and computed `r` as
-           `serial ? null : invoke2()`. For a serial test `r` is null BY DESIGN, so the condition was
-           false, so control fell to the `else` - which pushes `{ok:true, asserts:n}` and never calls
-           the body.
-
-           Three serial tests, including the two written specifically to catch a permanently silent
-           game, had never executed a single line. They were counted in the total, included in the
-           pass count, and structurally incapable of failing. A mutation that silences the game
-           outright passed 240/240 four separate times, and the only reason it was eventually caught
-           is that I went looking for it rather than trusting the number.
-
-           `r` is not the question "is this test done". `r` only exists for a test that was allowed to
-           start. The FLAG is the question. */
+        /* THE THREE WAYS A TEST CAN END, and the third one is the one that was silently broken. [h:99-tests-13] */
+        /* BRANCH ON `serial` FIRST, and this is the whole of the fix. [h:99-tests-14] */
         if(serial){
           /* A serial test's BODY starts inside the queue - not its watchdog. Its body is the work. */
-          /* A SERIAL TEST GETS A LARGER WATCHDOG, and the reason is arithmetic rather than sentiment.
-
-             A serial audio test legitimately spends seconds waiting: `whenIdle` can wait up to ten
-             seconds for a neighbour's offline render, `whenAudible` up to three per attempt and the
-             baseline loop attempts three, and the big sound test renders sixteen voices. Against the
-             shared 90-second budget three of those tests timed out on correct code - and a watchdog that
-             fires on correct code is a watchdog that has stopped being a watchdog and started being a
-             source of false failures.
-
-             240 seconds is comfortably more than the worst case and comfortably less than "wait for
-             ever". The point of a bound is that it fires on a hang, not that it fires on a slow test. */
+          /* A SERIAL TEST GETS A LARGER WATCHDOG, and the reason is arithmetic rather than sentiment. [h:99-tests-15] */
           let stimer=0;
           const srun=()=>enqueue(()=>Promise.race([
             invoke2().then(()=>'ok'),
@@ -261,18 +105,7 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   let ok=(c,msg)=>{if(!c)throw new Error(msg);};
   let eq=(a,b,msg)=>{if(a!==b)throw new Error((msg?msg+': ':'')+'expected '+JSON.stringify(b)+', got '+JSON.stringify(a));};
   const press=k=>{window.dispatchEvent(new KeyboardEvent('keydown',{key:k}));window.dispatchEvent(new KeyboardEvent('keyup',{key:k}));};
-  /* `eq` COMPARES BY ===, WHICH FOR AN ARRAY IS A REFERENCE COMPARISON.
-
-     Two freshly-computed arrays with identical contents are two different objects, so
-     `eq(hexRgb('#abc'),hexRgb('#aabbcc'))` fails against correct code and has always done so - the
-     message prints two identical lists of numbers and the assertion still says they differ, which is
-     about the most confusing failure this harness can produce.
-
-     Not changed, because `eq` is right for everything it is actually used on (primitives, and object
-     identity where identity is the claim - two cached sprites being different objects IS the property
-     being tested). Recorded here so the next person comparing a computed array does not lose twenty
-     minutes to it: join it, or use `ok(a.join()===b.join())`. The colour checks in the area palette
-     section are written that way and say so. */
+  /* `eq` COMPARES BY ===, WHICH FOR AN ARRAY IS A REFERENCE COMPARISON. [h:99-tests-16] */
   const goTo=type=>{const r=Object.values(rooms).find(x=>x.type===type);enterRoom(r.x,r.y,'W');readyT=0;fadeT=0;roomFade=0;return r;};
   const lunger=(r,x,y)=>{const e=spawnEnemy(false,r,x,y,'lunger');e.noticeTimer=0;e.aggroTimer=0;r.enemies.push(e);return e;};
   // walk into the way out of a cleared boss room, the way a player does: arrive at it, not teleport
@@ -281,23 +114,7 @@ if(new URLSearchParams(location.search).has('test')) (function(){
   const clearRecords=()=>{for(const k of REC_KEYS){try{localStorage.removeItem(k);}catch(e){}} loadRecords();};
   const playerSpeedForTest=()=>0.935*PLAYER_MOVE;
 
-/* THE PLAYER'S TOP SPEED, MEASURED AT RUN TIME - NOT WRITTEN DOWN.
-
-   `playerSpeedForTest()` above is 0.935*PLAYER_MOVE = 1.122, which is the player's BASE speed. It is
-   the right denominator for "can the player still move" and the wrong one for "can a pack catch them",
-   because the tick's real top speed is `player.speed * (1 + moveSpeedBonus())` and against a pack
-   the player is FASTER still, because the momentum meter fills from being chased and being shot at.
-
-   These were hard-coded numbers - 1.4025 and 1.6045 - and the first one was wrong: measured, the
-   empty-room top speed is 1.4041. It was 0.1% off, which is why nobody caught it, and it is wrong in
-   the direction that matters, because a bound written against it is 14% optimistic on top of the 43%
-   it is optimistic about by quoting 1.122. A number written in a comment cannot disagree with the
-   game; a number written in an array can, and this one did, for as long as it was there.
-
-   So both are MEASURED here, by the same probe `tools/perf-baseline.js` uses, and the literals that
-   follow are checks on the measurement rather than substitutes for it. Every Brunch bound in this
-   file is a multiple of the chased figure - which is why 1.35 read as "1.20x the player, decisive"
-   while the pack could not close a gap at all, and why it had to be raised twice before it worked. */
+/* THE PLAYER'S TOP SPEED, MEASURED AT RUN TIME - NOT WRITTEN DOWN. [h:99-tests-17] */
 let _TOP_SPEED_CACHE=null;
 const measuredTopSpeed=(meterFull)=>{
   if(_TOP_SPEED_CACHE){
@@ -310,27 +127,14 @@ const probeTopSpeed=(meterFull)=>{
   startGame(7);
   const rm=currentRoom(); rm.enemies.length=0; rm.pickups.length=0; projectiles.length=0;
   readyT=0; fadeT=0;
-  /* IN A ROOM BIG ENOUGH FOR THE RUN. This probe holds one direction for three seconds and the
-     standard room is 700px wide, so at 1.6px/tick the player crosses it in 0.44s - hits the east
-     wall and stops, and then measures a wall, not a top speed. That is what made the numbers read
-     1.1734 and 0.2832: both are the player pressed against a wall with the velocity zeroed. The
-     same shape of error as the Brunch fixture that measured a wall-pinned pack. */
+  /* IN A ROOM BIG ENOUGH FOR THE RUN. [h:99-tests-18] */
   rm.bounds=roomBounds(60000,4000); rm.cx=rm.bounds.l+rm.bounds.w/2; rm.cy=rm.bounds.t+rm.bounds.h/2;
   rm.doors={}; rm.spawned=true; rm.cleared=true;
   syncRoomBounds();
   player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.hp=player.maxHp;
   for(const k of Object.keys(keys)) delete keys[k];
   keys={d:1};
-  /* HOLD THE METER, WITH THE INSTRUMENT THAT EXISTS FOR IT.
-     `Momentum.hold(v)` (06-stats.js:270) pins the meter and is honoured by `Momentum.level()`,
-     which is the only reader. Writing `player.momentum` directly does nothing to the reading,
-     because the level comes from `Stats.value('momentum')` - so this probe measured an empty room
-     twice and reported 1.4025 for both.
-
-     Its own comment records this exact failure: "the measurement reported an identical number for
-     momentum 0 and momentum 1 without anybody noticing that both columns were the same column."
-     The instrument was built, documented, and then bypassed by the probe written after it. Hold is
-     released in a finally so a failing assertion cannot leave the meter pinned for the next test. */
+  /* HOLD THE METER, WITH THE INSTRUMENT THAT EXISTS FOR IT. [h:99-tests-19] */
   Momentum.hold(meterFull?1:0);
   try{
     for(let t=0;t<210*3;t++) update();
@@ -348,54 +152,17 @@ const probeTopSpeed=(meterFull)=>{
 const EMPTY_ROOM_TOP_SPEED=()=>measuredTopSpeed(false), CHASED_PLAYER_SPEED=()=>measuredTopSpeed(true);
 const TOP_SPEED_BAND=0.05;
 
-  /* AIM AT A WORLD POINT. Every fixture in this file used to say `mouse.x=e.x; mouse.y=e.y`, which
-     reads as obvious and is the reason a real bug survived 163 checks.
-
-     `mouse` is the CURSOR, in screen space - that is what the DOM handler produces and what the
-     weapon bench hit-tests against. The fixture was writing a WORLD position into it, and the game
-     was reading a world position out of it, so the test and the bug agreed perfectly: aiming worked
-     in the suite and was wrong on screen, by between 0.34 and 21.28 degrees depending on where the
-     cursor was. The agreement was the accident, and only one of the two sides of it was real.
-
-     So the frame is now stated at every call. `pointAt(e.x,e.y)` means "put the cursor over this
-     world point", which is what a fixture always meant, and it cannot be got quietly wrong again:
-     a fixture that meant a screen position now has to say so. */
+  /* AIM AT A WORLD POINT. [h:99-tests-20] */
   const pointAt=(x,y)=>{ updateCamera(); mouse.x=x-cam.x; mouse.y=y-cam.y; };
 
-  /* PIXELS ARE SAMPLED IN SCREEN SPACE, from a WORLD position, and every test that looks at a
-     rendered pixel goes through here.
-
-     getImageData reads the framebuffer, which is the screen, and the game is drawn in world space
-     under a camera transform. So a test that samples at a body's world x/y was correct only while
-     the camera was the identity - which it was, for every room that fit on screen, and stopped being
-     the moment a room was allowed to be bigger than the viewport. That is the same class of bug as
-     every other stale-derived-value in this file: a thing that was true because of an accident of
-     the current numbers, and stops being true the moment a number moves.
-
-     Doing the conversion in one helper rather than at each call site is also what stops a second
-     reader of the same idea from appearing: the conversion is the kind of arithmetic that is easy to
-     get backwards, and backwards it samples empty floor and reports a hit that is not there. */
+  /* PIXELS ARE SAMPLED IN SCREEN SPACE, from a WORLD position, and every test that looks at a rendered pixel goes through here. [h:99-tests-21] */
   const px=(v)=>Math.round(v-cam.x), py=(v)=>Math.round(v-cam.y);
   const pixelsAtWorld=(x,y,w,h)=>{
     updateCamera();
     return ctx.getImageData(px(x),py(y),w,h).data;
   };
 
-  /* THE CHARACTER IS NEUTRALISED FOR WEAPON TESTS, and this one helper exists because a starting
-     class put +3 Strength on every pellet of every gun and quietly broke fifteen checks.
-
-     A character is a new input to the damage pipeline. A test that measures a falloff curve, a
-     pierce ratio or a boss time-to-kill is measuring the WEAPON, and with a Wyrd's Strength in the
-     pipeline it is measuring the Wyrd instead - the Scatter's volley came out at 44.8 raw damage
-     against a stated 20.8, which is exactly 20.8 plus 3 on each of 8 pellets, and a test asserting
-     20.8 was not wrong about the Scatter so much as measuring something else.
-
-     So the weapon tests call this first, and they measure the weapon. What the class contributes is
-     not thereby untested: there is a dedicated check that a class's Strength lands on a real shot,
-     because a class that did nothing would pass every one of these and ship.
-
-     Note it subtracts rather than resets, so it also works mid-test after a build has been applied -
-     a test can give itself items, strip the character, and be measuring exactly one thing. */
+  /* THE CHARACTER IS NEUTRALISED FOR WEAPON TESTS, and this one helper exists because a starting class put +3 Strength on every pellet of every gun... [h:99-tests-22] */
   const noCharacter=()=>{
     for(const k of Stats.ORDER){
       const b=Stats.baseOf(k);
@@ -404,10 +171,7 @@ const TOP_SPEED_BAND=0.05;
   };
 
   test('the player top speeds a chase is measured against are measured, not written down',()=>{
-    /* These three live in a TEST and not at module scope on purpose. At module scope they ran
-       while this file was being parsed, before the ?test harness existed - so a mutation
-       anywhere near them hung the loader for the full 240s instead of failing an
-       assertion, which is the most expensive way there is to report a wrong number. */
+    /* These three live in a TEST and not at module scope on purpose. [h:99-tests-23] */
 ok(Math.abs(EMPTY_ROOM_TOP_SPEED()-1.4041)<TOP_SPEED_BAND,
   'the player empty-room top speed measures '+EMPTY_ROOM_TOP_SPEED().toFixed(4)+' against the '
   +'1.4041 this block was written against - outside 0.05, so either the tick acceleration changed '
@@ -537,11 +301,7 @@ ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED
     Content.resetMods();
     delete HOOKS.on_hit_bonus_damage;
   });
-/* A fingerprint of everything the RUN stream decides: the shape of the dungeon, and for every
-     ordinary room the bodies it rolled - their types and their positions. Spawns are placed on
-     room entry rather than at generation, so this has to walk in and let each room roll, in a
-     fixed order, or the second half of the fingerprint would always be empty and the test would
-     pass for the wrong reason. */
+/* A fingerprint of everything the RUN stream decides: [h:99-tests-24] */
   const probeRun=()=>{
     const all=Object.values(rooms).slice().sort((a,b)=>(a.y*64+a.x)-(b.y*64+b.x));
     let s=all.length+'|';
@@ -556,35 +316,11 @@ ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED
     }
     return s;
   };
-  /* `startGame(seed)` is now how a run is STARTED AT A KNOWN SEED, and it reseeds the generator before
-   it builds anything. This used to be `Rnd.set(seed); startGame();` - two statements, with startGame
-   deliberately NOT touching the generator, which is what let pressing R produce a different dungeon
-   under the same code.
-
-   So every fixture that meant "build the dungeon for this seed" said two things when it meant one,
-   and the second one was quietly ignored. Written as the single call the game itself makes, a
-   fixture cannot drift from the behaviour it is checking again. */
+  /* `startGame(seed)` is now how a run is STARTED AT A KNOWN SEED, and it reseeds the generator before it builds anything. [h:99-tests-25] */
   const runAt=seed=>{startGame(seed);return probeRun();};
 
   test('a seed replays the same FIGHT, not just the same dungeon',()=>{
-    /* The dungeon is not the run. Two cursors live at MODULE scope in 20-world.js - FLANK_CURSOR, which
-       decides which slice of the circle the next lunger takes, and PACK_CURSOR, which hands out wall
-       identities - and neither was reset by startGame. They are correct WITHIN a run and wrong ACROSS
-       one: the second run from a seed began with the golden-angle walk already part-way round.
-
-       Measured, same seed and same commands twice, before the fix:
-
-           run 1   flank 0.00 2.40 4.80 ...   lunger at 401, 414, 430
-           run 2   flank 0.35 2.75 5.15 ...   lunger at 398, 411, 427
-
-       Same rooms, same bodies, same everything the fingerprint below can see - and a different fight,
-       because a lunger approaching from a different angle is a different fight. The first run of a
-       session played differently from the second, so a friend comparing runs got a difference with no
-       seed to explain it. That is the one thing a seed cannot be asked to absorb.
-
-       So the check is a PLAYED fingerprint rather than a generated one: build the world, enter a room,
-       play six hundred ticks of the same held key, and compare where every body ended up. A test that
-       only compared the dungeon would have passed throughout - `runAt` above does exactly that. */
+    /* The dungeon is not the run. [h:99-tests-26] */
     const play=(seed,ticks)=>{
       startGame(seed);
       const n=Object.values(rooms).find(r=>r.type==='normal');
@@ -607,13 +343,7 @@ ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED
     eq(play(12345,600),a,'the third run from the same seed differed from the first two');
     // and the reset must not flatten the seed space: neighbours still have to play differently
     ok(play(12346,600)!==a,'two different seeds played the identical fight');
-    /* AND THE RESET IS THE RUN'S, NOT THE FLOOR'S. descend() must not call it: a pack id is unique within
-       a RUN, and clearing it mid-run would let a body outlive a room transition and end up sharing a
-       formation with a pack it has never met - which is exactly what the original comment on those
-       counters was defending. The scope is the run.
-
-       Asserted on the pack ids, which are the thing that actually has to stay unique: descending and
-       then spawning more bodies must not hand out an id the run has already used. */
+    /* AND THE RESET IS THE RUN'S, NOT THE FLOOR'S. [h:99-tests-27] */
     startGame(12345);
     const perId=new Map();
     const collect=()=>{
@@ -629,10 +359,7 @@ ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED
     collect();
     const floor1Ids=perId.size;
     ok(floor1Ids>0,'floor 1 handed out no pack ids at all, so nothing below is being checked');
-    /* THROUGH A REAL FLOOR CHANGE. Setting `run.floor` does not regenerate anything - descend() is what
-       calls generateDungeon - so the first version of this asserted on the same dungeon twice and saw
-       no new ids, and read it as "descending does nothing". It calls descend() because that is the path
-       a player takes and the one that has to keep the counters running. */
+    /* THROUGH A REAL FLOOR CHANGE. [h:99-tests-28] */
     descend();
     collect();
     ok(perId.size>floor1Ids,'descending to floor 2 added no new pack ids ('+floor1Ids+' -> '+perId.size+
@@ -694,10 +421,7 @@ ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED
   });
 
   test('the run stream cannot be reached by the jitter or the art, or by playing the game',()=>{
-    // THE POINT OF THE WHOLE EXERCISE. If any non-run draw shared the run's stream then adding an
-    // enemy behaviour, or touching the art, would silently renumber every future seed - and the
-    // first person to find out would be a friend who pasted a seed and got a different dungeon,
-    // who would then conclude the feature was broken rather than that it had rotted.
+    /* THE POINT OF THE WHOLE EXERCISE. [h:99-tests-29] */
     const base=runAt(12345);
 
     // burning the cosmetic streams to death must not move a single stone
@@ -724,10 +448,7 @@ ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED
   });
 
   test('every seed produces a dungeon a player can actually walk',()=>{
-    // A seed system hands the player a number and a promise. The promise has to hold for all of
-    // them, not for the one the test happens to use - so this is the check that the GENERATOR is
-    // sound, across the whole seed space, rather than that one dungeon happens to be fine. 300
-    // seeds is enough to have caught a degenerate draw more than once.
+    /* A seed system hands the player a number and a promise. [h:99-tests-30] */
     let worst=0;
     for(let n=0;n<300;n++){
       const seed=(n*2654435761)>>>0;
@@ -753,11 +474,7 @@ ok(Math.abs(CHASED_PLAYER_SPEED()-(player.speed*(1+moveSpeedBonus())))<TOP_SPEED
     ok(worst<=24,'a seed built '+worst+' rooms, which is past the point where a run is a game');
   });
 test('typing a seed goes into the field and not into the game',()=>{
-    // The suppressor that stops the game seeing keys while an overlay is open runs in the CAPTURE
-    // phase on window, which is ahead of every element in the tree. Without an exemption for the
-    // field, the stopPropagation there means the input never sees a keystroke at all - a text box
-    // that accepts nothing, and no error anywhere, because from the browser's point of view nothing
-    // is wrong. This is the whole test: that box has to take letters.
+    /* The suppressor that stops the game seeing keys while an overlay is open runs in the CAPTURE phase on window, which is ahead of every element in... [h:99-tests-31] */
     startGame();
     seedClose();
     state='start';
@@ -793,10 +510,7 @@ test('typing a seed goes into the field and not into the game',()=>{
   });
 
   test('a typed seed is used, a mistyped one is refused in place, and an empty one is a new dungeon',()=>{
-    // The loop this exists for: read a seed off somebody's summary, type it in, get that exact
-    // dungeon. Three cases, and the middle one matters most - a mistyped seed that quietly started
-    // a random dungeon instead would make the whole feature feel broken, with nothing on screen
-    // saying why.
+    /* The loop this exists for: [h:99-tests-32] */
     startGame();
     seedClose();
     const inp=document.getElementById('seedInput'), err=document.getElementById('seedErr'),
@@ -830,14 +544,7 @@ test('typing a seed goes into the field and not into the game',()=>{
   });
 
   test('surfaces the player reads are baked once instead of rebuilt every frame',()=>{
-    // Two bugs of exactly the same shape lived here, and neither announced itself.
-    //
-    // paperTex looked its result up in woodCache under a 'paper' key, which can never collide with
-    // a 'wood' key, so it missed every single time. drawRunSummary calls it once per frame: 3360
-    // noise iterations and about ten thousand draws, sixty times a second, on the death screen.
-    // Worse than the cost: the speckle came from the art stream each time, so the paper SHIMMERED.
-    // eq() on two object references is the whole assertion - a texture that re-bakes is a different
-    // object every frame, and this fails the moment somebody reintroduces the mistake.
+    /* Two bugs of exactly the same shape lived here, and neither announced itself. [h:99-tests-33] */
     eq(paperTex(420,320),paperTex(420,320),'the paper is re-baked on every call');
 
     const tag=seedTagArt(172,52,'ABC1234');
@@ -861,40 +568,24 @@ test('typing a seed goes into the field and not into the game',()=>{
     eq(state,'gameover','ending a run did not reach the summary screen');
     eq(lastRun.seed,Rnd.encode(4242),'the summary did not record which seed produced the run');
     ok(/^[0-9A-Z]{7}$/.test(lastRun.seed),'the recorded seed is not something a player could type back in: '+lastRun.seed);
-    /* AND THE ROOT, NOT WHATEVER THE GENERATOR HAPPENS TO HOLD. The summary read `Rnd.seedText`, which
-       after a descent is floorSeed(root, floor) rather than the root - so a player who died on floor 3
-       was handed a code that reproduces somebody else's floor 3. Since the summary is the artefact you
-       send to a friend, that is the one place where printing the wrong number breaks the feature. */
+    /* AND THE ROOT, NOT WHATEVER THE GENERATOR HAPPENS TO HOLD. [h:99-tests-34] */
     startGame(4242);
     Rnd.set(Rnd.floorSeed(run.rootSeed,run.floor+1));   // what descend() does
     endRun(false);
     eq(lastRun.seed,Rnd.encode(4242),'after a descent the summary printed the FLOOR seed ('+lastRun.seed+
       ') instead of the run seed the player would type to replay this dungeon');
-    // and it has to FIT. stampText centres on its x, so a value right-aligned by centring hangs
-    // half its width over the paper and the last character falls off the edge - which prints
-    // "000039" for a seed that is "000039U", and a seed missing a character is a dungeon that will
-    // not replay. The summary is a pixel layout, so this is checked as one.
+    /* and it has to FIT. [h:99-tests-35] */
     const pw=440,px=(W-pw)/2,L=px+36,R=px+pw-36;
     const vw=stampWidth(ctx,lastRun.seed,15,2.6);
     ok(R-vw>=L,'the seed is '+vw+'px wide and hangs off the right margin of the sheet, so the last character is clipped');
     ok(L+ctx.measureText('Seed').width+20<R-vw,'the Seed label and its value collide on one line');
   });
 test('a stat is derived from base every time, so removing an item removes exactly its share',()=>{
-    /* THE rule the whole item system stands on. If a build is applied by multiplying into the live
-       value, then after twenty items the number is a product applied in an order nobody can
-       reproduce, and taking one item off does not take its effect off. The build cannot be explained
-       to the player, cannot be saved, cannot be compared, and no bug report can be acted on because
-       the wrong thing is not the wrong line.
-
-       The sharpest form of the check is not that the maths is right - it is that the base constant
-       in the game is never touched at all. */
+    /* THE rule the whole item system stands on. [h:99-tests-36] */
     startGame();
     const baseSpeed=player.speed;
     Stats.reset();
-    /* A fresh run is now the CHARACTER'S SHEET, not a row of zeroes - the Wyrd starts with 3
-       Strength, 25% speed, 1 Intelligence and 8 Vigor. So "clean" means the class baseline, and the
-       assertion is written against baseOf() rather than a literal 0, which means a second class with
-       different numbers needs no edit here at all. That is the whole reason the class exists as data. */
+    /* A fresh run is now the CHARACTER'S SHEET, not a row of zeroes - the Wyrd starts with 3 Strength, 25% speed, 1 Intelligence and 8 Vigor. [h:99-tests-37] */
     eq(Stats.value('strength'),Stats.baseOf('strength'),'a fresh run did not start from its character\'s sheet');
     ok(Stats.baseOf('strength')>0,'the class starts with no Strength, so the sheet is a row of zeroes '+
        'and a player has nothing to read');
@@ -918,26 +609,15 @@ test('a stat is derived from base every time, so removing an item removes exactl
   });
 
   test('nothing stacks past the speed ceilings, however many items go in',()=>{
-    /* Two ceilings and the difference is the point. SPEED_CAP is the most items may give, so a Speed
-       item always has a readable value; MOVE_SPEED_HARD_CAP is the most ANYTHING may give, so a
-       player with every speed item and a full meter still cannot outrun the gunner. The clamp is on
-       the DERIVED value rather than on each modifier, because capping inputs would make each item
-       quietly worth less than its number the moment a second one arrived. */
+    /* Two ceilings and the difference is the point. [h:99-tests-38] */
     startGame();
     Stats.reset();
-    /* First, the degenerate case that the first version of this model had. Aggregation was
-       (base+flat) * product(1+mult), and Speed's base is 0 because the real base is PLAYER_MOVE and
-       it lives on the player - so a Speed item multiplied zero and the stat stayed at exactly 0. The
-       item was equipped, named on the sheet, and did nothing whatsoever. Only the arithmetic said so;
-       nothing threw, and the bar simply never moved. */
+    /* First, the degenerate case that the first version of this model had. [h:99-tests-39] */
     Stats.flat('speed',0.06);
     ok(Stats.value('speed')>0,'a 6% Speed item produced a bonus of '+Stats.value('speed')+
        ' - an equipped item that does nothing is worse than a missing one, because the player is '+
        'told they have it');
-    /* The ITEM'S SHARE, not the total. The Wyrd starts at 25% speed, so moveSpeedBonus() is 31% with
-       the item on and 25% without, and asserting 6 was asserting a thing that was never true about
-       the stat - it was true about the stat when the character started at nothing. The delta is what
-       the item did, and it is the only part the item is responsible for. */
+    /* The ITEM'S SHARE, not the total. [h:99-tests-40] */
     eq(Math.round((moveSpeedBonus()-Stats.baseOf('speed'))*100),6,
        'a 6% Speed item adds '+(Math.round((moveSpeedBonus()-Stats.baseOf('speed'))*100))+
        '% over the character baseline, so an equipped item is quietly worth less than its number');
@@ -955,25 +635,7 @@ test('a stat is derived from base every time, so removing an item removes exactl
        'tuning was measured against');
     ok(MOVE_SPEED_HARD_CAP<SPEED_CAP+MOMENTUM_SPEED,'the hard cap is above what items and a full '+
        'meter can actually reach, so it is a ceiling on nothing');
-    /* THE METER'S SPEED GIFT IS AN ABSOLUTE AMOUNT, and this asserts the distinction rather than
-       trusting a comment to carry it.
-
-       The balance file's paragraph on the meter described the contribution as "5%" and named the
-       number 0.05, while the constant beside it was 0.18. Both halves were wrong.
-
-       THE UNIT IS THE THING THAT WAS MISUNDERSTOOD, and this is why it is worth a test.
-       `moveSpeedBonus()` returns `Stats.value('speed') + Momentum.level()*MOMENTUM_SPEED`, and the
-       tick uses it as `(1+moveSpeedBonus())` - so the whole quantity is a MULTIPLIER FACTOR, not a
-       speed. The Wyrd starts at a 0.25 speed stat, which is why a naive read of the bonus as "a
-       percentage of the stat" makes 0.18 look like 72% of the character. It is not: 0.18 on a 0.25
-       base is 0.43 inside `(1+x)`, i.e. 18% more speed than the base alone, and the whole thing is
-       then clipped by MOVE_SPEED_HARD_CAP.
-
-       That is why the comment said 5% and was wrong in a way nobody caught: 18% is close enough to
-       "a small share" to read as one, and the constant was changed at some point without the prose
-       moving with it. Measured, at the starting build: 283.8px/s with the meter empty, 294.5px/s
-       full - a gain of 3.8%, not 18%, because at that build the multiplier is further from 1 than the
-       raw points suggest and the acceleration half dominates what the player actually feels. */
+    /* THE METER'S SPEED GIFT IS AN ABSOLUTE AMOUNT, and this asserts the distinction rather than trusting a comment to carry it. [h:99-tests-41] */
     {
       Stats.reset();
       const baseBonus=moveSpeedBonus();
@@ -999,11 +661,7 @@ test('a stat is derived from base every time, so removing an item removes exactl
   });
 
   test('Momentum charges on ground covered under pressure, and on nothing else',()=>{
-    /* Four cases, and the one that took a rewrite is the third. The meter is meant to answer "is the
-       player playing well", so it has to distinguish a player who is moving from a player who is
-       trying to. The first version charged on velocity - and clampPlayer() stops a body's position at
-       a wall while leaving its velocity pointing into it, so a player pinned against a wall with
-       bodies alive reported full speed indefinitely and farmed the meter without covering ground. */
+    /* Four cases, and the one that took a rewrite is the third. [h:99-tests-42] */
     Momentum.unlock();
     startGame();
     const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
@@ -1047,14 +705,7 @@ test('a stat is derived from base every time, so removing an item removes exactl
     startGame();
     Momentum.set(1);
     Momentum.hit();
-    /* THE COST IS A RANGE, not a literal. This test used to pin 450 because MOMENTUM_HIT_KEEP was
-       0.45, and when the constant was retuned to 0.55 the test failed as though the constant were
-       the specification. It is not - the specification is "a hit costs the cushion and not the run".
-
-       So it is asserted as a cost, measured from the meter itself, and checked against a band wide
-       enough to survive a retune and narrow enough to catch a regression. A penalty of 0 would be a
-       free hit; a penalty of 0.9 would throw a good fight off the scale, which is the failure the
-       comment above it describes. */
+    /* THE COST IS A RANGE, not a literal. [h:99-tests-43] */
     const cost=1-Momentum.value();
     ok(cost>0.30&&cost<0.60,'a hit cost '+(cost*100).toFixed(0)+'% of the meter, which is outside '+
        'the 30-60% band: below that a hit is free and the meter stops being worth protecting, above '+
@@ -1095,10 +746,7 @@ test('a stat is derived from base every time, so removing an item removes exactl
          '", which is not one the sheet knows how to draw');
       eq(typeof s.value,'number','stat '+s.key+' has no numeric value');
     }
-    /* Every kind the model defines has to be used by something, and every stat has to use one it
-       defines. NOT "six stats, six kinds" - Strength and Vigor are both plain quantities and that is
-       correct. What must not happen is a kind that exists in the model and no stat ever uses, which
-       is a door left in the type system with nothing behind it. */
+    /* Every kind the model defines has to be used by something, and every stat has to use one it defines. [h:99-tests-44] */
     const kinds=[...new Set(sheet.map(s=>s.kind))].sort().join(',');
     eq(kinds,['add','key','meter','roll'].sort().join(','),'the kinds actually in use ('+kinds+
        ') and the kinds the model defines have drifted apart, so either a stat is typed wrongly or '+
@@ -1116,10 +764,7 @@ test('a stat is derived from base every time, so removing an item removes exactl
        'can still fail silently somewhere');
   });
 test('the character sheet shows every stat, and re-reads the build each time it opens',()=>{
-    /* A sheet that renders once and then goes stale is worse than no sheet, because it is confidently
-       wrong: the player makes a decision from a number the game is not using. The rows are rebuilt on
-       open rather than kept live, so the thing to test is that rebuilding actually re-reads Stats -
-       and that an unchanged build shows no invented contribution. */
+    /* A sheet that renders once and then goes stale is worse than no sheet, because it is confidently wrong: [h:99-tests-45] */
     startGame();
     Stats.reset();
     setPaused(true);
@@ -1132,18 +777,7 @@ test('the character sheet shows every stat, and re-reads the build each time it 
       return out;
     };
     let sheet=read();
-    /* MOMENTUM IS NOT A SHEET ROW ANY MORE, and these two assertions used to say the opposite.
-
-       They asserted the sheet drew every stat the model defines, and that Momentum was marked `earned`
-       so it would read as the one number you earn rather than pick up. Both were written when the
-       meter lived here, and both encoded a decision that has since changed - a stat the player cannot
-       act on does not belong on the screen that answers "what am I carrying", and a PAUSE screen is
-       the worst place for the one number whose whole appeal is watching it move while you fight. It
-       is on the HUD now, and the tutorial that explained it is gone.
-
-       So the sheet's contract is "every stat EXCEPT momentum", and the interesting part is that the
-       exclusion is asserted rather than assumed: a stat silently vanishing off the sheet is the
-       failure this file has the most of, and momentum is now the one that has to be checked. */
+    /* MOMENTUM IS NOT A SHEET ROW ANY MORE, and these two assertions used to say the opposite. [h:99-tests-46] */
     const wantOnSheet=Stats.ORDER.filter(k=>k!=='momentum');
     eq(Object.keys(sheet).length,wantOnSheet.length,'the sheet drew '+Object.keys(sheet).length+' rows but the model has '+wantOnSheet.length);
     eq(Object.keys(sheet).sort().join(','),wantOnSheet.slice().sort().join(','),
@@ -1191,29 +825,7 @@ test('the character sheet shows every stat, and re-reads the build each time it 
     setPaused(false);
   });
 test('a shooter cannot be stared at: a straight line and a human reversal are both answered',()=>{
-    /* The user's report was that a shooter could be survived indefinitely by dodging, and that it
-       backed away uselessly rather than ever being a threat. Both halves were true, and the cause was
-       not the retreat - there is a brake that stops a body at its line, so it settles at 250px and
-       holds - it was that NOTHING about a shooter punished a reversal.
-
-       The shooter shares its entire firing branch with the gunner. Both read one signal about the
-       player, SWERVE, and both use it to shrink their lead. That signal was decaying with a half-life
-       of sixty-three ticks, about a third of a second, which registers a player reversing four times
-       a second and washes out completely for one reversing at a human rhythm. Measured average swerve:
-       0.85 at a 0.12s reversal, 0.17 at 0.25s, 0.04 at 0.95s. So the enemies read a player who does
-       not exist and were blind to the one who does.
-
-       The numbers below are the fix, measured through the same fixture as the gunner test beside it -
-       which is the point of deriving this one from that one rather than writing a fresh probe. An
-       earlier probe of this said a straight runner was hit 65% of the time, and the figure was wrong
-       twice over: it never cleared the ready window, and it let the shooter fire while the player was
-       pinned in place, which is a shot correctly aimed at somebody standing still. Both are the
-       failures the gunner fixture documents at length, and neither was visible in the output - they
-       were only visible as a number that disagreed with a test.
-
-       SWERVE is 0 for a player holding a line, so a runner is unaffected by any of this: it is read as
-       perfectly, and it is punished. That is the claim worth making, because a fix that helps reversers
-       by making everyone less readable would be a fix in the wrong direction. */
+    /* The user's report was that a shooter could be survived indefinitely by dodging, and that it backed away uselessly rather than ever being a threat. [h:99-tests-47] */
     const THR=PLAYER_HIT_R+5;
     const rate=a=>a.filter(x=>x.d<=THR).length/Math.max(1,a.length);
     const show=a=>'['+a.map(x=>x.d.toFixed(0)).join(' ')+']';
@@ -1276,63 +888,17 @@ test('a shooter cannot be stared at: a straight line and a human reversal are bo
        '% of the time at 200px ('+show(line200)+'), so walking in a line is free');
     // the actual claim: a quarter-second reversal has to be answered. It measured 13% before the
     // swerve decay was fixed, which is the state the player reported as unlosable.
-    /* At 300px the shot is only a fifth of the time, and lowering how much a walking shooter believes
-       a reverser - 1.0, then 0.45, then 0.28 - moved the two-hundred-pixel case all the way and left
-       this one flat at 21%. That is the useful part: it says the residual here is NOT a belief
-       problem. A shell from 300px is in the air for a hundred and thirty-six ticks against a
-       hundred-and-four-tick oscillation, and a single lead cannot solve that however much the shooter
-       trusts the read - the target genuinely is somewhere else by the time it arrives.
-
-       So the claim is a floor on a pre-existing property rather than a fix: reversing was 13% here
-       before the shooter started walking and is 21% now, so the movement change made the long-range
-       reverser slightly WORSE, not better, and that is the honest result to carry into playtesting.
-       Whether a three-hundred-pixel reverser being a seventy-nine-percent dodge is acceptable is a
-       design question, not a tuning one, and it is flagged rather than quietly tuned away. */
+    /* At 300px the shot is only a fifth of the time, and lowering how much a walking shooter believes a reverser - 1.0, then 0.45, then 0.28 - moved the... [h:99-tests-48] */
     ok(rate(rev300)>=0.12,'a player reversing every quarter second is still hit '+
        (rate(rev300)*100).toFixed(0)+'% of the time at 300px ('+show(rev300)+
        '), so a shooter can be stared at by dodging, which is the whole thing this fixes');
     // Inside the deadzone neither behaviour may be an escape, and that is a claim about both numbers
     // rather than about the gap between them. Comparing them was the wrong assertion: it made an
     // eight-point difference on twelve repetitions read as a strategy, which it is not.
-    /* The deadzone claim, and it is now a claim about the MOVING shooter rather than the rooted one.
-
-       This measurement is genuinely unstable at twelve repetitions - the same settings returned 10%,
-       21% and 92% - because each rep is close to a single coin flip: the body is chasing a point that
-       is rotating, and a centimetre of difference in where it happens to be when the cast starts
-       decides whether the shell arrives. Asserting a tight band on twelve samples was asserting a
-       coincidence, which is the failure this file has been rewritten several times to avoid. At
-       thirty-six repetitions it settles into a rate: a straight runner 100%, a quarter-second
-       reverser 38% at 200px and 11% at 300px.
-
-       The runner number is the one that must not move. SWERVE is zero for a player holding a line, so
-       a runner is read perfectly and punished, and any fix that helped reversers by making everyone
-       less readable would be a fix in the wrong direction. That is why the claim below is a FLOOR on
-       the reverser and not a comparison of the two: the gap is real, it is the price the movement
-       costs, and it is reported here rather than tuned out of sight.
-
-       Whether a reverser at 38% should feel safer than a runner at 100% is a playtesting question and
-       not one a threshold can settle. What a threshold can do is refuse to regress silently. */
+    /* The deadzone claim, and it is now a claim about the MOVING shooter rather than the rooted one. [h:99-tests-49] */
     ok(rate(line200)>=0.9,'a straight runner is only hit '+(rate(line200)*100).toFixed(0)+
        '% of the time at 200px ('+show(line200)+'), so walking in a line is free');
-    /* THE FLOOR IS 12%, it was 30%, and the fix that caused the drop is now understood.
-
-       A quarter-second reverser measured 38% here when the character had no speed. The Wyrd starts at
-       25% and a full meter adds 18%, so a reverser crosses more ground in the same quarter second
-       and the shooter's intercept - which is solved, not guessed - is solving a target that really
-       has moved further. 16% is the honest measurement of a 43%-faster character, and it is stable:
-       four runs, identical, because the fixture is seeded.
-
-       THE EVIDENCE THAT IT IS THE CHARACTER AND NOT THE FIX, which is worth recording because it is
-       the same shape of argument this file keeps having to make. The velocity-lag fix in the gun
-       solver - reading player.vx instead of a 71-tick-old EMA - moved the COMMITTED straight runner
-       at 200px from 0% to 99%, and left this number at exactly 16%. A fix that improved the solver
-       and did not touch the reverser is the proof that the two are governed by different signals:
-       a settled player is read by the accuracy of their velocity, and a reverser by how little of
-       it should be believed at all. The two are conf and freshness, and they were the same knob.
-
-       Whether a reverser dodging 84% is right is a design question and a threshold cannot settle it.
-       What the threshold can do is refuse to regress silently, and 12% is measured with the cause
-       written down rather than chosen. */
+    /* THE FLOOR IS 12%, it was 30%, and the fix that caused the drop is now understood. [h:99-tests-50] */
     ok(rate(rev200)>=0.12,'a player reversing every quarter second is hit '+
        (rate(rev200)*100).toFixed(0)+'% of the time at 200px ('+show(rev200)+'), against a straight '+
        ' runner at '+(rate(line200)*100).toFixed(0)+'%), so reversing has become far '+
@@ -1341,13 +907,7 @@ test('a shooter cannot be stared at: a straight line and a human reversal are bo
   });
 
   test('a room gets more dangerous as it empties, and it never reads the player',()=>{
-    /* The last body in a room has to do all the work, so it closes and shoots faster. Most rubber
-       bands make a losing position worse; this one makes it sloppier, which is what keeps a room you
-       are losing survivable long enough to be played properly rather than merely survived.
-
-       Both effects are visible - it walks at you, and it fires more often - and that is the only
-       reason it is fair. A hidden accuracy ramp on a lone enemy is indistinguishable from the game
-       cheating, and the number it reads is the ROOM, never the build. */
+    /* The last body in a room has to do all the work, so it closes and shoots faster. [h:99-tests-51] */
     eq(roomPressure(1),1,'a lone body is not at maximum pressure, so the last enemy in a room is the '
        +'safest one, which is the exploit this exists to close');
     ok(roomPressure(5)<roomPressure(1),'pressure does not fall as the room empties, so a pack is more '
@@ -1375,10 +935,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
        multiplies into live values, and twenty items in a run will be unexplainable. */
     startGame(); Items.reset();
     const baseSpeed=player.speed;
-    /* Every assertion below is the class baseline PLUS the item. A Wyrd starts with 3 Strength, so
-       "+1 Strength" is a total of 4, and a test that says 1 is not measuring the item - it is
-       measuring a character that no longer exists. Reading baseOf() rather than a literal means a
-       second character needs no edit here at all. */
+    /* Every assertion below is the class baseline PLUS the item. [h:99-tests-52] */
     const bStr=Stats.baseOf('strength');
     Items.give('heavy_hands');
     eq(Stats.value('strength'),bStr+1,'a +1 Strength item did not give exactly 1 Strength over the character');
@@ -1433,10 +990,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     Items.give('tin_cup');
     const cup=Items.equipped('tin_cup');
     eq(cup.charges,3,'the cup did not arrive with its three charges');
-    // A PRESS AT FULL HEALTH SPENDS NOTHING, and this is the assertion that pins it. It used to heal
-    // nobody, report success, and cost a charge - so two reflexive presses cost half a tin, and from the
-    // player's side the item looked broken rather than the game looking busy. The hook now reports
-    // whether it did anything and the charge follows the answer.
+    /* A PRESS AT FULL HEALTH SPENDS NOTHING, and this is the assertion that pins it. [h:99-tests-53] */
     player.hp=player.maxHp;
     const c0=Items.equipped('tin_cup').charges;
     ok(Items.use('tin_cup')!==null,'a press at full health reported success');
@@ -1464,22 +1018,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(Items.equipped('bone_whistle'),'a reusable item wore out');
   });
 
-  /* ONE ACTIVE, NINE SIGILS, NO CAP ON EITHER MEASURED SEPARATELY.
-
-     The two limits in this system are opposites and it is worth saying which is which. Sigils are
-     uncapped, because nine of them compounding is where the number of possible builds comes from - a
-     cap there would be a statement that some combinations are less worth having. There is exactly ONE
-     active, because a key you press is a decision rather than a fourth number to stack, and because
-     four actives spread over three declared keys used to collide: Bone Whistle and Hunter's Mark both
-     claimed key 1, so the largest build was 12 of 13 and nobody could tell whether that was a rule.
-
-     The per-item `slot` field is gone, which is what actually settles it. Three places used to have to
-     agree about a number - the definition, the build, and the blurb a player reads - and they did not:
-     Lantern Friend was written as slot 2 and described as "Hold 2". With one slot there is nothing to
-     agree about.
-
-     What is asserted here is the SHAPE, measured from the roster rather than as a count, so that adding
-     a fourth active or a tenth sigil makes this test stronger instead of needing editing. */
+  /* ONE ACTIVE, NINE SIGILS, NO CAP ON EITHER MEASURED SEPARATELY. [h:99-tests-54] */
   test('nine sigils with no cap, exactly one active, and a second active displaces the first',()=>{
     startGame(); Items.reset();
     eq(Items.ACTIVE_SLOT,0,'the active slot moved, and the bench plate draws a hard-coded position');
@@ -1515,10 +1054,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(one.dropped===null,'the first active reported displacing something, so something was already there');
     eq(two.dropped,actives[0],'the second active did not report the first as displaced');
     ok(!Items.equipped(actives[0])&&Items.equipped(actives[1]),'both actives ended up held');
-    // 4. Q presses it, and pressing with an empty slot is a no-op rather than an error. The player is
-    //    WOUNDED first, because a hook that reports nothing happened does not spend a charge, and a
-    //    full-health Tin Cup is now exactly that - so a healthy fixture here would be testing the
-    //    decline rather than the press.
+    /* 4. Q presses it, and pressing with an empty slot is a no-op rather than an error. [h:99-tests-55] */
     Items.reset();
     ok(!Items.useActive(),'pressing with no active reported a use, so something answered with empty hands');
     Items.give('tin_cup');
@@ -1553,27 +1089,8 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     }
   });
 
-  /* NOTHING VISIBLE OR LIVE SURVIVES A DOORWAY.
-
-   The room's transient state is four arrays plus the wand's muzzle flash, and `clearTransient` is the
-   one list that holds all of them. `enterRoom` used to clear projectiles and nothing else, so the
-   other three outlived the transition - and because every room's bounds start at the same origin, an
-   effect left behind does not drift into the void beside the next room. It lands in the middle of it.
-
-   That made the hook field a gameplay bug rather than a smear of leftover art: `tickFields` runs
-   against the current room's bodies, so a leaked field charged and stunned an enemy the player had
-   never met, and being charged is what grants hook RESISTANCE. The assertion below is about that
-   charge, because the leftovers are only interesting if something consumes them. */
-  /* THE BINDING ITSELF, dispatched as a real key rather than called.
-
-   Every other test of Q calls Items.useActive(), which proves the function works and says nothing at
-   all about whether anything presses it - and "nothing presses it" is precisely the state this whole
-   system sat in for its entire life: four actives, a working use(), and no key anywhere in the game.
-   So the assertion is on a keydown event going through the real handler.
-
-   It also pins the one behaviour that is easy to get wrong by accident: Q with an empty slot must be a
-   no-op rather than an error, an overlay stealing it, or a dialog opening. A key that fires every time
-   you press it with empty hands is worse than a key that is not there yet. */
+  /* NOTHING VISIBLE OR LIVE SURVIVES A DOORWAY. [h:99-tests-56] */
+  /* THE BINDING ITSELF, dispatched as a real key rather than called. [h:99-tests-57] */
   test('Q presses the active item, through the real key handler',()=>{
     startGame(); Items.reset();
     const held=Items.active();
@@ -1605,50 +1122,9 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
        'so the key is reaching the wrong slot');
   });
 
-  /* THE ACTIVE ITEM'S NAME FITS THE BENCH ROW WHOLE.
-
-     This used to be about THREE labels - the weapon, the item and the alt - fitted against each
-     other, and that layout was abandoned because the row is 147px and the three names come to 210px
-     at full size. The two weapons keep their icons and cooldown sweeps instead, and the footer already
-     reads LMB cast / RMB blast every frame, so the item name is the only one that needed the room and
-     the only one whose full text is not otherwise on screen.
-
-     Two earlier versions of this test passed while the HUD was wrong, so the assertions below are
-     chosen to fail on what actually broke:
-
-       - One re-implemented the budget formula beside the drawing code, so a mutation of the drawing's
-         call site went unnoticed. It now calls fitLabel, which is the function the drawing calls.
-       - One asserted only that labels did not OVERLAP, which passed a mutation that set the gap to
-         zero - touching is not overlapping, but three words jammed together read as one word. It now
-         asserts the layout that was requested, and a 6px gap is what was requested.
-       - One asserted against a hardcoded row width of 190 when the real one is 147, so it was
-         checking a geometry the game does not have. It now reads BENCH_ROW_W, published by drawHUD.
-
-     And the assertion that matters is not "no overlap" but "WHOLE": the defect that actually reached
-     the screen was ARCAN... UNTER'S ... BLAST, a collision fixed by deleting the information, and
-     nothing that only asked about overlap would ever have noticed. */
-  /* THE WARDEN'S BAR, and the four things it has to do that the floating sliver did not.
-
-     The starting point matters, because the first version of this comment claimed the boss had no
-     health bar at all. It had one - 56px, twice a regular body's, riding the body as it walked. The
-     claim was wrong and was caught only because the measurement that produced it used
-     spawnEnemy(false, ...) and quietly got a lunger back. So the tests below assert what the bar
-     DOES rather than that some bar exists, because "a bar exists" was true before and was not
-     sufficient. */
-  /* THE RUN SUMMARY CARD IS SIZED BY ITS CONTENTS, and nothing on it prints outside its own frame.
-
-     The card was `pw=440, ph=380` - three literals - wrapped around content that is a runtime stack of
-     rows at 26px steps. Sixteen rows, a seed line, a rule, a heading and four more rows put the last
-     baseline at y 534 against a card bottom of y 512, so "Dungeons cleared" was printed on the wood
-     BELOW the paper. Nothing was wrong with the arithmetic; the box was a guess beside a computed
-     stack, which is a defect no reading finds and no test that does not measure the last row against
-     the card can catch.
-
-     Then fixing it introduced the same defect one layer in: the RECORDS heading was drawn at
-     `y+RULE_GAP+14` while its own item was only `RULE_GAP*2+2` tall, so the 12px heading's baseline
-     fell 6px past the end of its slot and printed through "Deepest floor". The card had stopped
-     bursting and started colliding. So the assertions below cover BOTH: nothing outside the card, and
-     no two items' text on top of each other. */
+  /* THE ACTIVE ITEM'S NAME FITS THE BENCH ROW WHOLE. [h:99-tests-58] */
+  /* THE WARDEN'S BAR, and the four things it has to do that the floating sliver did not. [h:99-tests-59] */
+  /* THE RUN SUMMARY CARD IS SIZED BY ITS CONTENTS, and nothing on it prints outside its own frame. [h:99-tests-60] */
   test('the run summary card fits its own contents, and the contents fit the canvas',()=>{
     startGame();
     const saved=JSON.parse(JSON.stringify(records));
@@ -1695,34 +1171,13 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('no two items on the run summary draw over each other',()=>{
-    /* The overlap this catches is not the same as the overflow above. A card can contain all of its
-       text and still print two labels on top of each other, which is what happened the moment the
-       card stopped bursting: the heading was positioned by an offset that its own height did not
-       account for. So every item's slot has to be tall enough for what it draws at the y it is
-       given, and the text must not reach into the slot below it.
-
-       The numbers are font metrics, not guesses: a 15px monospace row needs 18px of line box, a 12px
-       heading needs 14px, and each is measured against its declared height. */
+    /* The overlap this catches is not the same as the overflow above. [h:99-tests-61] */
     startGame();
     lastRun={won:false,floor:12,floorTicks:1050,ticks:84521,explored:16,total:18,kills:143,
       dmgTaken:7.5,shots:300,hits:192,weapon:'Arcane Beam',seed:'0VVJ9U',
       newDepth:true,newFastest:false,newRooms:true};
     const lay=summaryLayout(lastRun);
-    /* The condition that matters is not "is the slot taller than the font size" - it is whether one
-       item's glyphs reach into the next one's. A baseline is where text SITS; what collides is the
-       DESCENT of the row above against the ASCENT of the row below. Measured, not guessed:
-
-         bold 12px monospace   ascent 8.0  descent 2.0
-         15px monospace        ascent 10.0 descent 3.0
-
-       So a heading followed immediately by a row needs more than 2+10=12px between their baselines -
-       and the earlier version gave the heading a 29px slot but drew it at an OFFSET inside that slot,
-       which is how "RECORDS" ended up printed through "Deepest floor" while every slot was nominally
-       large enough. An earlier attempt at this test asserted `h >= 14` and passed a mutation that
-       shrank the heading's slot to 16px, because 16 >= 14; the assertion was measuring a number
-       nothing collides over.
-
-       This measures the two halves that actually meet, and requires real air between them. */
+    /* The condition that matters is not "is the slot taller than the font size" - it is whether one item's glyphs reach into the next one's. [h:99-tests-62] */
     const y=[];
     let cur=0;
     for(const it of lay.items){ y.push(cur); cur+=it.h; }
@@ -1770,15 +1225,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
       (headDesc+rowAsc).toFixed(1)+'px toward each other (descent '+headDesc.toFixed(1)+
       ' + ascent '+rowAsc.toFixed(1)+'), so they print on top of each other');
 
-    /* And the DRAWING, not just the layout. The offset bug above was a `fillText('RECORDS',L0,y+22)`
-       in the draw loop, and no assertion about item heights can see it - the layout was correct and
-       the drawing ignored it. Three attempts at this test checked the data and passed the defect,
-       which is the same failure as the earlier one where a test re-implemented the rule instead of
-       calling it: the thing being verified is not the thing being drawn.
-
-       So this reads the drawing function and finds where RECORDS is actually positioned. It is not a
-       substitute for a screenshot, but it fails on the defect that a screenshot found, and it does so
-       without one. */
+    /* And the DRAWING, not just the layout. [h:99-tests-63] */
     const realFill=ctx.fillText;
     const drawn=[];
     ctx.fillText=function(txt,x,y){ drawn.push({txt:String(txt),x:x,y:y}); realFill.call(this,txt,x,y); };
@@ -1803,12 +1250,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     }
   });
 
-  /* THE LAB IS A REAL PLACE, not a mock-up: F2 alone reaches it, and everything on its rail can be
-     taken. Four defects were found by walking into it, and each of them is a class worth a test.
-
-     None of them are subtle from the source. What they share is that the lab was built to LOOK at,
-     so the things that only happen when you USE it were never exercised - which is the standing
-     argument of this project, in its own house. */
+  /* THE LAB IS A REAL PLACE, not a mock-up: [h:99-tests-64] */
   test('the lab is reachable from a key alone, and its shelf items can be picked up',()=>{
     startGame();
     ok(state==='playing','a fresh game is in state '+state);
@@ -1834,14 +1276,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('leaving the lab takes its shelf with it, so no run inherits a free roster',()=>{
-    /* This one hid behind two owners of one field. The shelf rebuilt `r.pickups` by REASSIGNING it
-       while the game's pickup loop in 60-tick held the old array and spliced as it went. Leaving the
-       lab then filtered the new array, so the old one kept its items - and the next run started with
-       free items lying on the floor. The symptom was "3 pickups left after F2" with no plausible
-       cause; the cause was that two things thought they owned the reference.
-
-       So the assertions are about the room's pickups after an actual leave, and the array identity
-       is checked as well - two owners of one field is the whole bug. */
+    /* This one hid behind two owners of one field. [h:99-tests-65] */
     startGame();
     Lab.key('f2',true);
     const r=currentRoom();
@@ -1874,18 +1309,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     for(let i=0;i<4;i++) update();
     const wait=Lab.shelfData()[pk.labShelf].gone;
     ok(wait>0,'the alcove did not start a refill timer');
-    /* THE PLAYER STEPS AWAY FIRST, and that is not tidiness - it is the whole test.
-
-       The alcove refills at the end of its timer and the game consumes a pickup the instant the
-       player touches it. So a test that keeps the player standing on the rail watches the alcove
-       return at zero ticks and get taken again on the next one, which is CORRECT and looks exactly
-       like a shelf that never refills. It cost me two wrong diagnoses: first that the timer was not
-       running (it was, 522 down to 516), then that the refill branch was unreachable (it fires on the
-       tick the timer reaches zero). Measured tick by tick: gone=2,1,0 with the pickup back, then 525
-       again because the player was standing on it.
-
-       So the player moves off the alcove, the timer runs out, and the item is observed to be back -
-       which is the thing a player walking along the rail actually sees. */
+    /* THE PLAYER STEPS AWAY FIRST, and that is not tidiness - it is the whole test. [h:99-tests-66] */
     player.x=pk.x+220; player.y=pk.y; player.lagX=player.x; player.lagY=player.y;
     for(let i=0;i<wait+1;i++) update();
     ok(Lab.shelfData()[pk.labShelf].gone===0,'the alcove timer ran out but the alcove is still marked '+
@@ -1905,22 +1329,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('the lab brazier flame burns in the bowl, and its floor has no lattice over it',()=>{
-    /* Both of these were only ever visible in a screenshot, which is the argument for looking.
-
-       THE FLAME. The brazier and the flame are two separate baked sprites, each centred on its own
-       middle, so the features inside them sit at offsets: the bowl is at o-21 within the brazier, and
-       the flame's BASE is at o+25 within the flame. Drawn at two unrelated offsets those put the
-       flame's base 166px below the bowl - a fifth of a brazier's height - which read as a lit line on
-       the floor beside a stand rather than as fire in a dish.
-
-       The relationship that matters is the only one that means anything: the flame's base must land
-       on the bowl's centre. So the test measures both offsets out of the sprites' own geometry and
-       checks the drawn position against the bowl.
-
-       THE GRID. The lab drew a 120px grid over a floor that is otherwise a seamless speckle. A room
-       1680 wide has 14 of those verticals, and over an untextured background they read as tiles
-       rather than as a ruler on the ground. A dungeon room has NO grid at all - which is exactly why
-       the dungeon floor looks like ground and the lab floor looked like squares. */
+    /* Both of these were only ever visible in a screenshot, which is the argument for looking. [h:99-tests-67] */
     const ga=Lab.gridAlphas();
     // the minor pass must contribute nothing: it is the lattice, and the lattice is what tiled
     ok(ga.minor===0,'the minor grid is still drawn at alpha '+ga.minor+', and a '+
@@ -1929,37 +1338,14 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
 
     // the flame geometry, from the numbers the drawing itself uses
     const G=Lab.BRAZIER_GEOM();
-    /* One invariant, and it is the only one that is checkable without re-deriving the drawing.
-
-       The bowl is baked at sprite row `r - bowlY` in a sprite drawn at `spot - r`, so it lands at
-       `spot - bowlY` - the radius cancels. The flame's base is baked at row `FLAME_BASE_ROW`, so drawn
-       at top T it lands at `T + FLAME_BASE_ROW`. For those to meet, T = `-(FLAME_BASE_ROW + bowlY)`.
-
-       Only the SIGN of the row is asserted here; the magnitude is the pixel measurement's job. Three
-       versions of this test asserted the magnitude and all three were wrong in the same direction,
-       because they were re-expressing the drawing's assumption instead of testing it. The one thing
-       that is cheap and certain is that the base row is ABOVE the sprite's own middle - the flame is
-       baked pointing up, and if that ever inverts the whole shape is wrong. */
+    /* One invariant, and it is the only one that is checkable without re-deriving the drawing. [h:99-tests-68] */
     ok(G.flameBaseRow>G.flameR,'the flame base row is '+G.flameBaseRow+' in a '+(G.flameR*2)+
       '-row sprite whose middle is '+G.flameR+', so the base is '+(G.flameBaseRow-G.flameR)+
       'px BELOW the middle - the flame is baked pointing DOWN');
     ok(G.bowlY>0&&G.bowlY<G.r,'the bowl is '+G.bowlY+'px above the brazier middle, which is inside '+
       'its own '+G.r+'px radius only if it is a real offset ('+(G.bowlY>=G.r?'it is not':'ok')+')');
 
-    /* AND WHAT IS ACTUALLY DRAWN. Everything above computes from the constants, so it cannot see a
-       wrong call site - a mutation that put the flame back at the old y-48 passed all of it, because
-       the constants were still correct while the drawing ignored them. That is the third time in this
-       work that a test verified the data while the defect was in the drawing, and the third time a
-       screenshot found it first.
-
-       So this measures the draw calls themselves. `drawImage` is wrapped for one frame and every
-       flame-sized sprite recorded with its y. It cannot be fooled by a constant that nothing uses,
-       and it does not care how the call is spelled.
-
-       The player is moved onto a brazier first, and that is load-bearing rather than cosmetic: the
-       braziers are laid out from the room's own origin at 175px in and 300px apart, and the camera
-       follows the player, so a test that renders wherever the player happens to be standing may have
-       no brazier in frame at all. "No flame was drawn" is then a true report about the wrong place. */
+    /* AND WHAT IS ACTUALLY DRAWN. [h:99-tests-69] */
     Lab.enter();
     const b=currentRoom().bounds;
     const brX=b.l+175, brY=b.t+175;             // the first brazier the lab places
@@ -1975,30 +1361,9 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(seen.length>0,'no flame sprite was drawn at a brazier the player is standing on ('+
       seen.length+' found), so there is nothing to check');
     if(seen.length){
-      /* THE PIXELS, not the arithmetic. Every version of this assertion that computed from the constants
-         passed while the flame was in the wrong place - wrong by 168px, then 42px, then 11px - because
-         each time the formula and the mistake shared the same wrong idea. A test written from the
-         implementation checks that the implementation agrees with itself, and three of them did.
-
-         So this reads the rendered framebuffer: it finds the warm pixels of the fire and the cool
-         pixels of the metal it sits in, and requires the fire to be up inside the bowl rather than
-         beside it. That is a property of the picture, which is the thing that was actually wrong, and it
-         is the check that finally found it.
-
-         The fire is found by `r > 110 && r > b + 50` - warm and redder than blue. The metal is the
-         remainder of the brazier's own colours, `r < 90 && g < 95 && b < 105`, which is the bowl rim
-         (#464e5c) and the stand (#23262e). Both bands are read from the same 60x120 sample so they are
-         measuring one another's frame of reference. */
+      /* THE PIXELS, not the arithmetic. [h:99-tests-70] */
       const sx=Math.round(brX-cam.x), sy=Math.round(brY-cam.y);
-      /* A NARROW COLUMN and a short window, and that is not incidental. The first version sampled 60x120
-         and found the fire spanning -43..58, which looks like it sits below the bowl - but it was
-         measuring the brazier's RADIAL LIGHT POOL, a warm radial gradient baked into the sprite and
-         336px across, plus the warm floor underneath it. The bowl and the stand are the dark metal in
-         the middle of that.
-
-         So the sample is the stand's own width (10px of rect at o-5..o+5, so 12 columns catches it with
-         margin) and a 70px window around the bowl. Within that window the only warm pixels are the
-         flame, because the light pool is too diffuse to pass `r > 110 && r > b + 50` near the metal. */
+      /* A NARROW COLUMN and a short window, and that is not incidental. [h:99-tests-71] */
       const WD=24, HT=70, x0=sx-12, y0=sy-G.bowlY-30;
       const img=ctx.getImageData(x0,y0,WD,HT).data;
       let warmLo=Infinity, warmHi=-Infinity, metalLo=Infinity, metalHi=-Infinity;
@@ -2024,10 +1389,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
           mBot+' with its middle at '+mMid+', so the flame sits in the lower half of the stand '+
           'rather than in the dish at the top');
       }
-      /* And the constant the drawing uses must be the ROW, which is what flameFrame actually bakes.
-         FLAME_BASE_Y is a distance from the sprite's middle; flameFrame writes `o + FLAME_BASE_Y` with
-         o already the half-size, so the row is FLAME_R + FLAME_BASE_Y. Reading the distance as the row
-         put the fire one whole half-size too low, which is the entire remaining bug. */
+      /* And the constant the drawing uses must be the ROW, which is what flameFrame actually bakes. [h:99-tests-72] */
       ok(G.flameBaseRow===G.flameR+G.flameBaseY,'FLAME_BASE_ROW is '+G.flameBaseRow+
         ' but flameFrame bakes the base at FLAME_R+FLAME_BASE_Y = '+(G.flameR+G.flameBaseY)+
         '. One is a distance from the sprite middle and the other is a row in the sprite, and reading '+
@@ -2036,22 +1398,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     Lab.leave();
   });
 
-  /* THE NUMBERS THE PLAYER READS, and the ones that were arithmetic accidents underneath them.
-
-     Three separate defects, and they are worth keeping apart because only one of them is what it looks
-     like:
-
-     1. `BOSS_SHELL_DMG = SHOT_DMG*0.8` evaluated to **1.4400000000000002**. Seventeen significant
-        digits for a tuning number, and it propagates into every number derived from it. The constant is
-        the intent, 1.44, written out.
-     2. `fmtHearts(21.25)` printed **"10.625 hearts"** - a real total, expressed in a unit the interface
-        cannot draw. Health is measured and DISPLAYED in half-hearts, so anything finer is noise.
-     3. The dev panel printed `toFixed(2)` on derived products, so `0.5+0.66` showed as `1.16` or
-        `1.1600000000000001` depending on the day.
-
-     What is deliberately NOT done: rounding the simulation. A lunger hits for `0.96 * 0.66 = 0.6336`
-     half-hearts, and rounding that to a whole heart makes every hit worth at least one. That is a
-     balance change wearing a formatting costume, and this ladder is fractional on purpose. */
+  /* THE NUMBERS THE PLAYER READS, and the ones that were arithmetic accidents underneath them. [h:99-tests-73] */
   test('displayed damage is rounded to something the interface can draw',()=>{
     /* Half-hearts are the smallest thing the heart plate shows, so half a heart is the smallest thing
        the player has ever been able to read. Anything finer invites the player to check the arithmetic
@@ -2072,15 +1419,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('the simulation is NOT rounded - only the display is',()=>{
-    /* The test for the rounding being presentation rather than a balance change. If health were rounded
-       at the source, a sub-heart hit would become a heart and the whole damage model would shift. This
-       asserts the fractional part SURVIVES into the player's health bar.
-
-       Two fixture details, both of which cost a wrong diagnosis first. `startGame()` leaves the player
-       in invulnerability, and `damagePlayer` returns false on iframes BEFORE it subtracts anything - so
-       the first version of this ran, did nothing, and reported "the lunge did no damage at all" as
-       though the damage model were broken. And the lunger's damage is not on `e.pay`; the field the
-       game uses is LUNGER_PAY through ARMOUR. */
+    /* The test for the rounding being presentation rather than a balance change. [h:99-tests-74] */
     startGame();
     player.iframes=0; player.blinkGrace=0; player.graceSpent=false;
     player.armor=0;                    // no armour, so the fraction reaches the health bar at all
@@ -2145,27 +1484,12 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     // and the bar's numbers are derived from the body rather than assumed
     const rect=bossBarRect();
     ok(rect.w>0&&rect.h>0,'the bar has no size: '+rect.w+'x'+rect.h);
-    /* ON THE CANVAS, which is the property that holds in BOTH places. It used to assert the room's
-       right wall, which is true on a floor and meaningless in a room wider than the screen - and the
-       Lab is the one place this bar is checked by eye. The room's right edge is not where the bar
-       stops; the canvas is. */
+    /* ON THE CANVAS, which is the property that holds in BOTH places. [h:99-tests-75] */
     ok(rect.x>=0&&rect.x+rect.w<=canvas.width,'the bar runs from x '+rect.x+' to '+(rect.x+rect.w)+
       ' on a '+canvas.width+'px canvas, so part of it is off the side of the screen');
     ok(rect.x+rect.w<=ROOM_RIGHT,'on this floor the bar runs past the right wall: '+(rect.x+rect.w)+
       ' against a wall at '+ROOM_RIGHT);
-    /* The bar must be OUT OF THE PLAYING AREA and ON THE CANVAS, and both of those are asserted as
-       geometry rather than as a description of where it is.
-
-       It was first drawn at y 84, straight across the momentum row, and the test for it asked
-       whether it was "above the room" - which was TRUE of the broken version and FALSE of the fix,
-       so a correct fix would have failed. It then moved inside the room's top edge, which cleared the
-       HUD plates and collided with the play area instead, and that was reported as disruptive. The
-       assertions below are the two properties that survived every version: it is on the canvas, and
-       it is not over the room.
-
-       Anchoring is to the CANVAS rather than the room because the Lab's room runs past the bottom of
-       the screen and the camera scrolls - a room-anchored bar is off-screen there by 290px, which is
-       the one place the bar exists to be looked at. */
+    /* The bar must be OUT OF THE PLAYING AREA and ON THE CANVAS, and both of those are asserted as geometry rather than as a description of where it is. [h:99-tests-76] */
     ok(rect.y>ROOM_TOP,'the bar is at y '+rect.y+', which is inside the room (top '+ROOM_TOP+
       '), so it sits in the playing area rather than out of the way of it');
     ok(rect.y+rect.h<=canvas.height,'the bar ends at y '+(rect.y+rect.h)+' but the canvas is only '+
@@ -2178,26 +1502,13 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     // the labels sit ABOVE the bar, so they need room between the bar and the room's floor
     ok(rect.y-6>ROOM_TOP,'the labels sit at y '+(rect.y-6)+', which is inside the room, so the '+
       'caption for the fight is over the play area');
-    /* And it is nowhere near the HUD plates, which are at the top. The plate block is three rows tall
-       and now starts under the top band, so its bottom is the DEPTH plate - the third row - not the
-       first two. This used to stop at HUD_HP_H+HUD_ROW_H, which was already the wrong row: the depth
-       plate hangs 31px below that, so the assertion was passing with 31px of unused margin and would
-       have kept passing if the depth plate had grown twice as tall again. Read as the block's real
-       extent, from the same terms drawHUD lays it out with. */
+    /* And it is nowhere near the HUD plates, which are at the top. [h:99-tests-77] */
     const platesBottom=HUD_BLOCK_Y+HUD_HP_H+HUD_ROW_H+HUD_GAP+HUD_ROW_H+HUD_FRAME;
     ok(rect.y>platesBottom,'the bar is at y '+rect.y+' and the HUD plates end at y '+platesBottom);
   });
 
   test('the boss is drawn with ONE health bar, not two',()=>{
-    /* The boss had a floating bar over its body AND the fixed bar at the bottom of the screen. Two
-       bars for one health is one too many: they disagree the moment both are on screen, because the
-       floating one is 4px and rounded to whole pixels and the fixed one is 10px and notched, and the
-       player has to decide which to believe. It is also redundant with the player's own health bar -
-       the fight had two bars on screen and one of them belonged to a third party.
-
-       So drawBossBar is the ONLY place the boss's health is drawn, and this asserts the exclusion
-       rather than trusting a comment. Every other body keeps its floating sliver: at 4px over a 14px
-       body it is a glance, not a reading, which is the right amount of attention for a Brunch. */
+    /* The boss had a floating bar over its body AND the fixed bar at the bottom of the screen. [h:99-tests-78] */
     startGame();
     const room=currentRoom();
     room.enemies.length=0; room.pickups.length=0;
@@ -2220,25 +1531,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('the bar is sized to the SCREEN, so the Lab gets one too and the floor is unchanged',()=>{
-    /* Two bugs in one rectangle, and they pull in opposite directions.
-
-       The first version read ROOM_W and ROOM_TOP into constants at load time, so the Lab drew a bar
-       sized for a 700px room inside a 1680px one. bossBarRect() fixed that by measuring the room per
-       draw - and introduced the opposite failure: measuring the room per draw in a room that is
-       WIDER THAN THE SCREEN draws a 1640px bar starting at x 70 on a 960px canvas. 750px of it, the
-       flush-right "PHASE n" caption and the right-hand side of both phase notches were off the side
-       of the screen. The Lab is where every tell gets checked, so that is the one place the bar was
-       not visible.
-
-       Neither of those is caught by asserting a WIDTH against the room, which is what this test used
-       to do - and which is why it went green over both defects in turn. So it asserts the property
-       each one violates: the bar fits the canvas it is drawn on, and it fits it the same way in both
-       places.
-
-       FLOOR UNCHANGED is asserted explicitly and exactly. A fix that made the Lab correct by
-       re-anchoring everything to the screen would have widened the floor bar from 660 to 920, moved
-       it 50px left, and every screenshot of a normal run would have changed. The room still decides
-       where the bar sits; only a room wider than the screen gives up its edges. */
+    /* Two bugs in one rectangle, and they pull in opposite directions. [h:99-tests-79] */
     startGame();
     const floorW=ROOM_RIGHT-ROOM_LEFT;
     const floorRect=bossBarRect();
@@ -2271,20 +1564,11 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     ok(labRect.x+labRect.w>=canvas.width-BOSS_BAR_INSET_X,'the Lab bar stops short of the right '+
       'inset, so it is not using the screen it has');
 
-    /* BOTH NOTCHES AND THE CAPTION, measured off the framebuffer rather than off the arithmetic.
-
-       The claim is that they are ON the screen, which is a claim about pixels, and a rectangle whose
-       width is correct can still put a notch outside the canvas if the notch is placed from something
-       other than the bar's own left edge. So: draw it, and sample the notch in the Lab. The notch is
-       bone-white standing proud of the bar, 2px wide and h+8 tall, so at full health it is against the
-       dark recess - which is what makes it findable at all. */
+    /* BOTH NOTCHES AND THE CAPTION, measured off the framebuffer rather than off the arithmetic. [h:99-tests-80] */
     render();
     const nx=labRect.x+Math.round(labRect.w*BOSS_PHASE_1);
     ok(nx>=0&&nx<=canvas.width-2,'BOSS_PHASE_1 puts its notch at x '+nx+', which is not on the canvas');
-    /* The bar is drawn in SCREEN space, so it is sampled as screen - which is why cam is added back on
-       both axes before handing world coordinates to the one sampler in this file. pixelsAtWorld is
-       the only pixel reader here and it converts the other way; passing it screen coordinates in the
-       Lab, where the camera is not the identity, would sample the wrong part of the frame entirely. */
+    /* The bar is drawn in SCREEN space, so it is sampled as screen - which is why cam is added back on both axes before handing world coordinates to the... [h:99-tests-81] */
     const band=pixelsAtWorld(nx+cam.x-1,labRect.y+cam.y+2,2,4);
     let lit=0;
     for(let i=0;i<8;i++) if(band[i*4]>200&&band[i*4+1]>200&&band[i*4+2]>170) lit++;
@@ -2298,12 +1582,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('the bar marks the two phase thresholds exactly where the fight changes',()=>{
-    /* The claim this makes is that the mark on the screen and the threshold in the tick loop are the
-       same number, so the two cannot drift. The subtle part is what "same" means. The notch is
-       placed at Math.round(w*th) and the fill's edge at Math.round(w*frac), and comparing those two
-       PIXELS is the correct test. Comparing Math.round(w*th)/w against th is not - it comes out
-       0.0006 apart, which looks like a mismatch and is not one, because both were rounded from the
-       same width. That is the mistake this test exists to not make, and it made it first. */
+    /* The claim this makes is that the mark on the screen and the threshold in the tick loop are the same number, so the two cannot drift. [h:99-tests-82] */
     startGame();
     const room=currentRoom();
     room.enemies.length=0; room.pickups.length=0;
@@ -2326,26 +1605,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('the Warden has a readable bar in the Lab, above the legend and below the band',()=>{
-    /* THE LAB IS WHERE THIS BAR GETS LOOKED AT. Every other tell in the game is checked there
-       without playing a run, and this one was the exception: the Lab's room is 1680px wide and the
-       screen is 960, so for the whole life of the bar roughly half of it - and the flush-right
-       "PHASE n" caption with it - was drawn off the side of the canvas in the one place you would go
-       to check it. A bar that is only really drawn on a floor is a bar that is only really checked on
-       a floor, which means the Lab has been testing nothing about it.
-
-       This asserts the vertical relationships that make it legible, and it asserts them against
-       PIXELS wherever the claim is about what is on the screen, because each of them is a claim about
-       overlap and overlap is not a property of two numbers - it is a property of what got painted on
-       top of what. The measurements are stated because the alternative was three more pairs of
-       hand-copied constants that agree with each other and disagree with the drawing:
-
-         the boss bar        567..577, frame 564..580
-         the Lab legend      574..600   <- 6px of overlap, and the legend drew last
-
-       So the legend gives up the 6. It is the one that moves, for two reasons that are in the code
-       beside it: the bar is anchored to the canvas edge and is the one fixed thing in a fight, and
-       the legend is screen space over a world-space SHELF, so moving the legend up would put it on
-       the shelf at some camera positions and not others. */
+    /* THE LAB IS WHERE THIS BAR GETS LOOKED AT. [h:99-tests-83] */
     startGame();
     Lab.enter();
     readyT=0; fadeT=0; roomFade=0;   // the fade is opaque black over everything, pixels included
@@ -2362,36 +1622,18 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
       frameBottom+', so the legend is painted over '+Math.max(0,frameBottom-lane.y)+
       'px of the bar - and the legend draws after the HUD, so the bar is the one that disappears');
 
-    /* 2. THE BAR'S OWN PIXELS ARE STILL THE BAR'S. The overlap was invisible in the data and obvious
-       on the screen, so this is a framebuffer read: sample the middle of the fill and require the
-       Warden's green. 0x5ee27a is the fill colour the bar draws, and under an 86%-opaque legend strip
-       it would be roughly 0x1a1d1b - the same dark that an absent bar would give. */
+    /* 2. THE BAR'S OWN PIXELS ARE STILL THE BAR'S. [h:99-tests-84] */
     const pxAt=(x,y)=>{ const d=pixelsAtWorld(x+cam.x,y+cam.y,1,1); return [d[0],d[1],d[2]]; };
     const mid=pxAt(b.x+b.w/2,b.y+b.h/2);
     ok(mid[1]>mid[0]+40&&mid[1]>mid[2]+40,'the middle of the boss bar is rgb('+mid+') in the Lab, which '+
       'is not a lit bar - the legend is drawn on top of it, or it is not drawn at all');
 
-    /* 3. THE LEGEND IS STILL THERE. Shrinking its lane must not have shrunk it out of existence, and
-       "no overlap" is satisfied just as well by a legend that is not drawn - so the strip's own
-       pixels are read too. It is 86%-opaque near-black over whatever is behind it, so it lands dark
-       and neutral regardless of the room, which is what makes it findable. */
+    /* 3. THE LEGEND IS STILL THERE. [h:99-tests-85] */
     const lg=pxAt(W/2,lane.y+lane.h-4);
     ok(lg[0]<60&&lg[1]<60&&lg[2]<70,'the Lab legend lane at y '+(lane.y+lane.h-4)+' is rgb('+lg+
       '), which is not the legend strip - the lane was made to avoid the bar by removing it');
 
-    /* 4. AND THE CHIPS ARE INSIDE THAT LANE. This is the assertion the shrink is really for, and it
-       is the one that was missing until the row was made to follow the lane.
-
-       A 26px strip with its chips on a fixed y was correct and became wrong the moment the strip
-       shrank to 20: the chips stayed at y+6 and hung 3px out of the bottom of their own background,
-       over the canvas edge. Every assertion above still passed - the lane was below the bar, the strip
-       was still drawn, the bar's pixels were still the bar's - because none of them were about where
-       the CONTENTS are. An overlay's background being in the right place says nothing about its text,
-       which is the same failure as a health bar drawn in the right frame with the wrong number in it.
-
-       So the chips' own rects are read out of the drawing and asked whether they fit. Sized by what
-       the chip colour is rather than by position, because the state caption on the right is drawn as
-       text with no rect of its own and the strip's own background is a rect too. */
+    /* 4. AND THE CHIPS ARE INSIDE THAT LANE. [h:99-tests-86] */
     const rects=[], realFill=ctx.fillRect.bind(ctx);
     ctx.fillRect=(x,y,w,h)=>{rects.push({x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)});
       return realFill(x,y,w,h); };
@@ -2435,11 +1677,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
       (c,i,a)=>a.indexOf(c)!==i).join(', ')+', so the fight changing phase is invisible');
     // and the phase number is real state the tick loop sets, not something the bar invents
     ok(b.phase===1,'a fresh boss is in phase '+b.phase);
-    /* noticeTimer has to be spent before the tick loop will step this body at all: the enemy loop
-       skips any body whose noticeTimer is still counting down, so a freshly spawned boss ignores
-       several updates and the phase never moves. That is the FIXTURE being wrong rather than the
-       game, and it is the same trap as spawnEnemy's boss flag - a helper that quietly returns
-       something usable-looking instead of what was asked for. Both cost real time here. */
+    /* noticeTimer has to be spent before the tick loop will step this body at all: [h:99-tests-87] */
     b.noticeTimer=0;
     b.hp=b.maxHp*BOSS_PHASE_1;
     update();
@@ -2453,25 +1691,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('the phase a bar marks is a phase the FIGHT can tell apart',()=>{
-    /* This is the justification for drawing the two notches at all. If crossing 66% did nothing
-       observable, marking it would be decoration. It does something observable: the boss builds its move
-       bag from the phase number, so phase 2 adds the wall and phase 3 is mostly sweep.
-
-       AND IT ASKS THE GAME, WHICH IS THE WHOLE POINT. This used to rebuild the bag by hand:
-
-           bag.push('volley'); bag.push('volley'); bag.push('sweep');
-           if(p>=2) bag.push('wall');
-           if(p>=3) bag.push('volley'); bag.push('sweep'); bag.push('sweep');
-
-       - which is a COPY of the line in 60-tick.js, braces and all. When that line was missing its
-       braces the copy was missing them too, so the two agreed perfectly and the test passed against a
-       boss that charged 60% of the time in its introductory phase. A test that restates the rule it is
-       checking cannot discover that the rule is wrong; it can only confirm that the statement and the
-       implementation are identical, which is a different and much weaker thing.
-
-       So the bag is read out of the game, by counting the moves it actually performs. `stepBoss` picks
-       with `Rnd.run()`, so it is asked thousands of times and the moves are tallied from what the boss
-       does - beginBoss is intercepted so the fight does not actually play out 9000 times. */
+    /* This is the justification for drawing the two notches at all. [h:99-tests-88] */
     startGame();
     const room=currentRoom();
     room.enemies.length=0; room.pickups.length=0;
@@ -2489,11 +1709,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
         const before={};
         for(const k in tally) before[k]=tally[k];
         let n=0;
-        /* `stepBoss` resolves an IN-PROGRESS move and returns (line 154: `if(e.move!=='idle')`), so a
-           boss that is mid-attack never reaches the draw. Because `beginBoss` is stubbed out, nothing
-           ever ends the move either - so without these two resets the boss picks exactly one move in
-           the whole phase and every distinct-move count comes out as 1. It is a stub artefact, not a
-           fact about the fight. */
+        /* `stepBoss` resolves an IN-PROGRESS move and returns (line 154: [h:99-tests-89] */
         for(let i=0;i<3000;i++){
           b.move='idle'; b.moveT=0; b.bossCd=0;
           stepBoss(b,player.x-b.x,player.y-b.y,100,1,room);
@@ -2511,18 +1727,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
         if(p>=2) ok(got.wall>0,'phase '+p+' never chose the wall in '+total+
           ' draws, so crossing '+(BOSS_PHASE_1*100)+'% changes nothing the player can feel');
       }
-      /* THE LADDER OF MOVES PER PHASE: 3, then 4, then 7, which is what REPORT.md describes. That is a
-         count of ENTRIES IN THE BAG, and a bag can hold the same move twice - phase 1 is
-         `volley volley sweep`, so it has three entries and two DISTINCT moves, and volley is meant to
-         be the common one. So this asserts entries, and the distinct set is asserted separately as
-         "which behaviours exist", because those are two different questions and conflating them is how
-         the wrong bag hides.
-
-         Entries are read as the number of draws divided by the draws per entry... which is circular.
-         So they come from the PROPORTIONS instead: with an entry counted once per appearance, the bag
-         size is the reciprocal of nothing measurable - and what IS measurable is that each phase can
-         produce the moves it claims and only those. The distinct-move sets below are the real
-         assertion; these two are the escalation. */
+      /* THE LADDER OF MOVES PER PHASE: [h:99-tests-90] */
       const size=p=>draws[p].names.length;
       ok(size(2)>size(1),'phase 2 can choose '+size(2)+' distinct moves and phase 1 only '+size(1)+
         ', so the first notch adds no new behaviour');
@@ -2565,17 +1770,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('every item name fits the bench row whole, at full size, with room to spare',()=>{
-    /* The row belongs to the item name alone now. Two earlier layouts failed and both failures are
-       the reason this test asserts what it does rather than merely checking that nothing overlaps.
-
-       Labels were first centred in their own plates and overlapped, because eleven of thirteen item
-       names are wider than a 62px plate. Then all three names were fitted onto one 147px row, which
-       does not fit at 12px (the worst case is 210px), and the version of that test asserted against a
-       hardcoded row width of 190 - so it passed while checking a geometry the game does not have.
-
-       So the row width is READ from the drawing, and the assertion is not "no overlap" but "every
-       name whole at 12px", because the defect that actually reached the screen was never an overlap.
-       It was "ARCAN... UNTER'S ... BLAST": a collision fixed by deleting the information. */
+    /* The row belongs to the item name alone now. [h:99-tests-91] */
     startGame(); render();
     const ROW=BENCH_ROW_W;
     ok(ROW>0,'BENCH_ROW_W is still '+ROW+', so drawHUD has not run and this test would check nothing');
@@ -2598,12 +1793,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     // the empty case must say so, not fall through to the last item's colour
     ok(fitLabel('nothing',budget).text==='nothing','the empty slot lost its label');
 
-    /* The overflow branch, exercised deliberately. Every name in the roster fits, which means the
-       shrink and truncation paths never run - so a test that only walks the roster cannot see whether
-       they work at all. A mutation that removed the shrink passed 178/178 for exactly that reason,
-       and the branch it disabled is the one that protects the next item name somebody adds. So a
-       name far too long for the row is fitted here and the result is checked for the three properties
-       that matter: it terminates, it fits, and it admits what it did. */
+    /* The overflow branch, exercised deliberately. [h:99-tests-92] */
     const huge='Weighted Grip Of The Lantern Friend Of The Very Long Name';
     const r=fitLabel(huge,budget);
     ok(r.w<=budget,'a name of '+huge.length+' characters came back '+r.w+'px wide in a '+
@@ -2672,10 +1862,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     eq(player.muzzleTimer,0,'the wand flashed in a room the shot was not fired in');
     eq(projectiles.length,0,'a projectile survived the doorway');
 
-    /* And the consequence, which is the part that was never cosmetic: a body that walks through where
-       the old field sat must not be charged by it. The field is gone, so this cannot happen - but the
-       assertion is on the body's state rather than on the array, because a field that survived but
-       happened to be out of range would pass an array check and still be a live bug next room. */
+    /* And the consequence, which is the part that was never cosmetic: [h:99-tests-93] */
     const r=currentRoom();
     r.enemies.length=0;
     const g=spawnEnemy(false,r,MIDX+260,MIDY,'lunger');
@@ -2711,11 +1898,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
     // the weights are relative: every rarity must remain possible at every luck value
     for(const k of ['common','uncommon','rare','legendary'])
       ok(none[k]>0&&lucky[k]>0,'rarity "'+k+'" never came up');
-    /* And the beam is on PRECISION, not on luck. It used to be on luck, which meant one number was
-       doing two unrelated jobs - deciding what the dungeon contains and deciding how narrowly a shot
-       leaves the wand - so neither could be tuned without the other and a Lucky Coin was quietly a
-       damage item. Both halves are asserted here because the interesting failure is the quiet one:
-       a stat that still has an effect it should not. */
+    /* And the beam is on PRECISION, not on luck. [h:99-tests-94] */
     Stats.reset();
     const wide=preciseSpread(WEAPONS[2].spread);
     eq(wide,WEAPONS[2].spread,'the beam is not at its full cone with no Precision, so something else is narrowing it');
@@ -2733,19 +1916,8 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
   });
 
   test('an artifact is a field on an item, not a category beside it',()=>{
-    /* The design started from five types with "artifact" listed as a sixth that "falls under one of
-       the previous categories" - which is a description of a FIELD, and encoding it as a category is
-       what would have produced hybrids. A Brass Compass is simultaneously a legendary passive AND an
-       artifact, and neither half is a special case. */
-    /* NOTE: this used to call Items.reset() immediately after startGame(), and that call was the
-       only reason the assertion below could pass. It created the `unlocked` bucket the test then
-       read, so the test was checking that a bucket it had just built by hand was still there after
-       an item went in - and the real path, where a player picks an artifact up mid-run with nothing
-       having called reset() first, was never exercised. The lab found it: it equips every item in
-       the game at once and threw on the first artifact.
-
-       The bucket now belongs to the run's own literal, so this asks the question it means to ask -
-       can a fresh run take an artifact - and the removal of the reset() is the assertion. */
+    /* The design started from five types with "artifact" listed as a sixth that "falls under one of the previous categories" - which is a description of... [h:99-tests-95] */
+    /* NOTE: this used to call Items.reset() immediately after startGame(), and that call was the only reason the assertion below could pass. [h:99-tests-96] */
     startGame();
     Items.give('brass_compass');
     ok(run&&run.unlocked,'a fresh run has nowhere to record what it unlocked');
@@ -2794,24 +1966,7 @@ test('an item is applied by rebuilding from base, so taking one off takes exactl
       return s&&Object.values(s).some(v=>v<0);
     });
 test('every stat on the sheet changes something, or it is not a stat',()=>{
-    /* This is the check that would have caught the worst bug in the item framework's first day, and
-       it is here because nothing else did.
-
-       Strength and Vigor were on the character sheet with names, bars and blurbs for a full day, and
-       NOTHING READ THEM. Weapon damage used the weapon's own number and player.maxHp was the literal
-       8 written into the player at spawn. So a player could pick up Heavy Hands and Iron Ribs, see
-       the sheet change, and take a gun that did exactly the same damage with exactly the same health.
-
-       The reason it survived is worth recording, because it is the most dangerous shape this project
-       has: the sheet renders from Stats and the game reads a constant, and those two were different
-       numbers. Every check so far asked whether Stats was CORRECT. None of them asked whether
-       anything was READING it. A stat with no consumer is not a small stat - it is a lie with a bar
-       next to it, and it is the most expensive kind of bug to find by playing, because the player's
-       own report would be "the item did nothing" and there is no way to tell from inside the game
-       whether the item is broken or the wiring is.
-
-       So each stat is measured here by its EFFECT, not by its value. If one of these ever stops
-       being true, the stat has become decorative and the fix is to either wire it or delete it. */
+    /* This is the check that would have caught the worst bug in the item framework's first day, and it is here because nothing else did. [h:99-tests-97] */
     startGame(); Items.reset();
 
     const effect={};
@@ -2908,10 +2063,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       Stats.reset();
       const before=JSON.stringify(Content.all('item'));
       Stats.flat('intelligence',3);
-      /* This IS the hook, and no `ok(true,'')` is needed beside it. When magic doors land they gate
-         items, this eq() goes red, and the failure message - "Intelligence changed the item table,
-         which is not what it is for" - is the note to whoever lands them. A passing assertion with an
-         empty message adds nothing beside it and reads like a check that has not been written yet. */
+      /* This IS the hook, and no `ok(true,'')` is needed beside it. [h:99-tests-98] */
       eq(JSON.stringify(Content.all('item')),before,'Intelligence changed the item table, which is not '+
          'what it is for');
     }
@@ -2928,11 +2080,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        same disagreement between the sheet and the game as the inert stats, in the other order. */
     startGame(); Items.reset();
     Items.give('heavy_hands'); Items.give('iron_ribs');
-    /* The class baseline PLUS the build. And "health ceiling" is now read off vigor, because Vigor IS
-       the pool - there used to be a BASE_HP constant here that was a second place knowing what the
-       starting health was, and the starting health is a CHARACTER's number now. Referencing a
-       deleted constant would have thrown rather than failed, so this line is a reminder that the
-       honest assertion is the one that reads the single source. */
+    /* The class baseline PLUS the build. [h:99-tests-99] */
     const bStr=Stats.baseOf('strength'), bVig=Stats.baseOf('vigor');
     eq(Stats.value('strength'),bStr+1,'the test did not set up a build');
     eq(player.maxHp,bVig+2,'Iron Ribs did not raise maximum health before the restart');
@@ -2977,12 +2125,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const t0=run.ticks; advance(STEP_MS); eq(run.ticks,t0+1,'resumed run did not tick');
   });
   test('pause: a click resumes without casting',()=>{
-    // The click lands on the character sheet's backdrop, because that is what now covers the screen.
-    // The canvas is not a valid target any more and dispatching there is CORRECTLY ignored - the
-    // suppressor stops the game seeing input while an overlay is up, and a click that reached the
-    // canvas would be the game acting on input the player cannot see it acting on. The claim is "a
-    // click puts the game back down, and does not also cast", and the backdrop is where such a click
-    // goes.
+    /* The click lands on the character sheet's backdrop, because that is what now covers the screen. [h:99-tests-100] */
     startGame(); goTo('normal'); setPaused(true);
     ok(document.getElementById('charSheet').classList.contains('on'),'pausing did not open the character sheet');
     document.getElementById('charSheet').dispatchEvent(new MouseEvent('mousedown',{button:0,bubbles:true}));
@@ -3025,11 +2168,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       eq(ws.length,2,'weapon count'); ok(ws[0]!==ws[1],'same weapon offered twice ('+ws+')'); ok(!ws.includes(player.weaponIdx),'offers the held weapon');
     }
   });
-  /* THE ITEM HALF OF THE LOOT POOL. Thirteen items existed, validated and wired to the sheet, and not
-   one could be picked up: there was no `item` pickup kind anywhere, so `Items.pool` and
-   `Items.rollRarity` were called from nowhere and every number in the roster was a guess about how a
-   thing feels rather than a measurement. These three are the difference between "the roster exists"
-   and "the roster can be playtested". */
+  /* THE ITEM HALF OF THE LOOT POOL. [h:99-tests-101] */
   test('loot room: two distinct items, and never one you already hold',()=>{
     for(let i=0;i<120;i++){
       startGame();
@@ -3069,16 +2208,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(r.pickups.length,0,'the pickup is still on the floor after being taken');
   });
   test('EVERY item on the floor can be picked up, including a duplicate',()=>{
-    /* The invariant, tested over the whole roster rather than one example.
-
-       This replaces a test that asserted the opposite - that an item already held would stay on the
-       floor - because that behaviour was the last silent dead pickup in the game: a tile you can walk
-       onto forever that does nothing, with no message, in the one room whose whole job is handing you
-       things. It read as a broken item rather than as a full build.
-
-       So the claim is now that no pickup is refused, and it is checked by offering EVERY item twice -
-       once into an empty build and once into a build that already holds it - because "a duplicate is
-       the hard case" is only true while duplicates are a special case. */
+    /* The invariant, tested over the whole roster rather than one example. [h:99-tests-102] */
     startGame();
     const ids=Content.ids('item');
     const missed=[], dupMissed=[];
@@ -3205,42 +2335,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const k0=run.kills; explode(r,MIDX,MIDY,{aoeRadius:2000,pool:1e5});
     eq(r.enemies.length,0); eq(run.kills,k0+n);
   });
-  /* RECORDS ARE WRITTEN AS ONE ATOMIC VALUE, so a failed save cannot leave a false record behind.
-
-       `saveRecords` used to write five separate keys inside one try/catch with an empty catch. Measured
-       by making the third `setItem` throw, which is what a quota error does:
-
-           depths_best      written
-           depths_fastest   written
-           depths_wins      stale
-           depths_deepest   stale
-           depths_tickhz    stale
-
-       A partial write is not a smaller record, it is a FALSE one. `depths_deepest` is the number the
-       summary tells the player they have reached; if it silently keeps an old value because the write
-       before it threw, the summary reports a personal best that is not one, and the old value survives
-       a reload. Nothing anywhere said so.
-
-       The records are now one JSON value under one key, because one `setItem` is atomic per key: it
-       lands or it does not. Measured after:
-
-           clean save        one key written, all four legacy keys removed
-           failed save       NOTHING written - 0 of 5 keys
-           three failures    one console warning, not three
-
-       Asserted as the outcome properties rather than as "calls setItem once", because atomicity is a
-       property of the storage API and the mechanism is free to change. The five properties that matter:
-
-         1. a clean save leaves exactly one record key and retires the legacy ones;
-         2. a save where every write throws leaves NOTHING behind - the whole point;
-         3. repeated failures warn once, so a loop cannot flood the console;
-         4. the previous flat format still loads, so an existing player loses nothing to the change;
-         5. a corrupt blob is treated as absent rather than thrown, because a bad value must not stop
-            the game starting.
-
-       Plus the read-order property, which is the one that would undo the fix from the other side: if a
-       browser has both formats, the single-key record is believed. Reading legacy first would let a
-       stale `depths_deepest` overwrite a good one - the exact failure this was introduced to prevent. */
+  /* RECORDS ARE WRITTEN AS ONE ATOMIC VALUE, so a failed save cannot leave a false record behind. [h:99-tests-103] */
   test('records save atomically, load either format, and never leave a half-written record',()=>{
     const real=Storage.prototype.setItem, realRemove=Storage.prototype.removeItem;
     const backup={}; for(const k of REC_KEYS){try{backup[k]=localStorage.getItem(k);}catch(e){}}
@@ -3307,11 +2402,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     clearRecords();
     startGame(); const r=goTo('boss'); const explored=Object.values(rooms).filter(x=>x.visited).length;
     run.ticks=4999; r.enemies.length=0; update();
-    // Killing the boss is not the end and neither is the way out: the way out goes DOWN. There is no
-    // longer any path through a normal run that reaches endRun(true), so a run ends when the player
-    // dies and only then. These two drive the death directly rather than walking into the portal,
-    // which is the point of the change - a test that still reached 'win' by walking would be testing
-    // a door that no longer exists.
+    /* Killing the boss is not the end and neither is the way out: [h:99-tests-104] */
     eq(state,'playing','clearing the boss ended the run by itself');
     stepIntoPortal(r);
     eq(state,'playing','walking into the way out ended the run instead of descending a floor');
@@ -3333,10 +2424,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(lastRun.floorTicks,run.floorTicks,'the summary floor time is not the floor time at death');
     eq(records.deepest,4,'the deepest floor reached was not recorded');
     ok(lastRun.newDepth,'a new deepest floor was not flagged as one');
-    /* Read the record the way the game does, through loadRecords, rather than poking a flat key.
-       The records moved into a single JSON key so that a partial write is impossible; a test that
-       still reads `depths_deepest` would be asserting on a key the game no longer writes, and would
-       pass or fail for reasons that have nothing to do with the record. */
+    /* Read the record the way the game does, through loadRecords, rather than poking a flat key. [h:99-tests-105] */
     eq(storedRecords().deepest,4,'the deepest floor was not written to storage');
     // a shallower, later run must not lower the record
     const deepest=records.deepest;
@@ -3389,17 +2477,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(n,Math.ceil(12/2)+Math.ceil(MAX_ARMOR/2));
   });
 
-  /* THE PLATE HAS A CEILING OF ITS OWN, because maxHp does not.
-
-     Vigor is unbounded by design, so the heart row used to grow without limit: 28 hearts is 810px of
-     plate from a margin of 15, and the minimap plate starts at 798. Past maxHp 56 the plate covered the
-     map - the thing that says where the boss is and which rooms you have seen - for the rest of the
-     run. It took twenty-one Iron Ribs, so nothing caught it: nothing plays that build.
-
-     Asserted as GEOMETRY rather than as a pixel sample, because the collision is arithmetic and can be
-     asked directly: the plate's right edge must stay clear of the minimap at every health. The
-     minimap's own position is derived from the same terms its drawing uses - W, the margin, GRID*cell
-     plus its frame - so this cannot pass by agreeing with a stale copy of a number. */
+  /* THE PLATE HAS A CEILING OF ITS OWN, because maxHp does not. [h:99-tests-106] */
   test('the heart plate never reaches the minimap, however much health there is',()=>{
     startGame();
     currentRoom().enemies.length=0;
@@ -3418,21 +2496,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       try{ drawHUD(); }catch(e){ threw=e.message; }
       eq(threw,null,'drawing the HUD at maxHp '+mx+' threw: '+threw);
     }
-    /* THE ROW DRAINS LEFT TO RIGHT, AND THAT IS NOT NEGOTIABLE.
-
-       This test previously asserted the OPPOSITE - that at 1 heart out of 98 the lit heart must be the
-       last slot on the plate - because that is what the code was doing. The bar counted backwards: at 2
-       health the row read `[empty x7, full]`, the one heart with blood in it sitting in the far right
-       slot. The test was written to match the implementation, which is the exact failure this file
-       exists to prevent, and it is the second time in one session I have done it.
-
-       The direction is not a style question and does not depend on whether hearts are hidden. A health
-       bar that empties from the left, at every health, in every game, is the contract; the only question
-       the cap raises is how many slots exist, not which way they fill.
-
-       So this asserts the DIRECTION, on an ordinary uncapped plate where every heart is visible, at
-       enough health values to catch a reversal - a single sample cannot tell "drains right" from
-       "drains left" when both ends are lit. */
+    /* THE ROW DRAINS LEFT TO RIGHT, AND THAT IS NOT NEGOTIABLE. [h:99-tests-107] */
     const rowAt=(mx,hp)=>{
       player.maxHp=mx; player.hp=hp;
       const seen=[]; const real=window.drawHeart;
@@ -3467,19 +2531,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(capped.filter(s=>s.fill>0).length===1,'a capped plate at 2 health lights '+
       capped.filter(s=>s.fill>0).length+' hearts');
 
-    /* THE HALO SITS ON THE HEART WITH BLOOD IN IT.
-
-       The "one heart left" pulse is a warning about a specific slot, so where it is drawn is part of
-       what it says. It was drawn on `slotX + (heartsDrawn-1)*heartSlotW` - the last slot ON THE PLATE -
-       on the reasoning that "the last heart" meant the last heart. It does not: the row drains left to
-       right, so at one heart the only lit slot is the FIRST, and the halo pulsed an empty heart at the
-       far end while the one being looked for sat unlit at the other.
-
-       Measured before the fix: lit heart at x 43, halo at x 225, on an eight-heart plate.
-
-       Asserted as POSITION against the fill, at a health where the two are far apart - one heart is
-       the sharpest case, because "last drawn" and "last lit" are then 182px apart. Also asserted on a
-       capped plate, where the gap is even wider. */
+    /* THE HALO SITS ON THE HEART WITH BLOOD IN IT. [h:99-tests-108] */
     const haloAt=(mx,hp)=>{
       player.maxHp=mx; player.hp=hp;
       const arcs=[]; const realArc=ctx.arc;
@@ -3521,29 +2573,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(statDisplay(luck()),'+2','a +2 Luck does not print with its sign');
     Stats.reset();
   });
-  /* POINTER COORDINATES ARE INTEGERS, and that is the whole reason this test exists.
-
-     A `MouseEvent` cannot carry a fractional `clientX`: dispatch one with 59.59375 and the handler
-     receives 59. So the content top-left - a fractional layout position - is not an addressable
-     point, and asserting that it maps to (0,0) is asserting something no cursor can ever do. The
-     original test asserted it anyway, with a 1px tolerance, which is loose enough to pass a handler
-     that was a whole pixel out.
-
-     So this asserts the property that actually matters: EVERY position a cursor can physically be
-     maps INSIDE the canvas. Not "the corner maps to zero" - "no reachable position produces a
-     negative coordinate or one past the far edge", because a negative coordinate means the shot is
-     aimed from off the left of the screen.
-
-     Measured at a 960x600 window, the canvas is letterboxed to a content box of 840.797 x 525.484
-     whose left edge is at clientX 59.5938. The first INTEGER the pointer can report is 60, which is
-     0.4638 of a canvas pixel inside the content. Reading the offset from `clientLeft` (2) rather than
-     the computed border put the same cursor at -0.678, which is off the left of the canvas entirely -
-     so the old mapping aimed outside the play area for the first half pixel of pointer travel, and
-     the old test passed because 1px of tolerance is wider than that error.
-
-     Checked across the whole reachable range at several window sizes rather than at one point: a
-     mapping that is correct in the middle and wrong at the edge is the shape of the camera clamp
-     bug, and asserting the endpoints is what catches it. */
+  /* POINTER COORDINATES ARE INTEGERS, and that is the whole reason this test exists. [h:99-tests-109] */
   test('mouse maps to canvas pixels inside the 2px border',()=>{
     const rect=canvas.getBoundingClientRect(), cs=getComputedStyle(canvas);
     const bl=parseFloat(cs.borderLeftWidth), br=parseFloat(cs.borderRightWidth);
@@ -3590,21 +2620,10 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        sy.toFixed(4)+' vertically - it is not scaled uniformly, so circles draw as ellipses');
   });
   test('every dungeon: a branching tree with a reward at each of two ends, and a key in a branch',()=>{
-    // This test used to assert a fixed 15 rooms, two forks and exactly four dead ends, because that
-    // was the shape the old hand-laid generator produced every single time. Asserting it again would
-    // be asserting the absence of the thing the redesign was for: a dungeon you can learn in one run
-    // is a corridor with monsters in it. So the invariants are now the ones that have to hold for a
-    // tree of any shape - the roles exist, the ends are clean, the keys are not behind the doors they
-    // open - and the room count is only required to VARY across dungeons.
+    /* This test used to assert a fixed 15 rooms, two forks and exactly four dead ends, because that was the shape the old hand-laid generator produced... [h:99-tests-110] */
     const shapes=new Set(), counts=new Set();
     for(let i=0;i<200;i++){
-      /* A DIFFERENT SEED EACH TIME, stated rather than inherited. This loop used to rely on the
-         generator simply carrying on from where the previous dungeon left it, which is exactly the
-         behaviour `startGame(seed)` was introduced to remove - so it built the SAME dungeon 200 times
-         and the "the room count must vary" assertion below failed on a generator that varies fine.
-
-         The multiplier is the one the neighbouring seed-space test already uses, so the two agree on
-         what "a different seed" means. */
+      /* A DIFFERENT SEED EACH TIME, stated rather than inherited. [h:99-tests-111] */
       startGame((i*2654435761)>>>0);
       const all=Object.values(rooms);
       const one=f=>all.filter(f).length;
@@ -3780,20 +2799,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
   test('weapons: every gun kills a lunger fast at the range it is meant to be used at',()=>{
     startGame();
-    /* The Scatter is deliberately not in this. It is a buckshot gun: a tight cone of eight pellets
-       behind a long cooldown, so it is the biggest thing you own with your nose on the target and
-       the worst thing you own across the room. The other three are meant to hold up at range.
-
-       The BEAM is in it, but at a BUILT strength rather than at base - and that is the assertion
-       worth having. Its damage is deliberately low (0.50) because Strength is added per shot and it
-       fires 17.31 times a second against the Bolt's 2.37, so every Strength sigil is worth several
-       times more to it. At base it is the slowest gun in the roster by design; at +6 it meets the same
-       bar as everything else. A test that only checked the base case would be asserting that a canvas
-       is not a canvas.
-
-       Note this arithmetic is off the TABLE, with Strength and armour applied by hand, because that is
-       what the table means. It still omits the Beam's miss rate - it sprays, landing 81% at 100px and
-       27% at 300px - so it is a floor on how fast the gun can be, not a prediction of how fast it is. */
+    /* The Scatter is deliberately not in this. [h:99-tests-112] */
     const STRENGTH=6, ARMOUR=ENEMY.lunger.armour||1;
     const tableTTK=(wp,d)=>{
       const mult=wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
@@ -3821,13 +2827,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(beamBuilt<tableTTK(WEAPONS[0],0)*1.15,
       'at +'+STRENGTH+' the beam is still slower than the Bolt ('+beamBuilt.toFixed(1)+
       's vs '+tableTTK(WEAPONS[0],0).toFixed(1)+'s), so the headroom never pays off');
-    // and the shotgun identity, asserted rather than assumed. This is about the SHOT, not sustained
-    // dps: the biggest single hit in the game, behind the longest wait, in the tightest cone, and the
-    // steepest collapse with distance of anything you can hold. Armour is a per-hit multiplier, so
-    // eight small pellets is genuinely the wrong answer to an armoured lunger and the right one to a
-    // Brunch knot - that is the trade, not a flaw. Note the test works off the table cooldowns, not
-    // the TEMPO-adjusted ones, because TEMPO divides every gun by the same factor and cannot reorder
-    // them.
+    /* and the shotgun identity, asserted rather than assumed. [h:99-tests-113] */
     const sc=WEAPONS[1];
     const dps=(wp,d)=>wp.dmg*wp.count*(wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear)))/(wp.cooldown/TICK_HZ);
     const edge=wp=>wp.fFar+120;
@@ -3837,27 +2837,15 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(sc.dmg*sc.count===burst,'the shotgun is not the biggest single shot ('+(sc.dmg*sc.count).toFixed(1)+' vs best '+burst.toFixed(1)+')');
     ok(sc.cooldown===slowest,'the shotgun is not the slowest gun ('+(sc.cooldown/TICK_HZ).toFixed(2)+'s vs slowest '+(slowest/TICK_HZ).toFixed(2)+'s)');
     ok(sc.count>=6,'the shotgun fires '+sc.count+' pellets, wanted a real bunch');
-    // The pattern is no longer a cone, so the old "spread*(count-1) rad wide" assertion is gone: it
-    // measured an angle that no longer decides where the pellets go, and leaving it in would have
-    // been a test that passes while describing nothing. What replaced it is the actual geometry -
-    // a column whose width is dominated by a term that does NOT scale with range, and a spread that
-    // is a distribution rather than a set of evenly spaced steps.
+    /* The pattern is no longer a cone, so the old "spread*(count-1) rad wide" assertion is gone: [h:99-tests-114] */
     ok(sc.muzzleJitter>0,'the shotgun has no muzzle scatter, so every pellet still leaves from one point');
     ok(sc.pelletSpeedVar>0,'the shotgun has no per-pellet speed variance, so the pellets stay in step');
-    // the angular error has to be small enough that the pattern is still a column and not a cone
-    // again. Measured in PIXELS at the far corner of a room, not in radians - an earlier version of
-    // this line compared a pixel figure against 0.02, which is a radian number, and failed a gun that
-    // was behaving exactly as intended.
+    /* the angular error has to be small enough that the pattern is still a column and not a cone again. [h:99-tests-115] */
     ok(sc.pelletAngle*450<8,'at the far corner of a room the angular term alone spreads the pattern '+
        (sc.pelletAngle*450).toFixed(1)+'px, so the shotgun has quietly become a beam with extra steps');
 
     ok(dps(sc,0)/dps(sc,edge(sc))>=steepest-0.01,'the shotgun is not the gun that cares most about range ('+(dps(sc,0)/dps(sc,edge(sc))).toFixed(2)+'x vs steepest '+steepest.toFixed(2)+'x)');
-    // Two different fights, two different numbers, and the difference between them is what makes
-    // the shotgun a shotgun. `crowd` is every pellet landing, which is what the tight cone buys.
-    // `solo` is one body, so only one pellet of the eight counts. The Scatter is the best gun in
-    // the game at the first and among the worst at the second, and it is the same gun either way.
-    // Keeping them as separate measurements is the point: asserting only the crowd number is what
-    // let the Voidball and the Bolt sit on identical numbers for four turns, each looking correct.
+    /* Two different fights, two different numbers, and the difference between them is what makes the shotgun a shotgun. [h:99-tests-116] */
     const at=(wp,d)=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
     const crowd=(wp,d)=>wp.dmg*wp.count*at(wp,d)/(wp.cooldown/TICK_HZ);
     const solo =wp=>wp.dmg*at(wp,250)/(wp.cooldown/TICK_HZ);
@@ -4003,10 +2991,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(r.enemies.length,4,'a clump should survive the blast');
     const share=ALT_WEAPON.pool/Math.pow(4,DISPERSE);
     for(const e of r.enemies) ok(Math.abs((e.maxHp-e.hp)-share*e.armour)<0.05,'a body in a clump took '+(e.maxHp-e.hp).toFixed(2)+', expected about '+(share*e.armour).toFixed(2));
-    // and the pool still has to afford a whole heavy body on its own, which is the entire reason it
-    // divides by ARMOUR. what it must NOT do is keep spending that budget no matter how many bodies
-    // are in the way: the whole point of DISPERSE is that the damage actually dealt collapses as the
-    // crowd grows, so a pack is something you chip down rather than something one click clears.
+    /* and the pool still has to afford a whole heavy body on its own, which is the entire reason it divides by ARMOUR. [h:99-tests-117] */
     ok(ALT_WEAPON.pool*ENEMY.lunger.armour>ENEMY.lunger.hp,'the budget cannot reliably afford one armoured lunger');
     const totalFor=n=>{
       r.enemies.length=0;
@@ -4068,11 +3053,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
   test('walking into a live room hands back the whole kit, once per room',()=>{
     // burn everything the player could be carrying into a fight
-    /* burn() puts every meter past its own maximum on purpose - 999 against a maximum of a few hundred -
-       so that "was it refilled" cannot be satisfied by a value that merely shrank into range. The right
-       click is deliberately NOT given a maximum here: enterRoom overwrites it from the weapon table, and
-       the first version of this fixture set it, which made the assertion below depend on a maximum the
-       code path had already replaced. */
+    /* burn() puts every meter past its own maximum on purpose - 999 against a maximum of a few hundred - so that "was it refilled" cannot be satisfied... [h:99-tests-118] */
     const burn=()=>{ player.cooldown=999; player.cooldownMax=999; player.altCooldown=999;
       player.blinkCharges=0; player.blinkRegen=BLINK_RECHARGE/2; };
     // a room that is already quiet is not a fight, so it arms nothing
@@ -4091,10 +3072,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(currentRoom().enemies.length>0,'the room under test spawned nothing to fight');
     eq(player.cooldown,0,'entering a live room did not refill the weapon');
     eq(player.altCooldown,0,'entering a live room did not refill the right click');
-    // The blink no longer SNAPS to full on entry: the bar starts where the player walked in and
-    // fills across the arrival, so these claims are about the animation starting in the right place
-    // rather than about a jump. burn() leaves the player on one charge - zero charges and half a bar -
-    // so the bar must come back showing exactly that, not two charges they never had.
+    /* The blink no longer SNAPS to full on entry: [h:99-tests-119] */
     eq(player.blinkCharges+player.blinkRegen/BLINK_RECHARGE,0.5,'entering a live room put the blink '+
        'bar back to full instead of where it was spent, so it shows two charges the player never had (got '+
        (player.blinkCharges+player.blinkRegen/BLINK_RECHARGE).toFixed(2)+')');
@@ -4145,10 +3123,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       return rects;
     };
     void marks;
-    /* The map's own placement, read from the HUD's terms rather than retyped. It was `my0=14` here
-       and `MARGIN_Y` in drawHUD, which is two copies of one number - and the two copies disagreed the
-       moment the top band arrived, so the test was watching for a mark in a cell that was no longer
-       where the map was. A test that computes where the drawing is has to compute it the same way. */
+    /* The map's own placement, read from the HUD's terms rather than retyped. [h:99-tests-120] */
     const cell=17,mapW=GRID*cell,pw=mapW+28,mx0=W-HUD_MARGIN_X-pw,my0=HUD_BLOCK_Y,mx=mx0+14,my=my0+14;
     const bcell={x:mx+boss.x*cell,y:my+boss.y*cell};
     ok(!boss.cleared,'the boss room starts cleared');
@@ -4165,24 +3140,10 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
   test('the HUD is laid out as one block, and every plate is derived from the same margins',()=>{
     startGame();
-    // This used to pin the blink plate at a hardcoded (14,56) and then assert the old padding
-    // numbers around it, so every layout improvement broke the test and every layout change had
-    // somewhere to hide. The assertions below are about the SHAPE of the layout - one margin, one
-    // frame thickness, one gap, plates that touch, bars that are centred - which is the thing that
-    // has to stay true, and which is the thing the old assertions could not express.
-    // X and Y are separate numbers, and this test READS them rather than restating them. It used to
-    // re-declare all nine, on the stated ground that it wanted to test "the HUD matches a stated
-    // layout" rather than "the HUD matches itself" - but `ok(MARGIN_X!==MARGIN_Y)` against its own
-    // two copies cannot fail whatever the game does, so the one assertion in here that was about the
-    // margins rather than about the drawing was measuring the test. The numbers are now one table in
-    // 70-view.js, read by both, which is the same fix as the boss door and the pulse.
+    /* This used to pin the blink plate at a hardcoded (14,56) and then assert the old padding numbers around it, so every layout improvement broke the... [h:99-tests-121] */
     const MARGIN_X=HUD_MARGIN_X, MARGIN_Y=HUD_MARGIN_Y, FRAME=HUD_FRAME, GAP=HUD_GAP;
     const HP_H=HUD_HP_H, ROW_H=HUD_ROW_H, KEY_W=HUD_KEY_W, KEY_H=HUD_KEY_H, BLINK_W=HUD_BLINK_W;
-    /* BLOCK_Y is the top of the PLATES, which is no longer the top margin: the top band owns the
-       strip above it. It is read rather than recomputed, and the assertions below are all relative -
-       the block's plates against each other - so they read the new silhouette rather than the old
-       numbers. What they must not do is re-derive BLOCK_Y here, because a test that has its own copy
-       of the layout cannot tell a moved HUD from a moved expectation. */
+    /* BLOCK_Y is the top of the PLATES, which is no longer the top margin: [h:99-tests-122] */
     const BLOCK_Y=HUD_BLOCK_Y;
     ok(MARGIN_X!==MARGIN_Y,'the two margins have been collapsed back into one number, which is what made the corner look wrong');
     ok(BLOCK_Y>MARGIN_Y,'the plate block is back on the top margin, so the top band owns nothing and '+
@@ -4211,10 +3172,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(keys.y,health.y,'the key plate is not aligned to the top of the health plate');
     eq(keys.x-health.x-health.w,GAP,'the key plate is '+ (keys.x-health.x-health.w) +'px off the health plate, wanted '+GAP);
     ok(KEY_H<HP_H,'the key plate was stretched to the health plate height again');
-    // row 2: the blink plate is glued to the bottom of the health plate and shares its left edge,
-    // and is deliberately NARROWER. Two short bars stretched across the full 186px read as progress
-    // on something enormous, and that asymmetry is what makes the two read as two different
-    // instruments stacked rather than as one long bar with a second row of decoration
+    /* row 2: the blink plate is glued to the bottom of the health plate and shares its left edge, and is deliberately NARROWER. [h:99-tests-123] */
     const blink=plates.find(p=>p.w===BLINK_W&&p.h===ROW_H);
     ok(blink,'the blink plate is not at its derived width');
     eq(blink.x,health.x,'the blink plate does not share the left edge of the health plate');
@@ -4235,39 +3193,17 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // were never the same distance from the edges of their own frame.
     ok(lo-inset.x>=0&&hi<=inset.x+inset.w,'the blink bars run outside their own inset');
     eq(lo-inset.x,inset.x+inset.w-hi,'the blink bars are not centred in their frame ('+(lo-inset.x)+'px left, '+(inset.x+inset.w-hi)+'px right)');
-    /* The wooden border is the same thickness on BOTH sides of every plate, and the only way to know
-       that is to measure the drawing rather than read the constant back.
-
-       This was `eq(FRAME,FRAME,'the right border of a plate is not the same as its left')` in a loop
-       over four plates. FRAME compared with itself, four times, carrying a message about plate
-       borders: it could not fail under any circumstances, and the loop around it made it look like
-       four checks. It is the exact shape of the inert Strength and Vigor stats - an assertion whose
-       text describes a property and whose expression cannot detect it.
-
-       What it should have measured: each plate is a wood image with an inset drawn inside it, so the
-       left border is (the inset's left edge minus the plate's left edge) and the right border is
-       (the plate's right edge minus the inset's right edge). Those are two numbers derived from
-       geometry, and they can disagree. */
+    /* The wooden border is the same thickness on BOTH sides of every plate, and the only way to know that is to measure the drawing rather than read the... [h:99-tests-124] */
     const {rects:borderRects}=grab();
     // The four HUD plates carry a wooden frame and an inset. The small weapon slots under the map are
     // drawn at 25x22 and have neither, so including them would only produce a guaranteed failure
     // about a plate that was never framed. Sized by what drawInset is called with, not by a name.
-    /* The top band is EXCLUDED BY NAME rather than by its height. It is a wood image with no inset, so
-       including it makes this loop report "a plate at 0,0 has no inset drawn inside it, so its borders
-       cannot be compared" - which is true of the band and useless as a statement about borders. It
-       currently drops out anyway because 15px fails the >=28 height test, which is an accident of the
-       band's size rather than a decision: raise the band to 40px and a border test fails on a plate
-       that is not a plate. Being explicit here means the answer survives the band's height changing,
-       which is the whole subject of the band's existence. */
+    /* The top band is EXCLUDED BY NAME rather than by its height. [h:99-tests-125] */
     const big=plates.filter(p=>p.w>=60&&p.h>=28&&!(p.w===W&&p.y===0));
     ok(big.length>=3,'only '+big.length+' framed plates were found (sizes '+big.map(p=>p.w+'x'+p.h)+
        '), so the border check has nothing to compare and would pass on an empty set');
     for(const p of big){
-      // The inset belonging to THIS plate. drawInset draws a 2px rule on each side and then fills the
-      // middle, so there are five rects inside every plate and the one to measure is the LARGEST -
-      // the fill. Sorting by distance to the plate's corner, which is what this did first, picks the
-      // 174x2 top rule instead and reports a 6px top border against a 32px bottom one, which is a
-      // true fact about a rule and a false one about the frame.
+      /* The inset belonging to THIS plate. [h:99-tests-126] */
       const insetR=borderRects
         .filter(r=>r.x>=p.x&&r.x<p.x+p.w&&r.y>=p.y&&r.y<p.y+p.h)
         .sort((a,b)=>(b.w*b.h)-(a.w*a.h))[0];
@@ -4292,10 +3228,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const SLOT_H=50, SLOT_GAP=2, wSlot=Math.floor((map.w-SLOT_GAP*2)/3);
     const row=plates.filter(p=>p.w===wSlot&&p.h===SLOT_H&&p.y===map.y+map.h+GAP).sort((a,b)=>a.x-b.x);
     eq(row.length,3,'the weapon row is not three plates (two hands plus the reserved middle)');
-    // touching, and spanning the map exactly. The two OUTER gaps are the nominal one; the middle
-    // pair is the reserved consumable slot, which is CENTRED in whatever the map's width leaves
-    // over, so its two gaps can differ from each other by the rounding pixel and must - centring it
-    // on the row is the whole point of it being in the middle.
+    /* touching, and spanning the map exactly. [h:99-tests-127] */
     const gap=(a,b)=>b.x-a.x-a.w;
     // the middle plate is CENTRED in whatever the map's width leaves over, so its gaps are the
     // nominal gap plus that leftover - which is the same on both sides, and that equality is the
@@ -4309,16 +3242,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // belongs rather than swallowed by the right-hand plate
     ok(row[1].x-row[0].x>wSlot/2,'the reserved middle slot is not between the two hands');
 
-    /* THE BLOCK CLEARS THE ROOM, which is the whole reason the band is 15px and not 40.
-
-       The depth plate is the third row and it is the thing that would touch the play area: ROOM_TOP is
-       a balance constant this file does not own, so the band cannot grow past what leaves the left
-       column ending above it. A band that pushed the depth plate onto the top wall would hide bodies
-       walking along it, and no test anywhere was watching for that - which is why the number lives
-       here as a constraint on the layout rather than as a preference in a comment.
-
-       The right column is checked against the SCREEN rather than the room: the map hangs in the margin
-       outside a 700px room, and it is the canvas it has to stay inside. */
+    /* THE BLOCK CLEARS THE ROOM, which is the whole reason the band is 15px and not 40. [h:99-tests-128] */
     const leftColumnBottom=BLOCK_Y+HP_H+ROW_H+GAP+ROW_H;
     ok(leftColumnBottom<=ROOM_TOP,'the left plate column ends at y '+leftColumnBottom+' and the room '+
       'starts at y '+ROOM_TOP+', so the top band has pushed the depth plate onto the room and it will '+
@@ -4328,33 +3252,17 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
 
   test('the top band owns the top of the screen, and nothing else is drawn in it',()=>{
-    /* THE BAND IS THE ONE THING AT THE TOP OF THE SCREEN, and the plates are under it.
-
-       This is asserted as PIXELS rather than as a pair of numbers, and that is the whole point of it:
-       "the health plate is at y 29" is true whether or not anything was drawn over it, and the failure
-       mode for a band is precisely that - a band arrives, nothing moves, and a plate is drawn straight
-       through the thing that was supposed to own the strip. Numbers cannot see that. Pixels can.
-
-       So the band is sampled where it is (wood, warm and mid-tone) and the plate is sampled where it
-       is (the inset's near-black fill), and the band is sampled again where a plate WOULD have been
-       had it stayed on the top margin - which is the assertion that actually catches the regression:
-       the band is opaque there, not HUD showing through it. */
+    /* THE BAND IS THE ONE THING AT THE TOP OF THE SCREEN, and the plates are under it. [h:99-tests-129] */
     startGame();
     currentRoom().enemies.length=0; currentRoom().pickups.length=0;
-    /* The room fade goes to black over the whole canvas, so a pixel read taken during the arrival
-       samples the fade rather than the HUD - and it samples it as opaque black, which is a colour
-       nothing in this HUD is. Every other pixel check in this file zeroes the fade first for the same
-       reason, and this one has to as well. */
+    /* The room fade goes to black over the whole canvas, so a pixel read taken during the arrival samples the fade rather than the HUD - and it samples... [h:99-tests-130] */
     readyT=0; fadeT=0; roomFade=0;
     render();
     const pxAt=(x,y)=>{ const d=pixelsAtWorld(x+cam.x,y+cam.y,1,1); return [d[0],d[1],d[2]]; };
     const isWood=c=>c[0]>45&&c[0]>c[2]+15&&c[1]>c[2];
     const MARGIN_Y=HUD_MARGIN_Y;   // read, not retyped: the old margin is the point of assertion 2
 
-    /* 1. THE BAND IS DRAWN, ACROSS THE WHOLE WIDTH, INCLUDING WHERE NO PLATE IS. Sampled at three x:
-       over the health plate, in the gap between the two columns, and over the map. A band drawn only
-       as wide as the left column would pass the first and fail the other two, and a band drawn as a
-       fill without its wood would be flat where the plates have grain. */
+    /* 1. THE BAND IS DRAWN, ACROSS THE WHOLE WIDTH, INCLUDING WHERE NO PLATE IS. [h:99-tests-131] */
     for(const [x,what] of [[30,'over the health plate'],[W/2|0,'between the columns'],[W-40,'over the map']]){
       const c=pxAt(x,HUD_TOP_BAND_H/2);
       ok(isWood(c),'the top band at x '+x+' ('+what+') is rgb('+c+'), which is not wood: the band is '+
@@ -4380,16 +3288,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(!isWood(gap),'the strip between the band and the plates at y '+(HUD_TOP_BAND_H+6)+' is rgb('+
       gap+'), which is wood: the band has been drawn taller than its own height');
 
-    /* 5. THE RAIL IS A RAIL AND NOT A TEXTURE CHANGE: it has its own dark lower border, and what is
-       under it is the empty space over the room rather than more HUD.
-
-       This replaced an assertion about a drop shadow the band used to draw, which could not fail -
-       the band is above ROOM_TOP, so what was behind the shadow was already rgb(0,0,0), and a shadow
-       over black is black. The test passed on the shadowed version and on the version with the shadow
-       deleted, which is the exact property a check is supposed to lack. What IS there and visible is
-       woodPlate's own dark border at the rail's lower edge, so that is what is asserted: the last two
-       rows of the rail are its dark frame, and the row below them is the void and not the rail's
-       middle. A band with no border reads as the texture changing rather than as a frame ending. */
+    /* 5. THE RAIL IS A RAIL AND NOT A TEXTURE CHANGE: [h:99-tests-132] */
     const border=pxAt(W/2|0,HUD_TOP_BAND_H-2);
     ok(border[0]<50&&border[0]<border[1]*2,'the second-to-last row of the band is rgb('+border+
       '), which is not its dark lower border - the rail has no edge, so the plates below it float '+
@@ -4474,10 +3373,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       pointAt(p[0], p[1]); player.cooldown=0;
       for(let k=0;k<200;k++){ fireWeapon(); update(); }
       ok(!host.doors[host.secret],'the left click broke the fake wall');
-      // the right click does. read the direction first: breaking the wall clears the marker.
-      // ONE cast, then let it fly: the hook can be detonated early with a second right click, and a
-      // test that held the button down every tick would spend its life cancelling the bolt a few
-      // dozen pixels from the player and never let it reach the wall at all
+      /* the right click does. [h:99-tests-133] */
       const d=host.secret;
       let broke=false;
       pointAt(p[0], p[1]); player.altCooldown=0; altMouseDown=true;
@@ -4495,10 +3391,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(HOOK_WEAPON.aoeRadius<ALT_WEAPON.aoeRadius*1.35,'the hook has grown well past "a little further than the blast"');
     ok(HOOK_WEAPON.pull&&!HOOK_WEAPON.aoeKnock,'the hook does not pull');
     ok(HOOK_WEAPON.pool===0,'the hook deals damage, which makes it a strictly worse blast');
-    // The bug this weapon existed to not have: the bolt has to stop on the point you aimed at. The
-    // travel test compares the distance still to cover against the per-tick step, and without that
-    // step stored on the bolt the comparison is against undefined, so the hook sailed straight past
-    // the cursor and only ever went off on a wall.
+    /* The bug this weapon existed to not have: [h:99-tests-134] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; 
     for(const aim of [[MIDX,MIDY],[ROOM_RIGHT-30,MIDY],[MIDX,ROOM_TOP+20],[ROOM_LEFT+20,ROOM_BOTTOM-20],[MIDX+320,ROOM_BOTTOM-30]]){
       player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
@@ -4567,104 +3460,11 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(Math.hypot(b.x-cx,b.y-MIDY)>bd,'the blast did not push a body out');
   });
 
-  /* THE WALL SITS CLOSE TO THE ENEMY IT COVERS, not halfway to the player.
-
-       BRUNCH_SHIELD_FRAC was 0.55 - a little over half way along the player-to-target line, which is a
-       barricade halfway across the room rather than a shield around a body. At 0.34 the pack is a third
-       of the way from the TARGET, so it covers the shooter rather than the lane, and the player is left
-       with a wide apron of open floor between themselves and the wall for everything else in the room to
-       use. That was the point of the change: a shield that owns the whole lane is a shield the rest of
-       the fight never gets to use.
-
-       Measured across three seeds at a 350px gap: the pack centre moved from 0.46-0.63 of the gap to
-       0.13-0.42, and pack-to-player distance went from 62-90px to 96-143px.
-
-       The claim is asserted as the FRACTION, because a fixed pixel distance would pass while the wall
-       sat on the wrong side of the target - the fraction is what says "closer to the enemy". And it is
-       measured from the pack's centroid rather than one body, because a pack whose members disagree
-       about where the wall is can average out to the right answer. */
-  /* A BRUNCH DOES NOT EAT THE FIRE OF THE ENEMY IT IS ESCORTING.
-
-       The absorption rule was indiscriminate - any non-friendly shell overlapping any Brunch died there.
-       That was right while the only thing a pack covered was the PLAYER, because then every enemy
-       shell in the room was heading for the player. The moment a pack moves in front of a shooter,
-       that shooter's own firing line runs through the pack, and the pack was eating its own shells.
-
-       MEASURED, and this is the interaction the closer barricade produced: with BRUNCH_SHIELD_FRAC at
-       0.34 and again at 0.25, a shooter escorted by a six-body pack landed ZERO shots on the player in
-       14 seconds, against nine landings and 16.2 HP lost with no pack in the room. Not "fewer shots" -
-       none. Escorting a shooter made it completely harmless, and it got WORSE as the wall moved closer,
-       because closer means more of the firing line is pack.
-
-       The rule now is narrow: a shell is absorbed by any Brunch EXCEPT one that is guarding the enemy
-       who fired it. Everything else is unchanged, and in particular the player's own bolts are still
-       not absorbed - you must be able to shoot through a pack to clear it. */
-  /* A PLAYER HELD AGAINST A WALL REPORTS NO VELOCITY, because the enemies lead what they read.
-
-       `clampPlayer` stops the POSITION at the wall and deliberately leaves the velocity pointing into
-       it - which is the right call for the movement code and is documented as such. The consequence
-       was already known for the Momentum meter, which measures displacement instead of velocity
-       precisely so a pinned player cannot farm it. The GUNNERS read `player.vx` directly to build an
-       intercept, and nothing had given them the same treatment.
-
-       Measured, and this was the entire hit rate of every ranged enemy in the game:
-
-           player pinned against a wall, holding the key into it
-             player.x             737   (ROOM_RIGHT 750, r 13 - at the wall)
-             player.vx           1.40   (full speed, reported)
-             shell arrival error  52-55px on every shot, at every range, without variation
-
-       Fifty-two pixels is about 1.3 seconds of the player's travel, so every shell from every shooter
-       and gunner sailed past a stationary target by a distance that looks deliberate. Against a player
-       in open floor the same solver lands within 10px, and against a still player within 0.4px - which
-       is exactly why this read as a prediction problem and took a long time to find. In the open-floor
-       fixture, 72 of 75 shells now connect.
-
-       The claim asserted here is the state, not the hit rate: the velocity component the wall is
-       eating must be zero while it is being eaten, and only that component - a player sliding along a
-       wall while moving on the other axis keeps the velocity that is still real. */
-  /* A BLINK'S TRAIL STAYS INSIDE THE ROOM AND MATCHES HOW FAR THE PLAYER ACTUALLY WENT.
-
-       The trail used to be six puffs laid along `BLINK_DIST` BEFORE the move, on the assumption the
-       blink completed. It does not complete when there is a wall in the way - `doBlink` moves the
-       player and then calls `clampPlayer()` - so every puff was placed where the player would have
-       reached had the wall not been there, and the VFX was drawn through the wall and out of the
-       play area. Measured, starting 30px from each wall:
-
-           before   6 puffs, 4 of them outside the room, worst by 86px, in all four directions
-           after    1-3 puffs, 0 outside, in all four directions
-
-       Two separate things were wrong and fixing only the first still failed:
-
-         - the trail ignored how far the player travelled, so a 17px nudge into a wall drew the same
-           140px streak as a full blink. Length is the only thing telling the player how far they
-           went, so it is now derived from the move that actually happened.
-         - `clampPlayer` ends with a deliberately loose outer bound (`ROOM_LEFT-40` to
-           `ROOM_RIGHT+40`) so a player can sit outside the wall line in a doorway. Using the clamped
-           position as the trail's end point therefore still put puffs 40px outside the room on the
-           left and bottom walls. The player keeps that overshoot for transitions; the VFX is clamped
-           to the room box instead, because a puff drawn outside the room is drawn over the wall.
-
-       Asserted as two separate claims because they fail separately: no puff outside the room, and
-       trail length proportional to distance travelled rather than constant. */
-  /* THE RUN SUMMARY DOES NOT PRINT THE SAME ROW TWICE, in any format.
-
-       The records block once gained "Bodies killed" and "Accuracy" to replace two rows that could
-       never change ("Fastest clear" and "Dungeons cleared" - nothing increments `records.fastest` or
-       `records.wins` any more, since a cleared boss room opens a way out instead of ending the run).
-       That fixed the unchangeable pair and created a new problem: the card already carried "Enemies
-       defeated" and an accuracy row, so the kill count printed twice and the accuracy printed twice in
-       two different formats - "42% (17/40)" up top and "42%" down below.
-
-       Asserted as uniqueness over the LABEL rather than as a fixed list, because a label check is what
-       catches the next accidental duplicate, and because the two accuracy rows had different labels'
-       worth of disagreement only in their VALUE format - the label 'Accuracy' was genuinely repeated,
-       which is the part a reader notices.
-
-       The third assertion is the load-bearing one for the future: the records block must not be left
-       empty by a well-meaning removal. The pair it originally replaced was unfixable - nothing
-       increments those two fields - and deleting it without replacing it would have turned a
-       permanently-zero record into no record at all. */
+  /* THE WALL SITS CLOSE TO THE ENEMY IT COVERS, not halfway to the player. [h:99-tests-135] */
+  /* A BRUNCH DOES NOT EAT THE FIRE OF THE ENEMY IT IS ESCORTING. [h:99-tests-136] */
+  /* A PLAYER HELD AGAINST A WALL REPORTS NO VELOCITY, because the enemies lead what they read. [h:99-tests-137] */
+  /* A BLINK'S TRAIL STAYS INSIDE THE ROOM AND MATCHES HOW FAR THE PLAYER ACTUALLY WENT. [h:99-tests-138] */
+  /* THE RUN SUMMARY DOES NOT PRINT THE SAME ROW TWICE, in any format. [h:99-tests-139] */
   test('the run summary prints no row label twice',()=>{
     const s={floor:3,floorTicks:sec(12),ticks:sec(200),explored:5,total:9,kills:42,dmgTaken:7,
              shots:40,hits:17,weapon:'bolts',seed:'abc123',won:false,newDepth:false,newFastest:false,
@@ -4724,10 +3524,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
     player.x=ROOM_RIGHT-player.r; player.y=ROOM_TOP+200;
     player.vx=1.4; player.vy=0.9; player.maxHp=player.hp=1e9;
-    /* 'd' drives into the wall AND 's' slides down it, so there is a genuine second axis of movement
-       to check. Pressing 'd' alone would leave vy at zero for the honest reason that nothing is
-       pushing it that way, and the "only one component may be cleared" assertion would pass without
-       ever testing anything. */
+    /* 'd' drives into the wall AND 's' slides down it, so there is a genuine second axis of movement to check. [h:99-tests-140] */
     keys={d:true,s:true};
     for(let i=0;i<40;i++) update();
     ok(player.x>=ROOM_RIGHT-player.r-1,'the player is not against the wall ('+player.x.toFixed(0)+
@@ -4763,20 +3560,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
          reset player.hp every tick inside the measurement loop, which made every hit read as zero and
          reported "the guard is harmless" while proving nothing */
       for(let t=0;t<210*8;t++){ for(const e of br) e.hp=e.maxHp; player.hp=player.maxHp; update(); }
-      /* The player STRAFES, and stays clear of the walls while doing it.
-
-         Both halves matter and each was a separate wrong measurement:
-
-           - stationary: a motionless player is hit almost every time a shell is fired at it, so
-             every leg of the comparison lands a similar number of hits and "is the wall still
-             cover" cannot be distinguished from noise.
-           - against a wall: `clampPlayer` stops the position but leaves the velocity pointing into
-             the wall, so a player held against it reports full speed while going nowhere. The
-             gunners lead that stale velocity and miss by about 52px every shot - which is now fixed
-             in the tick, but a fixture that leans on the bug cannot test the mechanic.
-
-         So the player walks a slow strafe and reverses heading whenever it gets within 140px of any
-         wall, which keeps it in open floor for the whole measurement. */
+      /* The player STRAFES, and stays clear of the walls while doing it. [h:99-tests-141] */
       let hp0=player.hp, landings=0;
       for(let t=0;t<210*14;t++){
         for(const e of br) e.hp=e.maxHp;
@@ -4802,17 +3586,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(guarded.landings>0,'a shooter escorted by a '+guarded.guards+' body pack landed '+
        guarded.landings+' of its shells - the pack is eating the fire of the enemy it is guarding, so '+
        'escorting a shooter makes it harmless instead of making it harder to reach');
-    /* AND THE WALL MUST STILL BE COVER - measured the only way that means anything, which is by
-       firing the PLAYER's bolts at the guarded shooter and counting how many arrive.
-
-       The assertion this replaces compared escorted and unguarded HIT RATES and asked for the
-       escorted number to be lower. That is not the claim: the pack does not shield the shooter from
-       the player's gun, it stands in the way of it, and after the guard exemption the shooter's own
-       shells pass through its escort. So both figures come out the same (8 against 8) even while
-       the wall is blocking every player shot - the two numbers were never going to separate.
-
-       This version asserts the mechanic directly. 100% blocked means the pack is a wall; anything
-       less means the formation has a gap in it, which is a real and different failure. */
+    /* AND THE WALL MUST STILL BE COVER - measured the only way that means anything, which is by firing the PLAYER's bolts at the guarded shooter and... [h:99-tests-142] */
     let blocked=0, fired=0;
     const br=guarded.br, shooter=guarded.shooter;
     for(let k=0;k<20;k++){
@@ -4835,139 +3609,22 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     run=undefined;
   });
 
-  /* A PACK SWITCHES TO THE CHASE WHEN THE ENEMY IT WAS GUARDING DIES, and the whole of this test is
-       built around the fixture traps that hid the bug for a long time.
-
-       The reported symptom was "when the enemy being guarded dies, the Brunch do not activate the
-       chase". Measured across six GENERATED rooms, the transition itself is fine:
-
-           rooms where the pack guarded the shooter we killed   4 of 6
-             guard count before      7, 5, 6, 4   (every body)
-             guard count after       0, 0, 0, 0   (cleared on the same tick)
-             time to 90% chase speed  62-67ms
-             still guarding a dead body  0
-
-       The two rooms that appeared to fail were both rooms with a SECOND shooter, and in both the
-       pack had been guarding the other one - so killing the body this test happened to pick left it
-       guarding a live enemy 153px away at 0.25 speed. Which is correct, and looks exactly like the
-       bug. That is why the assertion below kills the body the pack is ACTUALLY guarding rather than
-       a body the fixture chose.
-
-       Two fixture traps, both of which produced confident nonsense before this test existed:
-
-         - a body spawned into a room the tick is not walking is NEVER TICKED. `currentRoom()` is the
-           room the PLAYER is in, so a detached scratch room full of enemies reports "nothing is
-           happening" forever. Every probe that built its own room shared this.
-         - `spawnEnemy` RETURNS a body and does not add it, so a hand-built pack that forgets the push
-           is simply not there.
-
-       This test uses currentRoom() and pushes what it builds. */
-  /* A PACK HOLDS ITS ESCORT UNTIL THE ESCORTED BODY DIES, and sprints at the player only when there
-       is nothing left to shield.
-
-       The design, as stated: a Brunch pack's primary purpose is to be a living shield. It leaves that
-       job for one reason only - the thing it is shielding is dead. The sprint at the player is the
-       LAST RESORT, not a fallback that gets used whenever the pack feels like it.
-
-       This replaces a leash that was implemented here and removed. The leash released the target when
-       the player moved more than BRUNCH_GUARD_LEASH away, and it was a defensible reading of the
-       mechanic that turned out to be wrong: it made the wall conditional on the player's habits.
-       Cross the room and the escort abandoned the shooter it was standing in front of, which means the
-       mechanic is only present when the player happens to be nearby - a decoration rather than a
-       threat. The wall is the point, so it does not get switched off by walking.
-
-       Three claims, and the second is the one that was actually wrong before:
-         - a target stays held through any player movement, including the far corner;
-         - it stays held when a NEARER shooter appears, because re-picking on proximity is what makes a
-           wall oscillate as bodies shuffle;
-         - it is released on death, and the pack sprints at BRUNCH_RUN immediately afterwards. */
+  /* A PACK SWITCHES TO THE CHASE WHEN THE ENEMY IT WAS GUARDING DIES, and the whole of this test is built around the fixture traps that hid the bug... [h:99-tests-143] */
+  /* A PACK HOLDS ITS ESCORT UNTIL THE ESCORTED BODY DIES, and sprints at the player only when there is nothing left to shield. [h:99-tests-144] */
   test('audio is not built until a gesture, and a gesture makes it work',async ()=>{
-    /* THE TEST FOR "THE GAME IS SILENT FOR EVER". The defect, in full, because every assertion in
-     * this file passed while it was true:
-     *
-     * `Sound.autoUnlock()` is called at LOAD from the input layer, and it used to set `gestureSeen`
-     * unconditionally and then unlock. So an AudioContext was built BEFORE any user interaction -
-     * exactly what every browser's autoplay policy suspends. The context came up suspended. `resume()`
-     * was called and its promise ignored, and `unlocked` was read from `ctx.state` on the very next
-     * line, before that promise could settle. So:
-     *
-     *   - `unlocked` stayed false, so every voice went to `skippedLocked`;
-     *   - the guard at the top of `unlock` was `if(ctx) return false`, and `ctx` had just been
-     *     assigned, so every LATER gesture returned false without trying anything;
-     *   - `autoUnlock` only removed its listeners once `unlocked` was true, so they stayed installed,
-     *     calling a function that could not succeed.
-     *
-     * Twelve working voices, correct waveforms, a correct mix, a bounded pool - and not one sound, the
-     * only symptom a counter nobody reads.
-     *
-     * Measured with a real keydown, a real click and NO autoplay flag (which is what a player's
-     * browser has): before the fix `ctxState` stayed `suspended` through every gesture and 50 shots
-     * reported 50 skips. With `--autoplay-policy=no-user-gesture-required` the same page reported
-     * `running` and everything passed. That is why every audio benchmark in this project said the
-     * audio was fine: the harness was relaxing the very policy under test.
-     *
-     * WHAT IS ASSERTED, and the discipline here is the point:
-     *
-     *   1. A gesture, and ONLY a gesture, brings the audio up. No helper, no pump, no wait between
-     *      the gesture and the assertion.
-     *   2. Then, and only then, a real play.
-     *
-     * The rule learned here, at the cost of a mutation that survived 239/239: **a helper that repairs
-     * the state under test deletes the test.** An earlier version of this test called
-     * `await Sound.whenAudible()` immediately after the gesture - and `whenAudible` sets `unlocked`
-     * itself. Restoring the original permanent-silence guard into `play` then passed the whole suite,
-     * because the helper had already made the context look healthy before `play` was ever called. */
-    /* NO PRECONDITION ASSERTED, AND THIS IS THE FIFTH TIME IN THIS PROJECT THAT ONE HAS HAD TO BE
-       REMOVED FROM AN AUDIO TEST.
-
-       The suite runs every async test concurrently, and 100 of them have already dispatched synthetic
-       keydowns at the audio system by the time this one starts - so `ctxState` here is `suspended`
-       and `gestureSeen` is true, and neither means anything. Asserting on either produces a failure
-       that says "this test cannot run" rather than "this test found a bug", and the difference is the
-       whole ballgame: the first costs an hour, the second costs a minute.
-
-       What is asserted below is only what THIS test causes. Everything else is established, not
-       assumed - which is the discipline the assertion I just deleted was violating. */
+    /* THE TEST FOR "THE GAME IS SILENT FOR EVER". [h:99-tests-145] */
+    /* NO PRECONDITION ASSERTED, AND THIS IS THE FIFTH TIME IN THIS PROJECT THAT ONE HAS HAD TO BE REMOVED FROM AN AUDIO TEST. [h:99-tests-146] */
     const before=Sound.stats();
 
-    /* THE GESTURE. `autoUnlock` requires `event` to be present before it will claim one or build
-       anything, so this is the same path a keypress takes.
-
-       It is repeated until the context is running, because in this harness the context may have been
-       suspended by a neighbouring test and a player's FIRST gesture would repair that. A loop rather
-       than a single call so the assertion below is about the game's path, not about which test ran
-       first. Three passes is ample: the real fix makes the first one work, and if it does not, the
-       assertion reports the state rather than hiding it. */
+    /* THE GESTURE. `autoUnlock` requires `event` to be present before it will claim one or build anything, so this is the same path a keypress takes. [h:99-tests-147] */
     for(let i=0;i<2 && Sound.stats().ctxState!=='running';i++){
       Sound.autoUnlock(new Event('keydown'));
       await Sound.whenAudible();
     }
     Sound.autoUnlock(new Event('keydown'));
 
-    /* ONE FRAME, AND THE REASON IS WORTH THE WAIT.
-
-       The assertion is still about the game's own path - the gesture above is a bare
-       `autoUnlock(new Event('keydown'))`, the same call a keypress makes, and `whenAudible` is not
-       used after it - but the context is read on the NEXT frame rather than on the next line.
-
-       `resume()` returns a promise. Reading `ctx.state` synchronously after a gesture is precisely the
-       mistake this whole bug was made of, and asserting on it here would be the same mistake wearing
-       a test's clothes: a test that fails against correct code teaches you to distrust the code.
-
-       Measured, and it is why the loop above exists at all: after the suite finishes, the same context
-       reads `running`. During the suite it reads `suspended`, because ~100 concurrent tests share it
-       and one of them suspends it to exercise the recovery path. A single frame is enough for the
-       promise this particular gesture started to settle, and long before the next thing can touch it. */
-    /* A MACROTASK, NOT `requestAnimationFrame`. This distinction cost a 120-second browser timeout and
-       is worth recording: the suite runs its bodies while the page is still parsing, so the main thread
-       is blocked, and a `requestAnimationFrame` callback does not fire until the browser gets control
-       back - which it never does while the suite is on the stack. A `setTimeout(0)` is a macrotask and
-       is delivered as soon as the current task yields.
-
-       So: audio that depends on animation frames is untestable inside this harness, and the helpers
-       that wait for audio (`whenAudible`, `whenIdle`) have the same problem - which is why they resolve
-       against `ctx.currentTime` advancing rather than against frames, and why the suite reports them as
-       TIMEOUT rather than hanging silently. */
+    /* ONE FRAME, AND THE REASON IS WORTH THE WAIT. [h:99-tests-148] */
+    /* A MACROTASK, NOT `requestAnimationFrame`. [h:99-tests-149] */
     await new Promise(z=>setTimeout(z,0));
     const now=Sound.stats();
     ok(now.gestureSeen,'a real gesture did not register, so nothing downstream can be trusted');
@@ -4997,32 +3654,14 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   },true);
 
   test('a suspended audio context can always be brought back',async ()=>{
-    /* THE THIRD PART OF THE FIX, and the one that makes the other two recoverable.
-     *
-     * The original `unlock` began `if(ctx||!Ctor) return false`. `ctx` was assigned a few lines
-     * earlier, so on the SECOND call - which is every gesture after the first - the function returned
-     * immediately without attempting anything. A context in the wrong state could therefore never be
-     * repaired, and the one thing that would have fixed the silence was the one thing that prevented
-     * it. That is why a game could be permanently silent with no code path out of it.
-     *
-     * Asserted here by SUSPENDING the context deliberately and asking for it back. There is no mock:
-     * `Sound.stats()` exposes no setter and this uses the real context the game is holding, because a
-     * test of the recovery path that used a fake context would be a test of the fake.
-     */
+    /* THE THIRD PART OF THE FIX, and the one that makes the other two recoverable. [h:99-tests-150] */
     await Sound.whenIdle();
-    /* BRING THE CONTEXT UP FIRST, REPEATEDLY, AND SAY WHY. `whenAudible` is not trusted to do it once:
-       a neighbouring test may have suspended the context again between the await and the next line,
-       so this is a loop that exits the moment the context is running. The fixture rule in this project
-       is that the precondition is established, never assumed - and a loop is the honest form of that
-       when the state is shared with 200 concurrent tests. */
+    /* BRING THE CONTEXT UP FIRST, REPEATEDLY, AND SAY WHY. [h:99-tests-151] */
     for(let i=0;i<2 && Sound.stats().ctxState!=='running';i++){
       Sound.autoUnlock(new Event('keydown'));
       await Sound.whenAudible();
     }
-    /* ESTABLISH THE PRECONDITION RATHER THAN ASSUMING IT. Because the tests run concurrently, this
-       one cannot know what state the audio is in when it starts - so it brings the context up first,
-       and only then breaks it. A test that asserted its own precondition here failed for four
-       consecutive runs against code that was correct. */
+    /* ESTABLISH THE PRECONDITION RATHER THAN ASSUMING IT. [h:99-tests-152] */
     Sound.autoUnlock(new Event('keydown'));
     await Sound.whenAudible();
     const running=Sound.stats();
@@ -5035,26 +3674,8 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(broken.ctxState,'suspended',
       'a context could not be suspended, so the recovery path cannot be exercised here');
 
-    /* AND THE CASE THAT ACTUALLY NEEDS `play` TO DO THE FIXING, which is the one a gesture cannot
-       reach and which nothing else in this file asserted.
-
-       This is the alt-tab: the game was audible, the tab went to the background, the browser
-       suspended the context, and the player came back and fired without pressing anything that would
-       register as a gesture. With the guard `if(!unlocked||!ctx||ctx.state!=='running')` the play is
-       simply refused and counted as a skip - so the game is muted until the player happens to press a
-       key, which is not a thing anyone would think to do about a game that has gone quiet.
-
-       The mutation that put that guard back PASSED 239/239 until this assertion existed, because the
-       other two audio tests always had a gesture immediately before their `play`, and a gesture
-       resumes the context - so the broken guard was never on the path anything measured.
-
-       A fix that only works when the player does the obvious thing is not a fix, and this is the
-       assertion that says so. */
-    /* THE PRECONDITION, ASSERTED. `eq(broken.ctxState,'suspended')` above checks the state at the
-       moment of the suspend call, and `suspend()` is a promise - so by the time `play` runs, another
-       await has happened and the context may already be back. Four runs of this test failed with a
-       completely unrelated message, and then this one passed against a mutation that should have
-       killed it, which together meant the fixture was not exercising the path at all. */
+    /* AND THE CASE THAT ACTUALLY NEEDS `play` TO DO THE FIXING, which is the one a gesture cannot reach and which nothing else in this file asserted. [h:99-tests-153] */
+    /* THE PRECONDITION, ASSERTED. [h:99-tests-154] */
     const atPlay=Sound.stats();
     eq(atPlay.ctxState,'suspended',
       'the context is '+atPlay.ctxState+' rather than suspended, so this test is not exercising the '
@@ -5097,15 +3718,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       Sound.autoUnlock(new Event('keydown'));
       await Sound.whenAudible();
     }
-    /* AUDIO IS TESTED BY ITS PLAN AND ITS LIMITS, NOT BY ITS SOUND. A headless browser hears
-       nothing, so what is asserted here is everything that is observable: that every voice builds,
-       that the pool is bounded, that mute is honoured before synthesis rather than after, that the
-       four weapons have four distinct pitches, that panning follows the body, and that a real fight
-       runs 4200 ticks without audio throwing into it.
-
-       The last of those is the one that matters. A sound that throws while the player is fighting is
-       a crash, and a crash caused by audio is indefensible - so every entry point in Sound wraps
-       itself, and `failed` is a counter that must stay at zero across a whole room. */
+    /* AUDIO IS TESTED BY ITS PLAN AND ITS LIMITS, NOT BY ITS SOUND. [h:99-tests-155] */
     ok(typeof Sound!=='undefined'&&typeof Sfx!=='undefined',
       'the sound system is not loaded - Sound and Sfx are undefined, so the game has no audio at all');
     const names=Sound.names();
@@ -5125,29 +3738,8 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     eq(unplanned.join(','),'','these voices have no plan, so calling them does nothing at all: '+unplanned.join(', '));
     eq(zeroLevel.join(','),'','these voices are silent by construction, so they are wired to events '
       +'and cannot be heard: '+zeroLevel.join(', '));
-    /* THE POOL IS BOUNDED, and it leaked once: measured at 162 simultaneous voices against a
-       declared cap of 24, after twenty seconds of a five-body fight. `onended` does not fire until
-       the audio thread reaches the scheduled end, so a count that waits for it only ever climbs. The
-       pool now prunes against the audio clock and steals the oldest.
-
-       THE BOUND IS PROVED BY OVERRUNNING IT, NOT BY READING IT. Two earlier versions of this
-       assertion checked `voices <= cap` and passed while the leak was present, for a reason worth
-       recording: in a headless browser the context never leaves `suspended`, nothing is ever
-       actually scheduled, and `track()` is never reached - so the count stays at zero and the
-       assertion is true for the wrong reason. Reading a counter that a disabled subsystem never
-       increments cannot test that subsystem.
-
-       So the cap is tested by putting MORE than `cap` voices through `play` and checking the pool
-       does not grow past it. That needs the voices to be tracked, and tracking is what a live
-       context does - so this test counts them through the same path a browser takes, and the count
-       is asserted either way: if the browser refuses the sounds entirely, the bound is trivially
-       satisfied and that is stated rather than passed off as a result. */
-    /* THE BOUND, EXERCISED THROUGH THE POOL'S OWN BOOKKEEPING. `exercisePool` calls the same
-       `reserve`/`steal` that `play` calls - it is not a parallel copy - and takes no AudioContext, so
-       it works in a browser that will never make a sound. Every path to the bound otherwise goes
-       through `ctx.state==='running'`, which in headless is never true, so `reserved` stays at 0 and
-       the count reads zero for the wrong reason. Two earlier assertions passed against the leak
-       that way. */
+    /* THE POOL IS BOUNDED, and it leaked once: [h:99-tests-156] */
+    /* THE BOUND, EXERCISED THROUGH THE POOL'S OWN BOOKKEEPING. [h:99-tests-157] */
     Sound.releasePool();
     const over=Sound.exercisePool(200);
     ok(over.voices<=over.cap,'the pool took 200 reservations and reports '+over.voices+' voices '
@@ -5173,10 +3765,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       +'to happen before anything is built, or a muted player pays for audio they cannot hear');
     ok(Sound.stats().played>playedBefore,'nothing played at all, which means the system is wired up '
       +'and cannot make a sound - check whether the browser is blocking it');
-    /* FOUR WEAPONS, FOUR PITCHES. This is the queued pitch-jitter item, and it failed twice on a
-       lookup key that does not exist - once on `w.id` (weapons have no id) and once on `w.name`
-       ('Beam' is not a name any weapon has; it is 'Arcane Beam'). The key is derived through the
-       game's own `Content.idOf` now, so a rename cannot silently mute the difference. */
+    /* FOUR WEAPONS, FOUR PITCHES. [h:99-tests-158] */
     const tones={};
     for(let i=0;i<WEAPONS.length;i++){ player.weaponIdx=i; tones[Content.idOf(WEAPONS[i])]=weaponDetuneCents(); }
     const vals=Object.values(tones);
@@ -5218,57 +3807,20 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       +'system - the wiring is as much a part of it as the voices');
     ok(Sound.stats().voices<=Sound.stats().cap,'the pool ended the fight at '
       +Sound.stats().voices+' voices against a cap of '+Sound.stats().cap);
-    /* THE SOUNDS ARE RENDERED, NOT MERELY ASSERTED TO EXIST. Everything above is observable
-       bookkeeping; none of it says whether a shot is a click or a warble. `OfflineAudioContext`
-       renders the real waveform with no speaker, so the envelope is measured from the same
-       `VOICES[name].build` the game plays - not from a copy, which would be testing the test.
-
-       And it immediately caught a mix that was wrong in a way no existence check could see. Measured
-       first pass: boss peaked at 0.9477 against a shot at 0.0771 - twelve times louder, which is not
-       a mix but an interruption - and `tell` at -8.3dBFS was LOUDER than the Brunch touch at -9.6,
-       inverting the design, since the tell exists precisely to sit under a fight. Both corrected; the
-       set now spans 20dB with the tell under the touch. */
+    /* THE SOUNDS ARE RENDERED, NOT MERELY ASSERTED TO EXIST. [h:99-tests-159] */
     ok(typeof Sound.render==='function','Sound.render is missing, so the waveforms cannot be '
       +'measured at all - a sound system tested only for existence is a sound system nobody has heard');
-    /* SILENCE THE SYSTEM BEFORE MEASURING IT. The fight above scheduled thousands of live voices,
-       and `render` clears the pool before it renders - but only the ones it can see, and a source
-       that was started in a previous task and has not been reaped yet is not in the list. Measured
-       consequence: a `shot` whose envelope ends at 0.09s reported a tail of 0.86 to 1.28 at 0 to
-       -1dBFS, varying between runs because it depended on what was still sounding when the offline
-       graph was built. Measured with the pool released first: peak 0.0771, tail exactly 0, every
-       time and at every viewport.
-
-       The lesson is the same one this file keeps arriving at, and it is now four separate checks in
-       it: a measurement taken while the thing being measured is still doing something else is not a
-       measurement. The test above measures "did audio break a tick"; this one measures "what shape is
-       the waveform", and the two cannot both be true at once. */
+    /* SILENCE THE SYSTEM BEFORE MEASURING IT. [h:99-tests-160] */
     Sound.releasePool();
     if(typeof Sound.render==='function'){
-      /* ONE AT A TIME, IN SEQUENCE, AND NOT `Promise.all`.
-         `Sound.render` swaps the module's ctx so the voice bodies can stay free of plumbing, and
-         twelve concurrent renders therefore corrupt each other: the numbers that came back described
-         a sound ringing at 3dBFS 1.46 seconds after a 90ms shot that is silent from 100ms on. Every
-         one of them was an artefact of two offline graphs sharing one set of module variables.
-
-         Rendered sequentially, `shot` measures peak 0.0771 with a tail of exactly 0 - the waveform is
-         correct and the concurrency was the only thing wrong with it. */
+      /* ONE AT A TIME, IN SEQUENCE, AND NOT `Promise.all`. [h:99-tests-161] */
       const measured=[];
       for(const n of names) measured.push(await Sound.render(n,{}));
       const silent=[], ringing=[], hot=[], tooQuiet=[];
       for(const m of measured){
         if(!m||m.threw||m.renderThrew){ silent.push(m&&m.name||'?'); continue; }
         if(m.silent) silent.push(m.name);
-        /* The tail check is in AMPLITUDE, and the threshold has to be an audible one. Every voice's
-           envelope ends on `exponentialRampToValueAtTime(0.0001)`, so the last of it sits at about
-           -80dBFS - inaudible, and a source that is stopped a moment later leaves a sliver of that
-           behind. Measuring at 0.001 (-60dBFS) reports a voice as ringing when it is 80dB down, which
-           is what the first version did: `over` was flagged at 1.48671 while its envelope ended at
-           0.9s, and the "defect" was the tail of a ramp that had already gone silent.
-
-           -60dBFS is the threshold because that is roughly the quietest thing worth keeping: a fight
-           has a shot at -22dBFS and a boss at -4, so anything below -60 under them is gone. A voice
-           genuinely RINGING - a filter with feedback, a release that never terminates - sits far above
-           it, so the check still bites. */
+        /* The tail check is in AMPLITUDE, and the threshold has to be an audible one. [h:99-tests-162] */
         if(m.tailPeak>0.001) ringing.push(m.name+' at '+m.tailPeak.toFixed(4)
           +' ('+(20*Math.log10(m.tailPeak)).toFixed(0)+'dBFS)');
         if(m.peak>0.95) hot.push(m.name+' at '+m.peak);
@@ -5276,10 +3828,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       }
       eq(silent.join(','),'','these voices render as pure silence, so they are wired to events and '
         +'cannot be heard: '+silent.join(', '));
-      /* MUTATION GUARD: the assertions below are only meaningful if `measured` has content. A skipped
-         promise, a renamed method, or a test that silently awaits nothing would leave this array empty
-         and every check trivially true - which is what happened to the pool-bound assertions in this
-         same test, twice, for the same reason. */
+      /* MUTATION GUARD: [h:99-tests-163] */
       ok(measured.filter(Boolean).length===names.length,'the render step measured '
         +measured.filter(Boolean).length+' of '+names.length+' voices, so every waveform assertion '
         +'below is passing vacuously');
@@ -5303,11 +3852,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       ok(spanDb<26,'the voices span '+spanDb.toFixed(1)+'dB, from '+Math.min(...peaks).toFixed(3)
         +' to '+Math.max(...peaks).toFixed(3)+' - under about 26 is a mix you can fight through, '
         +'and over it the loudest event silences the rest');
-      /* FOUR WEAPONS, FOUR MEASURED PITCHES. Asserted on the rendered waveform rather than on the
-         table, because the table was wrong twice on a key that did not exist and the table cannot
-         tell you. Zero crossings per second is a rough pitch proxy - a 440Hz sine crosses zero 880
-         times a second - and it separates four tones spread over 690 cents without any of that
-         needing to be precise. */
+      /* FOUR WEAPONS, FOUR MEASURED PITCHES. [h:99-tests-164] */
       const hz=[];
       for(let i=0;i<WEAPONS.length;i++){ player.weaponIdx=i;
         hz.push({id:Content.idOf(WEAPONS[i]), hz:(await Sound.render('shot',{detune:weaponDetuneCents()})||{}).zeroCrossHz}); }
@@ -5318,24 +3863,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
         +'zero-crossing count is off the scale, so the shot is either inaudible or a whistle');
     }
 
-    /* A RENDER MUST BE A MEASUREMENT, NOT A WINDOW. This is the fourth attempt at one symptom and
-       the first that found it, so it is worth stating what the symptom was and where everyone
-       looked: a 90ms `shot` kept reporting a tail of 0.78 to 1.28 at 0 to -2dBFS, and the number
-       moved between viewports and between runs.
-
-       Three fixes were aimed at the LIVE audio graph - serialising the renders, clearing the pool,
-       suspending the live context - and every one of them was reasonable and none of them was the
-       cause. The live graph was innocent. `renderVoice` builds its voice by swapping the module's
-       `ctx` to an OfflineAudioContext and then AWAITING `startRendering()`. That await yields the
-       main thread, and the game's own code runs in the gap: a fight loop, a keydown, another test's
-       `play()`. Every one of those built its nodes against the OFFLINE context and was rendered
-       into the buffer being measured. So the "shot" was a recording of whatever else was sounding,
-       which is why it was loud, why it rang on, and why it varied.
-
-       The fix is one line in `play`: do not build while a render holds `ctx`. And this test is the
-       proof, because it does the one thing the suite's own ordering made impossible - it fires
-       sounds INTO the render's await window. Mutate the guard out and this fails immediately, with
-       a peak of 1.07 and a 500ms ring on a sound that is silent after 75ms. */
+    /* A RENDER MUST BE A MEASUREMENT, NOT A WINDOW. [h:99-tests-165] */
     Sound.releasePool();
     const racing=Sound.render('shot',{});
     for(let i=0;i<3000;i++) Sound.play('shot',{});
@@ -5364,25 +3892,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   },true);
 
   test('every panel that is drawn OVER a live run still lets the player walk',()=>{
-    /* THE BENCH IS NOT A PAUSE, AND IT WAS EATING THE WHOLE KEYBOARD.
-
-       Two INDEPENDENT gates had to be opened, and fixing one left the bug looking smaller rather
-       than smaller-and-fixed - which is how it survived: after the handler stopped consuming
-       unclaimed keys, W, A and D were STILL dead while S worked.
-
-       1. The handler's `if(devOpen)` block ended in a bare `return`, so every key it did not
-          explicitly claim never reached `keys[k]=true` at 80-ui.js:987.
-       2. `uiHoldsInput()` returned `!!uiOverlay()||devOpen`, so the suppressor on 80-ui.js:891 sent
-          every key through `uiAllows()`, and WASD is not in UI_KEYS.
-
-       S worked after gate 1 because the lab's silver-key shortcut had put 's' in UI_KEYS - so one
-       of the four directions got through and the report said "S is broken" rather than "the bench
-       ate the keyboard". A fix that leaves one key alive is a fix that gets filed again.
-
-       Measured before, on the bench: W/A/S/D each moved the player 0px in 120 ticks, against 157.6
-       px with no panel open. The assertion below is that every direction moves the same amount with
-       the bench and the lab open as with neither - not merely that it moves, because a panel that
-       halved your speed would pass the weaker version. */
+    /* THE BENCH IS NOT A PAUSE, AND IT WAS EATING THE WHOLE KEYBOARD. [h:99-tests-166] */
     const walk=(label,setup)=>{
       const out={};
       for(const [key,dx,dy] of [['w',0,-1],['a',-1,0],['s',0,1],['d',1,0]]){
@@ -5423,10 +3933,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     }
     /* And the lab's own shortcuts still work, on keys that are not movement keys - which is the
        whole reason S moved to Y rather than the movement key being taken away. */
-    /* The lab shortcuts are gated on BOTH the bench being open and `state==='dev'` - the block is
-       `if(devOpen){ ... if(state==='dev'){ ... } }` (80-ui.js). Setting `state` alone leaves the
-       outer gate shut, so the shortcuts cannot fire and the test reports them broken, which is the
-       fixture being wrong rather than the code. `toggleDev(true)` opens the bench. */
+    /* The lab shortcuts are gated on BOTH the bench being open and `state==='dev'` - the block is `if(devOpen){ ... [h:99-tests-167] */
     startGame(); const rr=goTo('normal');
     rr.enemies.length=0; readyT=0; fadeT=0;
     const wasState=state;
@@ -5442,17 +3949,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
 
   test('a blink puff never lands outside the room, from any wall, at any distance',()=>{
-    /* THE PLAYER IS ALLOWED 40px PAST A WALL LINE AND THE PUFF IS NOT.
-
-       `clampPlayer` ends with a deliberately loose outer bound so a player can stand in a doorway
-       overshoot for the sake of transitions, which means a puff placed at the player's own clamped
-       position is drawn over the wall. That was measured - a blink into the left or bottom wall left
-       two puffs 40px outside the room - and it is fixed by clamping the TRAIL to the room box rather
-       than to the player's bounds (src/50-run.js:60-84).
-
-       Measured across all four walls at 15 starting distances each: 0 violations, 0px outside. This
-       asserts that, because the fix is a clamp on two numbers and a clamp is exactly the kind of
-       thing that gets tidied away by someone who did not know why it was not the player's bounds. */
+    /* THE PLAYER IS ALLOWED 40px PAST A WALL LINE AND THE PUFF IS NOT. [h:99-tests-168] */
     startGame();
     let violations=0, worst=0, checked=0;
     const where=[];
@@ -5492,22 +3989,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
 
   test('every ranged body telegraphs for CAST_TIME before its shell leaves',()=>{
-    /* THE SAME TELL ON EVERY RANGED BODY, PINNED TO THE MEASURED NUMBER.
-
-       The boss volley tell was already fixed and has its own test above. The GUNNER and SHOOTER use
-       the identical mechanism - `60-tick.js:1363` sets `castT=CAST_TIME` and `fireCommittedShot`
-       counts it down before pushing the shell - and nothing pinned it. Two probes in this session
-       measured it as 1 tick and then as 0 ticks, both times wrongly:
-
-         - sampling `castReady` transitions conflates the first shot with every later one;
-         - sampling `castT` on the tick the shell leaves always reads 0, because
-           `fireCommittedShot` does `if(--e.castT<=0) e.castReady=true` and then pushes - so the
-           value on screen for the whole countdown is invisible to a sample taken at the muzzle.
-
-       Measured, tracing one shot tick by tick: `castT` is set to CAST_TIME=105 on tick 169 and
-       counts down 104, 103, ... 1, and the shell leaves when it reaches 0. That is 0.5 seconds of
-       warning at 210Hz, and it is the number this asserts. A gunner whose tell collapsed to a
-       single tick would be unhittable-by-reading, which is the same failure the boss had. */
+    /* THE SAME TELL ON EVERY RANGED BODY, PINNED TO THE MEASURED NUMBER. [h:99-tests-169] */
     startGame(); const r=goTo('normal');
     r.enemies.length=0; projectiles.length=0; r.pickups.length=0; readyT=0; fadeT=0;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
@@ -5517,10 +3999,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       rm.enemies.length=0; projectiles.length=0; readyT=0; fadeT=0;
       player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.hp=player.maxHp;
       const g=spawnEnemy(false,rm,ROOM_RIGHT-160,MIDY,type); rm.enemies.push(g);
-      /* `shootCd` is LEFT ALONE. It is the cooldown that gates the cast - `60-tick.js:1186` reads
-         `else if(e.shootCd<=0)` and only then starts one - so pinning it to 1e9 stops the gunner
-         ever arming, and the test measured a tell of 0 for a body that telegraphs perfectly well.
-         A probe that silences the thing it is measuring reports the silence, not the behaviour. */
+      /* `shootCd` is LEFT ALONE. [h:99-tests-170] */
       g.noticeTimer=0; g.aggroTimer=0; g.maxHp=g.hp=1e9;
       let peak=0, armedTick=-1, firstShellTick=-1;
       for(let t=0;t<210*20 && firstShellTick<0;t++){
@@ -5544,35 +4023,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     }
   });
 
-  /* THE BOSS VOLLEY TELLS BEFORE EVERY SHELL, INCLUDING THE FIRST.
-
-       The volley set `castT=CAST_TIME` - which is exactly what the draw reads
-   (`if(e.castT>0) drawCastFlash(...)`, 70-view.js:442) - and set `volleyT=0` alongside it. `resolveBoss`
-       decrements `volleyT` and fires when it is `<= 0`, so the first shell left on the SAME TICK the
-       move was chosen: a charge that began and ended inside one tick, and was therefore never
-       rendered. The player was hit by a shell whose tell they had not seen.
-
-       Measured over a full phase-3 fight, the delay from entering the volley to each shell leaving:
-
-           before   first shell   1 tick      <-- no window at all
-                    second        117
-                    third         233
-
-           after    first shell   105 ticks   500ms, the same as a gunner
-                    second        221
-                    third         337
-
-       The re-tell BETWEEN shells was always there and is generous; the first shot of every volley was
-   the one with nothing. That is the worst shape for a three-shell attack to have, because the shell
-   you had no warning of is the one that sets up the two you did.
-
-       Asserted on all three shells rather than the first, because the between-shell re-tell and the
-   opening tell are different mechanisms and either can be broken alone.
-
-       The first version of the fix set `volleyT=1` and read as correct in a trace - `volleyT` 1,
-  `castT` 105 on the entry tick - while behaving exactly as before, because the decrement made it 0
-  and `<= 0` fired. A state field that has just been assigned says nothing about what the next tick
-       does with it; the only way to know is to watch a shell leave. */
+  /* THE BOSS VOLLEY TELLS BEFORE EVERY SHELL, INCLUDING THE FIRST. [h:99-tests-171] */
   test('the boss volley tells before every shell, the first one included',()=>{
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
@@ -5609,26 +4060,8 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
 
   test('stun and slowT are tick COUNTS: never negative, and a fractional write cannot strand a body',()=>{
-    /* THE BUG THIS EXISTS FOR. `40-combat.js` wrote `stun = KNOCK_STUN/3` = 29.333..., and the tick
-       decrements under the guard `if(e.stun>0)`. Thirty clean decrements take 29.333 to **-0.667**,
-       and a negative stun fails that guard - so the branch stops running, the value is never clamped,
-       the body is never decremented again, and it is left in a state that is neither stunned nor
-       clean. It is a permanent, silent, unrecoverable body state caused by one missing `Math.round`.
-
-       Measured consequence, before this was found: a Brunch pack could not chase a sprinting player
-       at ANY chase speed. Contact landed, the pack took knockback, `stun` pinned at 88 with `kvx` at
-       -2.36 and never decaying, and the pack was driven backwards at ~70px/s while `curSpeed` read
-       3.0. The symptom - "Brunch still cannot reach the player when sprinting away" - reads exactly
-       like a speed problem, and raising the speed did nothing, which is what made it worth chasing
-       rather than retuning.
-
-       The three assertions are: the CONSTANT is integral, the STATE never goes negative, and a
-       fractional value planted directly still recovers. The third is the one that would have caught
-       this at the time. */
-    /* NOT `Number.isInteger(KNOCK_STUN/3)` - that expression is fractional by arithmetic and always
-       will be, so asserting on it asserts something false. What has to be integral is the value
-       WRITTEN TO A BODY, and that is only observable by running a collision. Which is the better
-       test anyway: it reads the game's own answer rather than re-deriving it from the constant. */
+    /* THE BUG THIS EXISTS FOR. [h:99-tests-172] */
+    /* NOT `Number.isInteger(KNOCK_STUN/3)` - that expression is fractional by arithmetic and always will be, so asserting on it asserts something false. [h:99-tests-173] */
     startGame(); const rc=currentRoom(); rc.enemies.length=0; projectiles.length=0;
     readyT=0; fadeT=0;
     const a=spawnEnemy(false,rc,ROOM_LEFT+200,MIDY,'lunger');
@@ -5682,33 +4115,14 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(worstStun===0,'stun reached '+worstStun+' during a 12-second fight with six bodies '+
        'knocking each other off');
     ok(worstSlow===0,'slowT reached '+worstSlow+' during the same fight');
-    /* and an integral stun decays to EXACTLY zero rather than past it, which is the whole property.
-       It needs `aggroTimer` set: an unalerted body is skipped by `if(dist<aggroRange()) ... else
-       if(e.aggroTimer>0)` before the stun branch is ever reached, so a 3-tick stun planted on a body
-       that has not noticed the player never ticks down at all. That is correct behaviour - a body
-       that has not seen you is not being stunned - and it is the fourth fixture in this session to
-       have measured the wrong thing for that reason. */
-    /* A FRESH RUN, because the fight above ends the run. `run.state` was 'undefined' - the 12-second
-       brawl with six bodies ran the player to zero and `endRun` cleared it - so `update()` returned at
-       its state gate and no body was ever stepped. Two assertions in this file had been reading a
-       fixture that measured the state gate rather than the stun branch.
-
-       Asserting the run is alive before measuring it is the fix, and it is asserted rather than
-       assumed: a fixture whose game has ended is not a slow test, it is a wrong answer. */
+    /* and an integral stun decays to EXACTLY zero rather than past it, which is the whole property. [h:99-tests-174] */
+    /* A FRESH RUN, because the fight above ends the run. [h:99-tests-175] */
     startGame(); const r3=goTo('normal'); r3.enemies.length=0; projectiles.length=0;
     readyT=0; fadeT=0;
     player.hp=player.maxHp; player.iframes=0;
     const d=spawnEnemy(false,r3,ROOM_LEFT+100,MIDY,'gunner'); r3.enemies.push(d);
     d.noticeTimer=0; d.aggroTimer=9999; d.maxHp=d.hp=1e9; d.stun=3;
-    /* NOT an assertion on `run.state` - that field does not exist. `startGame()` builds a run object
-       with floor, ticks, kills, dmgTaken and the rest, and no `state` on it; the play/dead/gameover
-       state is a module-level variable beside it. A check written against a field that is not there
-       reads `undefined`, fails, and looks like a broken fixture rather than an invented one - which
-       is what it was, for three attempts.
-
-       What is worth asserting is the thing that actually gates the tick: that the fixture is in a
-       room and the room is stepping. Both of those are used below, so both are checked here rather
-       than discovered as a wrong number. */
+    /* NOT an assertion on `run.state` - that field does not exist. [h:99-tests-176] */
     ok(r3.enemies.indexOf(d)>=0 && typeof currentRoom()==='object',
        'the fixture body is not in the room it was spawned into, so no timer on it will ever tick');
     for(let f=0;f<10;f++){ update(); }
@@ -5745,18 +4159,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        sep+'px away - the wall has to survive the player leaving the room, or it is only present when '+
        'they happen to be nearby');
 
-    /* CLAIM 2: a DIFFERENT, and pack-nearer, shooter appears. The pack keeps the body it committed to.
-
-       The second candidate has to be nearer to THE PACK than the committed one, not merely nearer to
-       the player. `pickShield` breaks ties by distance to the pack centroid, so a shooter that is
-       closer to the player but further from the pack loses anyway - and this assertion passed
-       VACUOUSLY while the commitment was removed entirely: with unconditional re-picking, pickShield
-       still returned the committed body, because it was the nearer one to the pack. Measured: peak
-       player-to-shooter separation in this fixture is 424px, so a distance leash is also reachable
-       here, and neither was actually being tested until both were fixed.
-
-       So this spawns the second shooter right next to the pack, which is the case that would flip the
-       pick for real. */
+    /* CLAIM 2: a DIFFERENT, and pack-nearer, shooter appears. [h:99-tests-177] */
     const nearPack=br.reduce((a,e)=>({x:a.x+e.x/br.length,y:a.y+e.y/br.length}),{x:0,y:0});
     const nearer=spawnEnemy(false,room,nearPack.x-70,nearPack.y-40,'shooter');
     room.enemies.push(nearer);
@@ -5771,12 +4174,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        'proximity makes the wall oscillate as bodies shuffle, which is what the commitment exists '+
        'to prevent');
 
-    /* CLAIM 3: the escorted body dies, and only then does the pack come at the player.
-
-       The `nearer` shooter from claim 2 has to GO before this, or the pack correctly re-acquires it
-       on the next scan and the assertion reads "6 of 6 still holding a target" - which is right, and
-       is not the claim being tested. Claim 2 proved the pack does not switch while both are alive;
-       claim 3 is about what happens when the committed one dies and nothing else is left. */
+    /* CLAIM 3: the escorted body dies, and only then does the pack come at the player. [h:99-tests-178] */
     const ixN=room.enemies.indexOf(nearer); if(ixN>=0) room.enemies.splice(ixN,1);
     ok(br.every(e=>e.shieldTarget===shooter),'the pack abandoned its committed escort the moment the '+
        'nearer shooter was removed, before the escorted body had died - the commitment ends on death '+
@@ -5880,23 +4278,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   });
 
   test('a pack with nothing to protect CLOSES on a fleeing player, and announces itself doing it',()=>{
-    /* This asserts the BEHAVIOUR, because the number is what went wrong. The chase speed was 1.35
-       against a player at 1.2 - a ratio of 1.13, which reads as decisive in a table and is not. In a
-       room big enough that a 14-second chase never reaches a wall, with the player running flat out
-       and the pack starting 450px behind, the gap GREW ~107px per 2s. A pack that cannot run you down
-       is scenery, and the sprint's entire reason for existing is the moment there is nothing left to
-       shield.
-
-       Every previous check on this number was a RATIO against the player or against a lunger, and
-       ratios pass at almost any value between them - which is why a 13% cut to 1.18 went unnoticed.
-       So this measures the gap over time and asks a question about its SHAPE.
-
-       Two things have to hold and they pull against each other:
-         - the gap must SHRINK, or the pack cannot catch anyone;
-         - the pack must be slower than the player for a real interval first, or there is no window in
-           which to pick your ground, which is the entire reason BRUNCH_RAMP exists.
-       A speed high enough to satisfy the first can trivially break the second, so neither alone is
-       worth asserting. */
+    /* This asserts the BEHAVIOUR, because the number is what went wrong. [h:99-tests-179] */
     startGame();
     const r=currentRoom();
     /* 9000x2600 is not decoration. In a standard 700px room the pack reaches the west wall within
@@ -5919,21 +4301,10 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        the player's hitbox, which is the only reading of "did the pack get here" that survives the
        pack dying on arrival - and they do, because contact damage is mutual and a Brunch has 2 HP. */
     let firstContactSec=null, beatsChasedSec=null, closestApproach=1e9;
-    /* 20 SECONDS, not 14, and the shortfall was the assertion failing for the right reason at the
-       wrong threshold. Measured: a pack starting 450px behind closes at 104px/s and first overlaps the
-       player's hitbox at 13.6s - so a 14s budget has 0.4s of margin on a race, and it read "the pack
-       never reached the player" while the pack was 16px away and closing. The bound should be a
-       statement about the chase, not about how close to the deadline the fixture happened to stop. */
+    /* 20 SECONDS, not 14, and the shortfall was the assertion failing for the right reason at the wrong threshold. [h:99-tests-180] */
     for(let t=0;t<210*20;t++){
       keys={d:1};                        // the player runs flat out, away, in a straight line
-      /* SLIDE THE WHOLE FORMATION WEST before the tick, not the player alone. Without this the
-         player reaches the east wall of the 9000px room after about 90 seconds of a 14-second chase,
-         stops, and the "gap" stops being a gap - and the readings 451, 451, 395, 102, 181, 50, 146,
-         225 are that: the pack arriving at a player who has already stopped against a wall.
-
-         Moving the pack with the player rather than teleporting the player keeps the separation
-         between them intact, which a teleport would not: the whole point is to measure a chase at a
-         constant closing rate, and a teleport measures a different fight every tick. */
+      /* SLIDE THE WHOLE FORMATION WEST before the tick, not the player alone. [h:99-tests-181] */
       if(player.x>r.bounds.l+r.bounds.w-300){
         const d=player.x-(r.bounds.l+r.bounds.w-300);
         player.x-=d;
@@ -5949,21 +4320,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       { const px0c=player.x, py0c=player.y-PLAYER_HIT_DY;
         for(const g of pack) closestApproach=Math.min(closestApproach,Math.hypot(g.x-px0c,g.y-py0c)); }
       if(beatsChasedSec===null&&pack[0].curSpeed>CHASED_PLAYER_SPEED()) beatsChasedSec=+(t/TICK_HZ).toFixed(2);
-      /* AFTER the update, and with the offset SUBTRACTED. Both halves were wrong the first time and
-         they cancelled into "the pack never arrived" at a gap of 50px.
-
-         The order: this is checked after `update()` above, so the positions are post-move. Checking
-         before the tick measured the gap as it was a tick ago, and at 2.1px/tick that is two whole
-         body-radii of error - enough to miss contact entirely on a body that is arriving.
-
-         The sign: the game's own test at 60-tick.js:1365 reads
-         `Math.hypot(edx, edy-(PLAYER_HIT_DY)) < e.r+PLAYER_HIT_R`, and it is the only place in the
-         file that subtracts. Every other hitbox in the game adds 10 - `playerHit` measures against
-         `y+PLAYER_HIT_DY` - so a fixture written from the general rule measures a hitbox 20px from
-         the real one and silently never contacts.
-
-         Measured with both correct: closest approach 16.1px against a threshold of 18, first contact
-         at 13.25s. The two errors were opposite in sign, which is why the gap still looked plausible. */
+      /* AFTER the update, and with the offset SUBTRACTED. [h:99-tests-182] */
       if(firstContactSec===null){
         const px=player.x, py=player.y-PLAYER_HIT_DY;
         if(pack.some(g=>Math.hypot(g.x-px,g.y-py)<g.r+PLAYER_HIT_R))
@@ -5972,27 +4329,8 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       if(t%(210*2)===0) gapAt.push(Math.round(gap));
     }
     keys={};
-    /* The announcement bar is deliberately loose. The first version wanted the pack to still be 450px
-       out once its ramp finished, and it read 407px - which is the ramp WORKING, not failing: the gap
-       is expected to open slightly during the phase where the pack is deliberately slower than the
-       player, and the point is only that it must not have closed. Asserting "no closer than the start"
-       would be asserting that a pack which never chased would pass, which is the exact opposite of
-       this test. What has to hold is that the gap is still open and the pack has not arrived. */
-    /* THIS TEST WAS MEASURING THE WRONG MOMENT, and it only looked right by accident.
-
-       It read the gap at a FIXED time - 14 seconds - and called that "did it close". But a pack that
-       closes and LANDS is not a pack that ends 14 seconds later standing next to the player: contact
-       damage at 60-tick.js:1367 is mutual and symmetric, a Brunch has 2*TOUGH = 2.7 HP and takes 1.35
-       per touch, so the body that arrives dies on the second touch and the survivors are left with
-       nothing to shield and nothing to chase. The gap then opens because the pack is GONE, not
-       because it failed to arrive.
-
-       Measured with the pack kept alive it never went above 180px. Measured with the pack allowed to
-       die, the same trace reads 451, 451, 395, 102, 76, 221, 224, 813 - which looks exactly like a
-       pack that closes and then gives up.
-
-       So the question is WHEN IT ARRIVED, not where it was at an arbitrary tick. `firstContactSec` is
-       the arrival, and the bound on it is what the chase speed actually controls. */
+    /* The announcement bar is deliberately loose. [h:99-tests-183] */
+    /* THIS TEST WAS MEASURING THE WRONG MOMENT, and it only looked right by accident. [h:99-tests-184] */
     ok(firstContactSec!==null,'the pack never reached the player in '+(210*20/TICK_HZ).toFixed(0)+
        's of a straight-line sprint (gap 450  '+gapAt.join('  ')+'  closest='+
        closestApproach.toFixed(1)+') - a last-resort sprint that cannot '+
@@ -6018,30 +4356,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(packHp/fastest<2.2,'a maximum pack is more than two seconds of work for the best gun');
     // and they are quicker than the player, which is the point of them, but only just
     ok(ENEMY.brunch.run>ENEMY.lunger.run,'brunch is not quicker than a lunger');
-    /* THE 0.55/1.35 BOUNDS WERE RELATIVE, AND RELATIVE BOUNDS DID NOT NOTICE A REAL REGRESSION.
-       Both of these survived a 13% speed cut without complaining: a value can be "slower than 1.3x the
-       player" and "faster than a lunger" at almost any number in between, so nothing objected when
-       BRUNCH_RUN went 1.35 -> 1.18 and the pack became scenery. That comment claimed this test
-       "pins the cut", and it did not pin anything.
-
-       What the number has to satisfy is a BEHAVIOUR, not a ratio: with nothing to protect, a pack must
-       actually close on a player running flat out. Measured in a room large enough that a 14-second
-       chase never reaches a wall, gap every 2s from 450px:
-
-           run 1.35   451  682  790  898  1005  1112  1219    grows
-           run 1.62   451  609  604  599   594   589   583    holds, never closes
-           run 1.75   451  572  513  445   383   322   261    closes
-           run 1.90   451  538  423  300   176   197   156    closes faster
-
-       So 1.35 failed the property it existed for, and 1.62 is the more dangerous value: it holds the
-       gap, which looks like parity in a table and is not, because the player is never caught and can
-       walk away indefinitely. 1.75 is the pick - the first on the sweep that closes, and it closes
-       steadily rather than snapping.
-
-       The two speeds are asserted separately on purpose. BRUNCH_RUN is what a pack uses with nothing
-       to protect and BRUNCH_SHIELD_SPEED (0.72) is what it uses walking onto a slot, and the second
-       is a body heading for a FIXED point where overshooting is a real failure - so neither bound
-       can move without the other being noticed. */
+    /* THE 0.55/1.35 BOUNDS WERE RELATIVE, AND RELATIVE BOUNDS DID NOT NOTICE A REAL REGRESSION. [h:99-tests-185] */
     ok(ENEMY.brunch.run>1.70,'the chase speed is '+ENEMY.brunch.run+' - measured, 1.35 grew the gap '+
        '~107px per 2s against a fleeing player and 1.62 only held it, so anything under ~1.7 is a '+
        'pack that cannot catch a kiting player and is therefore scenery');
@@ -6049,25 +4364,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
        ' against a chase speed of '+ENEMY.brunch.run+' - the wall has to walk onto a fixed mark slowly '+
        'even when the chase is quick, which is the whole reason there are two numbers');
     ok(ENEMY.brunch.run>playerSpeedForTest(),'brunch no longer outruns the player, so kiting never fails now');
-    /* THE CEILING IS 1.9x, and it is stated against the CHASED player rather than the empty-room one.
-
-       `playerSpeedForTest()` is the player's speed in an empty room: 1.4025. A pack that is chasing you
-       is chasing a player whose momentum meter is full, which is BECAUSE they are being chased, and
-       that player moves at 1.6045. So the honest denominator is 1.6045 and 2.1 reads as 1.31x of it -
-       a chase. Measured time to contact from a 450px gap against a player holding one direction:
-
-           run 1.75   37.2s
-           run 2.10   30.3s     <- the pick
-           run 2.60   29.3s
-           run 3.20   28.3s
-
-       The curve goes flat hard after 2.1, which is why the ceiling is here and not at 3.2: at 3.2 the
-       pack closes at 1.6px/tick, where every mistake is fatal and it stops being something you can
-       read. At 2.1 it closes at 0.50px/tick, so a 200px mistake is survivable and a 400px one is not.
-
-       Both figures are asserted below, because a ceiling written against the wrong denominator is the
-       same error as a chase speed tuned against the wrong one - and that error is what made 1.35 look
-       adequate for an entire session. */
+    /* THE CEILING IS 1.9x, and it is stated against the CHASED player rather than the empty-room one. [h:99-tests-186] */
     ok(ENEMY.brunch.run<CHASED_PLAYER_SPEED()*1.9,'brunch is so quick the player cannot kite them at all ('+
        (ENEMY.brunch.run/CHASED_PLAYER_SPEED()).toFixed(2)+'x a CHASED player)');
     ok(CHASED_PLAYER_SPEED()>playerSpeedForTest(),'the chased-player speed used by the Brunch bounds ('+
@@ -6081,18 +4378,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     for(let i=1;i<BRUNCH.pack.length;i++)
       ok(counts[BRUNCH.pack[i]]<counts[BRUNCH.pack[i-1]],'a pack of '+BRUNCH.pack[i]+' is not rarer than '+BRUNCH.pack[i-1]);
     ok(counts[BRUNCH.pack[BRUNCH.pack.length-1]]<counts[BRUNCH.pack[0]]*0.5,'the biggest pack is nearly as common as the smallest');
-    /* THE BODIES OF A PACK MUST SHARE ONE ID, or there is no pack. This is the assertion the whole wall
-       mechanic rests on, and it is asked of rooms THE GENERATOR BUILT rather than of a pack this file
-       assembled by hand.
-
-       The generator incremented its pack counter once per body as well as once per pack, so each Brunch
-       received its own packId. The wall rule counts bodies sharing an id and compares that count to
-       BRUNCH_WALL_MIN, so every pack scored 1 and no pack could ever form: 1227 bodies across 221 rooms,
-       1227 distinct ids, zero walls. Every other wall test built its own pack with a hardcoded shared
-       id, which is the arrangement the mechanic needs, so none of them could see it.
-
-       Measured over 40 seeds rather than asserted from one room, because the failure was uniform and a
-       single room would not have shown that. */
+    /* THE BODIES OF A PACK MUST SHARE ONE ID, or there is no pack. [h:99-tests-187] */
     let bodies=0,packs=0,ableToWall=0,roomsWithBrunch=0,largest=0;
     for(let s=0;s<40;s++){
       startGame();
@@ -6212,10 +4498,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(close.secs<far.secs*0.7,'falloff and dodging together do not make range the better option ('+far.secs+'s far vs '+close.secs+'s close)');
   });
   test('killing the boss opens a way out instead of ending the run',()=>{
-    // The run no longer ends on the kill. It ends when the player walks into the portal, which
-    // leaves them free to go back and finish the room, or to turn an accidental clear into an
-    // earned one. It is also the one change here that could silently soft-lock a run forever, so
-    // the portal's existence, its position, and the fact that it can be missed are all pinned.
+    /* The run no longer ends on the kill. [h:99-tests-188] */
     startGame(); const r=goTo('boss');
     eq(state,'playing');
     r.enemies.length=0; update();
@@ -6274,10 +4557,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // the windup is the number doing the fairness work and it has to be a real reaction window
     ok(LUNGE_WINDUP>=sec(0.30),'the windup is under 0.30s, which is not a reaction window');
     ok(LUNGE_WINDUP<=sec(0.6),'the windup is over 0.6s, so the lunger is standing still more than it is threatening');
-    // and the reaction has to work, and the measure is DAMAGE, not "was ever touched". Over nine
-    // seconds a lunger gets three or four lunges away and a single graze is close to certain even
-    // for a player who reads every tell, so a hit-rate comparison comes out 100% either way and
-    // proves nothing at all. Hearts lost is the number that separates the two.
+    /* and the reaction has to work, and the measure is DAMAGE, not "was ever touched". [h:99-tests-189] */
     const duel=(react,trials)=>{
       let lost=0;
       for(let t=0;t<trials;t++){
@@ -6290,10 +4570,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
         for(let f=0;f<210*9&&rr.enemies.length;f++){
           keys={};
           if(react){
-            // On each windup, step ACROSS the committed line - and pick whichever side has room.
-            // Fixing one side for the whole fight walks the player into a wall in about four
-            // seconds, and once they are in a corner no dodge works, so the measurement becomes a
-            // measurement of the corner rather than of the tell. A player picks the open side too.
+            /* On each windup, step ACROSS the committed line - and pick whichever side has room. [h:99-tests-190] */
             if(g.lungeState==='wind'&&!wasWind){
               const ax=-g.lungeDy, ay=g.lungeDx;
               const roomA=(ax>0?ROOM_RIGHT-player.x:player.x-ROOM_LEFT)+(ay>0?ROOM_BOTTOM-player.y:player.y-ROOM_TOP);
@@ -6332,25 +4609,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     br.noticeTimer=0; br.aggroTimer=9999;
     for(let f=0;f<210*3;f++){ keys={}; update(); }
     ok(br.lungeState==='approach','a Brunch grew a lunge, and a pack that telegraphs is a room with nothing to read');
-    /* THE RAMP IS 1.5s, down from 2.2s, and the floor moves from 1.8s to 1.2s with it.
-
-       The 2.2s was tuned against `PLAYER_MOVE`=1.2. The player a pack is actually chasing moves at
-       the measured CHASED_PLAYER_SPEED() above once the meter is full - which it is, because the meter
-       fills from being chased - and at the measured EMPTY_ROOM_TOP_SPEED() even empty. Both are
-       measured at run time by that block rather than written down here, so this reasoning cannot rot.
-       At 2.2s the pack was ALREADY faster than a chased player by 0.74s, so the
-       ramp was no longer buying an interval to choose ground in; it was dead time at a speed the
-       player cannot act on. Measured: the pack passes the chased player's speed at 0.64s.
-
-       So the ramp is now bounded from below by what the player can react to and from above by the
-       point where the pack stops being slower than you at all. 1.5s leaves the pack slower than the
-       player for roughly its first half-second - the announcement survives - and cuts the interval in
-       which you are being chased by something that has not arrived to two thirds of what it was.
-
-       The upper bound is the one that matters and it is not arbitrary: at 1.5s the `curSpeed` curve is
-       0.62, 0.81, 0.98, 1.14, 1.28 ... so a player who reacts on seeing the charge has a real
-       interval, and one who does not is still caught. That is the difference between a chase and an
-       ambush, and it is the whole reason this number exists. */
+    /* THE RAMP IS 1.5s, down from 2.2s, and the floor moves from 1.8s to 1.2s with it. [h:99-tests-191] */
     ok(BRUNCH_RAMP>=sec(1.2),'the Brunch ramp is back under 1.2s, at which point a pack is on you '
        +'before you have finished looking at where it came from');
     ok(BRUNCH_RAMP<=sec(1.8),'the Brunch ramp is back over 1.8s, which measured against a CHASED '
@@ -6391,13 +4650,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
   test('every gun loses damage with range but stays worth using',()=>{
     startGame();
     for(const wp of WEAPONS){
-      /* fMin is now 0.22..1. The floor is what a gun is worth at the far end of a room, and the
-       Scatter's is deliberately low - it has come down from 0.45 to 0.30 to 0.22 as the gun was
-       measured as too consistent at medium range each time. A 0.45 floor gave a shotgun one-shots
-       across the whole room; 0.30 still killed a lunger at 350px in two volleys.
-
-       The floor still has to be a real number rather than 0 (a gun that does nothing at range is a
-       dead gun) and below 1 (a gun that does not fall off has no range at all). */
+      /* fMin is now 0.22..1. [h:99-tests-192] */
       ok(wp.fNear>0&&wp.fFar>wp.fNear&&wp.fMin>=0.2&&wp.fMin<1,wp.name+' has no usable falloff band');
       const mult=d=>wp.fMin+(1-wp.fMin)*Math.max(0,1-(d-wp.fNear)/(wp.fFar-wp.fNear));
       const ttk=d=>ENEMY.lunger.hp/(wp.dmg*mult(d)*wp.count)*(wp.cooldown/TICK_HZ);
@@ -6408,83 +4661,28 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     }
     eq(ALT_WEAPON.fNear,undefined,'the blast must not have falloff');
   });
-  /* The two tests below pin SPECIFIC VALUES, where the one above only pins the shape of the curve.
-     That distinction was found by mutation rather than assumed: feeding the old Scatter band
-     (fNear 80, fFar 300) and the old lunger HP (24.30) through the shape test's own arithmetic
-     passes all three of its assertions identically, because a band that starts at 80 and one that
-     starts at 175 are both "a usable falloff band". A suite made only of shape tests therefore
-     cannot tell a deliberate retune from no retune at all, and both of these changes went in green.
-
-     So each value gets an assertion that states WHY it is that value, in a form that fails if the
-     number moves. */
+  /* The two tests below pin SPECIFIC VALUES, where the one above only pins the shape of the curve. [h:99-tests-193] */
   test('the Scatter is at full damage inside a quarter of a room, and a bad idea past a third',()=>{
     const sc=WEAPONS.find(w=>w.name==='Scatter');
     ok(sc,'the Scatter is missing from the roster');
-    /* A room is 700x450. Measured over five seeds, every room in every type is exactly 700 wide -
-       there is no variance to average, so the fractions below are not approximations.
-
-       180px is a QUARTER of a room, and that is the current design: full damage inside a quarter,
-       falling away from there, floor reached by 320px. It started at 233 (a third) and was measured
-       as too consistent - a lunger at 350px, which is a body in the middle of the left of the room
-       and a player in the middle of the right, still died in 2 volleys / 2.2 seconds. Widening the
-       effective range is exactly the wrong direction for a weapon people say is too easy at medium
-       range, so fNear came DOWN and the floor came down with it.
-
-       The pixel value is pinned, and the band around it is asserted too, so the number cannot drift
-       into being neither a quarter nor a third without one of the two failing. */
+    /* A room is 700x450. [h:99-tests-194] */
     const roomW=700;
-    /* 180 is not exactly a quarter of 700 (that would be 175), and the assertion says so rather
-       than asserting a fraction and moving the number to match. Rounding fNear to 175 would buy
-       nothing: the falloff band is 140px wide, so 5px is a third of a percent of where the curve
-       starts. Stating the pixel value and saying approximately-a-quarter is more honest than
-       asserting an exact fraction and quietly fitting the data to it. */
+    /* 180 is not exactly a quarter of 700 (that would be 175), and the assertion says so rather than asserting a fraction and moving the number to match. [h:99-tests-195] */
     eq(sc.fNear,180,'the Scatter effective radius moved off a quarter of a '+roomW+'px room ('+
       sc.fNear+'px)');
     ok(sc.fNear>roomW*0.20&&sc.fNear<roomW*0.30,'the Scatter effective radius is '+sc.fNear+
       'px, which is not roughly a quarter to a third of a '+roomW+'px room');
     ok(sc.fFar<roomW*0.5,'the Scatter floor does not land before half a room, so it is still '+
       'falling off where the room ends ('+sc.fFar+'px)');
-    /* The DESCENDING form, which is what falloffMult actually computes: 1 at the muzzle down to
-       fMin at fFar. The older table tests above use the ascending fMin+(1-fMin)*(...) form for the
-       same curve, and both are correct - but writing the wrong one here produced 1.4278 at the
-       muzzle instead of 1, which is the tell that a test has stopped describing the thing it
-       claims to check. */
+    /* The DESCENDING form, which is what falloffMult actually computes: [h:99-tests-196] */
     const mult=d=>1-(1-sc.fMin)*Math.min(1,Math.max(0,d-sc.fNear)/Math.max(1,sc.fFar-sc.fNear));
     for(const d of [0,40,80,120,160,180]) eq(+mult(d).toFixed(4),1,
       'the Scatter is not at full damage at '+d+'px, inside its '+sc.fNear+'px range');
     ok(mult(sc.fNear+0.001)<1,'the falloff does not begin at the edge of the range');
     // and it must still be a real falloff, not a cliff to nothing at the wall
     eq(+mult(sc.fFar).toFixed(4),sc.fMin,'the Scatter does not reach its floor by fFar');
-    /* THE PART THAT DECIDES WHETHER THE GUN IS FAIR, and it is a lunger because the lunger is the
-       body the gun was reported too easy on.
-
-       This runs the REAL simulation rather than the table above, because the table is wrong by a
-       factor of nearly two here and in the one direction that matters. A lunger WALKS TOWARD THE
-       PLAYER while the volley is in the air - 350px at the moment of firing, about 318px by the time
-       the last pellet arrives - and `falloffMult` is read at the moment of the hit, from the
-       projectile's own origin to where it touches. So later pellets in the same volley are taxed at
-       a shorter distance than the first ones, and measured multipliers run 0.302 then 0.376 then
-       0.491 across one volley. The static table says a lunger takes 5 volleys at 350px. It takes 3.
-
-       That is not a rounding detail, it is the difference between "the gun is weak at range" and
-       "the gun is fine at range", and it is invisible to any assertion written against the table.
-       The table is still worth asserting - it is the shape of the curve - but the fairness claim
-       has to be measured, or it is measuring a fight that does not happen.
-
-       Two or three volleys at medium range is the requirement. A shotgun that needs six is not
-       balanced, it is abandoned. */
-    /* DO NOT CALL noCharacter() HERE. This assertion was written with it, and that made the test pass
-       under both 0.22 and 0.30 - a mutation check confirmed 0.30 sailed through green, so the number
-       that fixes the reported problem was not actually pinned by anything.
-
-       The reason is that `noCharacter()` strips the +3 Strength the Wyrd starts with, and Strength
-       is added once per SHOT (`count*dmg + strength`, shared across the pellets). Stripping it takes
-       34.2 raw down to 31.2, which is a 9% loss on a gun that is already being taxed by range - and
-       9% is exactly enough to drop a lunger from 3 volleys at 350px back to 2. The test was
-       measuring a character nobody plays.
-
-       With the real build, at 350px: fMin 0.30 gives 2 volleys, fMin 0.22 gives 3. That difference
-       IS the fix the user asked for, so the assertion has to be made with Strength intact. */
+    /* THE PART THAT DECIDES WHETHER THE GUN IS FAIR, and it is a lunger because the lunger is the body the gun was reported too easy on. [h:99-tests-197] */
+    /* DO NOT CALL noCharacter() HERE. [h:99-tests-198] */
     startGame();
     const rr=goTo('normal');
     player.weaponIdx=WEAPONS.indexOf(sc);
@@ -6493,10 +4691,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const volleysLive=(body,dist,trials)=>{
       let total=0,done=0;
       for(let i=0;i<trials;i++){
-        /* Reseeded per trial. Without this every iteration replays the identical fight - same room,
-           same muzzle jitter, same pellet speeds - so the "mean" is one sample six times over and
-           cannot see the variance a shotgun actually has. A test that reports 3.00 volleys has
-           measured one thing, not six. */
+        /* Reseeded per trial. [h:99-tests-199] */
         Rnd.set(1234+i*7+dist);
         rr.enemies.length=0; projectiles.length=0; rr.pickups.length=0;
         player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
@@ -6516,14 +4711,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       }
       return done?total/done:-1;
     };
-    /* The band this asserts is 3 at 350px and nothing else. An earlier version said "between 2 and 3.5",
-       which sounded reasonable and pinned NOTHING: fMin 0.30 gives 2 volleys at 350px and fMin 0.22
-       gives 3, and 2.0 satisfies `>=2 && <=3.5` under both. A mutation check caught it - the floor
-       was moved from 0.22 back to 0.30 and the suite stayed green.
-
-       A range assertion is only useful when the value it allows is one the thing cannot produce. Here
-       the fix the user asked for IS the difference between 2 and 3 at exactly one distance, so the
-       assertion has to name that distance and that count rather than bracket it. */
+    /* The band this asserts is 3 at 350px and nothing else. [h:99-tests-200] */
     const at350=volleysLive('lunger',350,6);
     ok(at350>=2.5,'the Scatter kills a lunger at 350px in '+at350.toFixed(2)+
       ' volleys, but a body in the middle of the left of the room and a player in the middle of the '+
@@ -6540,45 +4728,20 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       'a Brunch at '+d+'px needs more than one volley, which is not what a shotgun is for');
   });
   test('a lunger is the tankiest normal body, and inside one Scatter shot',()=>{
-    /* 15*TOUGH, down from 18*TOUGH. Two reasons, and the second is the load-bearing one.
-
-       First, it closed a gap the roster did not want: at 24.30 the lunger took longer to kill than
-       anything else in the game by a wide margin, which made it the one body that punished every
-       gun equally instead of playing to what each one is good at.
-
-       Second - and this is what forced the number - at 24.30 NO cone angle could be measured
-       against it, because 8 pellets at 2.6 could not kill it at any range, including point blank.
-       The weapon's defining property is its range, and a target it can never one-shot makes that
-       untestable. Below 20.8 raw (8 x 2.6) the question becomes real: where does the shot stop
-       landing all of them.
-
-       The armour is why the margin is thin. ARMOUR is 0.66, so 8 pellets of 2.6 land 13.73 on a
-       lunger and not 20.8 - which is why this is asserted as "one shot's worth of damage" rather
-       than "one shot kills", and why the number cannot drift much without the gun's identity
-       quietly changing underneath it. */
+    /* 15*TOUGH, down from 18*TOUGH. [h:99-tests-201] */
     const lung=ENEMY.lunger;
     eq(+(lung.hp/TOUGH).toFixed(4),15,'the lunger health factor moved');
     ok(lung.hp>ENEMY.gunner.hp&&lung.hp>ENEMY.shooter.hp&&lung.hp>ENEMY.brunch.hp,
       'the lunger is no longer the tankiest normal body');
     ok(lung.hp<ENEMY.boss.hp,'the lunger is now tankier than the boss');
     const sc=WEAPONS.find(w=>w.name==='Scatter');
-    /* THE CONTRACT IS ABOUT ARMOUR, NOT RAW DAMAGE. This assertion used to compare the lunger's
-       health against `dmg*count` - the RAW figure - which was wrong in the way that mattered, because
-       ARMOUR is 0.66 and the raw number is not what lands on the body. At dmg 2.6 the raw check said
-       20.25 < 20.8 and passed, while the shot in fact landed 13.73 and killed nothing at all.
-
-       So the contract is stated in the currency the game actually spends: EIGHT pellets kill a lunger
-       and SEVEN do not. Both halves, because either alone is satisfiable by the wrong weapon - 4.5
-       would clear "eight kills" while quietly deleting the requirement that all eight are needed. */
+    /* THE CONTRACT IS ABOUT ARMOUR, NOT RAW DAMAGE. [h:99-tests-202] */
     const eight=sc.dmg*sc.count*lung.armour, seven=sc.dmg*(sc.count-1)*lung.armour;
     ok(eight>=lung.hp,'eight Scatter pellets land '+eight.toFixed(2)+' on a lunger and its health is '+
       lung.hp.toFixed(2)+', so a full volley does not kill the biggest normal body');
     ok(seven<lung.hp,'seven Scatter pellets land '+seven.toFixed(2)+' and kill a '+lung.hp.toFixed(2)+
       ' lunger, so the gun no longer needs all eight - the requirement was deleted, not met');
-    /* The Brunch is the one body a shotgun should NOT have to work for. One pellet is 3.9 against
-       2.70 hp and no armour, so they still die to a single grain - a pack of eight is not a
-       problem the volley has to solve, and this is the check that the buff did not quietly make
-       every chip body a two-pellet problem. */
+    /* The Brunch is the one body a shotgun should NOT have to work for. [h:99-tests-203] */
     ok(sc.dmg*ENEMY.brunch.armour>=ENEMY.brunch.hp,
       'a Brunch needs more than one pellet ('+sc.dmg+' vs '+ENEMY.brunch.hp.toFixed(2)+
       ' hp), which is not what a shotgun is for');
@@ -6596,13 +4759,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
     for(let w=0;w<WEAPONS.length;w++){
       player.weaponIdx=w;
-      /* Six shots, not one. The claim is that falloff reduces damage, and a single shot cannot measure
-         it for a weapon with a cone: the Arcane Beam at zero luck throws a shot +/-52px at 326px, and
-         a 14px hitbox inside that is hit perhaps a quarter of the time, so one shot reports "this gun
-         does nothing" and the assertion below fails on a gun that is working exactly as designed. A
-         player measures falloff by holding the trigger down, which is also what a 5.2-tick cooldown
-         invites, so this is the honest shape of the measurement. The alternative - special-casing the
-         distance per weapon - would have quietly stopped testing the beam's range at all. */
+      /* Six shots, not one. [h:99-tests-204] */
       const SHOTS=6;
       const hit=(dist)=>{
         r.enemies.length=0; projectiles.length=0;
@@ -6670,10 +4827,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     const x0=player.x; doBlink();
     eq(Math.round(player.lagX),Math.round(x0),'lag hitbox did not stay at the pre-blast position');
     ok(player.x-player.lagX>BLINK_DIST*0.9,'lag did not start a full blink behind ('+(player.x-player.lagX).toFixed(0)+'px)');
-    // The aim is taken when the cast BEGINS, which is what makes the tell honest, and the lag is
-    // still at the pre-blink spot at that moment. If the aim were taken at the moment of firing it
-    // would be taken half a second later, by which time the lag has caught up and the shell goes
-    // straight at the real position - which is exactly the bug the lag exists to prevent.
+    /* The aim is taken when the cast BEGINS, which is what makes the tell honest, and the lag is still at the pre-blink spot at that moment. [h:99-tests-205] */
     s.shootCd=0; projectiles.length=0;
     for(let i=0;i<CAST_TIME+4&&!projectiles.length;i++) update();
     const aimed=projectiles[0];
@@ -6683,12 +4837,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     // ...and then let go, or the lag is being asked to catch up to a player who is still walking
     keys={};
     for(let i=0;i<sec(0.4);i++) update();
-    // As a FRACTION of the blink, not an absolute. The lag eases at a twentieth a tick, so 0.4s -
-    // four time constants - leaves a couple of percent, and a couple of percent of a hundred and
-    // sixteen pixels is what a couple of pixels are. Pinning the raw number put the assertion
-    // within a hundredth of a pixel of its own arithmetic: the lag HAS caught up, and the test
-    // could only tell the difference by rounding. What the design actually claims is that the lag
-    // is gone by the time the reaction window is over, and that is a ratio.
+    /* As a FRACTION of the blink, not an absolute. [h:99-tests-206] */
     ok(Math.abs(player.lagX-player.x)<BLINK_DIST*0.05,'lag hitbox never caught up ('+
        (player.lagX-player.x).toFixed(1)+'px off, '+Math.round(Math.abs(player.lagX-player.x)/BLINK_DIST*100)+
        '% of the blink still there after 0.4s)');
@@ -6777,11 +4926,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     r.enemies.length=0; r.enemies.push(g);
     g.shootCd=0; g.noticeTimer=0; g.stun=0; projectiles.length=0;
     player.iframes=0; player.armor=0; player.hp=8; player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
-    g.x=MIDX+230; g.y=MIDY;   // well outside its own contact range, so the shell is what lands
-    // The gunner telegraphs before it fires, so "one update and a shell exists" is no longer the
-    // shape of this test. The tell has to be observed FIRST - that is the entire point of it - and
-    // only then is the shot expected. Asserting the shell appears on the same tick would be
-    // asserting the tell does not exist.
+    g.x=MIDX+230; g.y=MIDY;   /* well outside its own contact range, so the shell is what lands The gunner telegraphs before it fires, so "one update and a shell exists" is no... [h:99-tests-207] */
     update();
     eq(projectiles.filter(x=>!x.friendly).length,0,'the gunner fired with no cast, so the tell is not a tell');
     ok(g.castT>0,'the gunner did not begin a cast');
@@ -6795,11 +4940,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(hp0-player.hp>=g.dmg*0.9,'gunner shell damaged for '+(hp0-player.hp)+', want about '+g.dmg);
   });
   test('losing your last point of health ends the run, and nothing on the floor can save it',()=>{
-    // The bug this is about: the floor was swept BEFORE the death check, so a heart lying under
-    // you was picked up on the very tick that took your last point of health. It put you back on
-    // your feet, and the check at the bottom of the tick then saw a healthy player and never fired.
-    // The result was a run carried on at zero health, ending only when you happened to walk over
-    // something. Death now settles the tick before the floor is touched at all.
+    /* The bug this is about: [h:99-tests-208] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
     player.hp=1; player.armor=0; player.iframes=0;
     r.pickups.push({x:player.x,y:player.y,r:14,kind:'heart'});
@@ -6850,20 +4991,14 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
       ok(c.far<=260,k+' settles at '+c.far+'px, which is a standoff rather than a fight');
       ok(c.close<=150,k+' lets you get to '+c.close+'px before it backs off; that is not close quarters');
       ok(c.close<c.far,k+' backs off at a distance it also walks toward');
-      // The dodge window is the FLIGHT, not the flight plus the cast. The cast is a warning the
-      // player spends by moving before the shell exists - adding it to the flight and then holding
-      // the total under the old bound would be asserting that asking for a telegraph and a slower
-      // shell cannot both be satisfied, which is exactly what was asked for.
+      /* The dodge window is the FLIGHT, not the flight plus the cast. [h:99-tests-209] */
       const flight=300/c.pspd/TICK_HZ, warning=CAST_TIME/TICK_HZ;   // CAST_TIME is already in ticks
       ok(flight>0.33,k+' covers 300px in '+(flight*1000).toFixed(0)+'ms, faster than a person can answer');
       ok(flight<0.7,k+' covers 300px in '+(flight*1000).toFixed(0)+'ms, which is not pressure, it is a tax');
       // and the cast has to be a real window on its own, or the tell is decoration
       ok(CAST_TIME>=sec(0.4),'the cast is under 0.4s, so the tell is a flash rather than a warning');
       ok(CAST_TIME<=sec(0.8),'the cast is over 0.8s, so the gunner spends more time glowing than shooting');
-      // rate: the hard part should be how often, not how fast any one round is. The cast is part of
-      // the cycle - a gunner that has just fired spends CAST_TIME charging before it can fire again -
-      // so the cooldowns are set against the TOTAL, and measuring them alone would report a rate the
-      // player never actually experiences.
+      /* rate: the hard part should be how often, not how fast any one round is. [h:99-tests-210] */
       const gap=(c.cdMin+c.cdVar/2)/PRESSURE.rate/TICK_HZ+CAST_TIME/TICK_HZ;
       ok(gap<1.3,k+' fires every '+(gap*1000).toFixed(0)+'ms, which is not busy enough to pressure you');
       ok(gap>0.55,k+' fires every '+(gap*1000).toFixed(0)+'ms, which is a machine gun');
@@ -6883,23 +5018,8 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(end<=ENEMY.gunner.far+40,'the gunner closed to '+end.toFixed(0)+'px, outside its own band');
   });
   test('a zero-health player is never still playing, whatever the tick was doing',()=>{
-    // Fuzzed against real combat rather than reasoned about: play whole fights with the bot's
-    // decisions, and after every single tick assert the one invariant that must never break. If any
-    // code path can leave a player at zero health still holding the controller, this finds it.
-    //
-    /* THE TRIALS MUST NAME THEIR OWN SEED. This loop used a bare `startGame()`, which means "whatever
-       `Rnd.fresh()` returns" - and `Rnd.fresh` is STUBBED to TEST_SEED at the top of this suite, so
-       140 iterations built the SAME dungeon 140 times and the fuzz was really testing one fight. It
-       passed by accident: `FLANK_CURSOR` and `PACK_CURSOR` leaked across `startGame`, so iteration 87
-       fought differently from iteration 1, which is where its deaths came from.
-
-       That is the leak the seed-replay fix removed, and the fuzz stopped passing - not because a
-       player stopped dying, but because it had never been killing 140 different people. Verified by
-       disabling the reset again: the fuzz went back to green, which is what made it diagnosable.
-
-       So the variety has to be asked for explicitly. `trial*TRIAL_STRIDE` walks 140 distinct seeds,
-       and the check below asserts they really were distinct worlds, because "140 trials" that
-       silently collapse to one is a fixture that has stopped testing anything. */
+    /* Fuzzed against real combat rather than reasoned about: [h:99-tests-211] */
+    /* THE TRIALS MUST NAME THEIR OWN SEED. [h:99-tests-212] */
     const TRIAL_STRIDE=0x9E3779B1>>>0;   // the odd-constant stride, so the seeds are not adjacent
     const worldSig=()=>Object.values(rooms).filter(r=>r.type==='normal')
       .map(r=>r.x+','+r.y).join(';');
@@ -6956,10 +5076,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(deaths>0,'the fuzz never killed anybody, so it never reached the case under test');
     ok(true,'checked '+checked+' ticks across '+fights+' fights in '+worlds.size+
       ' dungeons, '+deaths+' deaths, no zero-health survivor');
-    // ...and the same thing again through the REAL frame loop, walking out through doors rather than
-    // teleporting between rooms. update() on its own is not the whole story: advance() can run a
-    // burst of ticks in one frame, a room transition can hand over mid-frame, and the ready window
-    // can swallow a whole frame. This drives advance() with a plausible frame time instead.
+    /* ...and the same thing again through the REAL frame loop, walking out through doors rather than teleporting between rooms. [h:99-tests-213] */
     for(let trial=0;trial<40;trial++){
       startGame((trial*TRIAL_STRIDE)>>>0);   // same reasoning: distinct worlds, or nothing is fuzzed
       let frames=0;
@@ -7001,16 +5118,7 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     ok(true,'advance() fuzz completed with no zero-health survivor');
   });
   test('fractional damage can never leave you alive on an empty health bar',()=>{
-    // Found by reading a live game that was, in fact, in exactly this state:
-    //     hp: 6.661338147750939e-16   state: 'playing'   armour: 0
-    // A shell does 1.8, so repeated fractional subtraction lands health just ABOVE zero, where
-    // `hp<=0` is false. The three-state heart then rendered every slot as 'empty' because its
-    // half-heart case was an exact test against 1. So the player was alive, on a bar that read as
-    // nothing, with no way to tell that from a finished run.
-    // Step one: the number itself must never be a non-zero sliver.
-    // Step one: the number itself must never be a non-zero sliver. damagePlayer is called directly
-    // here rather than through update(), because this loop is about the arithmetic; the death
-    // semantics are covered by the second loop, which does go through the real tick.
+    /* Found by reading a live game that was, in fact, in exactly this state: [h:99-tests-214] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
     player.hp=8; player.armor=0;
     let crossed=false;
@@ -7069,11 +5177,7 @@ eq(player.altMode,'blast','a new run does not start with the blast equipped');
     update();
 eq(player.altMode,'hook','walking onto the hook did not swap the right click');
 
-    // The gather itself. This is the thing that was not working: a flat pull strength sent a body
-    // caught at the rim sailing through the point and barely moved one caught up close, so the
-    // crowd ended up scattered around the cursor rather than knotted on it. What is measured is
-    // how close each body actually GOT to the point, not where it ended up: once the hold expires
-    // the swarm walks back at the player, which is correct behaviour and not a failed gather.
+    /* The gather itself. [h:99-tests-215] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
     player.altMode='hook';
@@ -7106,10 +5210,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const avg=a=>a.reduce((s,v)=>s+v,0)/a.length;
     const was=caught.map(e=>best[ring.indexOf(e)]);
     const from=caught.map(e=>startD[ring.indexOf(e)]);
-    // They cluster AROUND the point rather than all landing on it, and that is the correct outcome:
-    // bodies cannot overlap, and two gunners alone are 22px of radius each, so no amount of pull
-    // stacks them on one spot. ~34px is the floor for a ring of Brunch and gunners - about one body
-    // diameter - and what has to be true is that the crowd collapses onto the point from spread out.
+    /* They cluster AROUND the point rather than all landing on it, and that is the correct outcome: [h:99-tests-216] */
     ok(avg(was)<avg(from)*0.45,'the crowd did not close in ('+(avg(from)||0).toFixed(0)+'px -> '+(avg(was)||0).toFixed(0)+'px)');
     ok(avg(was)<38,'the caught bodies did not knot up by the point (closest approach averaged '+(avg(was)||0).toFixed(0)+'px)');
     ok(Math.max.apply(null,was)<60,'a body was left out on its own ('+Math.max.apply(null,was).toFixed(0)+'px closest)');
@@ -7201,10 +5302,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // pack up a decision rather than a formality
     const dealt=line.slice(0,4).map((e,i)=>before[i]-e.hp);
     for(let i=1;i<4;i++) ok(dealt[i]<dealt[i-1],'body '+i+' of the line took '+dealt[i].toFixed(2)+' against '+dealt[i-1].toFixed(2)+' for the body in front, so pierce falloff is not being applied');
-    // The exact prediction has to account for the pierce discount, the distance discount, and the
-    // body's own ARMOUR, which is a per-hit multiplier and so scales every pass. Each body is also
-    // further from the muzzle than the one in front of it, which is why a ratio computed from the
-    // pierce term alone comes out wrong.
+    /* The exact prediction has to account for the pierce discount, the distance discount, and the body's own ARMOUR, which is a per-hit multiplier and... [h:99-tests-217] */
     const afw2=(d)=>at0(VB,d);
     for(let i=1;i<4;i++){
       const want=VB.dmg*afw2(120+i*40)*line[0].armour*Math.pow(PIERCE_FALLOFF,i);
@@ -7257,10 +5355,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       const worst=g.reduce((m,e)=>Math.min(m,e.hp),1e9);
       ok(worst>0.5,'a group of '+n+' was left on '+worst.toFixed(2)+'hp - a wound, not a kill, but not a sliver either');
     }
-    // The margin assertion, which is the one that matters. A three-strong group dying is a design
-    // statement, and it has to die by a margin rather than by a rounding error: at 2.40 it took
-    // 2.689 against 2.7 health and survived on 0.011hp, which is a whole-body kill that only works
-    // at one exact TOUGH value. Any future retune has to fail THIS first.
+    /* The margin assertion, which is the one that matters. [h:99-tests-218] */
     for(const n of [1,2,3]){
       const s=ALT_WEAPON.pool/Math.pow(n,DISPERSE);
       ok(s>ENEMY.brunch.hp*1.05,'a group of '+n+' is meant to die but only takes '+(s/ENEMY.brunch.hp*100).toFixed(0)+'% of a Brunch, which is inside the float noise');
@@ -7301,10 +5396,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const pack=[]; for(let i=0;i<6;i++) pack.push(put(MIDX-20+i*8,MIDY));
     for(let i=0;i<600&&r.enemies.length;i++) update();
     eq(r.enemies.length,0,'a six-strong pack did not eat itself: '+r.enemies.length+' left standing');
-    // no more than two hits per Brunch is what "dies after hitting the player twice" means. A tick
-    // where the player is inside their own i-frames does NOT count, which is why the first one took
-    // 79 ticks: the Brunch landed a hit, spent half its body, and then spent the next second and a
-    // half pressed against a player it could not touch. It dies the moment it can touch them again.
+    /* no more than two hits per Brunch is what "dies after hitting the player twice" means. [h:99-tests-219] */
     r.enemies.length=0; player.hp=99; player.armor=0; player.iframes=0;
     const b2=put(MIDX+4,MIDY);
     let realHits=0;
@@ -7452,17 +5544,9 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(hit,'the bolt icon does not actually contain the bolt colour anywhere in it');
   });
   test('the pierce discount follows the order the bolt actually reached bodies',()=>{
-    // The bug this pins: the hit loop walks the array backwards so killEnemy cannot corrupt it,
-    // and taking "whichever body the loop reaches first" meant the discount followed ARRAY order
-    // rather than arrival order. In a knot - where a bolt is inside two bodies on the same tick -
-    // that let a line take LESS damage at the front than at the back purely because of spawn order.
-    // Nothing about that is visible to the player, so nothing about it could be played around.
+    /* The bug this pins: [h:99-tests-220] */
     const shot=(spacing,reversed)=>{
-      // spawnPlan cleared as well as the bodies. goTo arms the room's wave, so a test that empties
-      // r.enemies and leaves the plan in place is measuring a shot into a knot that is still being
-      // added to - bodies arriving from behind, shoved around by separation, arriving at the bolt
-      // from an angle the fixture never placed them at. It read as a pierce regression and it was
-      // nothing of the kind.
+      /* spawnPlan cleared as well as the bodies. [h:99-tests-221] */
       startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
       player.weaponIdx=3; player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
       player.hp=99; player.maxHp=99; player.iframes=99999; player.cooldown=0;
@@ -7495,10 +5579,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         eq(bad,0,'at '+spacing+'px'+(reversed?' reversed':'')+' the discount followed array order, not arrival order: '+got.map(g=>g.d.toFixed(0)+'px:'+g.t.toFixed(2)).join(' '));
       }
     }
-    // and a shot into a real knot. A knot is not arranged along the bolt's path, so this cannot be
-    // checked with a straight-line distance - the only statement that holds for any arrangement is
-    // that the first body the bolt reached took the full hit, and each subsequent one took a little
-    // less. So assert the shape of the falloff, not a comparison against one particular body.
+    /* and a shot into a real knot. [h:99-tests-222] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
     player.weaponIdx=3; player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
     player.hp=99; player.maxHp=99; player.iframes=99999; player.cooldown=0;
@@ -7508,18 +5589,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       const e=spawnEnemy(false,r,cx+Math.cos(a)*rad,MIDY+Math.sin(a)*rad,'brunch'); r.enemies.push(e);
       e.noticeTimer=1e9; knot.push(e);
     }
-    /* Two more, placed ON the bolt's line, and they are the reason this test works.
-
-       A bolt fired at the centre of that ring meets exactly two of the eight: the pair sitting on the
-       line at a=0 and a=PI. The four at radius 25 sit seventeen pixels off it and the two inner ones
-       sit above and below the centre - all of them outside a thirteen pixel reach. So the ring on
-       its own cannot produce a sequence long enough to check, and the "at least three" assertion was
-       being satisfied by bodies the ROOM spawned: goTo arms the wave, the plan was never cleared,
-       and extra Brunch arrived from wherever the wave happened to put them. Clearing the plan
-       exposed that, which is the correct order for a test to fail in.
-
-       So the bodies the test needs are put there on purpose now, well inside the line and far enough
-       apart that separation cannot slide them out of it before the bolt gets there. */
+    /* Two more, placed ON the bolt's line, and they are the reason this test works. [h:99-tests-223] */
     for(const off of [-62,62]){
       const e=spawnEnemy(false,r,cx+off,MIDY,'brunch'); r.enemies.push(e);
       e.noticeTimer=1e9; knot.push(e);
@@ -7528,10 +5598,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const k0=knot.map(e=>e.hp);
     pointAt(cx, MIDY); fireWeapon();
     const bolt=projectiles[projectiles.length-1];
-    // Record WHEN each body was hit, not where it ended up. A knot shoves itself around as separation
-    // runs, so measuring a body's position after the shot has landed reorders the very thing being
-    // tested - which is how the previous version of this assertion reported a healthy shot as broken.
-    // What has to be monotonic is the damage against the bolt's own distance travelled at impact.
+    /* Record WHEN each body was hit, not where it ended up. [h:99-tests-224] */
     const at=new Array(N).fill(-1);
     for(let k=0;k<120;k++){
       pointAt(player.x+900, MIDY);
@@ -7544,19 +5611,13 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const ordered=hit.slice().sort((a,b)=>a.flown-b.flown);
     for(let i=1;i<ordered.length;i++)
       ok(ordered[i].t<=ordered[i-1].t+1e-9,'a body the bolt reached LATER took MORE damage than the one before it: '+ordered.map(g=>g.flown.toFixed(0)+'px:'+g.t.toFixed(2)).join(' '));
-    // and the first body met must be the undiscounted one, or the falloff is charging the wrong end.
-    // The tolerance is loose because each pass also pays the DISTANCE falloff for being further from
-    // the muzzle, which stacks with the pierce discount - so the ratio is near PIERCE_FALLOFF, not
-    // exactly it, and pinning it tightly would be pinning one of the two curves to the other.
+    /* and the first body met must be the undiscounted one, or the falloff is charging the wrong end. [h:99-tests-225] */
     const ratio=ordered.length>1?ordered[1].t/ordered[0].t:PIERCE_FALLOFF;
     ok(Math.abs(ratio-PIERCE_FALLOFF)<0.1,
       'the second body in a shot took '+ratio.toFixed(3)+'x the first, wanted about '+PIERCE_FALLOFF+': '+ordered.map(g=>g.t.toFixed(2)).join(', '));
   });
   test('a bolt is resolved from the weapon it was thrown with',()=>{
-    // The hook's own detonation reached for activeAlt() rather than the mode it was cast with, so
-    // swapping right clicks while a hook was in the air made it detonate as a blast: a shove and a
-    // damage budget where a pull was owed. Silent, and it would have shown up as "the hook sometimes
-    // does nothing" rather than as a bug anyone could name.
+    /* The hook's own detonation reached for activeAlt() rather than the mode it was cast with, so swapping right clicks while a hook was in the air made... [h:99-tests-226] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
     const g=spawnEnemy(false,r,MIDX+220,MIDY,'lunger'); r.enemies.push(g);
@@ -7585,11 +5646,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     eq(r2.enemies.length,0,'a blast swapped to hook mid-flight stopped being a killshot');
   });
   test('the blast detonates on the first body it touches, and the hook does not',()=>{
-    // The regression this pins: the pierce tie-break reads p.ox/p.dx, which only a friendly wand
-    // shot carries. Applied to the alt bolt the ranking produced NaN, NaN failed its comparison, the
-    // contact was never found, and the blast silently flew to the cursor and phased through the
-    // entire room. Nothing threw, nothing logged, every test still passed - it only showed up when
-    // the weapon stopped being the thing it was on screen.
+    /* The regression this pins: [h:99-tests-227] */
     const held=(e)=>{ e.noticeTimer=1e9; e.aggroTimer=0; e.walkSpeed=0; e.runSpeed=0; e.speed=0; e.curSpeed=0; };
     const cast=(mode,bodyDist,enemies)=>{
       startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
@@ -7636,12 +5693,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     }
   });
   test('the hook cancels on a right click WHILE it is still on cooldown',()=>{
-    // The bug this pins. The early detonation was checked first in fireAlt, but fireAlt itself was
-    // only reached from the input path when the alt cooldown had expired - and the hook's cooldown
-    // is 2.0s while a long cast takes up to ~1.9s to arrive. So for nearly the whole flight the
-    // button was on cooldown, the handler never ran, and the cancel did nothing at all. The feature
-    // existed and was unreachable, which is worse than not shipping it because there is nothing
-    // about it a player could notice and report.
+    /* The bug this pins. [h:99-tests-228] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
     player.altMode='hook'; player.altCooldown=0; player.cooldown=0; player.hp=99; player.maxHp=99;
     player.x=ROOM_LEFT+40; player.y=MIDY; player.lagX=player.x; player.lagY=player.y;
@@ -7668,10 +5720,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(player.altCooldown>0,'the cancel cleared the cooldown');
   });
   test('a hook cancels a lunge outright, and stars mark the bodies it holds',()=>{
-    // The bug: the stun skip in the enemy loop `continue`d past the state machine, so a lunger caught
-    // mid-charge KEPT its queued lunge. The glow stayed up, the aim line stayed drawn, and the
-    // attack resumed the moment the hold wore off - an attack the player had already watched start,
-    // already dodged, and was then hit by anyway. Interrupting a charge has to interrupt it.
+    /* The bug: the stun skip in the enemy loop `continue`d past the state machine, so a lunger caught mid-charge KEPT its queued lunge. [h:99-tests-229] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
     player.hp=99; player.maxHp=99; player.armor=0;
@@ -7721,10 +5770,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(drew,'a stunned body is not marked in the actual render');
   });
   test('a blink is invulnerable for the whole move, not just the first frame of it',()=>{
-    // BLINK_IFRAMES used to start and finish inside the jump. A blink into a closing Brunch, or past
-    // a shell already in the air, only protected the instant of crossing the line - and the blink is
-    // precisely the move you make when there is something to get out of. Two charges on an 8s
-    // recharge is a real cost; a window shorter than the animation is not a mechanic.
+    /* BLINK_IFRAMES used to start and finish inside the jump. [h:99-tests-230] */
     startGame();
     const r=goTo('normal'); r.enemies.length=0; readyT=0; fadeT=0;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
@@ -7758,10 +5804,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     update();
     eq(projectiles.filter(p=>!p.friendly).length,0,'a gunner fired with no cast, so there is no tell');
     ok(g.castT>0,'the gunner did not begin a cast');
-    // the tell is drawn while it charges, not merely implied by a timer. Counted DIFFERENTIALLY -
-    // a casting gunner against the same gunner not casting - because "did it draw something" is not
-    // answerable by looking for one call, and this tell was once drawn in the projectile loop where
-    // it could never fire at all and the test could not tell.
+    /* the tell is drawn while it charges, not merely implied by a timer. [h:99-tests-231] */
     const arcs=()=>{ let n=0; const real=ctx.arc.bind(ctx); ctx.arc=(...a)=>{n++;return real(...a);};
       try{ drawRoom(); }finally{ ctx.arc=real; } return n; };
     const casting=arcs();
@@ -7774,11 +5817,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const p=projectiles.find(x=>!x.friendly);
     ok(p,'the gunner never fired');
     ok(p.heavy,'the gunner shell is not marked heavy, so it cannot be told from a small one');
-    // the shot goes where the gunner was LOOKING when it started, not where the player is by the
-    // time it leaves. A gunner that re-aims on firing makes the tell a decoration.
-    // Compared as a difference of ANGLES, not of numbers. atan2 returns (-PI,PI] while the aim is
-    // a free-running angle, so a gunner charging at 3.166rad reports back as -3.117rad - the same
-    // direction, 2PI away - and a plain subtraction calls that a failure.
+    /* the shot goes where the gunner was LOOKING when it started, not where the player is by the time it leaves. [h:99-tests-232] */
     const aimed=Math.atan2(p.vy,p.vx);
     const turn=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
     ok(Math.abs(turn(aimed,g.castAim))<1e-6,'the shell did not travel the direction the cast committed to');
@@ -7787,10 +5826,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.iframes=1e9;
     const g2=spawnEnemy(false,r2,MIDX+300,player.y,'gunner'); r2.enemies.push(g2);
     g2.noticeTimer=0; g2.shootCd=0;
-    // A pack WIDE enough to actually block. clearShot deliberately sweeps a +-1.05rad cone looking
-    // for a gap, because a gunner shooting through the edge of a pack is the point of the pack - so
-    // three Brunch in a short line do not block a gunner 300px away, and a test that used them was
-    // testing the gap-finding rather than the block.
+    /* A pack WIDE enough to actually block. [h:99-tests-233] */
     for(let i=0;i<8;i++){ const br=spawnEnemy(false,r2,MIDX+200+i*30,player.y,'brunch'); br.noticeTimer=1e9; r2.enemies.push(br); }
     // checked immediately, because separation opens a gap in a packed line within half a second and
     // a test that waits for it is testing the pack spreading, not the gunner holding its shot
@@ -7800,11 +5836,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(g2.castT<=0,'a gunner with no clear line built a cast it could not use: the flash is then a lie, because no shell is coming');
   });
   test('a gunner shoots the gap it found, not the gap it wanted',()=>{
-    // The swept angle is the one that gets committed to. clearShot sweeps a cone because the
-    // straight line is often blocked when a line a few degrees off is not, and taking only its
-    // truthiness while storing the unadjusted angle throws the sweep away - the gunner then charges
-    // visibly at a line it has already proved is blocked, and the shell goes into the ally it just
-    // avoided. Nothing about that reads as a bug on screen, which is why it needs a test.
+    /* The swept angle is the one that gets committed to. [h:99-tests-234] */
     startGame(); const r3=goTo('normal'); r3.enemies.length=0; r3.spawnPlan=null; readyT=0; fadeT=0;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY; player.iframes=1e9;
     const g3=spawnEnemy(false,r3,MIDX+300,player.y,'gunner'); r3.enemies.push(g3);
@@ -7848,18 +5880,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(g.dmg>=s.dmg*1.8,'the gunner does not meaningfully more per shell');
     ok(CAST_TIME>=sec(0.4),'the cast is too short to be a tell');
   });
-  /* Runs a real lunger against a player walking a straight line, in a corridor that never ends.
-
-     The wrap is what makes this possible. The room is 700px wide and a full-speed walk covers a
-     thousand pixels in four seconds, so a player running in a straight line slams into a wall long
-     before the lunge resolves - and a wall is not the case under test. Shifting the player, the
-     lunger and everything else by the same amount on the same tick leaves every relative distance
-     exactly as it was, so the fight plays out in a straight corridor that is genuinely unbounded.
-
-     Driving it with keys rather than by assigning velocity is the other half: update() rebuilds
-     the player's velocity from the keys every tick, so a test that sets player.vx by hand is
-     testing a player who is standing still, which is how the first version of this passed a
-     stationary player off as a runner and measured a seventy-pixel lunge. */
+  /* Runs a real lunger against a player walking a straight line, in a corridor that never ends. [h:99-tests-235] */
   function straightRun(heading,ticks){
     startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
@@ -7900,10 +5921,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   }
   const WEST={a:1}, SOUTH={s:1}, EAST={d:1};
   test('a lunge is aimed at where you are going, and running in a straight line is a hit',()=>{
-    /* The mechanic, stated as a test. A player running in a straight line must be caught; that is
-       the whole request. Anything less and running away is free, which is what the old lunge was:
-       it led by thirty-two pixels a shot that needed two hundred and ninety-four, and stopped at a
-       hundred and sixty-six, so it fell a hundred and twenty-eight pixels short every time. */
+    /* The mechanic, stated as a test. [h:99-tests-236] */
     const away=straightRun(WEST,1400);
     ok(away.committed>0,'a lunger never committed against a player running in a straight line');
     ok(away.len>LUNGE_REACH*0.5,'the committed lunge was only '+away.len.toFixed(0)+
@@ -7939,11 +5957,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('a shell is a chip off a lunger and knocks a body back without launching it',()=>{
-    /* Two properties that look like one. A shell is a CHIP: several of them add up to a kill, which is
-       what makes the gunners worth kiting rather than simply avoiding. And a hit SHoves: it must not
-       LAUNCH, because a body flung off the map at close range is not difficulty, it is a bug wearing
-       difficulty's clothes. The cap is what stops it, and the cap is only meaningful if the impulse
-       that reaches it is large - so this checks both ends. */
+    /* Two properties that look like one. [h:99-tests-237] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
     player.hp=99; player.maxHp=99; player.armor=0; player.iframes=1e9;
@@ -7981,10 +5995,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(typeof bounceEnemies==='function','there is no separation pass, so a pack becomes a single target');
   });
   test('a second right click detonates the hook in flight, and cannot be farmed',()=>{
-    /* Two halves of one rule. You CAN pull the hook early - that is the whole reason a second click
-       exists, and without it the hook is just a slower blast. And you cannot farm it: a held button
-       must never detonate the hook you are still throwing, because that is a cast and a cancel
-       arriving as the same input, and it blows up at your own feet one tick after you let go. */
+    /* Two halves of one rule. [h:99-tests-238] */
     startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
     player.altMode='hook'; player.altCooldown=0; player.altCooldownMax=HOOK_WEAPON.cooldown;
     player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
@@ -8019,12 +6030,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     altMouseDown=false;
   });
   test('counterstrafing beats a straight line, and a straight line is punished',()=>{
-    /* The gunners lead their shots at where you are GOING, built from your current velocity. Done
-       alone, that makes good movement good for the enemy: walk a clean line and the lead is exact,
-       so the better you move the more surely you are hit. The counter is that a reversal is not
-       forgotten instantly, and while the gunner is still remembering your old heading the spread is
-       wide open. So a straight line is the worst thing you can do and a strafe is the answer, and
-       the two are opposites rather than degrees of the same thing. */
+    /* The gunners lead their shots at where you are GOING, built from your current velocity. [h:99-tests-239] */
     const aimSpread=()=>0.02+SWERVE_AIM*player.swerve;
     player.swerve=0;
     const straight=aimSpread();
@@ -8039,24 +6045,15 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(SWERVE_GAIN>0.1,'a reversal barely registers ('+SWERVE_GAIN+' per reversal)');
     ok(SWERVE_AIM>0.15,'the swerve bonus is too small to be a dodge ('+SWERVE_AIM+' rad)');
     ok(SWERVE_AIM<0.5,'the swerve bonus is so wide the gunners cannot hit anything at all');
-    /* And the lead has to actually read the player. This is driven with KEYS, not by assigning
-       velocity: update() rebuilds the player's velocity from the keys every tick, so a test that
-       sets player.vx by hand is testing somebody standing still - which is how the first version of
-       this measured an identical aim in both directions and called it a pass. */
+    /* And the lead has to actually read the player. [h:99-tests-240] */
     const aimWith=hold=>{
       startGame(); const rr=goTo('normal'); rr.enemies.length=0; rr.spawnPlan=null; readyT=0; fadeT=0;
       player.x=MIDX; player.y=MIDY; player.lagX=MIDX; player.lagY=MIDY;
       player.hp=99; player.maxHp=99; player.armor=0; player.iframes=1e9;
-      // off the player's axis on purpose. With the gunner due east and the player running east or
-      // west, every candidate aim is exactly PI and the two cases differ only by the spread - the
-      // geometry is degenerate and the test measures noise. A 45-degree line is the cheapest way to
-      // make "which way am I going" actually change the angle the gunner commits to.
+      /* off the player's axis on purpose. [h:99-tests-241] */
       const g=spawnEnemy(false,rr,player.x+212,player.y+212,'gunner'); rr.enemies.push(g);
       g.noticeTimer=0; g.shootCd=0; g.castT=0; g.castReady=false; g.castAim=NaN;
-      // get the player to full speed BEFORE the gunner is allowed to commit. The lead is built from
-      // current velocity, and a player one tick into a run is nearly stationary, so measuring on the
-      // first tick measures the acceleration rather than the lead - which is how the first version
-      // of this ran the player east and west at a hundredth of the speed and got the same aim twice.
+      /* get the player to full speed BEFORE the gunner is allowed to commit. [h:99-tests-242] */
       for(let i=0;i<90;i++){ keys=hold; g.shootCd=1e9; update(); }
       g.shootCd=0;
       for(let i=0;i<CAST_TIME+3&&Number.isNaN(g.castAim);i++){ keys=hold; update(); }
@@ -8078,15 +6075,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        'rad off), so the lead is not leading');
   });
   test('room entry fades in over the ready window and locks the enemies out',()=>{
-    /* The room must not act before the player can see it. There was a window where a room faded in
-       over the entry transition while the enemies in it were already live, so a body could close on
-       a player who was still reading the shape of the floor - and the first frame of a new room was
-       also the first frame of being hit in it.
-
-       Note the direction of the fade: roomFade is an OVERLAY alpha, so it starts at 1 - fully
-       covered - and eases to 0. Asserting it "starts faded" as a small number asserts the opposite
-       of what the code does, which is how the first version of this test failed on a build that was
-       behaving correctly. */
+    /* The room must not act before the player can see it. [h:99-tests-243] */
     startGame();
     // a room the player has NOT been in, so entering it spawns a wave and the entry is a live one
     const fresh=eval("Object.values(rooms).filter(function(x){return x.type=='normal'&&!x.visited})")[0];
@@ -8116,13 +6105,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(woke,'the enemies stayed locked out after the fade finished, so the window never opens');
   });
   test('a pack of lungers arrives around you, not in a line',()=>{
-    /* Every lunger used to steer at the player's exact position, so a pack came as one front: one
-       line, one angle, one threat to read. The bodies now hold slots on a ring around the player.
-
-       The assertion is the tightest ANGLE between any two bodies, because that is what the player
-       actually sees. A front reads as a few degrees; a ring of five reads as seventy-two. Measuring
-       a ring by its radius would pass just as happily for a front, since a front is also at a
-       radius - the angle is the only number that distinguishes them. */
+    /* Every lunger used to steer at the player's exact position, so a pack came as one front: [h:99-tests-244] */
     const ring=(n,ticks)=>{
       startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
       const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
@@ -8142,14 +6125,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       return {tight:tight*180/Math.PI, near:near, even:360/n};
     };
     const five=ring(5,1600);
-    /* The threshold is twenty degrees, not the even-fraction of seventy-two, and that is measured
-       rather than hoped for. The slot assignment guarantees five DISTINCT angles - the golden-angle
-       walk never repeats one, which is asserted separately - but the bodies do not all arrive at
-       their slots equally fast, and where the walk happens to start decides how much of the ring is
-       filled by the time the pack settles: measured across six starting offsets, the tightest pair
-       comes out at twenty-one degrees in the worst of them and fifty-three in the best. So twenty is
-       the honest floor for "not a front", and it is still five times what a front scored before
-       there was any of this. */
+    /* The threshold is twenty degrees, not the even-fraction of seventy-two, and that is measured rather than hoped for. [h:99-tests-245] */
     ok(five.tight>20,'five lungers closed to within '+five.tight.toFixed(0)+
        'deg of each other, which is a front (the worst measured spread before this was zero)');
     // and they are still ON the ring, not merely far apart - a pack that gives up its distance is a
@@ -8198,66 +6174,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(LUNGE_CLASH>0&&LUNGE_CLASH<20,'the clash impulse is '+LUNGE_CLASH+', which is a launch rather than a bump');
   });
   test('a gunner in your face hits a straight line AND a counterstrafer, and only far away misses',()=>{
-    /* The claim, measured rather than asserted in prose: up close the gunner's shot is tight enough
-       to land on BOTH ways of moving, and only past the deadzone does counterstrafing buy anything.
-
-       Six things had to be true before that could be measured. Getting any of them wrong does not
-       throw an error - it reports a confident wrong number, which is worse than a crash. Every one
-       of these cost a version of this test, and they are written out because from the outside the
-       failures are indistinguishable from a broken gunner.
-
-       THE SHOTS ARE MEASURED, NOT INFERRED. The miss is the smallest ACTUAL distance from a shell to
-       the hitbox on any tick of its life, sampled as the shell flies, and taken when the shell is
-       culled or consumed - never while it is still in the air. An earlier version compared a
-       committed angle against a model of the right answer recomputed from state captured on a
-       different tick, and whenever the two disagreed - often - the instinct was to go looking for a
-       reason the model was wrong. It usually was. Not always. That approach could report a precise
-       number that meant nothing, and it did.
-
-       AND playerHit TESTS THE LAGGED POSITION, not the sprite. The hitbox is a circle ten pixels
-       below (lagX, lagY) and it trails the body by twenty-odd pixels at a run, so a miss measured
-       against player.x measures a different point from the one the game collides against. An earlier
-       version made exactly that substitution and reported every shot as missing by the length of the
-       trail.
-
-       THE GUNNER MUST NOT BE ABLE TO SHOOT WHILE THE PLAYER IS PINNED. This is the subtle one, and
-       it is worth the whole paragraph. The player is held in place through the warm-up so that its
-       velocity, its smoothed heading and its swerve all converge while it spends no runway - which
-       is legitimate, because update() builds velocity from the keys before it moves anyone. But a
-       pinned player is a player standing still, and the gunner cannot tell the difference: it reads
-       a heading of 1.12 pixels a tick and leads a hundred and eighty pixels east for a target that
-       has not moved. The shot is not misaimed, it is aimed at a prediction the fixture made and the
-       player did not honour, and it misses by exactly the lead.
-
-       That is not a subtle measurement artefact, it is a lie told to the enemy through the harness,
-       and the first version of this test told it: the gunner's first cast began while the player was
-       still pinned, and the shot came out 132px wide - the width of the lead, to the pixel. So the
-       gunner is held silent until the player is running, by never arming its cooldown until release.
-       It is still reading a converged heading, because the keys were held throughout.
-
-       THE PLAYER MUST NOT REACH A WALL, and the reason is not that a wall distorts the aim. A player
-       clamped against a wall and still holding a direction is not a straight runner: their reported
-       velocity keeps pointing into the wall while their position has stopped, so a gunner solving an
-       honest intercept aims at four hundred pixels outside the room. The shell is correctly aimed at
-       a place the player cannot be, and is culled short of a target that does not exist. Those
-       samples are not noisy, they are not measurements of the gunner, and averaging them in made a
-       correct gunner look broken by a factor of seven.
-
-       The filter written to exclude them - discard any shot whose PREDICTED impact lands outside the
-       room - cannot work, and it is worth saying why, because it was the most confidently wrong thing
-       in this file's history. Clamped against a wall, the player's motion no longer matches the
-       constant-velocity model the prediction is built on, so the predicted impact comes back INSIDE
-       the room and the shot is kept. It fails at exactly the case it exists to catch. So it is
-       empirical instead: a shot counts only if the player stayed clear of every wall for the whole
-       of its flight - every tick of it, not just the tick it was born.
-
-       AND THE RANGE HAS TO FIT. Holding the gunner at a fixed offset is the only way to stop the
-       range under test drifting, but a fixed offset eats the player's runway and the two compete for
-       the same axis. Both cases therefore put the gunner due north - separation along the SHORT axis,
-       runway along the LONG one - which is the only arrangement in a room 700x450 where a player can
-       run a straight line and still see the shell land. An earlier far case put the gunner 450px EAST
-       of a player standing at x=560, which is outside the room; clampEnemy dragged it back and the
-       case measured something a hundred pixels narrower than it claimed to. */
+    /* The claim, measured rather than asserted in prose: [h:99-tests-246] */
     const THR=PLAYER_HIT_R+7;                 // 7 is the gunner's shell radius
     const rate=a=>a.filter(x=>x.d<=THR).length/Math.max(1,a.length);
     const mean=a=>a.length?a.reduce((x,y)=>x+y.d,0)/a.length:Infinity;
@@ -8268,19 +6185,8 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
         const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
         projectiles.length=0;
-        // The player starts hard against the west wall so the whole crossing is runway, and sits near
-        // the SOUTH wall so a gunner dy above it is still inside the room. The constant matters:
-        // deriving the player's row from dy put the gunner outside the building at 400px, where
-        // clampEnemy dragged it back to the wall and quietly collapsed a 400px separation into 13.
-        // That case reported a straight runner missed by a hundred and thirty five pixels, which
-        // reads exactly like a broken gunner and was a broken fixture.
-        /* Clearance of the player's own radius plus a margin. The first version of this was
-           ROOM_LEFT+10, which is INSIDE a radius-13 body - so a counterstrafer was pressed flat
-           against the west wall for its entire oscillation, oscillating between 6px and 40px from a
-           wall it was already touching. The 6px wall filter let that through, so the suite measured
-           "counterstrafing" using a body that could barely move, and reported the result as though it
-           were about the mechanic. The straight-line case never noticed, because a runner leaves the
-           wall immediately; only the strafe, which is supposed to stay put, spent its life in it. */
+        /* The player starts hard against the west wall so the whole crossing is runway, and sits near the SOUTH wall so a gunner dy above it is still inside... [h:99-tests-247] */
+        /* Clearance of the player's own radius plus a margin. [h:99-tests-248] */
         const px=ROOM_LEFT+player.r+64, py=ROOM_BOTTOM-15-player.r;
         player.x=px; player.y=py; player.lagX=px; player.lagY=py; player.maxHp=99;
         const s=spawnEnemy(false,r,px,py+dy,'gunner'); r.enemies.push(s);
@@ -8288,87 +6194,20 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         const half=Math.round(TICK_HZ*0.25);
         // pinned this long, so velocity and heading converge without spending any runway
         const warm=420, release=warm;
-        // ...and then given this long at full speed BEFORE the gunner is armed, because a player one
-        // tick into a run is still accelerating: the heading filter is slow on purpose, so a shell
-        // fired the instant they are let go leads a target that has not reached its speed yet. That
-        // is a real property of the game, but it is a property of the first tenth of a second of a
-        // run, and including it measures the acceleration rather than the intercept.
+        /* ...and then given this long at full speed BEFORE the gunner is armed, because a player one tick into a run is still accelerating: [h:99-tests-249] */
         const arm=release+70;
         const span=s.cdMin+s.cdVar+CAST_TIME;
         const live=new Map();
-        /* THE WINDOW IS SIZED BY THE FASTEST COLUMN, not by the baseline. It used to be
-           `span*1.9`, long enough for two shells to land - a compromise chosen when a character with
-           no speed could not cross the room inside it. A Wyrd at 25% with a full meter runs 45%
-           quicker, so that window is 828 ticks and the fast player covers 1,159px in a 674px lane and
-           is against the wall with a shell in the air. Every one of its shells was then born
-           wall-clamped, the filter below threw them all away, and the A/B reported 8 against 0 - it
-           was comparing silence with accuracy and calling the difference a result.
-
-           At `span*1.0` the window is 469 ticks, the fastest column covers 656px and finishes at
-           x=719 against an inner wall at 736: two shells still land and the lane still holds. This is
-           the same arithmetic the comment at the filter does, arrived at from the other end.
-
-           Two other fixes were tried and both produced a confident wrong number instead of an error.
-           An endless lane that teleported the player to the far side of the room put the shooter 470px
-           away instead of 200. A lane that translated the whole world - player, hitbox, shooter, every
-           shell - preserved all the relative geometry and still broke, because the shooter resyncs its
-           own x to the player between shots, so the moment the world moved its stored aim was stale
-           and it fired at where the player had been. */
-        /* THE WINDOW IS DERIVED FROM THE ROOM, not chosen. It was `span*1.9`, a number that only
-           worked while the character had no speed: the window is how long the player may run, and a
-           Wyrd at 25% with a full meter runs 45% quicker, so 828 ticks is 1,159px of travel inside a
-           537px lane. The fast column finished against the inner wall with a shell in the air, every
-           one of its shells was born wall-clamped, the filter below threw them all away, and the A/B
-           reported 8 against 0 - comparing silence with accuracy and calling it a result.
-
-           So the window is computed from two things that are already true: the room's actual runway,
-           and the FASTEST top speed the character can reach. Neither is a guess and neither is a
-           constant, so a second character, a bigger room or a stronger meter changes the window
-           instead of breaking the test. It still allows a cast plus a flight to complete, because a
-           window that ends before a shell is culled measures nothing at all - which is what the
-           first attempt at a hand-picked smaller window did.
-
-           Two other fixes were tried and both produced a confident wrong number instead of an error.
-           An endless lane teleporting the player to the far side of the room put the shooter 470px
-           away instead of 200. A lane translating the whole world - player, hitbox, shooter, every
-           shell - preserved the relative geometry and still broke, because the shooter resyncs its
-           own x to the player between shots, so the moment the world moved its stored aim was stale
-           and it fired at where the player had been. */
+        /* THE WINDOW IS SIZED BY THE FASTEST COLUMN, not by the baseline. [h:99-tests-250] */
+        /* THE WINDOW IS DERIVED FROM THE ROOM, not chosen. [h:99-tests-251] */
         const fastest=player.speed*player.slowMult
           *(1+Math.min(MOVE_SPEED_HARD_CAP,SPEED_CAP+MOMENTUM_SPEED));
         const startX=player.x;
         const runway=(ROOM_RIGHT-player.r-1)-startX;
         const roomTicks=Math.floor(runway/fastest);
         const win=Math.max(arm+CAST_TIME+40, release+roomTicks);
-        /* THE PLAYER RUNS THE FULL LANE AND TURNS AT THE EDGES, so the window can stay at the full
-           shell cadence rather than shrinking every time the character gets faster.
-
-           The window used to be a hand-picked `span*1.9`, which only held while the character had no
-           speed: a Wyrd at 25% with a full meter runs 45% quicker, so 828 ticks is 1,159px of travel
-           in a 537px runway, the fast column finished against the wall with a shell in the air, every
-           one of its shells was born wall-clamped, the filter below threw them all away, and the A/B
-           reported 8 against 0 - comparing silence with accuracy and calling it a result.
-
-           Sizing the window DOWN was tried twice and both produced a confident wrong number. Sized to
-           the runway it ended before a shell had finished flying, so there were no samples at all.
-           Sized to the room width rather than the runway it put the player at x=30, outside the
-           playable band, so the wall filter still fired a tick later - a torus whose period is the
-           room width is not a torus, because the band a body may stand in is narrower than its
-           period. Translating the whole world - player, hitbox, shooter, every shell - preserved all
-           the relative geometry and still broke, because the shooter resyncs its own x to the player
-           between shots, so the instant the world moved its stored aim was stale and it fired at where
-           the player had been.
-
-           Turning at the edges needs no window arithmetic at all. The player is never clamped - they
-           turn a few pixels INSIDE the band - so the wall filter never fires and every sample is a
-           body genuinely running at full speed. The honest cost is that the runner is no longer a
-           perfectly straight line for the whole trial: the swerve read is not exactly zero at a turn.
-           It is a handful of ticks per lap out of several hundred, and the claim under test is that
-           the gunner solves a real intercept on a moving target rather than leading by a guess. */
-        /* Straight, as it always was. Turning at the edges was tried and reverted: 700px of lane is
-           the whole constraint, and a player who turns is a player the swerve read no longer sees as
-           straight, so the misses move from the corners to the turns and the fixture measures
-           something else again. The claim below records what this test can and cannot now say. */
+        /* THE PLAYER RUNS THE FULL LANE AND TURNS AT THE EDGES, so the window can stay at the full shell cadence rather than shrinking every time the... [h:99-tests-252] */
+        /* Straight, as it always was. [h:99-tests-253] */
         for(let t=0;t<arm+Math.round(span*1.9);t++){
           keys=kind==='straight'?{d:1}:(t%(half*2)<half?{d:1}:{a:1});
           player.hp=99; player.iframes=0; player.armor=0;
@@ -8386,14 +6225,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
           for(const [p,rec] of live){
             const d=Math.hypot(p.x-player.lagX,p.y-(player.lagY+PLAYER_HIT_DY));
             if(d<rec.min) rec.min=d;
-            /* The wall test used a 6px margin, which is TIGHTER THAN THE PLAYER'S OWN RADIUS of 13.
-               A body clamped flat against a wall sits 13px from it - so it passed a check that was
-               supposed to be impossible to pass, and a wall-clamped player was measured as a running
-               one. The gunner leads a clamped player's reported velocity, which keeps pointing into
-               the wall while the position has stopped, so the shell goes exactly where the player
-               cannot be and misses by the lead: a huge miss that is not a gunner failure at all. It
-               never showed up before because a baseline-speed player did not reach the wall inside
-               the trial, and the 6px number was chosen without anyone checking it against r. */
+            /* The wall test used a 6px margin, which is TIGHTER THAN THE PLAYER'S OWN RADIUS of 13. [h:99-tests-254] */
             if(!(player.x>ROOM_LEFT+player.r&&player.x<ROOM_RIGHT-player.r
                 &&player.y>ROOM_TOP+player.r&&player.y<ROOM_BOTTOM-player.r))
               rec.wall=true;
@@ -8408,58 +6240,13 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       }
       return out;
     };
-    /* Every sample carries the clearance the player had when the shell was born, and failures print
-       it as miss@clearance. That is not decoration: the first version of this fixture measured a
-       player who had run out of room, and the only reason it was recognisable as a fixture fault
-       rather than a broken gunner was that the misses were systematically the ones with the least
-       clearance left. A distance on its own cannot tell you which of the two you are looking at. */
+    /* Every sample carries the clearance the player had when the shell was born, and failures print it as miss@clearance. [h:99-tests-255] */
     const show=a=>'['+a.map(x=>x.d.toFixed(0)+'@'+x.born.toFixed(0)).join(' ')+']';
     /* MEASUREMENT ONLY - this is scaffolding, and it is here to produce numbers, not to pass.
        Same fixture, same four cases, the meter held at 0 and at 1 so the only difference between
        the two columns is acceleration. */
-    /* ---- what Momentum is allowed to do to a gunner, measured ------------------------------------
-       Momentum raises top speed by 10% and acceleration by 55%. The design claim is that this cannot
-       help against a gunner, and the reason is that the gunner solves a real intercept rather than
-       leading by a guess: a player who moves 10% faster is simply a faster target, solved correctly.
-
-       MEASURED, and the first measurement said the opposite - full Momentum dropped a 200px straight
-       runner from 100% to 50%, and at 400px a straight runner was missed by 88px. Both numbers were
-       the FIXTURE, not the gunner. The wall filter used a 6px margin while the player's own radius is
-       13px, so a body pressed flat against a wall passed a check meant to be impossible to pass; a
-       10%-faster player reaches the wall inside the trial and a baseline one does not. Separating the
-       samples by the clearance the player had at birth showed it immediately: every hit was born with
-       163px+ of room and every miss with 106-141px. With the filter corrected to the player's radius:
-
-         200px straight   momentum 0 -> 100%     momentum 1 -> 100%
-         400px straight   momentum 0 -> 100%     momentum 1 -> 100%
-
-       So the claim holds, and now it is pinned rather than assumed. If a future item raises top speed
-       enough to matter, this is the test that says so. */
-    /* THE CLAIM CHANGED, and this is the most consequential assertion edit in the file's history.
-
-       It used to read: "a full meter cannot help against a gunner, because the gunner solves a real
-       intercept rather than leading by a guess - a player who moves 10% faster is simply a faster
-       target, solved correctly." Measured, with a character that starts at 25% speed, that is FALSE.
-       A straight-line runner at 200px with a full meter is hit 50% of the time and the misses are a
-       consistent 16-32px rather than scattered - a SYSTEMATIC error, not noise. At a 10% meter it was
-       0%: literally unhittable.
-
-       The cause is not the speed, it is the ACCELERATION, and it was never going to work. The gunner
-       solves a CONSTANT VELOCITY intercept; a player who is still accelerating when the solution is
-       taken has a velocity about to change, and the solution becomes correct again only once they
-       stop. Speed is a solved quantity. Acceleration is not. So any acceleration bonus produces
-       exactly this: a small, consistent, one-directional miss on a committed runner.
-
-       That means the old claim was not a property of the gunner. It was a property of a moment when
-       the character had no speed and the margin happened to be there. It was measured at 100%/100%
-       and generalised, and the generalisation did not survive a faster character.
-
-       The claim now is what is actually true, and it is what the design wants: Momentum is an
-       EVASIVENESS buff, a straight-line runner is still hit at least a third of the time with a full
-       meter, and a full meter is never BETTER than an empty one. The meter helps, it helps bounded,
-       and it cannot make a committed player untouchable.
-
-       The real fix for a stronger meter is in the gunner's solver, not in this assertion. */
+    /* what Momentum is allowed to do to a gunner, measured ------------------------------------ Momentum raises top speed by 10% and acceleration by 55%. [h:99-tests-256] */
+    /* THE CLAIM CHANGED, and this is the most consequential assertion edit in the file's history. [h:99-tests-257] */
     for(const [dy,label] of [[-200,'200px'],[-400,'400px']]){
       const held=trial(dy,'straight',8,0), full=trial(dy,'straight',8,1);
       Momentum.release();
@@ -8472,37 +6259,13 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
         ok(rate(held)>=0.9,'a straight runner is only hit '+(rate(held)*100).toFixed(0)+'% of the time at '+
            label+' with an empty meter ('+show(held)+')');
       } else {
-        /* 400px is RECORDED, and the reason is now purely the ROOM rather than the gunner. The solver
-           fix - predicting from the current velocity instead of a 71-tick-old EMA - restored the 200px
-           columns to 99%+, and the 400px straight column is still empty for a different reason: a
-           1.4px/tick runner crosses this 700px lane in 500 ticks, about one shell cadence, so a window
-           long enough to fire twice puts the player against the wall with the shell in the air and the
-           wall filter discards the shot. Nothing to do with accuracy.
-
-           To measure 400px honestly this fixture needs a lane long enough to hold a flight, which is
-           a change to the test's own world rather than to the game. Guarded so it comes back the
-           moment that exists. */
+        /* 400px is RECORDED, and the reason is now purely the ROOM rather than the gunner. [h:99-tests-258] */
         ok(rate(held)>=0,'a straight runner is not hit AT ALL at 400px even with an empty meter ('+
            show(held)+'). It used to be 100%, and the cause was a 71-tick velocity lag in the belief, '+
            'now fixed. If this column is empty rather than merely low, the lane is too short to '+
            'measure in rather than the gunner being wrong');
       }
-      /* The full-meter column is RECORDED, never required, and the reason is geometric rather than
-         convenient. A 1.4px/tick runner crosses this 700px lane in 500 ticks, about one shell
-         cadence, so a window long enough to fire twice puts the player against a wall with the shell
-         in the air - and then the wall filter discards every shot it fired. The fast column comes back
-         empty rather than wrong: it is not measuring accuracy, it is measuring the room.
-
-         Four ways of giving the trial more lane were tried - a longer window, an endless lane, a
-         translated world, a filtered sample set - and each produced a confident wrong number rather
-         than an error, which is the signature of a fixture that cannot be repaired by reshaping it.
-         They are written up where they happened.
-
-         So the empty-meter column is asserted, because that is the gunner's own correctness and the
-         thing this test exists to protect, and the full-meter column is only checked for the one
-         property that is meaningful without samples: that it is never BETTER. A real fix is a solver
-         that leads an accelerating target, or a room built for the measurement; neither is a
-         threshold, and pretending otherwise is how the original overclaim survived this long. */
+      /* The full-meter column is RECORDED, never required, and the reason is geometric rather than convenient. [h:99-tests-259] */
       if(full.length>0){
         ok(rate(full)>=0.9,'a straight runner is only hit '+(rate(full)*100).toFixed(0)+'% of the '+
            'time at '+label+' with a FULL Momentum meter ('+show(full)+'), so playing well makes the '+
@@ -8518,11 +6281,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const cS=trial(-200,'straight',5), cC=trial(-200,'strafe',5);
     // 400px, same arrangement, past the 350px deadzone where the spread starts to open.
     const fS=trial(-400,'straight',5), fC=trial(-400,'strafe',5);
-    /* The 400px STRAIGHT column is allowed to be empty: at 400px against a character 25% faster than
-       the encounter tuning assumed, the gunner's constant-velocity intercept misses by 86-139px over a
-       195-tick flight, and the straight runner is against the wall before its first shot is culled, so
-       the wall filter discards it. The 200px columns and the 400px strafe column are the ones still
-       measuring something. */
+    /* The 400px STRAIGHT column is allowed to be empty: [h:99-tests-260] */
     ok(cS.length>=4&&cC.length>=1,'a gunner produced too few usable shots '+
        '('+[cS,cC,fS,fC].map(a=>a.length).join('/')+'), so the numbers below are measuring silence '+
        'rather than accuracy');
@@ -8532,47 +6291,12 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(rate(cS)>=0.6,'only '+(rate(cS)*100).toFixed(0)+'% of a gunner\'s shells at 200px landed on a '+
        'player walking in a straight line ('+cS.length+' shots, misses '+show(cS)+'), so a straight '+
        'line is free');
-    /* Counterstrafing at 200px is NOT supposed to be free. The whole point of the distance gate is
-       that a reversal buys you nothing inside the deadzone, and the mechanism for that is the gunner
-       believing the player in proportion to how settled they look: a thrashing player's net
-       displacement over a close flight is near zero, so not leading them and leading them are
-       nearly the same shot. What must NOT happen is the reversal being a clean escape - the claim is
-       that it is a downgrade, not a dodge. So this is a ceiling, not a floor: if the strafe lands
-       MORE often than the straight line, something has inverted. */
+    /* Counterstrafing at 200px is NOT supposed to be free. [h:99-tests-261] */
     ok(rate(cC)<=rate(cS),'a counterstrafer at 200px is hit '+(rate(cC)*100).toFixed(0)+'% of the time '+
        'against a straight runner\'s '+(rate(cS)*100).toFixed(0)+'% ('+cC.length+' shots, misses '+
        show(cC)+'), so reversing is BETTER than holding a line up close');
-    /* ...and the deadzone is a claim about DISTANCE, not about a hit rate. This used to assert that a
-       counterstrafer is still hit at most 40% of the time at 200px, which was written when the
-       measurement said 13% - so it encoded the bug as the expectation, and the test's own name ("hits
-       a straight line AND a counterstrafer") has always said the opposite. Fixing the swerve decay
-       took it to 100%, which is the name being right at last.
-
-       What the deadzone actually claims is that a reversal buys the player MORE the further away the
-       gunner is, and nothing at all up close. So that is the assertion: the gain a reversal is worth
-       must be larger at 400px than at 200px. Comparing hit rates cannot express that, because "the
-       gunner hits everything" is the correct answer at both ends of the near range. */
-    /* THE 400px COMPARISONS RUN, and the guard that skipped them is gone.
-
-       Three `ok(true,'')` calls used to stand in for these when the 400px straight column came back
-       empty. That is the worst shape a dead assertion takes: not a missing check, but a PASSING one,
-       carrying a message that reads like a result. The test reported green and had checked nothing at
-       400px, which is exactly where the deadzone claims to matter most - the whole point of the
-       mechanic is that a reversal is worth more the further away the gunner is.
-
-       The guard's comment blamed the player being pinned against the far wall at 400px in a 700x450
-       room. That part is real - the 200px fixture above needed a wall filter at the player's own radius
-       precisely because a body pressed flat against a wall can produce a clearance no shot could have
-       used. But the conclusion drawn from it ("the column is empty, so the assertions cannot run") was
-       not: the fixture needed to keep the player in open floor, which is what the block below does by
-       recentring them on the gunner rather than pinning them to a corner.
-
-       The measurement matches the 200px one exactly, because a different metric is not a comparison:
-       each shell is followed to its end and scored by the SMALLEST distance it ever had to the
-       hitbox, not the distance at the moment it was fired. A shell fired at a stale aim has a large
-       "distance" at birth and can still connect, and scoring that as a miss makes a reversal look
-       worse than it is - which is what the first version of this block did, reporting a reversal as
-       worth -10.7px of extra miss when it was worth nothing at all. */
+    /* ...and the deadzone is a claim about DISTANCE, not about a hit rate. [h:99-tests-262] */
+    /* THE 400px COMPARISONS RUN, and the guard that skipped them is gone. [h:99-tests-263] */
     let fFar=0;
     {
       /* `r` belongs to the 200px block, which closed before this one opens. Declaring it again is the
@@ -8580,18 +6304,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
          block's scope is one edit away from silently measuring a different room. */
       const r=currentRoom();
       const fS2=[],fC2=[];
-      /* THE GUNNER GOES IN THE MIDDLE, and that is not a convenience - it is the only position from
-         which 400px is a measurable range.
-
-         Measured: a 400px ring around a body in a 700x450 room clears the walls at only 13-17 of 72
-         directions, and at the room's edge that falls to near zero. Any fixture that parks the gunner
-         off-centre and then requires the player to stand 400px away is requiring the player to stand
-         in a wall for most angles, and the fallback that clamps them inward produces a shot taken at
-         250-300px scored into a column labelled 400px. That is the fault the guard's comment described,
-         and it is a fault of PLACEMENT rather than of the mechanic.
-
-         The gunner's own standoff is 200-250px, so the centre of the room is also where it spends a
-         real fight. */
+      /* THE GUNNER GOES IN THE MIDDLE, and that is not a convenience - it is the only position from which 400px is a measurable range. [h:99-tests-264] */
       const g2=spawnEnemy(false,r,(ROOM_LEFT+ROOM_RIGHT)/2,(ROOM_TOP+ROOM_BOTTOM)/2,'gunner');
       r.enemies.push(g2); g2.noticeTimer=0; g2.alerted=true;
       /* keep the player at RANGE and clear of every wall, so the sample is about the deadzone rather
@@ -8603,13 +6316,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       for(let i=0;i<400&&(fS2.length<40||fC2.length<40);i++){
         const strafe=i%2===1;
         for(let k=0;k<90;k++){
-          /* a counterstrafer REVERSES: alternate the axis every window, so the column is reversals
-             rather than one long arc. A single fixed angle is a slower straight line, which is what
-             the first version of this swept and why it produced one usable sample in 400 iterations.
-
-             The angle is chosen from the ones that are actually clear at this range, so the fixture
-             never asks the player to stand in a wall - which the measured 13-17 of 72 directions makes
-             a real constraint, not a formality. */
+          /* a counterstrafer REVERSES: [h:99-tests-265] */
           const win=Math.floor(k/24)%2;
           const base=strafe?([0,Math.PI/2,Math.PI,-Math.PI/2][win]):0.9;
           let a=base;
@@ -8676,12 +6383,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // and it has to be on a body, not a global count, or a pack of five fresh bodies is soft
     startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
-    // Far enough apart that one body's field cannot reach the next, AND all three inside the room.
-    // Sixty pixels put the "fresh" body inside the first body's field and it was charged twice;
-    // three radii put the spares at y=709 and y=1063, which is outside a room ending at 580, so
-    // clampEnemy dragged them onto the wall and the test read a field landing on nothing; and 130 is
-    // still too close, because the reach test is against aoeRadius PLUS the body's own radius, which
-    // for a gunner is 140. A hundred and seventy clears all three.
+    /* Far enough apart that one body's field cannot reach the next, AND all three inside the room. [h:99-tests-266] */
     const fresh=[], used=[];
     for(let i=0;i<3;i++){ const e=spawnEnemy(false,r,MIDX+40,MIDY+(i-1)*170,'gunner');
       r.enemies.push(e);
@@ -8693,10 +6395,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       update();
       return e.stun;
     };
-    /* The stun is read AFTER the tick that applied it, and the enemy's own update has already
-       decremented it once, so the absolute number is one lower than what was written. Every cast
-       here is measured the same way, so the RATIOS between them - which is the whole claim - are
-       unaffected, and the absolute check only has to clear that one decrement. */
+    /* The stun is read AFTER the tick that applied it, and the enemy's own update has already decremented it once, so the absolute number is one lower... [h:99-tests-267] */
     const s1=hit(used[0],1);
     const s1b=hit(used[0],1);
     const sFresh=hit(fresh[0],1);
@@ -8705,24 +6404,8 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        ' then '+s1b.toFixed(1)+'), so the resistance is not applied');
     ok(Math.abs(sFresh-s1)<0.01,'hooking a DIFFERENT body was weaker ('+sFresh.toFixed(1)+
        ') than hooking a fresh one ('+s1.toFixed(1)+'), so the resistance is global rather than per body');
-    // and it forgets - but only one step per HOOK_FORGET, so recovering from two hooks takes two.
-    // The leftover fields are cleared first: the earlier casts are still on the floor for nearly two
-    // seconds and each one that catches this body resets its calm timer, which is the mechanic
-    // working correctly and the test measuring the wrong thing.
-    /* The player is kept alive and kept out of harm's way for the whole wait, and the run is asserted
-       to still be going afterwards. Both are load-bearing and neither was here.
-
-       Hooking calls alertEnemy, so all three gunners are awake and shooting for twenty-one seconds at
-       a player who is standing still and doing nothing. Without this the player dies partway through,
-       state flips to gameover, update() stops ticking - and the calm timer that this whole assertion
-       is about freezes with it. The body then still has its stacks, the hook lands for nothing, and
-       the test reports that a body "never comes back".
-
-       It used to pass anyway, and the reason is worth recording: it was surviving on a `keys` object
-       leaked from whichever test ran before it, which walked the player out of the firing line. Adding
-       a per-test UI reset - a strict improvement - removed that accident and exposed the test. The
-       claim is about a body forgetting, and whether the player survives twenty-one seconds of gunner
-       fire has nothing to do with it, so the fixture now says so outright. */
+    /* and it forgets - but only one step per HOOK_FORGET, so recovering from two hooks takes two. [h:99-tests-268] */
+    /* The player is kept alive and kept out of harm's way for the whole wait, and the run is asserted to still be going afterwards. [h:99-tests-269] */
     for(let t=0;t<HOOK_FORGET*3+10;t++){
       hookFields.length=0; used[0].stun=1e9; player.hp=99; player.maxHp=99; player.iframes=1e9;
       update();
@@ -8735,15 +6418,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        sAfter.toFixed(1)+' vs '+s1b.toFixed(1)+'), so it never comes back');
   });
   test('a lunge that cannot reach waits, and one that can is never dawdled with',()=>{
-    /* Distance is not a reason the attack fails; it is a reason it has not started. A lunger whose
-       solution is out of reach keeps closing until the solution fits, and only then commits.
-
-       The "never dawdles" half is asserted on the lunger's OWN numbers rather than on a gap measured
-       from outside. The earlier version re-derived the gap and the solution in the test loop and
-       demanded they agree tick for tick, which they cannot: the rule is evaluated against the
-       lagged facing point the lunger steers by, the loop measures the real position, and a player
-       running away sits on the boundary between them for half a second. That is a disagreement
-       about where the player is, not a lunger failing to act. */
+    /* Distance is not a reason the attack fails; it is a reason it has not started. [h:99-tests-270] */
     startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
     player.hp=99; player.maxHp=99;
@@ -8780,13 +6455,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     eq(a.dist.toFixed(3),b.dist.toFixed(3),'the intercept solver is not deterministic');
   });
   test('a lunger holds its distance instead of walking into you, and lunges across the gap',()=>{
-    /* The bug that made the whole mechanic meaningless. A lunger whose approach speed exceeds the
-       player's closes the last thirty pixels and then "lunges" from zero range, where no read is
-       worth anything because there is nothing left to dodge - every measurement of this attack came
-       out a hundred percent for that reason and not because the prediction was any good.
-
-       The gunner has always held station inside a close/far band. This asserts the lunger does too,
-       and that the lunge is the thing that crosses the distance rather than the walk. */
+    /* The bug that made the whole mechanic meaningless. [h:99-tests-271] */
     const gapAfter=(n,ticks)=>{
       startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
       const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
@@ -8810,10 +6479,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // and the standoff has to be far enough out that the player can still answer the line
     ok(LUNGE_HOLD>player.speed*LUNGE_WINDUP*0.5,'the standoff is inside the distance the player covers in half a windup, so there is no room to answer the line');
     ok(LUNGE_HOLD<LUNGE_REACH,'the standoff is beyond the lunge reach, so the lunger holds where it cannot attack');
-    // A pack is allowed to press in past the hold, and should be: five bodies shoving each other
-    // forward is a legitimate threat and pretending otherwise would remove the reason to clear a room
-    // quickly. What must NOT happen is a lunge being committed from inside contact range, because
-    // that is the whole defect and the minimum-range gate is what prevents it whatever the pack does.
+    /* A pack is allowed to press in past the hold, and should be: [h:99-tests-272] */
     startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     const rr=currentRoom(); rr.enemies.length=0; rr.spawnPlan=null; rr.pickups.length=0;
     player.x=MIDX; player.y=MIDY;
@@ -8850,13 +6516,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     eq(fromContact,0,'a lunger committed a lunge from inside '+LUNGE_MIN+'px, '+fromContact+' times');
   });
   test('a lunge reads a settled heading, and a thrashing one is read as unreliable',()=>{
-    /* The read the mechanic is built on. The lunger must not aim from the raw velocity: a player one
-       tick into a keypress is still nearly stationary, and a player mid-reversal is momentarily
-       pointing the wrong way, and both of those are places a lunge would be aimed that the player is
-       about to leave. It reads a smoothed heading instead, scaled by how settled the player looks.
-
-       So holding a line is read in full and punished, and thrashing is read as unreliable and gets a
-       much shorter lunge. That is what makes reversing a trade rather than a free dodge. */
+    /* The read the mechanic is built on. [h:99-tests-273] */
     startGame(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     const r=currentRoom(); r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0;
     player.hp=99; player.maxHp=99;
@@ -8879,17 +6539,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const thrashConf=solveIntercept(c,player.x-c.x,player.y-c.y).conf;
     ok(thrashConf<settledConf*0.6,'a thrashing player is read as '+(thrashConf/settledConf).toFixed(2)+
        'x as confident as a settled one, so reversing buys nothing');
-    /* This assertion used to require thrashConf to stay ABOVE LUNGE_CONF_MIN, and that floor was
-       the bug rather than a safety property. It guaranteed that even a player who had fully convinced
-       the lunger they were going nowhere kept a third of a full lead thrown along the last direction
-       the lunger believed - and when that direction was stale, the lunge went the wrong way.
-
-       The floor existed so that reversing could never make the attack harmless. Displacing it means
-       confidence now reaches zero, so what protects the attack is that a thrashing player is being
-       read as genuinely not going anywhere, which is TRUE of them: they net-travel almost nothing
-       over a lunge's horizon, so aiming at their current position is the correct prediction and not
-       a punishment. The claim is therefore that the two ends of the range behave correctly and in
-       opposite directions, rather than that one of them is clamped. */
+    /* This assertion used to require thrashConf to stay ABOVE LUNGE_CONF_MIN, and that floor was the bug rather than a safety property. [h:99-tests-274] */
     ok(thrashConf<settledConf*0.15,'a thrashing player is read at '+thrashConf.toFixed(2)+
        ' confidence against a settled '+settledConf.toFixed(2)+', so a continuous reverser is still'+
        ' only half believed and the lunge is never harmless');
@@ -8900,10 +6550,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(long.dist>=0,'the solver returned a nonsense distance');
   });
   test('the controls sheet and the bug list take the keyboard away from the game',()=>{
-    /* A DOM overlay on top of a canvas game is a click that casts and a key that walks you into a
-       Brunch, unless something stops them. And the suppressor must not stop so much that the overlay
-       cannot be closed with the key that opened it - which is the same failure as the hook's cancel
-       sitting behind its own cooldown: the feature is there and unreachable. */
+    /* A DOM overlay on top of a canvas game is a click that casts and a key that walks you into a Brunch, unless something stops them. [h:99-tests-275] */
     startGame();
     ok(typeof uiHoldsInput==='function','there is no way for the game to know an overlay is open');
     ok(typeof toggleControls==='function','there is no way to open the controls sheet');
@@ -8992,17 +6639,8 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(player.boost>0,'landing left no momentum at all');
     eq(player.boost,BLINK_BOOST,'the momentum is not one whole burst');
     eq(Math.round(player.boostX),1,'the burst is not aligned with the blink, so it cannot gate on it');
-    /* The burst is a LENGTH counted in ticks, not a level that bleeds a fraction per tick. It used
-       to be the second: a nominal 23 then lasted twenty-three hundred ticks, about ten seconds, ten
-       times what the comment beside it said. And it used to be a flat multiplier, which is the
-       strongest version of itself - blink away from a Brunch, hold the opposite key, and the burst
-       pays out backwards, so the move is a free displacement rather than momentum. */
-    /* The ceiling the burst is measured against is the player's ACTUAL top speed, which is
-       player.speed * slowMult * (1 + moveSpeedBonus) - the bonus is applied at the movement site
-       rather than baked into the field, so a test reading player.speed alone compares against a
-       base 25% lower than the speed the player is actually travelling at. Same mistake as reading a
-       derived value's input instead of the value, and it made a correct burst look like it was
-       handing out more than it claims. */
+    /* The burst is a LENGTH counted in ticks, not a level that bleeds a fraction per tick. [h:99-tests-276] */
+    /* The ceiling the burst is measured against is the player's ACTUAL top speed, which is player.speed * slowMult * (1 + moveSpeedBonus) - the bonus is... [h:99-tests-277] */
     const flat=player.speed*player.slowMult*(1+moveSpeedBonus());
     const BURST_PROBE=15;              // inside the burst, and long enough that the velocity ease
                                        // is well under way - it cancels, because both runs get it
@@ -9035,25 +6673,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('walking into a fight hands the kit back, and the blink bar shows it happening',()=>{
-    /* The refill in enterRoom is the most generous thing the game does, and for a while it did it
-       silently. Three numbers jump at the moment the player is looking at a door open, and a cooldown
-       returning is invisible by nature: a bar that was half spent is now full and nothing about that
-       transition catches an eye.
-
-       It then got rings, and the rings were wrong twice. A ring on a bar that has ALREADY snapped to
-       full is decoration - the player saw the jump, and the ring arrived afterwards to announce
-       something that had happened. And the ring was invisible for its entire first life, because the
-       fade is flattest at its start and the whole 34-tick flash played against a screen that was
-       87-100% black. The test for that one asserted the clock counted down, and it did, and nobody
-       asked whether anyone could see it.
-
-       So: weapons restore instantly and silently, and the BLINK animates, because its value is a
-       continuum the player is used to watching and a snap reads as the game taking something away
-       and giving it back in one frame. The bar starts at exactly what it was before the door.
-
-       Two properties matter and both are about the animation being honest rather than about it
-       existing: it starts at the pre-room value, and it is full the instant the player regains
-       control. Anything else is a bar disagreeing with the game. */
+    /* The refill in enterRoom is the most generous thing the game does, and for a while it did it silently. [h:99-tests-278] */
     const arm=(cd,altC,bc,br)=>{
       startGame();
       const r=currentRoom(); enterRoom(cur.x,cur.y,'W');
@@ -9101,15 +6721,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(wasBelowAtHalf,'the blink bar reached full before the player regained control, so there is '+
        'a stretch of the arrival where the bar claims something the player cannot yet use');
     eq(drawn(),2,'the blink bar is not full on the tick the player regains control');
-    /* The animation writes into the real fields, so there is no separate "drawn" and "real" to
-       compare - an earlier version of this test compared them and could not fail, because both
-       sides were the same expression. The claims below are therefore about the SHAPE of the fill:
-       where it starts, that it climbs, and where it lands.
-
-       What makes that safe is that the fill is uninterruptible and lands on the READY tick. The
-       player cannot act during the arrival - readyT gates input - so there is no window in which
-       the bar and the player's actual ability disagree in a way they could exploit. The only way to
-       lose a charge would be to leave the arrival early, and the fill has no early exit. */
+    /* The animation writes into the real fields, so there is no separate "drawn" and "real" to compare - an earlier version of this test compared them... [h:99-tests-279] */
     startGame();
     const fillR=currentRoom(); enterRoom(cur.x,cur.y,'W');
     fillR.enemies.length=0; fillR.spawnPlan=null; fillR.pickups.length=0;
@@ -9152,17 +6764,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('a tick that lives above the state check survives the states above it',()=>{
-    /* The blink bar''s arrival fill runs above `if(state!=='playing') return`, because it has to
-       advance through the room transition and the READY window and neither of those calls tickBlink.
-       Moving it down was the obvious first attempt and the bar simply stopped animating.
-
-       The cost of putting it up there is that it also runs on the title screen, where there is no
-       player at all - `player` is undefined until the first startGame(). Reading player.blinkRestore
-       there throws every frame, and no test in this file caught it, because every one of the tests
-       calls startGame() before it touches anything. The title screen was the one place it could
-       break and the one place no test stood.
-
-       So this test does the thing none of the others do: it runs the clock with no game in it. */
+    /* The blink bar''s arrival fill runs above `if(state!=='playing') return`, because it has to advance through the room transition and the READY... [h:99-tests-280] */
     const savedPlayer=player, savedState=state;
     let threw=null;
     try{
@@ -9194,11 +6796,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('the weapon bench swaps guns, and freezes the run while it is open',()=>{
-    /* F1 exists because weapon balance could not be judged: every attempt at a new gun cost a run,
-       and a run costs twenty minutes. So the two things this has to get right are that a swap
-       actually changes the gun, and that the numbers on the panel are the numbers the game fires
-       with - a bench that disagreed with the game would be worse than no bench, because it would
-       be believed. */
+    /* F1 exists because weapon balance could not be judged: [h:99-tests-281] */
     startGame();
     const was=player.weaponIdx;
     toggleDev(true);
@@ -9227,29 +6825,12 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('the bench reports the gun the game actually fires, including under Strength',()=>{
-    /* The panel exists to settle an argument about whether a gun is weak, and it settles it by
-       showing figures. If the figures are not the ones fireWeapon uses, it does the opposite of what
-       it was built for - so this recomputes each one the way the game does and compares.
-
-       The term that matters is Stats.value('strength'), added FLAT to the weapon's own damage. That
-       is the distortion the panel was built to expose: a flat +4 is +57% on the Bolt and +476% on the
-       Arcane Beam, so the Beam's base being low does not mean it is weak, it means it is unusually
-       sensitive to a buff. */
+    /* The panel exists to settle an argument about whether a gun is weak, and it settles it by showing figures. [h:99-tests-282] */
     startGame();
     const check=(str,dist)=>{
       for(let i=0;i<WEAPONS.length;i++){
         const w=WEAPONS[i];
-        /* EXACTLY THE GAME'S OWN TERMS, WHICH ARE `count*dmg + strength`.
-
-           This asserted `(dmg+strength)*count` - strength once per PELLET - which is precisely the
-           mistake the panel was making and which this test was written to catch. The two agreed
-           perfectly, so the test passed against a bench that told the player the Scatter dealt 55.2
-           where the game deals 34.2: the panel and its own test were wrong in the same way.
-
-           fireWeapon does `w.dmg*w.count + Stats.value('strength')` and shares it across the pellets.
-           The note above that line is long and the reason is not in doubt: a flat +3 must be +3 on a
-           shotgun and +3 on the Bolt, or a "+1 Strength" sigil is worth eight times as much to one
-           weapon as to another. */
+        /* EXACTLY THE GAME'S OWN TERMS, WHICH ARE `count*dmg + strength`. [h:99-tests-283] */
         const want=(TICK_HZ/(w.cooldown/TEMPO.rate))*(w.dmg*w.count+str)*devFalloff(w,dist);
         ok(Math.abs(devDps(w,str,dist)-want)<0.01,'the bench says '+w.name+' does '+
            devDps(w,str,dist).toFixed(2)+' dps at '+dist+'px with '+str+' Strength, but the terms '+
@@ -9272,14 +6853,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('the bench draws, and nothing on it falls outside the card',()=>{
-    /* The first version of this panel overlapped itself in three places and put a key cap three
-       pixels past the bottom edge of the card. None of that threw, so "does not throw" was never
-       going to catch it - and the gap check that did exist was measuring the same number the drawing
-       used, which is agreement, not verification.
-
-       So this asserts the two things that actually decide whether a panel is usable: it draws without
-       throwing, and every element's baseline sits inside the panel. The bands are all named in
-       devLayout, and the list below is those names - if a band is moved, this is what notices. */
+    /* The first version of this panel overlapped itself in three places and put a key cap three pixels past the bottom edge of the card. [h:99-tests-284] */
     startGame();
     toggleDev(true);
     const G=devLayout();
@@ -9316,12 +6890,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
          Math.round(y)+', which is not on the card');
     }
     toggleDev(false);
-  // The buckshot property, measured off the pellets the gun actually spawns rather than restated
-  // from the weapon table. A test that checks the numbers on the definition cannot tell a working
-  // spawn from a broken one - it would go on passing if fireWeapon stopped reading muzzleJitter.
-  // Evenness is the statistic: a volley of evenly spaced pellets has seven identical gaps and scores
-  // 1.00, and any value above that is real clumping and real holes. The old cone scored 1.01 at every
-  // range, which is the whole complaint restated as a number.
+  /* The buckshot property, measured off the pellets the gun actually spawns rather than restated from the weapon table. [h:99-tests-285] */
   test('the scatter is a column of shot: tight, near-constant width, and not evenly spaced',()=>{
     const sc=WEAPONS[1];
     const volley=()=>{
@@ -9372,10 +6941,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const lo=Math.min(...speeds), hi=Math.max(...speeds);
     ok(hi-lo>sc.speed*0.2,'per-pellet speed spans only '+(hi-lo).toFixed(2)+' px/tick on a '+sc.speed+
        ' px/tick weapon, so the pellets fly in step and the shot reads as one bolt of light');
-    // 4. and the damage is untouched, because this is a redistribution and not a buff. No escape
-    // hatch on a missing dmg field: that was in the first version, and a projectile that stopped
-    // carrying damage at all would have made the sum 0 and sailed through a test written to allow
-    // it. Verified to be taking the real branch - 8 pellets at 2.60 is exactly 20.80.
+    /* 4. and the damage is untouched, because this is a redistribution and not a buff. [h:99-tests-286] */
     let total=0;
     for(const p of v0) total+=p.dmg;
     ok(v0.length===sc.count,'the buckshot spawned '+v0.length+' pellets, wanted '+sc.count);
@@ -9383,13 +6949,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        'against a stated '+sc.dmg*sc.count+', so the pattern change quietly buffed the gun');
   });
 
-  // THE DEPTH LADDER, and the rule it exists to enforce: difficulty is a function of the floor
-  // number and of nothing else. Not the player's health, not their build, not how many items they
-  // are carrying. The first test is the one that matters, and it is deliberately hostile: a naked
-  // player and a maxed one must meet the same fight on the same floor.
-  // The field name out of a snapshot entry like `lunger:hp=25.0000`. Declared BEFORE the test that
-  // uses it rather than after: these run in definition order, so a helper defined below its caller
-  // is a temporal-dead-zone error the moment that caller executes.
+  /* THE DEPTH LADDER, and the rule it exists to enforce: [h:99-tests-287] */
   const nameOf=field=>String(field).split('=')[0];
   test('difficulty reads the floor and never the player',()=>{
     // Two runs on the same floor, one stripped bare and one carrying everything the framework can
@@ -9420,30 +6980,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
              ',pack='+depthPack().toFixed(6);
     };
     const bare=snapshot(false), full=snapshot(true);
-    /* THE INVARIANT IS SPLIT IN TWO, and the split is the point of this rewrite.
-
-       This used to be one assertion - a byte-identical snapshot - which was right for the game as it
-       stood. It is wrong the moment ADAPT goes live, because ADAPT is SPECIFIED to read how the
-       player is performing, and two runs can differ in performance while sharing a floor and a
-       build. Whoever wires it would be told they had broken a core invariant, and the tempting
-       response is to delete the test rather than read what it was for.
-
-       So the claim is stated as what it actually is, in two parts, and the part that may move is
-       named as the part that may move:
-
-         PERMANENTLY player-independent - the enemy's health, its damage, its cadence, the depth
-         multiplier. These read the FLOOR and nothing else, forever. A difficulty that reads a stat
-         is a difficulty that punishes a good build, and no adaptive system may touch them.
-
-         DELIBERATELY player-dependent - the ADAPT term, which is zero today and is the one dial
-         allowed to differ between two runs.
-
-       Until ADAPT is live both halves are identical, so the test is as strong as it was. After it,
-       the first half still guards the thing that actually matters and the second one documents the
-       exception instead of hiding it.
-
-       ADAPT_TERMS is the list of snapshot fields permitted to differ. It is empty now, and adding a
-       name to it is a deliberate act with a reviewable diff - which is the point. */
+    /* THE INVARIANT IS SPLIT IN TWO, and the split is the point of this rewrite. [h:99-tests-288] */
     const ADAPT_TERMS=[];
     const fields=s=>s.split('|');
     const bareF=fields(bare), fullF=fields(full);
@@ -9458,21 +6995,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     }
   });
   test('the ladder is exponential, climbs unbroken, and its steps GROW',()=>{
-    /* THE NEW CONTRACT, and it inverts the one it replaces on the two points that matter.
-
-       The ladder used to be `1 + growth*n/(n+tau)`: monotonic, but SATURATING, so the steps shrank
-       and the whole thing flattened into an asymptote it never reached. The brief now asks for a
-       difficulty that climbs unbroken, with the later floors ramping significantly more than the
-       earlier ones. An exponential's increments increase, so that is a shape, not a retune - and it
-       is asserted here as a shape, because "later floors cost more" is a claim that a monotonic
-       test cannot make: a saturating curve is also monotonic.
-
-       So the step size is the assertion. If the steps ever stop growing, the ladder has gone back to
-       flattening and every other check here would still pass.
-
-       HP is UNBOUNDED. Density and cadence are not, and the reasons are playability and reaction
-       time rather than taste - both are asserted below, and the note there says why an unbounded
-       version of each is not a harder game but a broken one. */
+    /* THE NEW CONTRACT, and it inverts the one it replaces on the two points that matter. [h:99-tests-289] */
     ok(typeof DEPTH_HP_GROWTH==='undefined','the old saturating ladder constant is still in the file');
     const rows=[];
     for(let f=1;f<=14;f++){
@@ -9513,24 +7036,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('the ladder stays playable and readable at every floor, which is why two dials are capped',()=>{
-    /* An unbounded ladder is not a harder game, it is a broken one, and this is the test that says
-       so with numbers rather than taste. Both caps were DERIVED from a fairness property rather than
-       chosen, because the ceiling the old ladder carried - 1.95x - was never wrong so much as
-       unreachable: its own saturation never got there before the content ran out, so it looked like
-       a safety limit and behaved like none.
-
-       The two properties:
-
-       REACTION TIME. A ranged body starts at 0.648 px/tick against a player who moves at 1.20, and
-       the standing guarantee is that it never closes faster than 0.87 - fast enough to read, slow
-       enough to answer. 0.87/0.648 is 1.343, so the rate ceiling is 1.34. Allowed the old 1.95 it
-       would reach 1.264, which is FASTER THAN THE PLAYER, and a body that outruns you is not a
-       threat you lost to, it is one you never had a chance to read.
-
-       PLAYABILITY. Density is capped too, and for a different reason: uncapped it is 246 bodies by
-       floor 40 and 1869 by floor 50. That is not a hard fight, it is a hang, and the old ladder put
-       floor 50 at 23. Past the point where the room stops being playable the ladder leans on HP,
-       which costs the player attention rather than the machine its frame budget. */
+    /* An unbounded ladder is not a harder game, it is a broken one, and this is the test that says so with numbers rather than taste. [h:99-tests-290] */
     const approachAt=f=>{ run.floor=f; return ENEMY.shooter.base*PRESSURE.rate*depthRate(); };
     let worst=0, worstAt=1;
     for(let f=1;f<=500;f++){
@@ -9563,17 +7069,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(t50>t1*10,'at floor 50 the only thing still climbing is health ('+t1.toFixed(2)+'x to '+
       t50.toFixed(1)+'x), so a deep floor is a longer fight rather than a busier one');
   });
-    // hp, rate and body count are the three levers. A ladder that only raised hp would make deep
-    // floors slow and empty, which is a worse game than either alternative.
-    //
-    // This test used to assert the ladder was LINEAR and that ten floors reached 3.5x health. Both
-    // assertions are gone, and both are worth explaining because they were pinning a bug.
-    //
-    // Linear in all three at once means the effective health pool is quadratic and the body count
-    // linear, which was measured at floor 50 as 15.7x HP, 8.8x rate and FOUR HUNDRED bodies. The
-    // rate column is the serious one: depthRate scales `e.speed` as well as cadence, so a ranged
-    // body at 8.84x crosses the room at 3.98 px/tick against a player who moves at 1.2, and fires
-    // every 60ms. A reaction time tax is not a difficulty curve, and the brief rules it out.
+    /* hp, rate and body count are the three levers. [h:99-tests-291] */
     const rows=[];
     for(let f=1;f<=10;f++){
       run.floor=f;
@@ -9599,10 +7095,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const itemCount=Items.equipped.length;
     const seedBefore=Rnd.seedText;
     const floor1=run.floor;
-    // Taken BEFORE the descent. The first version of this line sat below descend(), so shape1 and
-    // shape2 were both read off floor 2 - a comparison of a value with itself, which can never be
-    // unequal and so could never fail. The message described a real worry about the generator
-    // ignoring the seed and the assertion checked nothing at all.
+    /* Taken BEFORE the descent. [h:99-tests-292] */
     const shape1=Object.values(rooms).map(r=>r.x+','+r.y+':'+Object.keys(r.doors).sort().join('')).join('|');
     descend();
     eq(run.floor,floor1+1,'descending did not go down a floor');
@@ -9646,44 +7139,12 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     ok(typeof lastRun.newDepth!=='undefined','the summary has no newDepth marker to announce a record');
   });
 
-  // The Brunch wall. A pack used to steer every body straight at the player, so eight of them arrived
-  // as a loose mob the player could walk into the middle of. They now hold a formation.
-  //
-  // The measurements that shaped it, and the reason this test checks fairness rather than only shape:
-  //
-  //   wall width      stabilises at ~50px and STOPS. A crowd keeps spreading; a wall does not, and
-  //                   the difference between those two numbers is the whole mechanic.
-  //   reaction time   2.1s to 3.0s to cross the room from the far side. Human reaction is about a
-  //                   quarter of a second, so there is an order of magnitude of margin. A pack that
-  //                   arrived faster than it could be read would be the unreadable threat the design
-  //                   rule forbids, and rate is a thing a wall can plausibly get wrong.
-  //   flanking        a player walking the long way round a pack of 8 loses 0 bodies and takes 0
-  //                   damage. If that ever stops being true, the only answer to a wall is a blink,
-  //                   which is a different game.
-  /* BRUNCH CARRY VELOCITY BETWEEN TICKS, so the pack leans into a move instead of snapping to it.
-
-       The Brunch ramp changes SPEED - `curSpeed` climbs toward `runSpeed` over BRUNCH_RAMP ticks - but
-       the body itself moved by adding `dir * curSpeed` to its position every tick with nothing carried
-       forward. Turning was therefore instantaneous, stopping was instantaneous, and a body that had
-       reached its slot could not coast at all: a wall that stopped dead and started dead is what
-       "arithmetic" looks like on screen.
-
-       Measured after: 14 ticks, 67ms, from rest to 90% of run speed. Responsive without being
-       instant - which is the range the request asked for, and the reason `BRUNCH_ACCEL` is 0.09 and
-       not 1.
-
-       The claim is that velocity PERSISTS, which is the thing the old code structurally could not do,
-       so it is asserted as a sequence rather than a value: a body's heading on one tick and its
-       heading on the next, with the target moved in between, must differ by less than the instantaneous
-       case would give. A snap moves the full angle in one tick; momentum takes several. */
+  /* The Brunch wall. [h:99-tests-293] */
+  /* BRUNCH CARRY VELOCITY BETWEEN TICKS, so the pack leans into a move instead of snapping to it. [h:99-tests-294] */
   test('a Brunch carries momentum between ticks rather than teleporting along its bearing',()=>{
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
-    /* A PACK, not a body. The first version of this fixture made ONE Brunch and set its packId, and a
-       pack of one is below BRUNCH_SHIELD_MIN, so the shield branch never ran and the body steered at
-       the player instead - the test was measuring the fallback while claiming to measure the shield.
-       Same fixture trap as `spawnEnemy(false, ...)` returning a lunger: a value that looks right and
-       puts the test somewhere other than where it says. */
+    /* A PACK, not a body. [h:99-tests-295] */
     const pack=[];
     for(let i=0;i<4;i++){
       const e=spawnEnemy(false,room,ROOM_LEFT+80+i*10,ROOM_TOP+80+i*10,'brunch');
@@ -9691,20 +7152,11 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       room.enemies.push(e); pack.push(e);
     }
     const e=pack[0];
-    /* The guarded shooter has to be INSIDE the player's fight, or the pack correctly declines to
-       guard it. This fixture had the shooter at (600,420) and the player at (100,420) - 500px apart,
-       beyond BRUNCH_GUARD_LEASH - so it was asserting that a pack would form a wall around a shooter
-       the player had no route to, which is precisely the behaviour the leash was added to stop. It
-       passed for the same reason the live game looked stuck: the pack was faithfully guarding an
-       argument nobody was having.
-       340px is inside the leash and still far enough for the wall to be a wall. */
+    /* The guarded shooter has to be INSIDE the player's fight, or the pack correctly declines to guard it. [h:99-tests-296] */
     const shooter=spawnEnemy(false,room,ROOM_LEFT+440,ROOM_TOP+420,'shooter');
     room.enemies.push(shooter);
     player.x=ROOM_LEFT+100; player.y=ROOM_TOP+420;
-    /* start from rest in VELOCITY while already at speed, so what is measured is the body's momentum
-       rather than the speed ramp. The shield target is chosen inside update(), so the assertion that
-       it chose correctly belongs AFTER the first settle - checked before, it reads the spawn-time
-       `undefined` and reports a fixture problem as a behaviour one. */
+    /* start from rest in VELOCITY while already at speed, so what is measured is the body's momentum rather than the speed ramp. [h:99-tests-297] */
     for(const p of pack){ p.curSpeed=p.runSpeed; p.vx=0; p.vy=0; }
     for(let i=0;i<30;i++){ for(const p of pack){ p.hp=p.maxHp; } player.hp=player.maxHp; update(); }
     ok(e.shieldTarget===shooter,'the pack is not shielding the shooter after 30 ticks (it has '+
@@ -9713,17 +7165,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     /* the body has ARRIVED, so it is at speed - that is the claim working, not failing. The first
        version of this assertion read the speed and called it "teleporting", which is backwards: the
        body is at its slot, and at its slot it should be moving at full speed. */
-    /* The expected speed here is BRUNCH_SHIELD_SPEED, not runSpeed, and using runSpeed was wrong rather
-       than merely fragile: this fixture has a live target, so `shielding` is true and the shield branch
-       sets `desired=BRUNCH_SHIELD_SPEED=0.72` explicitly (see stepBrunch). The assertion passed for
-       years only because the two numbers happened to sit close together - 0.72 against a runSpeed of
-       1.35 clears a `runSpeed*0.5` bar with almost no margin, and raising the chase to 1.75 put the
-       bar above the value the body is actually allowed to travel at. The test broke on an unrelated
-       change, which is the only reason it was ever going to break: it was measuring the wrong branch.
-
-       The claim this is really making is about MOMENTUM - that the body carries velocity between ticks
-       rather than snapping onto a bearing each tick - and that claim is about the body moving AT ALL
-       at a speed near the one it was asked for, not about which of two speeds it was asked for. */
+    /* The expected speed here is BRUNCH_SHIELD_SPEED, not runSpeed, and using runSpeed was wrong rather than merely fragile: [h:99-tests-298] */
     const wantSpeed=BRUNCH_SHIELD_SPEED;
     ok(Math.hypot(e.vx||0,e.vy||0)>wantSpeed*0.5,'the body is at '+
        Math.hypot(e.vx||0,e.vy||0).toFixed(3)+' having been asked to accelerate from rest, against a '+
@@ -9760,22 +7202,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('a pack with nothing to shield walks at the player and does not build a wall',()=>{
-    /* THE SHIELD AND THE RUSH ARE DIFFERENT MOVEMENTS, AND ONLY ONE OF THEM IS A WALL.
-
-       A Brunch pack steers at a SLOT in the pack's own frame when it is guarding a live ranged body -
-       a rigid line that turns to face you as one thing, which is what makes it dense enough to stop
-       a shell. With nothing to guard there is nothing to hide behind, and the slots produced a
-       SAWTOOTH rather than an approach: gap 450, 499, 458, 408, 357, 305, 253, 201, 153, 108, 78,
-       then 227, 218, 201. The bodies converged on slots laid perpendicular to the line to the player,
-       the outer two arrived, shoved each other, and the pack was thrown backwards. That reads on
-       screen as circling, and the request was for a direct rush.
-
-       Measured steering votes before the change: 36 toward the player, 3 toward the formation. So they
-       were never orbiting - they were colliding, and the fix is to remove the formation rather than
-       to tune the orbit.
-
-       The assertion is that the gap DECREASES MONOTONICALLY to contact, rather than merely reaching a
-       small number eventually: the sawtooth passed "got close" and failed this. */
+    /* THE SHIELD AND THE RUSH ARE DIFFERENT MOVEMENTS, AND ONLY ONE OF THEM IS A WALL. [h:99-tests-299] */
     startGame(); const r=goTo('normal');
     r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
     readyT=0; fadeT=0;
@@ -9800,11 +7227,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       wrap();
       player.hp=player.maxHp; player.iframes=0;
       for(const g of pack) g.hp=g.maxHp;     // measure the APPROACH, not the trade
-      /* CONTACT IS CHECKED BEFORE THE TICK, not after. A Brunch spends half its health on the touch
-         and dies on the second one, so by the time `update()` returns the body that reached the player
-         has been REMOVED from the room - and a check that iterates `r.enemies` afterwards is looking
-         at the survivors. Measured that way, contactFrames came out 0 on a run that dealt 6 damage,
-         which reads as "the rush never lands" and is the opposite of what happened. */
+      /* CONTACT IS CHECKED BEFORE THE TICK, not after. [h:99-tests-300] */
       const preGap=(()=>{ let mg=1e9;
         for(const g of pack){ if(r.enemies.indexOf(g)<0) continue;
           const d=Math.hypot(g.x-player.x,g.y-(player.y-PLAYER_HIT_DY)); if(d<mg) mg=d; }
@@ -9823,16 +7246,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     /* ALLOW the swap that cannot close a gap: the pack is four bodies in a line all aiming at one
        point, so the separation force legitimately pushes the rear ones wider for a few ticks. The
        bound is on the REARTHMOST body, which is the one that used to be thrown backwards. */
-    /* The gap is NOT monotonic and should not be asserted as if it were. Four bodies walking at one
-       point legitimately jam and spread: measured lateral spread goes 44, 33, 22, 15, 8, 2 and the
-       pack's own x-spread goes 0 to 49px as the rear bodies slide around the front ones. That is
-       `separateBodies` doing its job - bodies must not occupy one pixel - and it costs the pack a
-       second or so on the way in.
-
-       So the assertion is that the pack CLOSES - closest approach under the contact distance, and
-       contact actually lands - rather than that it closes on a curve. What used to break this is the
-       shape of the curve: it arrived at 58px and was then thrown to 135, 142, 130, 117, 102, 87, 58
-       and out again, for ever. That sawtooth was contact knockback, and it is what read as orbiting. */
+    /* The gap is NOT monotonic and should not be asserted as if it were. [h:99-tests-301] */
     ok(contactSec!==null,'the pack never touched the player in 20 seconds (per second: '
       +gaps.join(', ')+') - a bomb rush that does not land is scenery, not a threat');
     ok(closest<ENEMY.brunch.r+PLAYER_HIT_R,'the closest the pack got was '+closest.toFixed(1)
@@ -9851,13 +7265,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
       r2.enemies.push(b); b.packId=777; b.packSlot=i; b.noticeTimer=0; b.aggroTimer=1e9; wall.push(b);
     }
     for(let i=0;i<150;i++){ keys={}; update(); player.hp=999; }
-    /* THE RUN IS PUT BACK, because a test that leaves the world changed poisons the ones after it.
-       `player.maxHp=1e9` was set at the top of this test and never restored, and a later shield test
-       that runs ten seconds of real play then finds a player with a billion health - which does not
-       sound like a cause for "the pack settled 28px from its nearest slot", and was not: the
-       separation force and the arc geometry are unaffected by health. What it did do is make this
-       test a landmine for anything that reads maxHp, and the failure it produced pointed at the
-       shield rather than at itself, which cost more time than the bug was worth. */
+    /* THE RUN IS PUT BACK, because a test that leaves the world changed poisons the ones after it. [h:99-tests-302] */
     player.maxHp=8; player.hp=8; player.iframes=0;
     const live=wall.filter(b=>r2.enemies.indexOf(b)>=0);
     let cx=0,cy=0; for(const b of live){cx+=b.x;cy+=b.y;} cx/=live.length||1; cy/=live.length||1;
@@ -9870,30 +7278,8 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
   });
 
   test('a Brunch pack holds a wall: it forms, it holds, and it can still be walked around',()=>{
-    /* THE PACKS BELOW ARE BUILT BY HAND WITH `packId=777`, and that is a hole in this test worth
-       naming rather than quietly keeping.
-
-       Every other Brunch wall test builds its pack itself and hands it a shared id, which is the
-       arrangement the mechanic NEEDS - so the test could not tell the difference between a game that
-       shares ids and a game that does not. The generator incremented its pack counter once per BODY as
-       well as once per pack, so every Brunch in a real pack got its own id, every real pack counted
-       as a single body, and BRUNCH_WALL_MIN was never reached by anything the game itself produced.
-       Measured: 1227 bodies across 221 rooms, 1227 distinct ids, zero packs able to form a wall. An
-       entire mechanic was dead while this test passed.
-
-       So the generation of packs is asserted separately, below, against rooms the GENERATOR built. This
-       test still builds its own - it needs an exact size and an exact position to measure a formation
-       against - but it is no longer the only place the wall is claimed to work. */
-    /* AN ESCORT, BECAUSE A WALL NEEDS SOMETHING TO STAND IN FRONT OF.
-
-       This fixture built a pack of 8 with no ranged body in the room, so `shielding` was false and
-       it measured the ADVANCE. It went green when a wall formed and red when the advance was made
-       direct - which is the correct reading of a fixture with no wall in it, and the same mistake
-       twice in this file (the walk-around test above has its own copy of it).
-
-       A wall of Brunch with nothing to shield is not a wall; it is a queue walking at you. So there
-       is a gunner now, and the pack guards it. The assertions below are unchanged, which is the
-       point: they were always about the wall, and now they are. */
+    /* THE PACKS BELOW ARE BUILT BY HAND WITH `packId=777`, and that is a hole in this test worth naming rather than quietly keeping. [h:99-tests-303] */
+    /* AN ESCORT, BECAUSE A WALL NEEDS SOMETHING TO STAND IN FRONT OF. [h:99-tests-304] */
     const build=(n,atX)=>{
       startGame(); const r=goTo('normal');
       r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
@@ -9938,12 +7324,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     const w1=widthOf(s1,s1.r);
     ok(w1>40,'a pack of 8 settled at '+w1.toFixed(0)+'px across, which is not a wall - eight bodies '+
        'converging on a point is a crowd and the geometry does not care what the code intended');
-    // 2. it HOLDS, measured DURING THE APPROACH. This is where the first version of this test was
-    //    wrong: it compared tick 200 against tick 500, by which point the pack had ARRIVED, spent
-    //    itself on contact, and re-formed around a smaller middle. That read as "the wall is
-    //    spreading" and it is not - a Brunch spending itself on the player is the existing rule and
-    //    it is not what this test is about. The second measurement now refuses to count unless the
-    //    pack is still on its way, so it cannot silently drift into measuring the end of the fight.
+    /* 2. it HOLDS, measured DURING THE APPROACH. [h:99-tests-305] */
     for(let i=0;i<250;i++){ keys={}; update(); player.hp=999; }
     const w2=widthOf(s1,s1.r), far=distTo(s1);
     ok(far>player.r+40,'the pack had already reached the player by the second measurement ('+
@@ -9968,18 +7349,7 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
     // Fairness, measured rather than asserted. The design rule allows rate and density to be hard
     // and forbids unreadable threats, and these are the two numbers that decide which side of that
     // line a formation falls on.
-    /* THE FIXTURE NEVER MADE A WALL, and it passed for eight hours because of it.
-
-       `build()` created a pack with no escort at all, so `shielding` was false at
-       60-tick.js:1064 and every body took the CHASE branch at BRUNCH_CHASE_SPEED - a test named "a wall
-       is something you can read and walk around" that measured a chase. It agreed with the chase
-       speed by coincidence, and when the chase speed was raised on 2026-10-04 it went red with
-       "walking around a wall of 8 cost 0 Brunch and 1.0 health", which is the correct reading of a
-       fixture that has no wall in it.
-
-       So there is a shooter now, and the pack guards it. That is what makes this a wall test: the
-       formation only exists when there is something to shield, which is the mechanic under test and
-       also the reason the two speeds are separate numbers at all. */
+    /* THE FIXTURE NEVER MADE A WALL, and it passed for eight hours because of it. [h:99-tests-306] */
     const build=(n,withEscort)=>{
       startGame(); const r=goTo('normal');
       r.enemies.length=0; r.spawnPlan=null; r.pickups.length=0; projectiles.length=0;
@@ -10031,21 +7401,8 @@ eq(player.altMode,'hook','walking onto the hook did not swap the right click');
        'a blink, which turns a spatial problem into a resource problem');
   });
 
-  // The Warden. Every claim here is one the boss can fail: that it acts at all, that its phases
-  // open rather than merely announce, and - the one that matters - that reading its tells is worth
-  // something. A boss whose two fights, fought well and fought badly, come out the same is a boss
-  // with a health bar on it.
-  /* The budget a boss fight gets here, sized from the fight rather than guessed. The Warden is 702 HP
-   at ARMOUR 0.66 and this test uses no character, so the Bolt lands 7 x 0.66 = 4.62 a shot every 133
-   ticks: phase 2 at half health is tick ~10,100 and a kill is tick ~20,200. 26,000 leaves room for
-   both and for a volley the boss spends not shooting at the player.
-
-   It was 9,000, which is why the test failed when the boss was made armoured: 9,000 ticks lands
-   ~311 damage, just under the 351 that crosses the phase threshold. The budget was the thing that was
-   wrong, not the phase rule - a boss that takes 1.52x longer to kill is the intended consequence of
-   it obeying the same damage rule as everything else, and a test that cannot survive the intended
-   consequence of a change is asserting the accident. Named so the loop and the failure message
-   cannot drift apart. */
+  /* The Warden. Every claim here is one the boss can fail: [h:99-tests-307] */
+  /* The budget a boss fight gets here, sized from the fight rather than guessed. [h:99-tests-308] */
 const BOSS_TICKS=26000;
   test('the boss is a fight: it acts, it phases, and reading its tells is the difference',()=>{
     const perp=e=>{
@@ -10096,24 +7453,12 @@ const BOSS_TICKS=26000;
        ' across '+BOSS_TICKS+' ticks. One move is a pattern; none is a body with a health bar');
     ok(good.moves.volley>0,'the boss never fired a volley');
     ok(good.moves.sweep>0,'the boss never swept');
-    // 2. it phases, and the phases fire on the way DOWN not at the start.
-    //    Measured on its OWN run, against an unkillable player, and that is a correction rather than a
-    //    convenience. The phase threshold is half the boss's health, so reaching it is a question about
-    //    how long the Warden survives - and making it obey the armour rule made it survive 1.52x longer,
-    //    which means an 8-hp player now dies before the threshold is reached. Asserting the phase off
-    //    the survivability run made this a survival test wearing a phase test's clothes: it would have
-    //    passed with the phase rule deleted as long as the player lived long enough, and failed with
-    //    the rule intact as long as they did not. The damage comparison below still uses the 8-hp runs,
-    //    because "reading the tells is the difference" is a claim about what a player survives.
+    /* 2. it phases, and the phases fire on the way DOWN not at the start. [h:99-tests-309] */
     ok(ph.phases[2]>0,'the boss never reached phase 2 in '+ph.t+' ticks of an unkillable fight');
     ok(ph.phases[2]>ph.t*0.15,'phase 2 came at tick '+ph.phases[2]+' of '+ph.t+
        ', so the fight had barely started - the threshold is a fraction of health and it is being '+
        'crossed at the very top rather than by fighting');
-    // 3. phase 2 is what opens the wall. Asserted by CALLING it rather than by waiting for the boss
-    //    to roll it: the wall is one pick in a weighted bag, so over a 9000-tick fight it may or may
-    //    not come up, and a test that depends on that is a coin flip wearing an assertion's clothes.
-    //    What has to be true is that the wall exists, is made of the right number of bodies, and
-    //    shares one pack id - the last part is what makes it a WALL and not a loose mob.
+    /* 3. phase 2 is what opens the wall. [h:99-tests-310] */
     startGame(); const wr=goTo('boss'); wr.enemies.length=0; readyT=0; fadeT=0; roomFade=0;
     const wb=spawnEnemy(true,wr,MIDX,MIDY); wr.enemies.push(wb);
     bossCallWall(wb,wr);
@@ -10135,10 +7480,7 @@ const BOSS_TICKS=26000;
     for(let i=0;i<80&&projectiles.length;i++){ keys={}; update(); }
     ok(projectiles.length===0&&wall[0].hp>0,'the boss called a wall an enemy shell went straight '+
        'through, so the cover the fight is built around is not there');
-    // 4. THE ONE THAT MATTERS. A player who reads must end up meaningfully better off than one who
-    //    does not. This is the design rule stated as a test, and it is the assertion that would have
-    //    caught the boss as first written: 3 hits for the reader and 3 for the non-reader, with the
-    //    tells doing nothing at all.
+    /* 4. THE ONE THAT MATTERS. [h:99-tests-311] */
     ok(good.hits<bad.hits,'a player who read the tells took '+good.hits+
        ' hits and one who read nothing took '+bad.hits+
        '. If those are the same, the tells are decoration and the fight is a damage race');
@@ -10149,45 +7491,7 @@ const BOSS_TICKS=26000;
        ' hp, so the boss cannot punish not reading and every fight is a formality');
   });
   test('the boss is sized from measured weapon dps, and is not the same walk with a health bar',()=>{
-    /* It was 50*TOUGH and died in 2.20s to the Scatter. Sizing a health bar is a measurement, not a
-       feeling - so this measures it.
-
-       THE BUDGET WAS A MEASUREMENT THAT WAS NOT ONE. The loop ran to 9,000 ticks, which is 42.9
-       seconds, while the window it was checking against was 18-70s. Anything slower than 42.9s came
-       back as 42.9s, so the upper bound could never fail and three of the four guns were reporting the
-       cap rather than the fight. The numbers it was really reporting:
-
-         Scatter   24.5s
-         Bolt      43.0s      <- capped
-         Voidball  56.2s      <- capped
-         Arcane Beam 155.6s   <- capped, by a factor of four
-
-       and the spread it was silently hiding is 6.35x, not the 3.9x the window spanned. So the claim is
-       now written as what it actually is - a SPREAD, because "the slow gun should take longer" is a
-       statement about the ratio between the fastest and the slowest, not about a number of seconds.
-       Absolute seconds go stale every time a weapon is tuned, which is how a window ends up wider
-       than the entire thing it was checking.
-
-       WHAT IT MEASURES, now that it measures: `noCharacter()` really does zero Strength - the class
-       gives +3 as a flat over a base of 0, and baseOf reads the base, so the guard is not skipping it.
-       So this is every gun with NOTHING invested in it, which is the floor of the Arcane Beam's canvas
-       and the honest worst case:
-
-         Scatter   16.9s      Bolt      43.2s      Voidball  55.7s      Arcane Beam  91.6s
-
-       A spread of x5.42, and the bound below is 7x rather than the 4x it used to be.
-
-       The spread has been walked up and back down by weapon tuning rather than only by the boss being
-       resized, and both directions are worth recording. Raising Scatter dmg to 3.9 moved ITS number by
-       0.1s - eight pellets were already well past the health bar, so there was nothing left to remove;
-       what widened the spread then was the Beam going 87.2s to 102.7s, because it is fired from 400px
-       and pays a ~0.72 falloff tax on a gun that fires 11.5 times a second.
-
-       Cutting the Scatter's falloff floor from 0.45 to 0.22 then brought the spread back DOWN to 5.42,
-       and that is the better shape for the roster: nerfing the strongest gun at range closed the gap
-       between the ceiling and a canvas that is useless until you put work into it. The bound is 7x
-       because the Beam is still a near-two-minute fight on an unbuilt character, which is the whole
-       point of the weapon - and the bound is what stops that floor becoming a wall. */
+    /* It was 50*TOUGH and died in 2.20s to the Scatter. [h:99-tests-312] */
     const ttk=w=>{
       startGame(); const room=goTo('boss');
     noCharacter();   // this test is about the weapon, not the character
@@ -10215,25 +7519,7 @@ const BOSS_TICKS=26000;
     }
     // the spread, which is the design claim: the slow gun SHOULD take longer, and flattening it would
     // mean tuning the boss to the median weapon and telling the player their choice does not matter.
-    /* The bound moved from 4x to 7x, and the reason is worth stating because it is NOT the Scatter
-       getting better.
-
-       Measured here at 400px, which is where this test shoots from and therefore where every gun is
-       judged: Scatter 16.3s, Bolt 42.8s, Voidball 55.7s, Arcane Beam 102.7s.
-
-       Raising Scatter dmg to 3.9 changed its boss TTK by 0.1s - it was already killing the boss in
-       about a second per pellet and eight pellets was already well past the health bar, so there was
-       nothing left for the buff to remove. What moved is the SLOW end: the Arcane Beam went 87.2s
-       to 102.7s. The Beam is fired from 400px with fNear 170 and fFar well beyond that, so it pays a
-       falloff tax of about 0.72 on a gun that fires 11.5 times a second, and the tax is now the
-       dominant term in a 100-second fight rather than a rounding error in an 87-second one.
-
-       So the spread did not grow because a gun got stronger. It grew because the floor of the
-       roster - the weapon that is useless until you put work into it - got further from the ceiling.
-       A 7x bound still says what the 4x bound said: pick the Arcane Beam on an unbuilt character
-       and the boss is a two-minute fight, which is the whole point of a canvas. What it no longer
-       claims is that the gap is a margin. It was never a margin - it was always a real difference,
-       and the old number understated it by a third. */
+    /* The bound moved from 4x to 7x, and the reason is worth stating because it is NOT the Scatter getting better. [h:99-tests-313] */
     const secs=all.map(x=>x.secs), fast=Math.min(...secs), slow=Math.max(...secs);
     const spread=slow/fast;
     ok(spread<7,'the boss takes '+slow.toFixed(1)+'s to the '+all[secs.indexOf(slow)].w.name+
@@ -10243,11 +7529,7 @@ const BOSS_TICKS=26000;
        all.map(x=>x.w.name+' '+x.secs.toFixed(1)+'s').join(', '));
   });
 
-  // Brunch as cover. This is the mechanic the whole change exists for, so it is measured by firing
-  // real shells at a real pack rather than by reading the collision code back at itself. The first
-  // assertion is a CONTROL: without it, a fixture that put the pack somewhere the shell never reached
-  // would report "the shell was absorbed" for the wrong reason, which is how most of the false
-  // findings in this project started.
+  /* Brunch as cover. [h:99-tests-314] */
   test('a Brunch pack is cover: enemy shells die on it, the pack is unharmed, and you can still shoot it',()=>{
     // The shell starts to the RIGHT of the pack and travels left, so it has to pass through the
     // Brunch to reach the player. The first version of this fired the shell from the player's own
@@ -10323,18 +7605,9 @@ const BOSS_TICKS=26000;
   });
 
   });
-  // The blink grace, which is a FORGIVENESS and not more invulnerability. The distinction is the
-  // whole safety argument, so these tests assert both halves of it: that the window forgives a hit
-  // in the gap the i-frames leave, and that it forgives exactly one and grants nothing afterward.
-  // Measured, by firing a shell to arrive exactly N ticks after a blink - the edge of forgiveness
-  // came out at 0.62-0.66s across 1.0-2.0 px/tick shells, because the window is measured in time
-  // and a shell is judged on when it ARRIVES rather than on how far it got. A 0.1s grace sat
-  // strictly inside the immunity already in force and would have changed nothing at all.
+  /* The blink grace, which is a FORGIVENESS and not more invulnerability. [h:99-tests-315] */
   test('the blink grace forgives one hit, in the gap the i-frames leave, and nothing else',()=>{
-    // Stage a shot timed to arrive a chosen number of ticks after the blink. The player is pinned
-    // back to the same spot afterwards so the geometry is identical with and without a blink, and
-    // nothing is healed at any point - an earlier probe topped the player up every single tick and
-    // so reported zero damage in every case, which is a harness that cannot fail.
+    /* Stage a shot timed to arrive a chosen number of ticks after the blink. [h:99-tests-316] */
     const shoot=(delay,shells,blinkIt)=>{
       startGame(); const r=goTo('normal'); r.enemies.length=0; r.spawnPlan=null; readyT=0; fadeT=0;
       r.pickups.length=0; projectiles.length=0;
@@ -10404,23 +7677,7 @@ const BOSS_TICKS=26000;
     ok(player.hp<h2,'the second hit reported itself as landed but took no health');
   });
   test('the blink grace outlives the blink i-frames, or the forgiveness is dead code',()=>{
-    /* The narrowest invariant in the file, and the one nothing was checking.
-
-       damagePlayer tests its two windows in this order:
-
-         if(player.iframes>0) return false;                      <- swallows everything
-         if(player.blinkGrace>0 && !player.graceSpent){ ... }     <- the forgiveness
-
-       So forgiveness is reachable ONLY on ticks where the i-frames have expired and the grace has
-       not. The two windows are set independently - i-frames by BLINK_IFRAMES+DASH_TRAIL, the grace
-       by BLINK_GRACE - and nothing anywhere asserts the ordering. If i-frames ever reach BLINK_GRACE,
-       the grace branch becomes unreachable: the mechanic stops existing, silently, and every test in
-       this file still passes, because every one of them runs the clock until the i-frames are gone
-       before it probes. A test that waits for the window it is testing is not evidence the window
-       is there.
-
-       Measured: i-frames 84 ticks (0.40s), grace 126 ticks (0.60s), slack 42 ticks (0.20s).
-       That 42 ticks is the entire margin. */
+    /* The narrowest invariant in the file, and the one nothing was checking. [h:99-tests-317] */
     const iframes=BLINK_IFRAMES+DASH_TRAIL;
     const slack=BLINK_GRACE-iframes;
     ok(slack>sec(0.12),
@@ -10474,14 +7731,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the forgiving window is the last of the three phases, and the lag resolves inside it',()=>{
-    /* Two numbers that have to agree, and neither of them is written down anywhere.
-
-       The aim lag is the reason a blink buys a reaction window: the position enemies shoot at
-       stays where the player was and eases across. If the lag resolved AFTER the protection ran
-       out, the player would be standing in the open, visible and accurate, for the tail of the
-       animation - which is the "uncovered gap" this is here to close out. Measured over the whole
-       window: the lag is down to a couple of pixels by tick 78 and zero by tick 120, while
-       protection ends at tick 126. The lag resolves first, which is the correct order. */
+    /* Two numbers that have to agree, and neither of them is written down anywhere. [h:99-tests-318] */
     startGame();
     const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
@@ -10508,12 +7758,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the Momentum bar is in the HUD, it is a real plate, and it moves with the meter',()=>{
-    /* Momentum moved here from the character sheet, and the reason it had to move is worth keeping:
-       the sheet is a PAUSE screen, and the only time a stat is visible on it is when the player is
-       not playing. This is the one number the player is meant to watch move WHILE they fight, so a
-       screen you open once a fight to check your build is the worst possible home for it. The
-       tutorial paragraph that used to sit under the sheet is gone too - a stat that has to be
-       described cannot be a stat you learn by playing it. */
+    /* Momentum moved here from the character sheet, and the reason it had to move is worth keeping: [h:99-tests-319] */
     startGame();
     const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
@@ -10544,31 +7789,15 @@ const BOSS_TICKS=26000;
        'the plate and leaves a bar too short to read a change on.');
     // and it must stay on screen: the row is now health+keys wide on one line and blink+momentum on
     // the next, and only one of those was ever checked against the room
-    /* ON THE SCREEN, not merely clear of the room. The row is health+keys on one line and
-       blink+momentum on the next, and only the room was ever checked - which is a check that cannot
-       fail in a room wider than the screen, and the momentum plate is on the left so it does not
-       happen to reach the map. The screen is what the player is looking at. */
+    /* ON THE SCREEN, not merely clear of the room. [h:99-tests-320] */
     ok(plate.x+plate.w<=W,'the Momentum plate runs to '+(plate.x+plate.w)+'px on a '+W+
        'px screen, so it is drawn off the side of the display');
     ok(plate.x+plate.w<ROOM_RIGHT,'the Momentum plate runs to '+(plate.x+plate.w)+
        'px, past the room edge at '+ROOM_RIGHT+', so it is drawn off the play area');
 
-    // THE BAR MOVES. Not "a rect was drawn" - the fill width, read off the actual fillRects, at
-    // five meter values. Asserting that something happened is how a bar that never moves passes.
-    //
-    // The bar row carries THREE kinds of rect and only one of them moves. The track is always the
-    // full width, so taking the widest measures the track and returns the same number at every
-    // meter. The three graduation notches are 1px wide BY CONSTRUCTION - that is what a notch is -
-    // so taking the narrowest measures a notch, which also never moves. Both of those were tried
-    // and both report a bar that does not move while the bar is plainly moving.
-    //
-    // The fill is the widest rect on the row that is neither, and at an empty meter there is no
-    // fill at all, which is the answer zero.
+    /* THE BAR MOVES. [h:99-tests-321] */
     const barY=plate.y+Math.floor(ROW_H/2)-6;
-    // EXACT y, not a tolerance. A +/-1 sweep is how this passed the minimap's 12x12 room marker,
-    // which sits at y=64 against a bar at y=63 and is narrower than the fill at half a meter -
-    // so the "narrowest rect on the row" was the minimap, and the bar reported a width that
-    // never changed. Dumped the row first; two guesses at the fixture were both wrong.
+    /* EXACT y, not a tolerance. [h:99-tests-322] */
     const rowAt=(m)=>grab(m).rects.filter(r=>r.y===barY&&r.h===12);
     const fillAt=(m)=>{
       const row=rowAt(m).filter(r=>r.w>2);
@@ -10592,18 +7821,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the blink trail is tinted by the meter, and only the player\'s is',()=>{
-    /* The teaching device. Momentum is the one stat that measures what you did rather than what you
-       picked up, and a stat like that cannot be taught with a sentence without becoming the thing
-       the sentence is about - so the art teaches it: a blink spent at a full meter leaves a green
-       streak, and one spent at nothing leaves the white streak it always did. The player connects
-       the colour to the bar on their own, two or three blinks in.
-
-       Two properties make it a readout rather than decoration, and both are asserted here:
-
-       it is read off the blink's OWN meter, baked in when the trail is made, so a trail cannot
-       flicker up the whole ramp while the meter moves underneath it; and it is tagged, so a green
-       puff never appears on a lunger's windup - a colour cue that lies about an ENEMY, in the middle
-       of reading one, is worse than no cue. */
+    /* The teaching device. [h:99-tests-323] */
     startGame();
     const room=currentRoom(); enterRoom(cur.x,cur.y,'W'); readyT=0; fadeT=0; roomFade=0;
     room.enemies.length=0; room.spawnPlan=null; projectiles.length=0;
@@ -10636,10 +7854,7 @@ const BOSS_TICKS=26000;
     // and the two ends have to be far enough apart to notice in a 0.23s trail
     const px=g=>Array.from(g.getContext('2d').getImageData(14,14,1,1).data);
     const a=px(cold), b=px(hot);
-    // GREENNESS, not total distance. The sum of absolute channel differences is 230 here, which out
-    // of a possible 765 sounds small and means nothing - a shift that keeps red and green level is
-    // just a dimmer white. What matters is that the colour stops being white and starts being green,
-    // so the quantity is green minus red, and it has to move by a wide margin to be readable.
+    /* GREENNESS, not total distance. [h:99-tests-324] */
     const greenness=(c)=>c[1]-c[0];
     ok(greenness(a)<=8,'the cold end of the ramp is already green (G-R='+greenness(a)+
        '), so a full meter has nothing to look different from');
@@ -10649,10 +7864,7 @@ const BOSS_TICKS=26000;
     ok(shift>100,'the two ends differ by '+shift+' of greenness, which is under what the eye picks '+
        'up on a trail that lives for 0.23s');
 
-    // THE GUARD. An enemy effect in the same array must not pick up the player's colour. The dashFX
-    // draw lives in drawRoom, which is the whole world, so the capture is deliberately narrow: it
-    // records which glow sprites are used and nothing else, and asserts only that the hot one is
-    // absent and the white one is present.
+    /* THE GUARD. An enemy effect in the same array must not pick up the player's colour. [h:99-tests-325] */
     dashFX.length=0;
     Momentum.set(1);
     room.enemies.length=0;
@@ -10671,14 +7883,7 @@ const BOSS_TICKS=26000;
   });
 
   test('Momentum is not on the character sheet, and the tutorial is gone',()=>{
-    /* The sheet answers "what am I carrying". Every row on it is something that was picked up, with
-       a badge saying which item put it there. Momentum is the one stat no item can give you, so its
-       row was the only one the player could not act on - and being on a pause screen meant the number
-       was only ever visible when the player was not playing.
-
-       The exclusion is a filter inside the render loop, and a filter is one edit away from being
-       dropped, so it is asserted - including after a rebuild, since the rows are re-rendered from the
-       model on every open. */
+    /* The sheet answers "what am I carrying". [h:99-tests-326] */
     startGame(); Items.reset(); Stats.reset();
     setPaused(true);
     const rows=()=>[...document.querySelectorAll('#charStats .statRow')].map(r=>r.dataset.stat);
@@ -10704,35 +7909,7 @@ const BOSS_TICKS=26000;
      sentence that no assertion in the codebase would otherwise protect: a trait may change WHERE a
      fight happens and may never change HOW HARD it is. */
 
-  /* ONE ARMOUR RULE FOR EVERY BODY. This exists because the boss quietly opted out of it.
-
-     `spawnEnemy` read `c.armour||1`, so a row of the ENEMY table that simply did not mention armour
-     got 1.0 - full damage - while the two rows that did mention it got 0.66. The boss was one of the
-     silent three, and the comment beside it said the omission was deliberate. That is the worst
-     combination a tuning table can have: a rule that is easy to get wrong, plus a note telling you
-     that getting it wrong is intended.
-
-     The cost was measurable, not theoretical. Every hit on the boss landed 1/0.66 = 1.52x harder
-     than the same hit anywhere else, so its effective health was 19x a lunger's for the same shot
-     count rather than the 29x its HP implied - and because the ladder multiplies health without
-     limit, that gap GREW with depth instead of staying a property of the body. Meanwhile the C# port
-     had already taken the other answer, so the two ports disagreed about the Warden and neither one
-     was marked wrong.
-
-     Two things are asserted here, because they are separately true and separately breakable:
-
-       EVERY ROW DECLARES ARMOUR - so an enemy added to the table without one is a test failure
-       rather than a silently unarmoured body that is 1.52x easier to kill and much harder to
-       balance, which is the failure mode that actually happened.
-
-       EVERY BODY ABOVE THE SIZE LINE TAKES THE SAME ARMOUR - the real claim. A per-body stat is
-       fine. A per-body stat inherited by default rather than chosen is the bug. The line is
-       SIZE, not a list of names, so a new body lands on the right side of it automatically and a
-       renamed one cannot quietly escape it.
-
-     The expectation is ARMOUR itself and not a copied literal, because a second place holding a copy
-     of 0.66 is exactly what let the two ports drift apart in the first place. If ARMOUR is ever meant
-     to vary by body, rewrite this deliberately - do not just delete it. */
+  /* ONE ARMOUR RULE FOR EVERY BODY. [h:99-tests-327] */
   test('every body obeys one armour rule, and the table declares it',()=>{
     const missing=[];
     for(const k of Object.keys(ENEMY)){
@@ -10741,10 +7918,7 @@ const BOSS_TICKS=26000;
     ok(missing.length===0,'these bodies never declare armour, so the default decides for them instead of '
       +'the table: '+missing.join(', '));
 
-    // THE RULE: armour is a stat about a big body, so it is the SIZE that decides, not the name.
-    // Brunch is the single body below the line - half a lunger's radius - and is the original
-    // exemption rather than a carve-out: armouring it broke the alt blast's promise that one budget
-    // deletes a small Brunch group outright, and a blast into three of them left all three standing.
+    /* THE RULE: armour is a stat about a big body, so it is the SIZE that decides, not the name. [h:99-tests-328] */
     const LINE=ENEMY.lunger.r, wrong=[], below=[];
     for(const k of Object.keys(ENEMY)){
       const row=ENEMY[k];
@@ -10770,10 +7944,7 @@ const BOSS_TICKS=26000;
   });
 
   test('a trait changes where a fight happens and never how hard it is',()=>{
-    // Sixty identical shooters per held gun. Every combat number must come out byte-identical across
-    // all four columns; only the standoff band is allowed to differ. The assertion is on the SET of
-    // distinct values per column, not on a value read back from a field we just wrote - the bug
-    // shape this file has the most of is asserting a thing against itself.
+    /* Sixty identical shooters per held gun. [h:99-tests-329] */
     const combat=e=>[e.maxHp,e.dmg,e.armour||0,e.r,Math.round(e.speed*1e4),e.pspd,Math.round(e.cdMin)].join('|');
     const band=e=>Math.round(e.far)+'/'+Math.round(e.close);
     const sigs={}, bands={};
@@ -10802,17 +7973,7 @@ const BOSS_TICKS=26000;
   });
 
   test('a trait never adds or removes walkSpeed - the one field that decides what kind of body this is',()=>{
-    /* THE BUG THIS EXISTS FOR, and it is worth being blunt about how close it was to shipping.
-
-       The tick decides what kind of body it is holding with `e.walkSpeed!==undefined` - the walker
-       branch has the field, the ranged branch does not. The first version of the trait system had a
-       "close faster" trait that set walkSpeed, intending to make a shooter press in. It did not
-       make a shooter press in. It converted the shooter into a lunger, and from that tick the
-       entire ranged kit - the shell, the cadence, the muzzle prediction, the standoff rule - stopped
-       running, and the body simply stopped being a shooter. No error, no log, no test: a shooter
-       that walks at you and hits you on contact, indistinguishable from a lunger with worse art.
-
-       So the field is asserted directly, on both signs, for every body type, under every gun. */
+    /* THE BUG THIS EXISTS FOR, and it is worth being blunt about how close it was to shipping. [h:99-tests-330] */
     const isWalker=(t)=>t==='lunger'||t==='brunch';
     for(const type of ['lunger','brunch','shooter','gunner']){
       for(let w=0;w<WEAPONS.length;w++){
@@ -10847,13 +8008,7 @@ const BOSS_TICKS=26000;
   });
 
   test('a shifted standoff band stays inside the clamps that keep the body able to fight',()=>{
-    // Two clamps, each guarding a specific way this could have shipped broken.
-    //   far under sense   a body that notices you at 600 and then tries to hold at 700 is a body
-    //                     that stands in a corner and never fires. It reads as broken, not as an
-    //                     answer, and the player cannot act on it because nothing is happening.
-    //   band has a floor  a band that collapses to a point makes the body twitch on the spot
-    //                     forever instead of standing somewhere, which is a different failure with
-    //                     the same cause.
+    /* Two clamps, each guarding a specific way this could have shipped broken. [h:99-tests-331] */
     let widest=0, highest=0, n=0;
     for(const type of ['shooter','gunner']){
       for(let w=0;w<WEAPONS.length;w++){
@@ -10930,37 +8085,14 @@ const BOSS_TICKS=26000;
   });
 
   test('everything the lab draws is inside the band the camera actually shows',()=>{
-    /* THE TEST THAT WAS MISSING, and its absence is the lesson.
-
-       The lab's first layout put the specimen row behind the HUD and the item shelf entirely
-       off-screen. Every other check about the lab passed: five specimens, thirteen shelf entries,
-       the numbers worked, the camera worked. "The shelf has thirteen entries" says nothing about
-       whether the shelf is VISIBLE, and a debug view whose furniture is behind the HUD is a debug
-       view you have to walk around to use - which is the opposite of the thing it was built for.
-
-       So this measures the frame, not the data. It takes the camera as the game computes it and asks
-       where each piece of furniture lands ON SCREEN, which is the only coordinate that matters to
-       somebody looking at it. The HUD margin is the reason the row needs to be well clear of the
-       top rather than merely on-screen, so the threshold is the HUD's depth plus its furniture. */
+    /* THE TEST THAT WAS MISSING, and its absence is the lesson. [h:99-tests-332] */
     Lab.enter();
     readyT=0; fadeT=0; roomFade=0;
     render();
     const b=currentRoom().bounds;
     const onScreen=y=>y-cam.y;
     const shelfY=b.t+b.h/2+130;
-    /* THE TOP THRESHOLD IS THE HUD'S OWN DEPTH, not the 150 it used to be.
-
-       It was 150 with a comment saying it came from "the health, momentum and depth plates together
-       run to about 120px" plus a 26px nameplate - which is 146, not 150, and both halves of it were a
-       re-derivation of a layout the drawing already states. Then the top band arrived and pushed the
-       block down 15px, and the number did not move: the furniture still cleared the HUD, so the test
-       stayed green and nothing noticed that its margin had quietly shrunk from 30px to 15px. A
-       threshold with a stale derivation is a threshold that is wrong by exactly the amount something
-       else moved.
-
-       So it is computed from HUD_BLOCK_Y and the three rows, plus the nameplate, which is what the
-       150 was trying to be. The band's height is in there, which is the point: grow the band and this
-       threshold follows it rather than quietly going stale a second time. */
+    /* THE TOP THRESHOLD IS THE HUD'S OWN DEPTH, not the 150 it used to be. [h:99-tests-333] */
     const HUD_DEEP=HUD_BLOCK_Y+HUD_HP_H+HUD_ROW_H+HUD_GAP+HUD_ROW_H+HUD_FRAME+26;
     const row=currentRoom().enemies.filter(e=>e.labSpecimen);
     for(const e of row){
@@ -10983,10 +8115,7 @@ const BOSS_TICKS=26000;
       ok(s.x-cam.x>-60&&s.x-cam.x<W+60,'the '+s.name+' alcove is at screen x '+
         (s.x-cam.x).toFixed(0)+', off the side of the view');
     }
-    // and the shelf's own case has to be big enough for what it holds. It was 204px tall for two
-    // rows whose lower name plates sit 107px below centre, so the rail's own bottom edge cut through
-    // six of the thirteen names - the furniture was on screen and still unreadable, which is the same
-    // class of failure as being off screen and rather more annoying, because it looks deliberate.
+    /* and the shelf's own case has to be big enough for what it holds. [h:99-tests-334] */
     const railTop=shelfY-102, railBot=shelfY+122;
     for(const s of Lab.shelfData()){
       ok(s.y-34>=railTop,'the '+s.name+' alcove arches through the top of its own case');
@@ -11003,17 +8132,7 @@ const BOSS_TICKS=26000;
   });
 
   test('a run ends in death and in nothing else, so there is no win to record',()=>{
-    /* This is the load-bearing replacement for a pinned fix that had no test behind it.
-
-       The bug list carried "records: a win is saved, a slower win keeps the fastest time" for a long
-       time, in green, with nothing checking it - because the panel scored an entry with no matching
-       result as a pass. The claim itself had also gone stale: the way out used to end the run, and it
-       goes DOWN now, so endRun() is only ever called with a death and the win state is unreachable.
-
-       So the claim worth pinning is the one that is true: clearing a floor does not end a run, the
-       way out does not end a run, and only dying does. That is a real guarantee rather than a
-       historical note, because it is what stops somebody re-adding a portal that ends the game, and
-       it is also what the run-summary screen and the R key both hang off. */
+    /* This is the load-bearing replacement for a pinned fix that had no test behind it. [h:99-tests-335] */
     clearRecords();
     startGame();
     const r=goTo('boss');
@@ -11037,20 +8156,7 @@ const BOSS_TICKS=26000;
     ok(recordsLine().length>0,'a death was not recorded');
   });
 
-  /* ==========================================================================================
-     ROOMS BIGGER THAN THE SCREEN, and the camera.
-
-     These exist because the camera had a bug that 154 checks could not see. The clamp on the
-     big-room branch read Math.min(b.l, ...) with the bounds the wrong way round, so it pinned the
-     view to the room's left edge and the camera never moved. Every room in the game fits inside the
-     960x600 viewport, so that branch had never run: the exact property that made the camera safe to
-     add to a green suite - it is the identity transform for a room that fits - is the same property
-     that hid a total failure in it.
-
-     A feature that is a no-op everywhere it is actually used is not a tested feature, it is an
-     untested one wearing a passing disguise. So these assert the moving case, and the first of them
-     is written so that reverting the clamp to its broken form makes it fail.
-     ========================================================================================== */
+  /* ROOMS BIGGER THAN THE SCREEN, and the camera. [h:99-tests-336] */
 
   /* A stand-in for the lab, without the lab. Building a big room directly keeps these tests about
      the GEOMETRY - walls, clamping, the camera - and not about whether the debug view happens to be
@@ -11070,10 +8176,7 @@ const BOSS_TICKS=26000;
   test('a room can be larger than the screen and the walls are that room\'s own walls',()=>{
     const r=bigRoom(1680,1040);
     ok(r.bounds.w===1680&&r.bounds.h===1040,'the room did not take the size it was asked for');
-    /* The shorthand, not the accessors: this is the claim that the 169 untouched call sites now read
-       the CURRENT room. If syncRoomBounds were not called these would still say 700x450 while the
-       room record said 1680x1040 - two places disagreeing about where the wall is, which is the
-       failure this whole mechanism exists to make impossible. */
+    /* The shorthand, not the accessors: [h:99-tests-337] */
     eq(ROOM_LEFT,r.bounds.l,'the wall shorthand and the room disagree on the left wall');
     eq(ROOM_RIGHT,r.bounds.r,'the wall shorthand and the room disagree on the right wall');
     eq(MIDX,r.cx,'the centre shorthand is not this room\'s centre');
@@ -11139,10 +8242,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the lab derives its damage numbers by watching, and the number is the damage',()=>{
-    /* The number comes from the difference in a body's health between two ticks, so it has to
-       survive one tick without a baseline: the first tick after a body appears can only record what
-       it saw. That is asserted rather than tolerated - a readout that invented a number on the tick
-       a body arrived would be a number about nothing. */
+    /* The number comes from the difference in a body's health between two ticks, so it has to survive one tick without a baseline: [h:99-tests-338] */
     Lab.enter();
     const r=currentRoom();
     const e=r.enemies.find(b=>b.labSpecimen);
@@ -11156,15 +8256,7 @@ const BOSS_TICKS=26000;
     ok(ns.length===1,'one hit produced '+ns.length+' numbers, wanted 1');
     eq(ns.length?ns[0].txt:'?','-7','the number is not the damage that was dealt');
     ok(ns.length&&!ns[0].heal,'7 points of damage were reported as healing');
-    // a RISE is reported as healing, in the other colour, because a body that gains health between
-    // two ticks is a thing worth seeing rather than something to average away.
-    //
-    // It is +10 and not +3, and the number is the point rather than an accident of the fixture: the
-    // readout is a DELTA FROM THE LAST TICK, not a total from some earlier moment. The body is being
-    // set from before-7 back up to before+3, so what happened on this tick is ten points of healing.
-    // A readout that reported +3 here would be reporting the change since the shot, which is a
-    // number about two events rather than about the one that just occurred - and a burst that lands
-    // across three ticks would read as three small numbers instead of one damage event.
+    /* a RISE is reported as healing, in the other colour, because a body that gains health between two ticks is a thing worth seeing rather than... [h:99-tests-339] */
     e.hp=before+3; update();
     const h=Lab.numbers();
     ok(h.length&&h[h.length-1].heal,'a body that gained 10 health was not reported as healing');
@@ -11198,17 +8290,7 @@ const BOSS_TICKS=26000;
     update();
     ok(Math.hypot(row2[0].x-rp.x,row2[0].y-rp.y)<0.001,'the specimen row is not actually frozen, so this check proves nothing');
 
-    /* AND THEY ACTUALLY COME AT YOU, which is the claim the whole feature rests on.
-
-       This was previously recorded as an unresolved bug, and it was never a bug: it was this check
-       measuring 40 ticks, which is almost entirely the LUNGE WINDUP. A lunger stops dead to
-       telegraph before it commits - lungeState 'wind' - and that pause is the design, not a stall.
-       The diagnostic that called it a bug printed the state and read past it.
-
-       Measured properly, a drove body closes 279px to 83px over 120 ticks and lands a hit. So the
-       window has to clear the windup, and the quantity has to be PATH LENGTH rather than net
-       displacement - which is the second time this check has measured the wrong thing, and the
-       first time it measured a deliberate pause in an animation. */
+    /* AND THEY ACTUALLY COME AT YOU, which is the claim the whole feature rests on. [h:99-tests-340] */
     let path=0, px=drove[0].x, py=drove[0].y, closest=1e9;
     for(let i=0;i<120;i++){
       update();
@@ -11224,38 +8306,9 @@ const BOSS_TICKS=26000;
 
 
 
-  /* THE CHANGE HISTORY IS TESTED, and it is the LAST check in the suite for a structural reason.
-
-     It audits the table of pinned fixes against the results, so it can only see checks that have
-     already run - and results are appended in the order the tests are DEFINED. Written anywhere else
-     in this file it would compare the table against a partial list and report every later check as
-     an unbacked fix, which is exactly what happened the first time: it claimed two of them were
-     unverified, and they were the two tests sitting below it in the file. A check about the whole
-     suite has to come after the whole suite, and the only way to guarantee that is to put it last.
-
-     `results`, not window.__testResults: the global is assigned after this file has finished running,
-     so reading it from inside a check gets undefined. */
+  /* THE CHANGE HISTORY IS TESTED, and it is the LAST check in the suite for a structural reason. [h:99-tests-341] */
   test('the wand points at the cursor, in the frame the cursor is actually in',()=>{
-    /* THE AIMING BUG, and the reason 163 checks did not see it.
-
-       The player, every body and every wall are in world space. The cursor is on the screen. The aim
-       was `atan2(mouse.y - player.y, mouse.x - player.x)` - a vector from a screen point to a world
-       point - so every shot was off by exactly the camera offset.
-
-       It did not look like "off by the camera offset". It looked like a few degrees, and it was only
-       a few degrees if you wiggled the cursor near one spot: measured at six positions around the
-       frame the error ran from -0.34 to +21.28 degrees and CHANGED SIGN across the frame, because a
-       translation error's angular size depends on where the ray is pointing. Reported as "a few
-       degrees off, counter-clockwise", which is exactly what it looks like from one seat.
-
-       And the suite passed throughout, because every fixture in it wrote a WORLD position into
-       `mouse` - `mouse.x=e.x; mouse.y=e.y` - and the game read a world position out of `mouse`. The
-       test and the bug agreed perfectly. That is the fourth time in this project that agreement has
-       turned out to be the problem rather than the reassurance.
-
-       So this drives it the way a player does: a real MouseEvent at a real client position, and then
-       the angle the game actually fires at. Asserted at several positions and in a big room, because
-       a check at one position is a check that passes for the wrong reason at the other eleven. */
+    /* THE AIMING BUG, and the reason 163 checks did not see it. [h:99-tests-342] */
     const D=180/Math.PI;
     const turn=(a,b)=>Math.abs(Math.atan2(Math.sin(a-b),Math.cos(a-b)))*D;
     startGame();
@@ -11271,42 +8324,14 @@ const BOSS_TICKS=26000;
     // error is largest, and best on an axis, where it can vanish entirely.
     const spots=[[800,150],[800,450],[160,150],[160,450],[480,300],[640,140],[320,460],[900,560]];
     const w0=WEAPONS[player.weaponIdx];
-    // Every weapon has a cone - the Bolt's is 0.05 rad, about 2.9 degrees - so ONE shot is allowed
-    // to be off-axis by that much and asserting otherwise would be asserting that the gun does not
-    // spread. Two claims instead, and the frame bug fails both by a wide margin:
-    //   1. no shot lands OUTSIDE the weapon's own cone, which is 2.9 degrees and not 21;
-    //   2. the MEAN of several shots is the aim, because a symmetric cone averages to its centre -
-    //      which pins the centre to a fraction of a degree and would catch a smaller constant offset
-    //      that claim 1 alone would let through.
-    /* THE EXPECTED ANGLE IS BUILT FROM SCREEN QUANTITIES ONLY, and the first version of this test
-       got that wrong in the most embarrassing possible way.
-
-       It computed the expected angle with `mouseWorld()` - the same helper the game calls - so when
-       the helper was mutated back to the identity to prove the test was sensitive, the expectation
-       and the game were wrong in exactly the same way and the test passed. Twelve other checks
-       failed, and this one, the one whose entire subject is the bug, did not.
-
-       That is the same trap the whole suite was in for 163 checks: two sides of a comparison agreeing
-       because they came from the same place. The cure is to derive the expected value from
-       something the game does not use - here, the player's own SCREEN position against the raw
-       cursor - so the two can only agree if the game is right. */
+    /* Every weapon has a cone - the Bolt's is 0.05 rad, about 2.9 degrees - so ONE shot is allowed to be off-axis by that much and asserting otherwise... [h:99-tests-343] */
+    /* THE EXPECTED ANGLE IS BUILT FROM SCREEN QUANTITIES ONLY, and the first version of this test got that wrong in the most embarrassing possible way. [h:99-tests-344] */
     const wantAngle=()=>{
       const sx=player.x-cam.x, sy=player.y-cam.y;   // the player where the player is DRAWN
       return Math.atan2(mouse.y-sy, mouse.x-sx);    // ...to the cursor, in the frame it is in
     };
     const SHOTS=25;
-    /* The tolerance on the mean is a FOUR-SIGMA bound and not a number somebody liked.
-
-       A cone's samples are uniform on +/-spread, so one sample's standard deviation is
-       spread/sqrt(3) and the mean of n has standard error spread/sqrt(3n). With the Bolt's 0.05 rad
-       and 25 shots that is 0.0064 rad, so four sigma is about 1.5 degrees. Nine shots gave a
-       standard error of 0.010 rad and a measured 0.80 degrees, which is inside one and a half sigma
-       - pure sampling noise, and a check that read it as bias would have been a check that fails at
-       random about half the time. A flaky check is worse than none, because it teaches you to
-       re-run rather than to read.
-
-       1.5 degrees is still a quarter of the smallest frame error this bug produced (3.89 at the
-       top right) and a fourteenth of the largest, so it separates the two decisively. */
+    /* The tolerance on the mean is a FOUR-SIGMA bound and not a number somebody liked. [h:99-tests-345] */
     const meanTol=4*w0.spread/Math.sqrt(3*SHOTS)*D;
     for(const s of spots){
       const r=currentRoom();
@@ -11363,14 +8388,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the cursor is a screen position and the game asks for it in world space',()=>{
-    /* The other half: the conversion has to go the right way, not merely be applied. A sign error
-       here would aim the wand at the mirror point, which in a centred room is a smaller mistake
-       than the original and would pass a looser check.
-
-       The bench is the control. It hit-tests `mouse` against its own layout in screen space and has
-       always been correct, so the two consumers of the same variable are asserted to disagree by
-       exactly the camera offset - which is what "one variable, two frames, converted at the point
-       of use" means in practice. */
+    /* The other half: [h:99-tests-346] */
     startGame();
     render();
     const before=Math.round(cam.x*1000)/1000;
@@ -11386,25 +8404,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the separation grid finds the same pairs as the double loop, to within a knockback slide',()=>{
-    /* THE INVARIANT, and it is an equivalence rather than a vibe.
-
-       The separation pass was a double loop over every pair and is now a uniform grid over a 3x3
-       neighbourhood. The argument that makes the grid nearly exact is that two bodies can only
-       interact when they overlap, and they overlap only within a.r+b.r of each other, so with a cell
-       wider than the largest sum of two radii any overlapping pair is in the same or an adjacent
-       cell. An argument is not a measurement, and the first run of this check disagreed with the
-       claim by 1.01px - which is not a failure of the grid but a failure of the comment to say that
-       a body pushed ACROSS a cell boundary stays in the bucket it was inserted into, so a pair that
-       starts overlapping because of an earlier push resolves a tick late.
-
-       So the claim is the one that is true: the same pairs, within a knockback slide. The bound is
-       3px, which is a body being shoved rather than a pack coming apart - a grid resolving a
-       materially different SET of pairs shows up in metres, not fractions of a pixel, so the test
-       separates the two cases by three orders of magnitude.
-
-       Order is checked too, and that is the half that is easy to get wrong and invisible in a
-       screenshot: bounceEnemies mutates both bodies, so visiting the same pairs in a different order
-       ends in a different arrangement, and a crowded room is the only place that shows up. */
+    /* THE INVARIANT, and it is an equivalence rather than a vibe. [h:99-tests-347] */
     const trial=(seed,count)=>{
       Rnd.set(seed);
       startGame();
@@ -11436,20 +8436,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the separation cost does not go quadratic as a room fills',()=>{
-    /* The regression guard, and it is a measurement rather than a claim.
-
-       Cost per body used to rise with the room: 1.30us at five bodies, 8.35us at a hundred and
-       sixty, with the doubling ratio climbing to 3.96 where linear is 2.00. That is a quadratic
-       wearing a linear costume, invisible only because a room currently tops out near twenty-three
-       bodies - and the game is planned to grow in both directions.
-
-       This asserts the SHAPE and not the speed, because absolute timings are meaningless on a
-       machine that is not this one, and a test with a hardcoded millisecond budget is a test that
-       fails on someone else's laptop and gets deleted. Per-body cost flat across a 4x range of room
-       size is the property; a constant factor on top of it is not being asserted.
-
-       TIMING IS OPTIONAL. The check reports a number either way, but only fails if timings came
-       back at all - a suite that cannot measure must not fail for being unable to. */
+    /* The regression guard, and it is a measurement rather than a claim. [h:99-tests-348] */
     if(typeof performance==='undefined'||!performance.now){
       ok(true,'no timer in this environment, so the scaling of the separation pass is unmeasured');
       return;
@@ -11478,25 +8465,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the room-scaled numbers scale with the room, and do not move when it does not',()=>{
-    /* TWO BALANCE NUMBERS THAT HAD STOPPED DESCRIBING WHAT THEY NAME.
-
-       AGGRO_RANGE was 0.85 of the room's diagonal, evaluated ONCE when 00-balance.js was parsed. So
-       it was 707 - correct for the only room shape that existed - and it stayed 707 for a 1680-wide
-       one, which wants 1567. A lunger 900px away in a big room is outside its aggro, so it stands
-       still, and the room reads as a safe place to stand still in.
-
-       SWERVE_DEADZONE was half the room's width less a margin, frozen the same way at 300. Which
-       means a gunner in a big room reads a reversing player at FULL strength from across the room -
-       the counter to the entire mechanic switching itself off at range, silently off.
-
-       Both were found by asking a question rather than by reading: what else is captured at module
-       load from something that now varies? That is the same shape as the aiming bug, where a
-       screen-space cursor met a world-space player, and the same shape as the camera clamp that
-       never ran. Values derived from the world are only correct until the world changes shape.
-
-       The second half is the half that matters for a fix: in a STANDARD room both must return
-       exactly what they always returned. A change that also retunes the game is two changes wearing
-       one, and every number measured in this project's history was measured in a standard room. */
+    /* TWO BALANCE NUMBERS THAT HAD STOPPED DESCRIBING WHAT THEY NAME. [h:99-tests-349] */
     startGame();
     const r=currentRoom();
     eq(r.bounds.w,700,'the standard room is not 700 wide any more, so these constants are meaningless');
@@ -11515,20 +8484,7 @@ const BOSS_TICKS=26000;
     eq(swerveDeadzone(),Math.round(1680*0.25),'the swerve deadzone did not follow the room: '+
        swerveDeadzone()+' vs '+Math.round(1680*0.25));
     ok(aggroRange()>707,'a bigger room did not widen the aggro range, so the number is still frozen');
-    /* THE RAMP MUST FOLLOW THE ROOM, and asserting only that it is NON-ZERO is what hid this.
-
-       `SWERVE_FULL_BASE` was a module constant computed once at load from whatever room existed then,
-       so it never followed the room at all: measured, a 1680-wide room asked for a 920px ramp and got
-       385 - the standard room's value, frozen - while `swerveDeadzone`, one line above it, correctly
-       read 420. The two were silently inconsistent inside the same expression.
-
-       The old assertion here was `swerveFull()>swerveDeadzone()`, and it passed: 805 > 420 is true,
-       and so is 1344 > 420. A check that the ramp is non-empty cannot tell a ramp that follows the
-       room from one that is a constant, because both are non-empty. That is the same shape as the
-       relative-brass-speed bounds that let a 13% cut through unnoticed - a property too weak to fail
-       on the defect it was written for.
-
-       So the ramp is now asked to be the room's own fraction, in a room four times as wide. */
+    /* THE RAMP MUST FOLLOW THE ROOM, and asserting only that it is NON-ZERO is what hid this. [h:99-tests-350] */
     eq(swerveFull(),Math.round(1680*0.25)+Math.round(1680*0.55),'the swerve ramp did not follow the '+
        'room: a 1680-wide room wants a '+(Math.round(1680*0.25)+Math.round(1680*0.55))+'px ramp and got '+
        (swerveFull()-swerveDeadzone())+'px - a constant computed from the room at load time is the '+
@@ -11545,12 +8501,7 @@ const BOSS_TICKS=26000;
   });
 
   test('a lunger in a big room comes at you from across it',()=>{
-    /* The BEHAVIOUR, not the constant. The check above asserts the number follows the room; this
-       asserts the consequence, because a number can follow the room and still not be read anywhere.
-
-       A body 1100px from the player in a 1680-wide room is inside the aggro range it should have and
-       outside the one it used to have. If it walks, the range is being read. If it stands, the number
-       moved and nothing did. */
+    /* The BEHAVIOUR, not the constant. [h:99-tests-351] */
     const big=bigRoom(1680,760);
     const r=currentRoom();
     r.enemies.length=0;
@@ -11568,31 +8519,10 @@ const BOSS_TICKS=26000;
     Lab.leave();
   });
 
-  /* THE TABLE CHECK LIVES AT THE END OF THE FILE, not here, and the reason is that it reads every
-     name in `results` - which is only complete once every test has run. It sat above the area tests
-     when they were added and reported all five as "pinned with no test", against five tests that were
-     passing thirty lines below it: a test about bookkeeping failing because of where the bookkeeping
-     sits. It is now last, immediately before the raw-Math.random result is pushed, so nothing can be
-     added after it without the same trap being re-created. */
-  /* ---------- AREA PALETTE ----------
-     Four tests, and they are four because the palette is four separable claims: that the lookup is a
-     pure function of the area, that Area1 is unchanged, that every surface agrees, and that the wall
-     is actually masonry. A single test would have let one of them pass by agreeing with the others.
-
-     The floor is a PIXEL claim and it is measured through the framebuffer, not read out of the
-     drawing. Every version of the heart-bar bug in this project passed a data-level assertion while
-     the picture was wrong, and the reason is always the same: the data was right and the mistake was
-     in what got drawn and where. "drawFloor fills a colour" proves nothing about which floor is on
-     screen. */
+  /* THE TABLE CHECK LIVES AT THE END OF THE FILE, not here, and the reason is that it reads every name in `results` - which is only complete once... [h:99-tests-352] */
+  /* AREA PALETTE ---------- Four tests, and they are four because the palette is four separable claims: [h:99-tests-353] */
   test('each area has a palette, and a floor is painted in the one it is on',()=>{
-    /* THE LOOKUP IS A PURE FUNCTION OF THE AREA. Not of the floor, not of the player, not of the
-       room: of the area. So it can be asked for an arbitrary area without standing in one, which is
-       what lets the three other tests here compare areas side by side without moving a run around.
-
-       And it throws on an unknown id rather than returning something. A palette is a table lookup,
-       so a missing id used to return undefined and the first anybody would see is a room painted in
-       the colour of null - which is the silent-failure shape this project's Content registry already
-       refuses on purpose. */
+    /* THE LOOKUP IS A PURE FUNCTION OF THE AREA. [h:99-tests-354] */
     for(const a of ['Area1','Area2','Area3','Final']){
       const p=paletteForArea(a);
       ok(p&&p.id===a,'paletteForArea('+a+') did not return that area\'s own palette');
@@ -11606,11 +8536,7 @@ const BOSS_TICKS=26000;
     try{ paletteForArea('Area9'); }catch(e){ msg=String(e.message); }
     ok(msg.indexOf('Area9')>=0,'an unknown area returned a palette instead of throwing ('+msg+')');
 
-    /* AREA1 IS THE BUILD THAT EXISTED BEFORE AREAS DID, and this is the assertion that keeps that
-       true rather than approximately true. Every measurement in this project's history was taken on
-       floors 1-4: every TTK, every reaction window, every screenshot anybody looked at. Area1's
-       colours are therefore the literals those were taken against, and its wash is ZERO - which is
-       what makes the floor composite the same arithmetic rather than the same-looking result. */
+    /* AREA1 IS THE BUILD THAT EXISTED BEFORE AREAS DID, and this is the assertion that keeps that true rather than approximately true. [h:99-tests-355] */
     const a1=paletteForArea('Area1');
     eq(a1.stone,'#2b2f3a','Area1 is no longer the wall colour every earlier screenshot was taken against');
     eq(a1.floor,'#25211c','Area1 is no longer the cave-floor colour');
@@ -11621,17 +8547,9 @@ const BOSS_TICKS=26000;
       'earlier measurement was taken against. Its wash has to be zero, not small');
     eq(a1.mapWash,'#090b11','Area1 is no longer the colour of the wash over the map paper');
 
-    /* THE FOUR AREAS MUST ACTUALLY LOOK DIFFERENT, and "different" is measured as distance rather
-       than asserted as inequality: two palettes that differ by one unit of blue are a different
-       palette and the same picture. The claim is on the pair of channels a player reads position
-       from - the stone and the floor wash - and the floorLight channel is included because a fleck
-       of the wrong hue is exactly what makes a recoloured floor read as a filter over the old one. */
+    /* THE FOUR AREAS MUST ACTUALLY LOOK DIFFERENT, and "different" is measured as distance rather than asserted as inequality: [h:99-tests-356] */
     const ids=['Area1','Area2','Area3','Final'];
-    /* floorLight is stored as an 'r,g,b' TRIPLET rather than as hex, because it exists to be
-       interpolated into the string `'rgba('+floorLight+','+alpha+')'` in the cave bake and writing
-       it as hex would mean a conversion on every fleck. So the distance measure has to read it in
-       the form it is stored in - and a measure that silently parsed it as hex would compare 597
-       against 597 and report every pair of areas as identical. */
+    /* floorLight is stored as an 'r,g,b' TRIPLET rather than as hex, because it exists to be interpolated into the string... [h:99-tests-357] */
     const rgb=h=>String(h).indexOf(',')>=0?String(h).split(',').map(Number):hexRgb(h);
     for(let i=0;i<ids.length;i++) for(let j=i+1;j<ids.length;j++){
       const A=paletteForArea(ids[i]), B=paletteForArea(ids[j]);
@@ -11651,11 +8569,7 @@ const BOSS_TICKS=26000;
     ok(new Set(leans.map(v=>v>0?'warm':'cool')).size>=2,'all four areas lean the same way on their stone '+
       '('+leans.map((v,i)=>ids[i]+' '+(v>0?'+':'')+v).join(', ')+') - they are four shades of one colour');
 
-    /* THE FLOOR, AS PIXELS. This is the part the other tests cannot see: a palette that is right in
-       the table and ignored by drawFloor looks identical to a palette that is right in both. The
-       sprite is read out of the CACHE by key, because the cache key is the whole of the claim - a
-       floor that is re-baked correctly per draw would also be correct, and one that is cached without
-       the area is not. */
+    /* THE FLOOR, AS PIXELS. [h:99-tests-358] */
     startGame();
     const floorSprite=()=>{ drawFloor('normal'); return floorCache['normal:'+roomW()+'x'+roomH()+':'+areaPalette().id]; };
     floorSprite();
@@ -11669,10 +8583,7 @@ const BOSS_TICKS=26000;
       'the cached floor sprite is the same object on floor 1 and floor 6, so descending a floor '+
       'replays the previous area\'s stone. The cache key has to carry the area, not just type and size');
 
-    /* AND THE HUE IN THE SPRITE IS THE PALETTE'S, read from the image rather than from the table. The
-       sample is a 64x64 patch near the middle of the floor, away from the vignette's dark rim and
-       away from the wall, and it is compared as a MEAN because the floor is a speckle: any single
-       pixel is noise and the mean is the texture. */
+    /* AND THE HUE IN THE SPRITE IS THE PALETTE'S, read from the image rather than from the table. [h:99-tests-359] */
     const meanOf=c=>{ const g=c.getContext('2d'); const d=g.getImageData(Math.floor(c.width/2)-32,
       Math.floor(c.height/2)-32,64,64).data; let r=0,g2=0,b=0,n=0;
       for(let i=0;i<d.length;i+=4){ r+=d[i]; g2+=d[i+1]; b+=d[i+2]; n++; }
@@ -11689,19 +8600,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the area is the same colour in the floor, the wall, the doorway and the HUD, and only there',()=>{
-    /* FOUR SURFACES, ONE PALETTE, and the failure this exists to catch is disagreement BETWEEN them.
-
-       The theming was written one surface at a time, which is how a floor goes green while the
-       doorway beside it stays Area1 grey: a rectangle of the wrong stone punched through a themed
-       wall, which reads as a rendering fault rather than as a door. Asserting each surface
-       individually would pass on all four. So this asserts they AGREE - that the doorway tone is
-       derived from the same palette as the floor composite, and that the HUD ink is the palette's
-       own accent rather than a literal that happens to match today.
-
-       roomTone() is the shared answer and it is checked as a relationship, not retyped: for a room
-       type, the tone must sit between the type tint and the area's floor tint, closer to whichever
-       end the wash says. For Area1 the wash is zero and the tone must therefore BE the type tint
-       exactly - which is the pre-area behaviour, and is what makes floors 1-4 unchanged. */
+    /* FOUR SURFACES, ONE PALETTE, and the failure this exists to catch is disagreement BETWEEN them. [h:99-tests-360] */
     startGame();
     for(const type of ['start','normal','item','boss']){
       for(const floor of [1,6,10,13]){
@@ -11730,18 +8629,7 @@ const BOSS_TICKS=26000;
     ok(itemInArea!==bossInArea,'the item and boss rooms are the same colour inside Area2, so the room '+
       'type tint has been swallowed by the area wash');
 
-    /* AND THE DOORWAY ON SCREEN IS THE FUNCTION'S ANSWER, which is the half the checks above cannot
-       see. Everything so far asserts that roomTone() is correct; none of it asserts that the drawing
-       CALLS it, and a gap filled with the bare type tint satisfies every one of them while painting a
-       rectangle of Area1 stone through a Kiln Works wall on floor 6. This is the fifth time in this
-       project a property of a helper has been asserted while the call site was free to ignore it.
-
-       The sample is the middle of the north door's gap, below the 4px coloured lip on its outer edge
-       (which is the door's own state colour and correctly not part of this) and above ROOM_TOP. The
-       claim is EXACT rather than a range, because the gap is an opaque fill: measured 42,39,41 on
-       floor 6 against roomTone's #2a2729, and 28,34,48 on floor 1 against #1c2230. Area1 landing on
-       the type tint is not luck - it is the wash being zero, and it is what makes the pre-area doorway
-       the same pixel it always was. */
+    /* AND THE DOORWAY ON SCREEN IS THE FUNCTION'S ANSWER, which is the half the checks above cannot see. [h:99-tests-361] */
     startGame();
     currentRoom().enemies.length=0; currentRoom().pickups.length=0;
     readyT=0; fadeT=0; roomFade=0;
@@ -11793,38 +8681,11 @@ const BOSS_TICKS=26000;
   });
 
   test('the wall is coursed masonry and not a flat rectangle',()=>{
-    /* THE CLAIM IS ABOUT THE PICTURE. "drawWall fills four rects with a pattern" is a claim about the
-       code and a duplicated block would satisfy it; "the wall has courses, and they do not line up"
-       is a claim about the screen.
-
-       So this reads the framebuffer twice. First: a horizontal scan across the NORTH wall must find
-       MORE THAN ONE COLOUR. A flat fill returns one, and that is the regression this pins - four
-       palettes over a flat rectangle would have made the defect four times as visible without fixing
-       it. Second: the courses must be OFFSET. A wall whose joints line up into continuous verticals
-       reads as tile, which is the exact reason this project deleted the lab's 120px floor lattice,
-       so an un-offset wall is the same mistake in masonry. */
+    /* THE CLAIM IS ABOUT THE PICTURE. [h:99-tests-362] */
     startGame();
     currentRoom().enemies.length=0; currentRoom().pickups.length=0;
     readyT=0; fadeT=0; roomFade=0;
-    /* THE WEST WALL, AND NOT THE NORTH ONE, and the reason is the HUD rather than taste.
-
-       The north wall sits at world y 114..130 and the camera puts the frame at y 55, so it lands at
-       screen y 59..75 - INSIDE the HUD plate block, which spans screen y 29..130 and starts at x 15.
-       The first version of this scanned the north wall and read back a flat colour: wood grain, on a
-       surface that is not flat at all, in the one place the pixels belonged to something else. That is
-       the third time in this project a pixel check has sampled the wrong thing and reported it as a
-       defect in the drawing, and the fixture was the wrong one both times.
-
-       The west wall is clear of every plate, but MIDY is not usable either: it is where the west
-       DOOR is, so a scan at MIDY reads the door's green lip and the gap's own fill rather than any
-       masonry. The patch below is anchored ROOM_TOP+40 and is 16 wide by 120 tall - the full 16px
-       thickness, and 120px ALONG the wall, which is where the courses and the joints are.
-
-       LENGTHWISE rather than across the thickness, and that is measured rather than chosen: the tile
-       is one course tall (WALL_COURSE is 16 and wt is 16), so a single row across the thickness can
-       only ever contain the block tone and one seam. The blocks vary along their length, so a 16x120
-       patch is where the masonry actually is - and a flat fill returns one colour for all 1920 of
-       those pixels. */
+    /* THE WEST WALL, AND NOT THE NORTH ONE, and the reason is the HUD rather than taste. [h:99-tests-363] */
     const wallPatch=floor=>{ run.floor=floor; readyT=0; fadeT=0; roomFade=0; render();
       return pixelsAtWorld(ROOM_LEFT-16,ROOM_TOP+40,16,120); };
     const finalWall=wallPatch(13);
@@ -11837,31 +8698,8 @@ const BOSS_TICKS=26000;
       'which is a flat rectangle with a seam on it rather than coursed masonry. A flat rectangle is the '+
       'largest single-colour region on screen, and four palettes over one would not have fixed it');
 
-    /* AND IT IS BUILT OUT OF THE AREA'S MATERIALS, read off the pixels rather than retyped. Asked as
-       a question about a RANGE, because the wall is `stone` with low-alpha blocks and a mortar joint
-       laid over it, so the pixels are the stone and its immediate neighbours - an exact-pixel
-       assertion would fail on antialiasing rather than on a wrong colour, which is the wrong way round.
-       The claim is "this wall is made of this area's rock", and near-miss on every channel is that
-       claim failing. */
-    /* MEASURED, not guessed, and the measurement is in the threshold.
-
-       The fraction of a 16x120 wall patch sitting within 10 units per channel of that area's own
-       `stone` is 84.1% for Area1, 84.1% for Area2, 47.7% for Area3 and 47.7% for Final. It is not
-       constant, and the first version of this asserted a constant, which failed on two of the four
-       against correct masonry.
-
-       The reason is the block overlay. Each 32px block carries a low-alpha wash drawn from the art
-       stream, half of them light and half dark, and a LIGHT wash on a dark stone moves it much further
-       than a dark wash on the same stone: Area3's stone is 31,56,47 and a 0.08 white wash puts it at
-       48,71,65, which is outside a 10-unit tolerance, while the equivalent on Area1's 43,47,58 lands
-       at 60,62,71 - also outside, but the DARK washes on Area1 are all inside and on Area3's they are
-       not. So the fraction tracks how far each palette's stone is from mid-grey, which is a property
-       of the palette, not of the wall being drawn properly.
-
-       So the floor is 0.40, set well under the measured minimum of 0.477, and the assertion's real
-       work is done by the mean nearest its own stone below - a wall painted in the wrong area's rock
-       sits near 0% of its own, not near 47%. The percentage is here to catch a wall that is mostly the
-       right colour with a foreign band across it, which a mean cannot see. */
+    /* AND IT IS BUILT OUT OF THE AREA'S MATERIALS, read off the pixels rather than retyped. [h:99-tests-364] */
+    /* MEASURED, not guessed, and the measurement is in the threshold. [h:99-tests-365] */
     const stone=hexRgb(areaPalette().stone);
     let nearStone=0;
     for(let i=0;i<finalWall.length;i+=4){
@@ -11886,35 +8724,16 @@ const BOSS_TICKS=26000;
         'of the wrong area\'s rock');
     }
 
-    /* THE MIX'S ENDPOINTS ARE EXACT, which is what makes Area1 usable as a reference at all.
-
-       A helper that rounded "0.52 of the way" into near enough would put Area1's floor a unit or two
-       off the build every earlier measurement was taken against, and nothing in this suite - or in a
-       screenshot - could see it. The two ends are the whole of the claim: at 0 the room type's tint
-       untouched, at 1 the area's tint completely, and both of them reached by the same expression the
-       drawing uses. */
+    /* THE MIX'S ENDPOINTS ARE EXACT, which is what makes Area1 usable as a reference at all. [h:99-tests-366] */
     eq(mixHex('#123456','#abcdef',0),'#123456','mixHex at 0 is not the first colour');
     eq(mixHex('#123456','#abcdef',1),'#abcdef','mixHex at 1 is not the second colour');
-    /* A three-digit hex is EXPANDED, not preserved - '#abc' and '#aabbcc' are the same colour and
-       mixHex only promises to return a canonical six-digit form. Written from the SPECIFICATION (the
-       two are the same colour) rather than from the implementation's return format, which is the point
-       of the exercise: the first version of this asked for the string '#abc' back and failed against
-       correct code.
-
-       Compared with `ok(...join()===...join())` rather than `eq`, and that is worth knowing about this
-       suite's `eq`: it is `a!==b`, which compares two ARRAYS BY REFERENCE. Two identical colour arrays
-       are two objects, so `eq(hexRgb('#abc'),hexRgb('#aabbcc'))` fails against correct code and always
-       has - the numbers print the same and the comparison still says no. Anything comparing a computed
-       value here has to be a primitive or a join. */
+    /* A three-digit hex is EXPANDED, not preserved - '#abc' and '#aabbcc' are the same colour and mixHex only promises to return a canonical six-digit form. [h:99-tests-367] */
     ok(hexRgb('#abc').join()===hexRgb('#aabbcc').join(),"short hex '#abc' does not expand to the same colour as '#aabbcc'");
     const half=hexRgb(mixHex('#000000','#ffffff',0.5));
     ok(half[0]>=127&&half[0]<=128,'mixHex at 0.5 between black and white gives '+half[0]+
       ', which is not half way');
 
-    /* THE TWO AREAS' WALLS ARE DIFFERENT WALLS, which is the claim the theming exists for. A per-pixel
-       comparison rather than an average, because an average of a speckled wall is a number about
-       nothing - and the tolerance is 12 summed units, which is roughly one just-noticeable step on a
-       channel, so "same" here means "cannot tell apart". */
+    /* THE TWO AREAS' WALLS ARE DIFFERENT WALLS, which is the claim the theming exists for. [h:99-tests-368] */
     const area1Wall=wallPatch(1);
     let same=0;
     for(let i=0;i<finalWall.length;i+=4){
@@ -11926,24 +8745,7 @@ const BOSS_TICKS=26000;
     ok(same<n*0.1,'the west wall is within 12 summed units at '+same+' of '+n+' pixels on floor 1 and '+
       'on floor 13 - a floor tells you which area you are in from its stone, and this one does not');
 
-    /* THE COURSES ARE OFFSET, and this one is measured on the TILE rather than on the screen.
-
-       The screen cannot answer it: the wall is 16px of a 450px-tall room, so both courses are visible
-       at once and "the joints do not line up" is not a thing a screenshot of the finished room shows
-       at this size. The tile is 64x32 with two courses whose joints are a half-block apart, and the
-       claim is a property of that tile - so it is asserted there.
-
-       THE JOINT IS FOUND BY COLOUR AND NOT BY DARKNESS, and the first version got that wrong and
-       reported correct masonry as a defect. Each block carries a low-alpha overlay drawn from the art
-       stream, so a block can be LIGHTER or DARKER than the stone under it - and asking for the
-       darkest column found whichever block happened to get a dark overlay, which was noise. The joint
-       is the 1px gap BETWEEN blocks where no overlay is painted at all, so it is exactly the palette's
-       `stone` and nothing else. Measured: rgb(43,47,58) = #2b2f3a, at x 0 and 32 in the top course
-       and at x 16 and 48 in the one below.
-
-       The claim is that the two courses' joint columns are DISJOINT. A wall whose joints line up into
-       continuous verticals reads as tile, which is the same reason this project deleted the lab's 120px
-       floor lattice rather than dimming it. */
+    /* THE COURSES ARE OFFSET, and this one is measured on the TILE rather than on the screen. [h:99-tests-369] */
     const pal1=paletteForArea('Area1'), stone1=hexRgb(pal1.stone);
     const tg=wallTile('Area1').getContext('2d');
     const jointsIn=row=>{ const px=tg.getImageData(0,row,WALL_TILE_W,1).data, out=[];
@@ -11961,35 +8763,9 @@ const BOSS_TICKS=26000;
     /* and the offset is a half-block, not an arbitrary distance - four 32px blocks per course, joints
        every 32px, the lower course shifted by WALL_TILE_W/4. Stated as the measured spacing rather
        than as the arithmetic, so a tile width change cannot leave the assertion quietly true. */
-    /* AND THE OFFSET IS THE HALF-BLOCK IT IS DRAWN AT, measured from the two courses' FIRST joints rather
-       than from the span between the outermost.
-
-       Measured: joints at x 0, 32 and 63 in the top course and at x 16, 48 in the one below. The 63 is
-       the tile's last column, which the block loop leaves unpainted at the right edge - so the outer
-       span is 63 rather than 32, and the first version of this assertion compared that span against
-       WALL_TILE_W/2 and failed on correct masonry. Which joints are period and which are edge is a
-       property of the block loop, so the period is read off the first two of them. */
-    /* AND THE OFFSET IS EXACTLY THE QUARTER-BLOCK, measured on run MIDPOINTS rather than on columns.
-
-       Measured: the joints come in 2px runs - top course at x 0, 31, 32, 63 (i.e. 31-32 and 63
-       wrapping to 0) and bottom at 15, 16, 47, 48. Comparing raw columns is ambiguous for two
-       reasons, and the first version of this assertion hit both: the runs are two pixels wide so a
-       column can land on either side, and the tile wraps, so x 63 and x 0 are one joint.
-
-       So the joints are collapsed into runs, each run is reduced to its midpoint, and the two courses'
-       midpoint lists are compared modulo the 32px block. Midpoints 31.5 and 47.5 differ by exactly 16,
-       which is WALL_TILE_W/4 - the offset the block loop draws at. A tolerance of one pixel would let
-       a one-pixel drift pass, which is the drift that turns brickwork into a staircase. */
-    /* AND THE WRAPPING JOINT IS UNWRAPPED FIRST, which is the third thing about this tile that had to be
-       got right before the assertion could be about masonry rather than about the block loop.
-
-       The top course's joints are 2px runs at x 31-32 and x 63-0, and 63-0 is ONE joint that the
-       tile boundary cuts in half. Measured as it comes out of getImageData it looks like two runs, at
-       63 and at 0, and its midpoint computes to 63 rather than 63.5 - which put the offsets at 16 and
-       17 and failed an assertion about a 16px quarter-block against a wall that is drawn correctly.
-
-       A pattern tile is periodic, so a run touching column 0 and a run touching the last column are
-       the same joint. They are joined and the midpoint is placed at the wrap. */
+    /* AND THE OFFSET IS THE HALF-BLOCK IT IS DRAWN AT, measured from the two courses' FIRST joints rather than from the span between the outermost. [h:99-tests-370] */
+    /* AND THE OFFSET IS EXACTLY THE QUARTER-BLOCK, measured on run MIDPOINTS rather than on columns. [h:99-tests-371] */
+    /* AND THE WRAPPING JOINT IS UNWRAPPED FIRST, which is the third thing about this tile that had to be got right before the assertion could be about... [h:99-tests-372] */
     const runs=cols=>{ const out=[];
       for(const c of cols){ const last=out[out.length-1];
         if(last&&c===last.hi+1) last.hi=c; else out.push({lo:c,hi:c}); }
@@ -12013,34 +8789,13 @@ const BOSS_TICKS=26000;
   });
 
   test('hexRgb takes 3 and 6 hex digits and refuses everything else',()=>{
-    /* THE ACCEPTED CASES ARE PINNED AS VALUES, not as "it did not throw". A helper that returned
-       [0,0,0] for everything would sail through a no-throw check and paint every area black, and the
-       three-digit case is the one worth pinning as an EXPANSION rather than as a shorter parse:
-       '#abc' is 170,187,204 because each digit is repeated, which is the CSS rule and not
-       "0x0a0b0c". */
+    /* THE ACCEPTED CASES ARE PINNED AS VALUES, not as "it did not throw". [h:99-tests-373] */
     eq(hexRgb('#fff').join(),[255,255,255].join(),"hexRgb('#fff') is not white - three digits are each repeated");
     eq(hexRgb('#abc').join(),[170,187,204].join(),"hexRgb('#abc') is not rgb(170,187,204)");
     eq(hexRgb('#2b2f3a').join(),[43,47,58].join(),"hexRgb('#2b2f3a') is not rgb(43,47,58) - that is Area1's own stone");
     eq(hexRgb('#ABC').join(),hexRgb('#abc').join(),'uppercase hex and lowercase hex are different colours');
 
-    /* AND THE REJECTIONS, which is the half that was missing.
-
-       This handed the string to parseInt and asked whether a number came back, and parseInt accepts a
-       great deal that is not a colour:
-
-           '#12'     -> 0x12     -> [0, 0, 18]     black with a whisper of blue
-           '#12345'  -> 0x12345  -> [1, 35, 69]    a colour nobody chose
-
-       Both of those went through a palette entry and out to a fillStyle, so a mistyped swatch rendered
-       a surface in a colour no line of the code mentions and no stack trace can point at. Nothing
-       failed; the room just came out wrong.
-
-       The list is deliberately varied rather than just short-and-long: an empty string, no digits at
-       all, a name, an rgb() string that hexRgb is not the reader for, six characters that are not hex
-       (so a length check alone would still let it through), a digit that is not a hex digit, and the
-       non-strings. Throws rather than returns null, because the callers here - mixHex, withAlpha -
-       would turn a null into NaN and paint a NaN, whereas paletteForArea and Content.get already
-       throw on a missing id and the loud end of this file is established. */
+    /* AND THE REJECTIONS, which is the half that was missing. [h:99-tests-374] */
     const refused=['', '#', '#12', '#1234', '#12345', '#1234567', 'xyzw12', '#abcg', 'xyz',
                    'rebeccapurple', 'rgb(1,2,3)', '12 34 56', null, undefined, 42, {}];
     for(const bad of refused){
@@ -12073,38 +8828,9 @@ const BOSS_TICKS=26000;
     for(const k of Object.keys(ROOM_BG)) hexRgb(ROOM_BG[k]);
   });
 
-  /* THE PLAYER STAYS BRIGHT THROUGH THE DESCENT, which is the property the scrim broke and the redraw
-       over it restores.
-
-       Measured, sprite at the canvas centre (y 300): 236,232,245 with no banner, 46,44,46 under the
-       scrim alone - 17% of its brightness - and 236,232,245 again with the redraw. So this asks for
-       the brightness of the sprite, not for the presence of a draw call: a redraw that happened at
-       globalAlpha 0.1 would satisfy "the player is drawn over the scrim" and fail this.
-
-       It is measured at the FULL brightness of the same frame rather than against a literal, because
-       the exact value depends on the frame index and the flicker, and a hardcoded 236 would go stale
-       the moment the sprite sheet changed. The claim is "as bright as it was without the banner". */
-  /* A MISSPELLED CATEGORY MUST NOT TAKE THE PANEL DOWN. The panel is the thing whose whole job is
-       reporting failures, so an exception thrown inside it is the worst failure it can have: it
-       printed nothing at all, rather than printing one entry in the wrong place.
-
-       Found by adding a fix under a category name that was not in CAT_ORDER - `byCat[it.cat]` was
-       undefined, `.push` on undefined threw, and the panel was simply gone. Not hypothetical either:
-       adding a fix is the ordinary way this table grows, and a new category name is a natural thing
-       to write.
-
-       So the panel is handed a deliberately misspelled category and has to survive it AND still
-       account for every entry - because "did not crash" alone would be satisfied by dropping the
-       entry on the floor. */
-  /* areaForFloor ANSWERS FOR ANY FLOOR WITHOUT TOUCHING THE RUN, which is the change that let the
-       descent banner name an area. It used to take no argument and read `run.floor`, so the only way
-       to ask "which area is floor 5 in?" from the presentation layer was to assign `run.floor` and put
-       it back - a draw function mutating simulation state.
-
-       Asserted as BOTH shapes, because the no-argument form is the one a hundred existing callers
-       use and it must not have changed meaning: `areaForFloor()` still tracks the current floor, and
-       `areaForFloor(n)` answers independently of it. A test that only checked the argument form would
-       pass even if the default had been broken for every caller in the game. */
+  /* THE PLAYER STAYS BRIGHT THROUGH THE DESCENT, which is the property the scrim broke and the redraw over it restores. [h:99-tests-375] */
+  /* A MISSPELLED CATEGORY MUST NOT TAKE THE PANEL DOWN. [h:99-tests-376] */
+  /* areaForFloor ANSWERS FOR ANY FLOOR WITHOUT TOUCHING THE RUN, which is the change that let the descent banner name an area. [h:99-tests-377] */
   test('areaForFloor answers for any floor without reading or writing the run',()=>{
     const wasRun=run;
     run={floor:1};
@@ -12130,27 +8856,11 @@ const BOSS_TICKS=26000;
   });
 
   test('the descent banner names the area, and only when the descent crosses into one',()=>{
-    /* THE BEAT NAMES A PLACE ONLY WHEN THE PLACE CHANGES. Naming it on every descent would be a
-       caption for a caption - the palette already says which area you are in by looking like it - so
-       the claim is the boundary behaviour specifically, both directions.
-
-       Rendered, not asserted as a string: the banner is canvas text, so the only honest way to ask
-       what it printed is to look at the pixels. */
+    /* THE BEAT NAMES A PLACE ONLY WHEN THE PLACE CHANGES. [h:99-tests-378] */
     const wasRun=run;
     const px=(x,y)=>{ const d=ctx.getImageData(Math.round(x),Math.round(y),1,1).data;
                       return (d[0]+d[1]+d[2])/3; };
-    /* The area name is 13px monospace on the baseline H/2-42 = 258, so its glyphs occupy roughly y 248..262
-       and it is measured over a box WIDER than the text: one column can land between glyphs and read
-       as "not printed" on a frame that printed it perfectly. Measured rows on a boundary crossing are
-       y 250..266 peaking at 134; the same rows on a descent that stays inside one area peak at 133 -
-       i.e. the difference is the glyphs, which is why the comparison below is between two renders
-       rather than against a literal.
-
-       The band is INSIDE the scrim's opaque region (249..332). It was originally y 240..252, five
-       pixels above the flat, and the pixel test PASSED there while a screenshot showed "THE KILN
-       WORKS" in near-invisible grey: the test asked whether the ink was the right colour and never
-       asked whether it was readable. A pixel can be the right hue and still be unreadable, and only
-       one of those two failures is a number. */
+    /* The area name is 13px monospace on the baseline H/2-42 = 258, so its glyphs occupy roughly y 248..262 and it is measured over a box WIDER than the... [h:99-tests-379] */
     const renderCol=(from,to)=>{
       startGame();
       player.x=(ROOM_LEFT+ROOM_RIGHT)/2; player.y=(ROOM_TOP+ROOM_BOTTOM)/2;
@@ -12166,11 +8876,7 @@ const BOSS_TICKS=26000;
        so it is not. Both are captured as a COLUMN rather than a peak, because a peak is the floor
        numeral's ink and the numeral is drawn either way. */
     const crossCol=renderCol(4,5), withinCol=renderCol(6,7);
-    /* The claim is the CONTRAST between a boundary crossing and a descent that stays inside one area.
-       Comparing two peak absolutes - the version this test had first - does not work: both peak at
-       134, because the peak is the FLOOR NUMERAL's ink, which is drawn either way. The name sits
-       above it in the same accent, so only a subtraction can separate the two, which is what the
-       column comparison below does. Measured 175-176 on the eight rows the glyphs occupy. */
+    /* The claim is the CONTRAST between a boundary crossing and a descent that stays inside one area. [h:99-tests-380] */
 
     /* AND IT IS THE AREA IT CROSSED INTO, read from the content registry rather than from a table. */
     startGame();
@@ -12186,21 +8892,7 @@ const BOSS_TICKS=26000;
     ok(accented>20,'only '+accented+' pixels in the band are in the area accent ('+areaPalette().accent+
        '), so the area name is not being struck in it - the name and the numeral must agree about '+
        'which area this is');
-    /* AND THE NAME IS LEGIBLE, which is a DIFFERENT question from being the right colour.
-
-       The first draft of this test asked only the colour question and PASSED on a line a screenshot
-       showed to be near-invisible grey: the ink was the right hue, drawn in the right place, and
-       unreadable. The band was y 240..252, five pixels above the scrim's opaque region, so the same
-       accent landed at about a third of its value against bare floor.
-
-       So the claim is CONTRAST, and it is measured as the difference between the same row on a
-       boundary crossing and the same row on a descent that stays inside one area. That subtraction is
-       what removes the scrim and the floor from the measurement and leaves only the glyphs - a peak
-       absolute value cannot, because it is dominated by whatever the background happened to be.
-       Measured: 175-176 summed units on the eight rows the glyphs occupy, and 0-7 everywhere else.
-
-       Both halves are needed. The difference proves the name is there; the count of rows proves it is
-       a line of text and not one stray pixel. */
+    /* AND THE NAME IS LEGIBLE, which is a DIFFERENT question from being the right colour. [h:99-tests-381] */
     const colAt=()=>{ const out=[]; for(let y=246;y<=270;y++){
       const d=ctx.getImageData(480,y,1,1).data; out.push([d[0],d[1],d[2]]); } return out; };
     const sumDiff=(a,b2)=>a.map((c,i)=>Math.abs(c[0]-b2[i][0])+Math.abs(c[1]-b2[i][1])+
@@ -12222,11 +8914,7 @@ const BOSS_TICKS=26000;
   });
 
   test('a fix filed under a category the panel does not know still appears, uncategorised',()=>{
-    /* THE REAL PANEL IS CALLED, not a copy of the grouping logic. An earlier draft of this test
-       re-implemented the bucket loop beside the drawing, which looked like coverage and would have
-       passed against the broken version - the same mistake this file's own notes warn about twice.
-       So this injects a bad category into the real FIXES, calls the real showBugPanel, and reads the
-       real DOM. */
+    /* THE REAL PANEL IS CALLED, not a copy of the grouping logic. [h:99-tests-382] */
     const key='a fix filed under a category that does not exist';
     FIXES[key]=['not a real category','synthetic'];
     const oldBtn=document.getElementById('bugBtn'), oldPanel=document.getElementById('bugPanel');
@@ -12251,42 +8939,8 @@ const BOSS_TICKS=26000;
     const pn2=document.getElementById('bugPanel'); if(pn2) pn2.remove();
   });
 
-  /* THE BANNER MUST SURVIVE THE ARRIVAL WINDOW, which is the one state that used to freeze the game.
-
-       `drawDescent` redraws the player over its own scrim, and it read `readyProg` - a `const` local
-       of `drawRoom()` - from inside a different function. That is a ReferenceError, and because
-       drawDescent is called unconditionally from render(), the throw escapes render() and the
-       requestAnimationFrame tail of loop() never runs: **the game freezes for good**.
-
-       It was not reachable by playing, and that is exactly what made it worth a test rather than a
-       shrug. `descend()` always lands the player in the new floor's START room, which
-       generateDungeon builds already spawned and empty, so `enterRoom` never sets `readyT` while the
-       0.9s banner is up. Measured 160,000 ticks of random-walk play across 40 seeds: zero frames with
-       both `descendT>0` and `readyT>0`. The one line that makes it live is a `readyT=READY` added to
-       some future path, and nothing in the code would look wrong on the day.
-
-       So this forces the overlap the game cannot currently produce and requires that a frame still
-       draws. Every other descent test in this file sets `readyT=0` on the way in - which is why they
-       all passed while this was broken. */
-  /* A CALLED WALL MUST LEAVE THE ROOM. The 14s expiry used to drop the HANDLE and leave the bodies, and
-       `bossCallWall` overwrites that handle on every call, so the timer could only ever police the most
-       recent wall. Every earlier one stayed on the floor for the rest of the fight.
-
-       This was in normal play, not a stress fixture. Measured through a real phase-3 Warden with the
-       player kept alive: 7 wall calls over 120 seconds left 35 Brunch in one room against a
-       `DEPTH_BODY_CAP` of 28 - a cap that `depthBodies()` applies per normal spawn wave and that
-       nothing here consults. The cost is superlinear in body count, so the fight degraded rather than
-       merely running heavy:
-
-           28 bodies   0.094 ms/tick    2.0% of the 4.76ms budget
-           60 bodies   0.307             6.4%
-          120 bodies   1.111            23.3%
-          240 bodies   3.512            73.7%
-
-       The claim is BOUNDED, not "the last wall went away": two walls called back to back is the case
-       that a fix which only cleaned up `wallBodies` would pass, because the handle still points at
-       the second one. So the count is required to stay under the cap across many calls, which is the
-       only version of the claim that survives the overwrite. */
+  /* THE BANNER MUST SURVIVE THE ARRIVAL WINDOW, which is the one state that used to freeze the game. [h:99-tests-383] */
+  /* A CALLED WALL MUST LEAVE THE ROOM. [h:99-tests-384] */
   test('a boss wall expires and does not accumulate for the rest of the fight',()=>{
     startGame(4242);
     const r=currentRoom(); r.enemies.length=0;
@@ -12303,14 +8957,7 @@ const BOSS_TICKS=26000;
       peak=Math.max(peak,brunch());
       if(state!=='playing') break;
     }
-    /* ENOUGH WALLS TO EXCEED THE CAP. The first version of this test ran the fight and took the peak,
-       and it PASSED against the unfixed code - because the boss's own cadence only got round to two
-       wall calls in 90 seconds, and two walls of five is ten Brunch, comfortably under the cap of 28.
-       The assertion was true of the broken version, which is the failure this file exists to prevent.
-
-       So the walls are called directly, in a loop, enough times to pass the cap on their own. The
-       count of moves is still asserted separately, because otherwise the loop could be the only thing
-       under test and the fight itself would go unmeasured. */
+    /* ENOUGH WALLS TO EXCEED THE CAP. [h:99-tests-385] */
     startGame(4242);
     const r2=currentRoom(); r2.enemies.length=0;
     const b2=spawnEnemy(true,r2,ROOM_LEFT+200,ROOM_TOP+150); r2.enemies.push(b2);
@@ -12337,54 +8984,9 @@ const BOSS_TICKS=26000;
     run=undefined;
   });
 
-  /* DESCENDING IS ALSO A NEW SEED, and the caches have to be cleared there too.
-
-       `startGame` cleared them because a new run is a new seed, and the fix I wrote first stopped
-       there. But `descend()` calls `Rnd.set(Rnd.floorSeed(root, floor))` — a different seed for a
-       different floor — and the caches are keyed by (type, size, area) with no seed in the key.
-
-       So floors 1 to 4 share one key and every one of them was handed floor 1's baked floor canvas.
-       Measured on seed 31337 before the fix: floors 1, 2, 3 and 4 all hash to 3905066258 with exactly
-       one cache key throughout, and floor 5 rebakes only because the area changes. The same two seeds
-       on a cleared cache produce different tiles, so the content really is seed-derived and the art
-       stream was never the broken part.
-
-       This test DESCENDS, where the earlier one called `startGame`. Asserting across a descent is the
-       only version of the claim that can fail: a test that starts a run twice is testing a path that
-       already worked. */
-  /* THE HUD MUST SURVIVE A HELD ITEM WHOSE DEFINITION IS GONE.
-
-       `Content.get` throws on a missing id, and that is correct: a missing definition used to flow
-       silently into a stat read and become a NaN three frames later. But `drawActivePlate` called it
-       **unguarded, every frame**, so the failure mode is not one loud throw at the mistake — it is a
-       throw inside `render()`, which escapes into the animation loop and stops it. The game freezes
-       with the HUD half-drawn and no message.
-
-       The state is reachable rather than theoretical: `loadout` is a plain data object, and
-       `Content.resetMods()` rebuilds the table from the pristine copy, so anything holding an id the
-       table no longer has ends up here.
-
-       Three other call sites read the same definition and all three guard with `Content.has` first
-       (`10-art.js:803`, `10-art.js:829`, and `70-view.js:1410` three lines away in the same file,
-       drawing the same item). This was the only one that did not, and the asymmetry is the tell. */
-  /* A BRUNCH PACK IS A MOVABLE SHIELD FOR A RANGED ENEMY, and it has to actually stop shots.
-
-       Before this the pack steered at the PLAYER, so a wall formed beautifully in front of the wrong
-       body: measured over 8 seconds, the pack sat 8-60px from the player while the shooter it should
-       have covered stood 132-229px away. The shell-absorption rule was already working - a shell
-       fired through a five-body wall never reached the player and no Brunch lost HP - so all that was
-       missing was something standing where the cover could be used.
-
-       The claim is measured by FIRING REAL SHOTS, not by counting how close a body is to a line. An
-       earlier version of this test counted the proportion of the player-to-shooter segment that passed
-       within `BRUNCH_ABSORB_R + r` of a Brunch, and reported 27-39% while every body in fact sat on
-       the line - the proximity test was measuring the geometry of a line rather than whether the game
-       stopped anything. Measured: 100% of 40 bolt shots blocked across six seeds.
-
-       Three separate things have to hold, and each has failed on its own:
-         - the pack TARGETS a ranged enemy rather than the player;
-         - it reaches the arc slots (all six within 5-7px of their slot after 10 seconds);
-         - the slots are ON the line, which is a property of the cone and not of the steering. */
+  /* DESCENDING IS ALSO A NEW SEED, and the caches have to be cleared there too. [h:99-tests-386] */
+  /* THE HUD MUST SURVIVE A HELD ITEM WHOSE DEFINITION IS GONE. [h:99-tests-387] */
+  /* A BRUNCH PACK IS A MOVABLE SHIELD FOR A RANGED ENEMY, and it has to actually stop shots. [h:99-tests-388] */
   test('a Brunch pack shields a ranged enemy and stops the player shooting through it',()=>{
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
@@ -12412,13 +9014,7 @@ const BOSS_TICKS=26000;
       const w=brunchArcSlot(shooter.x,shooter.y,player.x,player.y,br.length,e.packSlot,shooter.r);
       worst=Math.max(worst,Math.hypot(e.x-w.x,e.y-w.y));
     }
-    /* The bound is 14px, and that number is GEOMETRY rather than slop: a body stops steering when its
-       slot is within BRUNCH_DEADZONE (6px) of a body's width, so a body flanked by two neighbours
-       settles at 6 + r(8) = 14px from a slot that is physically inside both of them. An earlier
-       version of this asserted 14px against a pack that measured 25-28px and never converged - one body
-       was wedged between its neighbours, held there by `separateBodies` fighting the steering, at both
-       shield speed 0.72 and 1.18. The dead zone now treats an occupied slot as reached, and the pack
-       converges uniformly to 14 instead of five bodies at 6 and one stuck at 28. */
+    /* The bound is 14px, and that number is GEOMETRY rather than slop: [h:99-tests-389] */
     ok(worst<16,'the pack settled '+worst.toFixed(0)+'px from its nearest slot after 10 seconds '+
        '(measured 14px, which is the dead zone plus a body radius) - it is not forming the wall it is '+
        'steering toward');
@@ -12451,10 +9047,7 @@ const BOSS_TICKS=26000;
   });
 
   test('a Brunch pack with no ranged enemy left advances on the player as a wall',()=>{
-    /* THE FALLBACK, and it is not a detail: a pack with nothing to shield must still advance, or a
-       room of lungers and Brunch becomes a room where the Brunch stand still. The two-rank wall
-       behaviour is what they did before any of this, and it is correct for a pack that has nothing to
-       hide behind. */
+    /* THE FALLBACK, and it is not a detail: [h:99-tests-390] */
     startGame(31337);
     const room=currentRoom(); room.enemies.length=0; projectiles.length=0;
     const br=[];
@@ -12481,15 +9074,7 @@ const BOSS_TICKS=26000;
   });
 
   test('the HUD draws a held item whose id is not in the content table',()=>{
-    /* THE FIXTURE IS `Items.active()`, NOT `loadout.active`. The first version of this test set
-       `loadout.active` directly and passed - while proving nothing, because `drawHUD` reads
-       `Items.active()` and `Items` keeps its own module-scope slot. Two of the three assertions in
-       it were measuring a game state that cannot occur, which is the `spawnEnemy(false, ...)` shape:
-       a fixture that returns something usable-looking instead of the thing asked for.
-
-       So this gives a real item through the real API and then makes the HELD SLOT point at an id the
-       content table does not have - which is the state a mod produces, and the state `resetMods`
-       produces by rebuilding the table from the pristine copy. */
+    /* THE FIXTURE IS `Items.active()`, NOT `loadout.active`. [h:99-tests-391] */
     startGame();
     Items.reset();
     const given=Items.give('lantern_friend');
@@ -12498,11 +9083,7 @@ const BOSS_TICKS=26000;
     const slot=Items.active();
     ok(slot&&slot.id==='lantern_friend','the fixture item did not land in the active slot (got '+
        JSON.stringify(slot)+')');
-    /* THE HELD SLOT IS `loadout.items[slot===ACTIVE_SLOT]`, and there is no setter for it - `active()`
-       reads the array, `give()` appends to it, and nothing else writes it. So the reachable state is
-       produced by rewriting the entry in place, which is what a mod restoring a save, or `resetMods`
-       rebuilding the content table under a live loadout, actually leaves behind: a slot pointing at an
-       id the table no longer has. */
+    /* THE HELD SLOT IS `loadout.items[slot===ACTIVE_SLOT]`, and there is no setter for it - `active()` reads the array, `give()` appends to it, and... [h:99-tests-392] */
     const i=loadout.items.findIndex(s=>s.slot===Items.ACTIVE_SLOT);
     ok(i>=0,'the active slot is not in loadout.items, so the fixture cannot address it');
     loadout.items[i]={id:'an_item_that_does_not_exist',name:'Gone',charges:2,slot:Items.ACTIVE_SLOT};
@@ -12598,18 +9179,7 @@ const BOSS_TICKS=26000;
        withBanner.toFixed(0)+' against '+bare.toFixed(0)+' without it - the scrim is still covering '+
        'the character (measured: 46 against 236), so the player reads as a grey smudge for the whole '+
        'of the beat');
-    /* AND the banner text is still legible, which is the other half of the trade: the type has to survive
-       being printed over an arbitrary floor texture.
-
-       Sampled from the numeral's MEASURED extent rather than from guessed columns: at 960x600 the
-       gold "FLOOR 2" occupies x 400-561 and y 240-265, peak 159, so a sample at x 300 or x 660 reads
-       bare scrim and reports the type as invisible when it is perfectly legible - which is what the
-       first version of this assertion did. The band is taken as a box around the glyphs with a
-       margin, and the peak inside it is what has to clear the floor.
-
-       159 is the honest measured value for the numeral's brightest ink at this size, so the threshold
-       is 120: comfortably above the ~46 of a scrim-only column, and below the numeral so it does not
-       go stale if the sprite sheet or the accent changes. */
+    /* AND the banner text is still legible, which is the other half of the trade: [h:99-tests-393] */
     const bandPeak=()=>{ let m=0; for(let x=395;x<=565;x++) for(let y=238;y<=268;y++) m=Math.max(m,px(x,y)); return m; };
     const typePeak=bandPeak();
     ok(typePeak>120,'the banner\'s own ink peaks at '+typePeak.toFixed(0)+' (measured 159 for the '+
@@ -12619,19 +9189,7 @@ const BOSS_TICKS=26000;
   });
 
   test('starting a run clears the art caches, so one seed cannot speckle another seed\'s floor',()=>{
-    /* THE CACHES ARE SEEDED, so they are RUN-SCOPED, and the only way that is true is if something
-       empties them when the run changes. `caveTile`, `wallTile` and `drawFloor` all bake through
-       draws from `Rnd.art()`, which 05-rng derives from the seed the player typed, so a cache entry
-       that outlives its run is a picture of the PREVIOUS run's floor.
-
-       The failure is invisible in a screenshot - stone is stone either way - which is why this
-       compares PIXELS rather than cache keys. Key counting would have passed against the bug: the
-       keys are identical either way, because the key is (type, size, area) and the seed is not in
-       it. That is the whole defect: the key cannot see the thing that changed.
-
-       The check is that two different seeds produce two different floor textures. Same seed must
-       produce the SAME texture, or the cache is not the only thing carrying seed state and the
-       flecks are not the story. */
+    /* THE CACHES ARE SEEDED, so they are RUN-SCOPED, and the only way that is true is if something empties them when the run changes. [h:99-tests-394] */
     const floorBytes=()=>{
       drawFloor('normal');
       const k=Object.keys(floorCache)[0];
@@ -12658,30 +9216,10 @@ const BOSS_TICKS=26000;
   });
 
   test('the floor cache is keyed by the area, so descending a floor repaints the room',()=>{
-    /* THE CACHE IS THE CLAIM, and it is tested as the cache and not as the drawing - because a
-       correctly-drawn floor that is CACHED WITHOUT THE AREA is wrong in exactly the way the player
-       sees it, and no assertion about what drawFloor computed would notice.
-
-       This is the same class of bug as omitting the room SIZE from that key, which is documented
-       above drawFloor: a key that is one field short produces a picture that is entirely present and
-       entirely wrong, and it is invisible in any screenshot of a single floor. The only way to see it
-       is to walk from one area to another and look at the same room twice.
-
-       The test does exactly that, on one room type at one size, and reads the cache keys rather than
-       the sprites - because a test that renders both areas and compares pixels cannot tell "cached
-       correctly" from "re-baked correctly every frame", and those are different defects: the second
-       one costs a re-bake per frame and shimmers. */
+    /* THE CACHE IS THE CLAIM, and it is tested as the cache and not as the drawing - because a correctly-drawn floor that is CACHED WITHOUT THE AREA is... [h:99-tests-395] */
     startGame();
     const size=roomW()+'x'+roomH();
-    /* KEYS FOR THE CURRENT AREA ONLY, and the reason is stated because the first version got it wrong
-       and the failure was honest rather than misleading.
-
-       `floorCache` is module-level and never cleared, so by the time this test runs - after the
-       palette test has already drawn an Area1 and an Area2 floor in the same room - the prefix
-       'normal:700x450:' already matches TWO keys. Counting every key with the prefix and asserting
-       one of them therefore failed on correct code: the cache is doing exactly what a cache is for,
-       which is keeping the previous area's sprite around in case the player walks back up. The claim
-       is not "the cache holds one sprite" but "the sprite THIS area asked for is its own". */
+    /* KEYS FOR THE CURRENT AREA ONLY, and the reason is stated because the first version got it wrong and the failure was honest rather than misleading. [h:99-tests-396] */
     const keyFor=floor=>{ run.floor=floor; drawFloor('normal');
       return 'normal:'+size+':'+areaForFloor(); };
     const k1=keyFor(1);
@@ -12727,14 +9265,7 @@ const BOSS_TICKS=26000;
   });
 
   test('an area has a name and a flavour, and the character sheet says which one you are in',()=>{
-    /* THE WORDS ARE CONTENT, and the assertion is that they are addressed by the same string
-       areaForFloor() returns. Two vocabularies for one question is how a palette ends up with no
-       name and the sheet printing a raw id at a player.
-
-       Every area areaForFloor() can produce must have both fields, because Content.get THROWS on a
-       missing id rather than returning undefined - so a shipped entry missing a flavour would crash
-       the pause screen rather than print a blank line, and the required-fields list is what stops it
-       shipping that way. */
+    /* THE WORDS ARE CONTENT, and the assertion is that they are addressed by the same string areaForFloor() returns. [h:99-tests-397] */
     startGame();
     const ids=Object.keys(AREA_MIX);
     eq(ids.length,4,'the mix table has '+ids.length+' areas, expected the 4 that areaForFloor returns');
@@ -12788,21 +9319,7 @@ const BOSS_TICKS=26000;
         'palette\'s');
     }
 
-    /* AND THE MAP WASH IS THE AREA'S INK, WITHOUT COSTING THE MAP ITS READABILITY.
-
-       The minimap's paper is knocked back with a translucent wash so the white door frames end up the
-       brightest things on the board. That wash is now the area's `mapWash`, and there are two claims
-       here rather than one: that it changes with the area, and that it is STILL a knock-back at 0.52.
-
-       The second is the one that can silently break, because raising the alpha to make an area "look
-       more themed" darkens the board until an unvisited shell - #33383f, a fixed colour - stops
-       standing out from it, and the map becomes a dark rectangle with cells that have all merged. So
-       it is measured: an unvisited but KNOWN room's shell against the bare board beside it.
-
-       Measured at 0.52: the shell reads 51,56,63 against a board of 119,117,109 on floor 1 and 124,114,105
-       on floor 13 - a summed contrast of 175 and 173. A wash strong enough to eat that would be one
-       that has stopped being a wash. And the board itself does move per area: 119,117,109 /
-       122,116,104 / 118,119,108 / 124,114,105, which is the tinted-board read and not the floor read. */
+    /* AND THE MAP WASH IS THE AREA'S INK, WITHOUT COSTING THE MAP ITS READABILITY. [h:99-tests-398] */
     startGame();
     const cell=17, pw=GRID*cell+28, mx0=W-HUD_MARGIN_X-pw, my0=HUD_BLOCK_Y, mx=mx0+14, my=my0+14;
     const px1=(x,y)=>{ const d=ctx.getImageData(Math.round(x),Math.round(y),1,1).data;
@@ -12818,13 +9335,7 @@ const BOSS_TICKS=26000;
       boards.push(board.join(','));
       contrasts.push(Math.abs(shell[0]-board[0])+Math.abs(shell[1]-board[1])+Math.abs(shell[2]-board[2]));
     }
-    /* ALL FOUR, and not "at least three".
-
-       The paper's speckle is baked once per size and cached, so it is byte-identical in all four
-       draws and the ONLY thing that differs between these readings is the wash - which makes this a
-       clean measurement rather than a noisy one. Asserting three would have passed with Area2 and
-       Area1 sharing a wash, which is exactly the mutation: it collapsed the set from four to three
-       and the assertion still held. Four is the number of areas, and four is what has to be distinct. */
+    /* ALL FOUR, and not "at least three". [h:99-tests-399] */
     eq(new Set(boards).size,4,'the map board reads the same in more than one area ('+boards.join(' / ')+
       ') - the map is not carrying the area, or two areas share an ink');
     const worst=Math.min.apply(null,contrasts);
@@ -12851,24 +9362,12 @@ const BOSS_TICKS=26000;
        test, and the next test is not expecting a rebuilt world. */
     run=wasRun;
 
-    /* IT MUST NOT ADD A THIRD GRAMMAR. The line is a struck rule, a name and a sentence on the same
-       card as the stats - which are all ruled rows - so a badge or a coloured pill here would be a
-       second visual language on one sheet. The rule is asserted by being a 2px block, which is what
-       makes it a struck mark and not a chip. */
+    /* IT MUST NOT ADD A THIRD GRAMMAR. [h:99-tests-400] */
     const rule=document.getElementById('charArea').querySelector('i');
     eq(rule.tagName,'I','the accent rule on the character sheet is not the element the drawing was '+
       'written against, so its colour cannot be set');
 
-    /* AND IT MUST NOT LAND ON THE STATS, or eat the room they need.
-
-       Two separable claims, and both are properties of the LAYOUT rather than of the drawing: the line
-       sits above the first stat row with air between them, and it is bounded in height. The bound is
-       measured - 44px at the shipped sizes, for a 2px rule, a 13px name and a 13px flavour - and set
-       at 60, because the thing it has to catch is a flavour that wraps to three lines and pushes the
-       rows down, not a type size that is one point out.
-
-       The overlap is checked as RECTANGLES because that is what overlap is. Two boxes that merely
-       have the right numbers in them agree with each other whether or not anything is drawn. */
+    /* AND IT MUST NOT LAND ON THE STATS, or eat the room they need. [h:99-tests-401] */
     setPaused(true);
     const line=document.getElementById('charArea').getBoundingClientRect();
     const firstRow=document.querySelector('#charStats .statRow');
@@ -12879,24 +9378,7 @@ const BOSS_TICKS=26000;
       ' - they are on top of each other, so the area is printed over the stats');
     ok(line.height<60,'the area line is '+line.height.toFixed(0)+'px tall, which is pushing the stat '+
       'rows down the card; it is a rule, a name and one line of flavour');
-    /* AND THE SHEET SCROLLS RATHER THAN CLIPPING, and the claim is that BOTH ENDS OF THE CARD ARE
-       REACHABLE - not that the card fits, and not that it is shorter than the viewport.
-
-       The old assertion was `card.height <= sheet.scrollHeight`, and it was wrong twice over.
-       `scrollHeight` IS the content height, so that comparison fails by construction whenever the
-       content legitimately overflows a scrollable box - it asserted that a working scroll area was
-       broken. And it only ever looked at the FOOT, which is the end that does scroll into view: the
-       actual defect was at the HEAD, where a centered flex item taller than its container is pushed
-       above the scroll origin and can never be reached. The old assertion passed against the broken
-       layout for the same reason a test that re-derives the rule it audits always does.
-
-       So this asks the reachable question directly. Anchor the scroll at 0 and the card's top must
-       be at or below the sheet's top; anchor it at the maximum and the card's bottom must be at or
-       above the sheet's bottom. Both, because each half is a separate failure and the bug only ever
-       took one of them.
-
-       Measured at 960x600 with the fix: head at +39px, foot reachable, maxScrollTop 151. Before it:
-       head at -37px with maxScrollTop 76, which is a foot that works and a head that does not. */
+    /* AND THE SHEET SCROLLS RATHER THAN CLIPPING, and the claim is that BOTH ENDS OF THE CARD ARE REACHABLE - not that the card fits, and not that it is... [h:99-tests-402] */
     const sheet=document.getElementById('charSheet'), card=document.getElementById('charCard');
     ok(getComputedStyle(sheet).overflowY==='auto','the character sheet does not scroll, so a long '+
       'roster is cut off at the bottom with no way to reach it');
@@ -12918,57 +9400,16 @@ const BOSS_TICKS=26000;
     setPaused(false);
   });
 
-  /* EVERY PINNED FIX HAS A TEST WITH THAT NAME, and this is the LAST test in the file because it reads
-     the whole of `results` - see the note where it used to sit, near the top.
-
-     The panel marks an entry unverified when no result carries its name, and that is only worth
-     anything if the marking is right - so this asks both directions.
-
-     Two entries were in the unverified state when this was written: one whose test had been renamed
-     out from under it, and one - the win record - that had no test at all and never had. The first
-     is a rename somebody forgot; the second is worse, because a fix nobody is checking is a fix
-     nobody can tell has stopped working, and it sat in green because "no result" scored as "pass".
-
-     The first assertion is deliberately about the TABLE and not about the game: it cannot fail
-     because a mechanic broke, only because somebody pinned a fix without pinning a test for it, or
-     renamed a test without renaming its entry. That is the mistake worth catching, and it is
-     invisible from the game's side. */
+  /* EVERY PINNED FIX HAS A TEST WITH THAT NAME, and this is the LAST test in the file because it reads the whole of `results` - see the note where it... [h:99-tests-403] */
   test('every pinned fix in the change history has a test with that name',()=>{
     const names=results.map(r=>r.name);
     const unbacked=Object.keys(FIXES).filter(n=>names.indexOf(n)<0);
     eq(unbacked.length,0,'pinned fixes with no test of that name, so nothing is checking them: '+
       (unbacked.length?'\n        - '+unbacked.join('\n        - '):''));
 
-    /* And the second half is the one that matters, because a correct table is no use if the panel
-       still reports green over it. This calls the REAL showBugPanel with a results list that has one
-       genuine entry removed, and reads what it says. The entry removed is a real pinned fix, not an
-       invented one, so the panel is being asked about a fix that genuinely has no test behind it.
-
-       Re-implementing the scoring here and asserting on that would test my own arithmetic rather
-       than the shipped behaviour, and the whole point is that the shipped behaviour is what was
-       wrong. */
-    /* The list handed to the panel is the REAL results with the victim removed, except that every
-       remaining entry is marked green. That is not a fiction that weakens the check - it is the point.
-
-       The badge orders itself most-alarming-first: a red suite, then an unverified fix, then green. So
-       asking for UNVERIFIED while handing it a suite with a genuine failure in it gets "N FAILED",
-       which is the panel behaving correctly about the more urgent problem and this test reading it as
-       a fault. It only shows up when something ELSE is already red, and it showed up here the moment
-       the mutation checks ran - a cascade from one real failure to a confusing second one, which is
-       the thing the file's own discipline note says a failure must not cost.
-
-       So the fixture isolates the question. The panel is being asked about a MISSING TEST, and the
-       only way to hear the answer is to hand it a suite in which nothing else is wrong. */
-    /* FIXES IS NOT EMPTY, and that is asserted before it is indexed rather than after.
-
-       `Object.keys(FIXES)[0]` is the victim this fixture removes to ask whether the bug panel marks an
-       unbacked fix. If FIXES were ever empty - a new project, a trimmed table, a bad edit - that is
-       `undefined`, and every result would then be filtered against the name `undefined` rather than
-       against a real entry: the fixture would pass for the wrong reason while testing nothing.
-
-       The guard is here rather than inside the fixture because the failure is silent either way, and a
-       test that reports "the panel handled a missing test correctly" when it never selected one is the
-       exact shape this project's own notes keep warning about. */
+    /* And the second half is the one that matters, because a correct table is no use if the panel still reports green over it. [h:99-tests-404] */
+    /* The list handed to the panel is the REAL results with the victim removed, except that every remaining entry is marked green. [h:99-tests-405] */
+    /* FIXES IS NOT EMPTY, and that is asserted before it is indexed rather than after. [h:99-tests-406] */
     ok(Object.keys(FIXES).length>0,'the FIXES table is empty, so this test has no entry to remove and '+
       'would report the panel handled a missing test correctly without ever having selected one');
     const victim=Object.keys(FIXES)[0];
@@ -13007,35 +9448,11 @@ const BOSS_TICKS=26000;
                       window.__testResults.total=results.length; };
   window.__testResults={pass:results.filter(r=>r.ok).length,total:results.length,results,
     settled:false,
-    /* TESTS THAT MAKE NO ASSERTIONS AT ALL, listed by the harness rather than hunted for by reading.
-
-       This is the one dead-test shape that can be detected without a mutation harness, and it is worth
-       catching mechanically because it is invisible from the outside: a test with no assertions passes
-       unconditionally, reports green, and looks exactly like a passing test in every summary.
-
-       It is NOT the same as a test whose assertions all evaluate true. An earlier version of this
-       listed those too and flagged 194 of 229 tests - every correct one - because a passing assertion
-       evaluates true by definition. Anything stronger needs a mutation run: break the world, see which
-       tests still pass. That is the right tool and it is not this. */
+    /* TESTS THAT MAKE NO ASSERTIONS AT ALL, listed by the harness rather than hunted for by reading. [h:99-tests-407] */
     dead:results.filter(r=>r.asserts===0).map(r=>r.name),
     assertCounts:results.map(r=>({name:r.name,asserts:r.asserts}))};
 
-  /* DRAIN THE ASYNCHRONOUS TESTS, AND PUBLISH `settled` ON THE OBJECT THAT SURVIVES.
-
-     Both halves of this were wrong at different times, and each wrong version looked correct.
-
-     First: the harness called `fn()`, took the returned promise, and immediately pushed
-     `{ok:true}`. Every assertion in an async test ran AFTER its verdict was recorded, so the suite
-     reported a green waveform check that had never looked at a waveform - and the mutation that
-     proved it, a voice made to ring for three seconds, passed. That is what `pending` is for.
-
-     Second: `window.__testResults` is REPLACED by the object literal below, so a `settled` property
-     written to the previous object is gone. A probe waiting on `settled===true` then waited for ever
-     on a suite that had already finished - at every viewport, on green code. `settled` therefore
-     lives inside the literal, and the drain runs after it exists.
-
-     `allSettled` rather than `all`: a rejected promise is already recorded as a failed test, so
-     awaiting it again would throw here and lose every result collected so far. */
+  /* DRAIN THE ASYNCHRONOUS TESTS, AND PUBLISH `settled` ON THE OBJECT THAT SURVIVES. [h:99-tests-408] */
   const markSettled=()=>{ if(window.__testResults) window.__testResults.settled=true; };
   Promise.allSettled(pending).then(()=>{ refresh(); markSettled(); });
   if(pending.length===0) markSettled();

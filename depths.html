@@ -310,11 +310,11 @@ p{margin:0;font-size:12px;opacity:.7;text-align:center;max-width:960px;padding:0
 <script src="src/50-run.js"></script>
 <script src="src/60-tick.js"></script>
 <script src="src/70-view.js"></script>
-<!-- ?parity: prints the C# parity table from the running game. Loaded before 80-ui so it can read
-     the game's own functions, and inert unless the URL carries ?parity. Maintenance page - see the
-     header in 97-parity.js for why it must never become an assertion. -->
-<script src="src/97-parity.js"></script>
+<!-- Debug-only scripts. ?parity prints the C# parity table (must load before 80-ui); ?test runs the
+     suite. Neither is fetched in a normal launch. document.write keeps them in parse order. -->
+<script>window.DEPTHS_DEBUG=/[?&](test|parity)\b/.test(location.search);
+if(/[?&]parity\b/.test(location.search)) document.write('<script src="src/97-parity.js"><\/script>');</script>
 <script src="src/80-ui.js"></script>
-<script src="src/99-tests.js"></script>
+<script>if(/[?&]test\b/.test(location.search)) document.write('<script src="src/99-tests.js"><\/script>');</script>
 </body>
 </html>
