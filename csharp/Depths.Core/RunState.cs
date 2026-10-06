@@ -69,6 +69,9 @@ namespace Depths
         /// <summary>Damage the player was dealt this run, before armour (run.dmgTaken).</summary>
         public double dmgTaken;
 
+        /// <summary>Shells fired this run, one per pellet (run.shots).</summary>
+        public int shots;
+
         /// <summary>
         /// The bodies in the room being fought, and the pickups on its floor. Both are needed by
         /// <c>killEnemy</c> (which splices a body out and pushes a drop) and neither existed on the

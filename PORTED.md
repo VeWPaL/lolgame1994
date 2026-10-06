@@ -26,6 +26,7 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | `Frame.cs` | the camera and world frame in `70-view.js` | `RoomBounds` clamp; the oversized-room branch must be exercised |
 | `World.cs` | `20-world.js` — `Dir`, `RoomKind`, `Room`, `Map`, `Dungeon` | Signature must match byte for byte |
 | `SpawnPlan.cs` | `spawnPlan()` in `20-world.js` | Position, distance, and the **draw count** |
+| `Weapons.cs` | `WEAPONS` in `00-balance.js` + `fireWeapon` in `40-combat.js` | Every shell of every gun, draw for draw on the jitter stream; never the run stream. `FireParityTests`, from `tools/fire-parity.js`. Strength and precision are parameters until stats are ported |
 | `Area.cs` | `areaForFloor()` in `00-balance.js` | Same thresholds. Takes a floor argument on both sides |
 | `Combat.cs` | `40-combat.js` + `50-run.js` + `10-art.js` — `falloffMult`, `alertEnemy`, `slowEnemy`, `damagePlayer`, `killEnemy`, `dropLoot` | On `Enemy`, the live body. `killEnemy` drops loot (one run draw per kill) and takes the Warden's wall with it |
 | `RunState.cs` / `Actors.cs` / `Tick.cs` | the run holder and the `update()` gates in `50-run.js`/`60-tick.js` | Tick order and RNG discipline. **`Tick.Update` is a skeleton** |
@@ -39,7 +40,7 @@ the view.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 
-`csharp/Depths.Tests` pins 93 `[TestCase]` rows of numbers **read out of the running JavaScript**.
+`csharp/Depths.Tests` pins 141 `[TestCase]` rows (48 of them `FireParityTests`, 2026-10-06) of numbers **read out of the running JavaScript**.
 
 Three of those rows are `RoomScaledParityTests`, and they are a different KIND of row from the rest.
 Every other table pins a constant or a function of a seed, so a drift is caught by comparing names.
