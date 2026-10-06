@@ -763,6 +763,8 @@ namespace Depths
             {
                 room.Cleared = true;
                 player.blinkRegen = System.Math.Max(player.blinkRegen, Balance.BlinkRecharge * 0.5);
+                // a won fight refills the regenerating heart (owner, 2026-10-06; C# only); not for the dead
+                if (room.Fought && player.hp > 0) { player.regenHeart = player.regenHeartMax; player.regenHeartT = 0; }
             }
 
             // The rewards, dropped once each. Two independent one-shots, because a room can hold
@@ -1102,7 +1104,7 @@ namespace Depths
         internal static void ClampPlayer(RunState run) => Rooms.ClampPlayer(run);
 
         /// <summary>The regen heart's clock: counts only in a live fight (an empty room pauses it, a hit
-        /// resets it); at RegenDelay it refills 1 HP, then 1 HP per RegenStep. Runs inside TickPlayer.</summary>
+        /// resets it); at RegenDelay +1 HP, then +1 per RegenStep. Clearing a fought room refills it (TickRoom).</summary>
         public static void TickRegen(RunState run)
         {
             var p = run.player;

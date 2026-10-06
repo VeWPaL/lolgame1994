@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-06 (C# playtest bot; before that Brunch A+, `js-final`, placeholder items). The previous
+_Last updated: 2026-10-06 (a won fight refills the regen heart; C# playtest bot; Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
 
 ## Where things are
@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  520/520, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
+  536/536, 148 parity rows. The whole run loop is ported and checked against JS recordings. After
   `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
@@ -26,13 +26,12 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   play `--label baseline` with `--project ../depths-base/csharp/Depths.Playtest` from THIS worktree's
   root (its JSON lands here and its header names its commit), play `current`, `report baseline
   current`, then `git worktree remove --force ../depths-base` (steps in CONVENTIONS "Gameplay changed?").
-  Numbers (2026-10-06, after the exit-crash fix a264e45, which the bot found): at 20 min, 17 of 18 runs
-  time out on floor 7 (about 3 min a floor), 1 death (average/42, floor 6), 0 stuck, 0 errors, damage
-  9.8 vs healing 10.3 hp per floor. The 20-min default caps the median floor, so its A/B signal is
-  deaths, damage/healing per floor and boss seconds; use `--minutes 60` for difficulty: median floor
-  17 (novice 15.5), 6 deaths (5 novice, between floors 15 and 17), damage 14.5 = healing 14.5 per
-  floor, boss 46 s. Q-when-low almost never heals: the bot takes every item, so Tin Cup is usually
-  replaced (60 min: 24 presses, 3 heals). The JS bot (`tools/playtest.js`, baseline tag
+  Default-matrix numbers (2026-10-06, with the won-fight refill): at 20 min 16 of 18 runs time out on
+  floor 7 (about 3 min a floor), 2 deaths, 0 stuck, 0 errors, damage 9.8 vs healing 10.3 hp per
+  floor. The 20-min default caps the median floor; use `--minutes 60` for difficulty: median floor 17
+  (novice 15), 7 deaths (5 novice), damage 14.2 vs healing 14.1 per floor, boss 45 s. 18 runs are too
+  few for deaths: the wide matrix (seeds 101-300) is the reference, see the regen heart entry below.
+  Q-when-low almost never heals: the bot takes every item, so Tin Cup is usually replaced. The JS bot (`tools/playtest.js`, baseline tag
   `pre-features-2026-10-06`) plays only the frozen JS.
 - Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
   `verify.ps1` is Windows-only (backslash paths): under Linux `pwsh` it stops at step 2.
@@ -67,15 +66,22 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   Not yet checked in the Unity editor (no Unity in the cloud session).
 - **Regenerating heart** (done 2026-10-06, owner's request): the 4th starting heart is its own layer,
   6 red + 2 regen = 8. Damage order: armour, regen, red. Refills in a fight only: 4s without a hit,
-  then +1 HP, then +1 HP per second; an empty room pauses the clock, only a hit resets it. Pickups,
-  Tin Cup and Vigor touch red only. Rose-violet in the HUD. Dials: `Balance.RegenHp`, `RegenDelay`,
-  `RegenStep`. Owner questions: should an empty room reset the clock instead of pausing it? Should
-  it also refill between fights (much more healing)?
+  then +1 HP, then +1 HP per second; an empty room pauses the clock (owner: "stop the clock after the
+  fight"), only a hit resets it. Winning a fight (clearing a room whose wave spawned bodies,
+  `Room.Fought`) refills it fully (owner's call);
+  start, item and secret rooms never do. Pickups, Tin Cup and Vigor touch red only. Rose-violet in
+  the HUD. Dials: `Balance.RegenHp`, `RegenDelay`, `RegenStep`. Bot A/B of the clear refill (seeds
+  101-300, 600 runs a side, paired sign test): deaths 35 -> 14 at 20 min (23 saved, 2 newly died,
+  p = 2e-5) and 155 -> 105 at 60 min (75 / 25, p = 6e-7). Significant overall and for novices (-35%,
+  p = 2e-5; median floor 16 -> 17); average and skilled point the same way (-27%, -24%) but are not
+  significant alone (p = 0.06, 0.29). It pays ~2 HP a floor, mostly HP the clock
+  would have refilled early in the next fight, so net healing barely moves (+0.1 to +0.4 HP a floor),
+  but every fight starts with the shield up. A real easing, clearest for novices.
 - **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
   curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
   area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,
-  consumables) load-bearing. Bot data (C#, 60 min): healing = damage per floor (14.5 hp),
-  median floor 17, novices die on floors 15-17.
+  consumables) load-bearing. Bot data (C#, 60 min, seeds 101-300, with the won-fight refill):
+  healing = damage per floor (15.2 hp), median floor 17, 105 of 600 runs die (68 of them novice).
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).

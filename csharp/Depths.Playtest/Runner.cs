@@ -26,6 +26,7 @@ namespace Depths.Playtest
         Exception? _recordingError;
         double _hp0, _ar0, _rg0, _taken0;
         int _rgT0, _live0, _floor0, _cx0, _cy0;
+        bool _cleared0;
 
         // a scratch run the game's own regen and damage functions are replayed on; the real run is never touched
         readonly RunState _probe = new RunState(new Rng(0));
@@ -146,6 +147,7 @@ namespace Depths.Playtest
             var p = Run.player;
             _hp0 = p.hp; _ar0 = p.armor; _rg0 = p.regenHeart; _rgT0 = p.regenHeartT; _taken0 = Run.dmgTaken;
             _live0 = Run.enemies.Count; _floor0 = Run.floor; _cx0 = Run.curX; _cy0 = Run.curY;
+            _cleared0 = Run.CurrentRoom?.Cleared ?? true;
             _pk0.Clear(); _pk0.AddRange(Run.pickups);
             _shots0.Clear();
             foreach (var s in Run.projectiles) if (!s.friendly) _shots0.Add(s);
@@ -185,29 +187,29 @@ namespace Depths.Playtest
                 foreach (var pk in _pk0)
                     if (pk.kind == "item" && !Run.pickups.Contains(pk)) Result.items.Add(pk.id + "@" + _floor0);
 
-            // the tick runs regen, then at most one landed hit (i-frames), then pickups; with a hit,
-            // the first two are replayed on the probe and what is left over is the pickups
+            // the tick runs regen, at most one landed hit (i-frames), the clear refill, then pickups; the
+            // first three are replayed on the probe and what is left over is the pickups
+            var room = Run.CurrentRoom;
+            bool refilled = sameRoom && !_cleared0 && room != null && room.Cleared && room.Fought && p.hp > 0;
             double hpX = _hp0, arX = _ar0, rgX = _rg0, hit = 0;
             string? src = null;
             if (Run.dmgTaken > _taken0)
             {
                 src = Source();
-                var q = _probe.player;
-                q.hp = _hp0; q.maxHp = p.maxHp; q.armor = _ar0; q.regenHeart = _rg0; q.regenHeartMax = p.regenHeartMax;
-                q.regenHeartT = _rgT0; q.iframes = 0;
-                _probe.blinkGrace = 0; _probe.graceSpent = false; _probe.state = "playing";
-                _probe.enemies.Clear();
-                if (_live0 > 0) _probe.enemies.Add(_probeBody);
-                TickOrder.TickRegen(_probe);
-                double refill = q.regenHeart - _rg0;
-                if (refill > 0) Regen(refill);
+                var q = ProbeRegen(p);
                 double h0 = q.hp, a0 = q.armor, r0 = q.regenHeart;
                 bool boss = src.EndsWith(":boss", StringComparison.Ordinal);   // the Warden's hits cost armour in full
                 Combat.DamagePlayer(_probe, Run.dmgTaken - _taken0, 0, 0, 0, boss);
                 hit = (h0 - q.hp) + (a0 - q.armor) + (r0 - q.regenHeart);
                 hpX = q.hp; arX = q.armor; rgX = q.regenHeart;
-                double lost = Math.Max(0, _hp0 - p.hp) + Math.Max(0, _ar0 - p.armor) + Math.Max(0, _rg0 - p.regenHeart);
+                double rgAfter = refilled ? q.regenHeart : p.regenHeart;   // the refill would hide the regen loss
+                double lost = Math.Max(0, _hp0 - p.hp) + Math.Max(0, _ar0 - p.armor) + Math.Max(0, _rg0 - rgAfter);
                 if (hit > lost + 1e-9) { Result.maskedHits++; Result.maskedHp += hit - lost; }
+            }
+            if (refilled)
+            {
+                if (Run.dmgTaken <= _taken0) rgX = ProbeRegen(p).regenHeart;   // the clock's step this tick, before the refill
+                if (p.regenHeartMax > rgX) { Clear(p.regenHeartMax - rgX); rgX = p.regenHeartMax; }
             }
             // what the hit (if any) does not explain: gains are pickups or regen, losses are damage
             double dHp = p.hp - hpX, dAr = p.armor - arX, dRg = p.regenHeart - rgX;
@@ -240,6 +242,26 @@ namespace Depths.Playtest
             // 2 can only be a whole one; 1 below the cap only a half; 1 at the cap is either, so unseen
             while (g >= Balance.HeartHeal - 1e-9) { heal(whole, Balance.HeartHeal); g -= Balance.HeartHeal; }
             if (g > 1e-9) heal(Math.Abs(g - Balance.HalfHeal) < 1e-9 && !atCap ? half : "unseen:" + layer, g);
+        }
+
+        // the step's start state on the probe, then the game's own regen tick; books the clock's gain as regen
+        Player ProbeRegen(Player p)
+        {
+            var q = _probe.player;
+            q.hp = _hp0; q.maxHp = p.maxHp; q.armor = _ar0; q.regenHeart = _rg0; q.regenHeartMax = p.regenHeartMax;
+            q.regenHeartT = _rgT0; q.iframes = 0;
+            _probe.blinkGrace = 0; _probe.graceSpent = false; _probe.state = "playing";
+            _probe.enemies.Clear();
+            if (_live0 > 0) _probe.enemies.Add(_probeBody);
+            TickOrder.TickRegen(_probe);
+            if (q.regenHeart > _rg0) Regen(q.regenHeart - _rg0);
+            return q;
+        }
+
+        void Clear(double hp)
+        {
+            Heal("clear", hp);
+            _f.regen += hp; _f.clear += hp; Result.regenHealed += hp; Result.clearHealed += hp;
         }
 
         void Regen(double hp)

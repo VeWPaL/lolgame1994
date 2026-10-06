@@ -8,7 +8,8 @@ namespace Depths.Playtest
     public sealed class FloorRecord
     {
         public int floor, ticks, rooms, cleared, bossTicks;
-        public double dmg, healed, regen;   // regen: HP the regenerating heart refilled on this floor
+        public double dmg, healed, regen;   // regen: HP the regenerating heart refilled on this floor (clock + clear)
+        public double clear;                // of which its refill for winning a fight
         public bool bossKilled;        // set on the actual descent (the JS set it while walking to the exit)
         public double hpIn, maxHpIn;   // hearts: red + regenerating, as the JS bot's hp
         public double? hpOut;          // after the step that left the floor (or at the run's end)
@@ -26,7 +27,7 @@ namespace Depths.Playtest
         public List<FloorRecord> floors = new List<FloorRecord>();
         public SortedDictionary<string, double> dmgBySource =
             new SortedDictionary<string, double>(StringComparer.Ordinal);
-        public double healed, regenHealed;
+        public double healed, regenHealed, clearHealed;   // regenHealed includes clearHealed
         public SortedDictionary<string, double> healBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
         public int hits, shots, kills, blinks, dodgeBlinks, secrets;
         public int qPresses, actives;   // Q pressed when low; actives: presses that raised HP (the JS rule)

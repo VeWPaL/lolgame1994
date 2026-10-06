@@ -49,8 +49,12 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
   5. `git worktree remove --force ../depths-base`
 
   Same `--seeds/--minutes/--brunch` on both sides. The bot is deterministic, so any difference is the
-  change. Use `--minutes 60` for difficulty (20 min caps the median floor at 7). It answers "harder,
-  fairer, longer?"; "more fun?" still needs a person. The JS bot (`tools/playtest.js`) plays only the JS.
+  change, but one changed HP point reroutes a whole run: deaths and floors on the default 18 runs
+  cannot tell an effect from chance. For those, play 100+ seeds on both sides (PowerShell:
+  `--seeds ((101..300) -join ',')`; bash: `--seeds $(seq -s, 101 300)`) and read the report's
+  "Deaths, paired by seed and profile" table (p under 0.05). Use `--minutes 60` for difficulty (20 min caps the
+  median floor at 7). It answers "harder, fairer, longer?"; "more fun?" still needs a person. The JS
+  bot (`tools/playtest.js`) plays only the JS.
 - **Drawing changed? Verify pixels, not data.** Assert on meaning ("the lit heart is at x 43"),
   sample the framebuffer, and pin directions and orders explicitly.
 - **Write the test from the specification, never from what the code currently does.**
@@ -101,7 +105,7 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **520 checks**, parity-verified against the JavaScript except the 132 in
+- C# `Depths.Tests` has **536 checks**, parity-verified against the JavaScript except the 148 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests` and
   `PlaytestToolTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
   `verify.ps1` skips when it counts parity rows). Parity tests whose recordings take player damage run

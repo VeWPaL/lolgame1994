@@ -77,6 +77,8 @@ namespace Depths.Unity
             p.hp = p.maxHp = 8 - Balance.RegenHp;
             _lastShots = _lastHits = _lastKills = 0; _lastHp = _run.player.hp; _lastDmg = 0;
             _run.enemies.Clear();
+            var arena = _run.CurrentRoom;
+            if (arena != null) arena.Fought = true;   // hand-placed waves are fights, so winning one refills the regen heart
             if (_bossRoom)
             {
                 // the Warden, spawned the way the game spawns it (its own draws, its kit)
@@ -179,7 +181,7 @@ namespace Depths.Unity
                     TickOrder.TickProjectiles(_run);
                     TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
-                    if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); } }
+                    if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
                 }
                 _acc -= StepMs;
             }

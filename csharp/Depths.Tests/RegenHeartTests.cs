@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 
 namespace Depths.Tests
@@ -5,8 +6,8 @@ namespace Depths.Tests
     /// <summary>
     /// The regenerating heart (C# only, 2026-10-06): the last of the starting 8 HP is its own layer,
     /// between the red hearts and the armour. It takes damage before the red, and refills in a fight
-    /// after RegenDelay without a hit, 1 HP then 1 HP per RegenStep. Pickups heal red only, Vigor
-    /// adds red only, and Balance.JsReference turns it off.
+    /// after RegenDelay without a hit, 1 HP then 1 HP per RegenStep, and fully when a fought room is
+    /// cleared. Pickups heal red only, Vigor adds red only, and Balance.JsReference turns it off.
     /// </summary>
     [TestFixture, Category("csharp-only")]
     public sealed class RegenHeartTests
@@ -233,9 +234,9 @@ namespace Depths.Tests
         }
 
         [Test]
-        public void ClearingARoomInTheGameLoopPausesTheClock()
+        public void ClearingARoomWhoseWaveSpawnedNoFightLeavesTheHeartAndItsClockAlone()
         {
-            var run = QuietFight();
+            var run = QuietFight();   // the start room: its wave spawned nothing, the lunger is added by hand
             for (int t = 0; t < 500; t++) TickOrder.Update(run, Input.None);
             Assert.That(run.player.regenHeartT, Is.EqualTo(500));
             Kills.KillEnemy(run, 0);   // the last body
@@ -273,6 +274,151 @@ namespace Depths.Tests
             TickOrder.DoBlink(run, new Input(1, 0, blink: true));
             Assert.That(run.blinkCharges, Is.LessThan(charges), "no blink happened; the test is not measuring one");
             Same("a blink");
+        }
+
+        // --- a won fight refills the heart (owner, 2026-10-06) ---
+
+        /// <summary>A started run standing in the first Normal room next to the start, its wave spawned.</summary>
+        static RunState InAFoughtRoom()
+        {
+            var run = Started();
+            var start = run.CurrentRoom!;
+            foreach (var d in start.Doors)
+            {
+                var n = run.dungeon.Neighbour(start, d);
+                if (n == null || n.Type != RoomKind.Normal) continue;
+                Rooms.EnterRoom(run, n.X, n.Y, d);
+                run.readyT = 0; run.fadeT = 0;
+                return run;
+            }
+            Assert.Fail("seed 4242 has no Normal room beside the start");
+            return run;
+        }
+
+        static void KillAll(RunState run) { while (run.enemies.Count > 0) Kills.KillEnemy(run, run.enemies.Count - 1); }
+
+        [Test]
+        public void ANormalRoomsWaveMarksItFoughtAndARoomWithoutOneIsNot()
+        {
+            var run = InAFoughtRoom();
+            Assert.That(run.enemies, Is.Not.Empty);
+            Assert.That(run.CurrentRoom!.Fought, Is.True);
+            var fresh = Started();
+            TickOrder.TickRoom(fresh);
+            Assert.That(fresh.CurrentRoom!.Fought, Is.False, "the start room counts as a fight");
+        }
+
+        [Test]
+        public void ClearingAFoughtRoomRefillsTheHeartAndZeroesItsClock()
+        {
+            var run = InAFoughtRoom();
+            run.player.hp = 4; run.player.regenHeart = 0; run.player.regenHeartT = 500;
+            KillAll(run);
+            TickOrder.Update(run, Input.None);
+            Assert.That(run.CurrentRoom!.Cleared, Is.True, "the room did not clear; the test is not measuring it");
+            Assert.That(run.player.regenHeart, Is.EqualTo(2), "a won fight did not refill the heart");
+            Assert.That(run.player.regenHeartT, Is.EqualTo(0));
+            Assert.That(run.player.hp, Is.EqualTo(4), "the refill touched the red hearts");
+        }
+
+        [Test]
+        public void TheRefillHappensOnceNotEveryTickInTheClearedRoom()
+        {
+            var run = InAFoughtRoom();
+            KillAll(run);
+            TickOrder.Update(run, Input.None);
+            run.player.regenHeart = 0; run.player.regenHeartT = 77;   // as if hit after the clear
+            for (int t = 0; t < Balance.RegenDelay * 2; t++) TickOrder.Update(run, Input.None);
+            Assert.That(run.player.regenHeart, Is.EqualTo(0), "standing in a cleared room kept refilling");
+            Assert.That(run.player.regenHeartT, Is.EqualTo(77), "the empty room moved the clock");
+        }
+
+        [Test]
+        public void KillingTheWardenRefillsTheHeart()
+        {
+            var run = Started();
+            var boss = run.dungeon.AllRooms.Single(r => r.Type == RoomKind.Boss);
+            Rooms.EnterRoom(run, boss.X, boss.Y, Dir.N);
+            run.readyT = 0; run.fadeT = 0;
+            Assert.That(boss.Fought, Is.True);
+            run.player.regenHeart = 0;
+            KillAll(run);
+            TickOrder.Update(run, Input.None);
+            Assert.That(run.player.regenHeart, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void TheItemRoomNeverRefillsTheHeart()
+        {
+            var run = Started();
+            var item = run.dungeon.AllRooms.Single(r => r.Type == RoomKind.Item);
+            run.player.regenHeart = 0;
+            Rooms.EnterRoom(run, item.X, item.Y, Dir.N);
+            run.readyT = 0; run.fadeT = 0;
+            for (int t = 0; t < 20; t++) TickOrder.Update(run, Input.None);
+            Assert.That(item.Cleared, Is.True, "the item room was never marked cleared; the test is not measuring it");
+            Assert.That(item.Fought, Is.False);
+            Assert.That(run.player.regenHeart, Is.EqualTo(0), "an item room handed out a refill");
+        }
+
+        [Test]
+        public void ADeathOnTheClearingTickGetsNoRefill()
+        {
+            var run = InAFoughtRoom();
+            KillAll(run);
+            var p = run.player;
+            p.hp = 1; p.regenHeart = 0; p.iframes = 0;
+            run.projectiles.Add(new Projectile { x = p.lagX, y = p.lagY + Balance.PlayerHitDy, vx = 0.01, r = 5, dmg = 2, friendly = false });
+            TickOrder.Update(run, Input.None);
+            Assert.That(p.hp, Is.LessThanOrEqualTo(0), "the shell did not kill; the test is not measuring a death");
+            Assert.That(run.CurrentRoom!.Cleared, Is.True);
+            Assert.That(p.regenHeart, Is.EqualTo(0), "a dead player was handed the refill");
+        }
+
+        [Test]
+        public void ReEnteringAClearedFightRoomDoesNotRefillAgain()
+        {
+            var run = InAFoughtRoom();
+            var fought = run.CurrentRoom!;
+            KillAll(run);
+            TickOrder.Update(run, Input.None);
+            var start = run.dungeon.AllRooms.Single(r => r.Type == RoomKind.Start);
+            Rooms.EnterRoom(run, start.X, start.Y, Dir.N);
+            run.player.regenHeart = 0;
+            Rooms.EnterRoom(run, fought.X, fought.Y, Dir.N);
+            run.readyT = 0; run.fadeT = 0;
+            for (int t = 0; t < 20; t++) TickOrder.Update(run, Input.None);
+            Assert.That(run.player.regenHeart, Is.EqualTo(0), "walking back into a won room refilled the heart");
+        }
+
+        [Test]
+        public void TheSecretRoomNeverRefillsTheHeart()
+        {
+            var run = Started();
+            var secret = run.dungeon.AllRooms.Single(r => r.Type == RoomKind.Secret);
+            run.player.regenHeart = 0;
+            Rooms.EnterRoom(run, secret.X, secret.Y, Dir.N);
+            run.readyT = 0; run.fadeT = 0;
+            for (int t = 0; t < 20; t++) TickOrder.Update(run, Input.None);
+            Assert.That(secret.Cleared, Is.True, "the secret room was never marked cleared; the test is not measuring it");
+            Assert.That(secret.Fought, Is.False);
+            Assert.That(run.player.regenHeart, Is.EqualTo(0), "a secret room handed out a refill");
+        }
+
+        [Test]
+        public void UnderTheJsRulesAWonFightChangesNothing()
+        {
+            Balance.JsReference = true;
+            try
+            {
+                var run = InAFoughtRoom();
+                run.player.hp = 5;
+                KillAll(run);
+                TickOrder.Update(run, Input.None);
+                Assert.That(run.player.regenHeart, Is.EqualTo(0));
+                Assert.That(run.player.hp, Is.EqualTo(5));
+            }
+            finally { Balance.JsReference = false; }
         }
 
         [Test]

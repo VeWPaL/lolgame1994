@@ -179,6 +179,86 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void TheClearRefillIsBookedAsClear()
+        {
+            // the harness marks the empty start room as a fight not yet won, so this tick clears it
+            var run = OneTick(r =>
+            {
+                var room = r.CurrentRoom!; room.Fought = true; room.Cleared = false;
+                r.player.regenHeart = 0;
+            });
+            Assert.That(run.Run.player.regenHeart, Is.EqualTo(2), "the fixture did not refill, so it tests nothing");
+            Assert.That(run.Result.healBy, Is.EqualTo(D(("clear", 2))));
+            Assert.That(run.Result.clearHealed, Is.EqualTo(2));
+            Assert.That(run.Result.regenHealed, Is.EqualTo(2), "the regen heart's total left its refill out");
+            Assert.That(run.Result.floors[0].clear, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void AnAlreadyWonRoomBooksNoRefill()
+        {
+            // the refill is booked once, on the clearing tick; a room won earlier pays nothing
+            var run = OneTick(r =>
+            {
+                var room = r.CurrentRoom!; room.Fought = true; room.Cleared = true;
+                r.player.regenHeart = 0;
+            });
+            Assert.That(run.Run.player.regenHeart, Is.EqualTo(0), "the game refilled a won room again");
+            Assert.That(run.Result.healBy, Is.Empty);
+            Assert.That(run.Result.dmgBySource, Is.Empty);
+        }
+
+        [Test]
+        public void ADeathOnTheClearingTickBooksNoRefill()
+        {
+            var run = OneTick(r =>
+            {
+                var room = r.CurrentRoom!; room.Fought = true; room.Cleared = false;
+                r.player.hp = 1; r.player.regenHeart = 0;
+                r.projectiles.Add(ShellOnHitbox(r.player, BodyKind.Gunner));
+            });
+            Assert.That(run.Run.player.hp, Is.LessThanOrEqualTo(0), "the shell did not kill; the test measures nothing");
+            Assert.That(run.Result.healBy, Is.Empty);
+            Assert.That(run.Result.dmgBySource, Is.EqualTo(D(("shot:gunner", 2))));
+        }
+
+        [Test]
+        public void TheClocksStepOnTheClearingTickIsRegenAndTheRestIsClear()
+        {
+            // the last body dies to a shot this tick, after the regen clock has stepped 0 -> 1
+            var run = OneTick(r =>
+            {
+                var room = r.CurrentRoom!; room.Fought = true; room.Cleared = false;
+                var p = r.player; p.regenHeart = 0; p.regenHeartT = Balance.RegenDelay - 1;
+                var e = Enemy.Of(BodyKind.Lunger, p.x + 200, p.y);
+                e.hp = 0.01; e.stun = 1e9; e.noticeTimer = 0;
+                r.enemies.Add(e);
+                r.projectiles.Add(new Projectile { x = e.x, y = e.y, vx = 0.01, r = 6, dmg = 5, friendly = true });
+            });
+            Assert.That(run.Run.enemies, Is.Empty, "the shot did not kill; the room never cleared");
+            Assert.That(run.Run.player.regenHeart, Is.EqualTo(2));
+            Assert.That(run.Result.healBy, Is.EqualTo(D(("clear", 1), ("regen", 1))));
+            Assert.That(run.Result.clearHealed, Is.EqualTo(1));
+            Assert.That(run.Result.regenHealed, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void AHitOnTheClearingTickIsCountedAndNotHidden()
+        {
+            // a 2 HP shell empties the regen heart, then the clear refills it: both are real, nothing is hidden
+            var run = OneTick(r =>
+            {
+                var room = r.CurrentRoom!; room.Fought = true; room.Cleared = false;
+                r.projectiles.Add(ShellOnHitbox(r.player, BodyKind.Gunner));
+            });
+            Assert.That(run.Run.player.regenHeart, Is.EqualTo(2));
+            Assert.That(run.Run.player.hp, Is.EqualTo(6));
+            Assert.That(run.Result.dmgBySource, Is.EqualTo(D(("shot:gunner", 2))));
+            Assert.That(run.Result.healBy, Is.EqualTo(D(("clear", 2))));
+            Assert.That(run.Result.maskedHits, Is.EqualTo(0));
+        }
+
+        [Test]
         public void ASecondHiddenHitIsReplayedAsExactlyAsTheFirst()
         {
             // two hits a second apart (after the i-frames), the second hidden by a heart
@@ -451,7 +531,12 @@ namespace Depths.Tests
             Assert.That(r.floors[0].hpIn, Is.EqualTo(8), "a run starts on 8 HP: 6 red and the 2 HP regenerating heart");
             Assert.That(r.floors[0].maxHpIn, Is.EqualTo(8));
             Assert.That(r.floors.Sum(f => f.regen), Is.EqualTo(r.regenHealed));
-            Assert.That(r.healBy["regen"], Is.EqualTo(r.regenHealed));
+            // the heart's total is its clock plus its refill for winning a fight, each booked under its own name
+            double clear = r.healBy.TryGetValue("clear", out var c) ? c : 0;
+            Assert.That(clear, Is.GreaterThan(0), "fixture: seven minutes of won fights and no refill");
+            Assert.That(r.healBy["regen"] + clear, Is.EqualTo(r.regenHealed));
+            Assert.That(clear, Is.EqualTo(r.clearHealed));
+            Assert.That(r.floors.Sum(f => f.clear), Is.EqualTo(r.clearHealed));
             Assert.That(r.weapon, Is.EqualTo(Weapons.All[run.Run.player.weaponIdx].Name).And.Not.Empty);
             Assert.That(r.items, Is.Not.Empty.And.All.Match(@"^[a-z_]+@\d+$"));
             Assert.That(r.blinks, Is.GreaterThan(0), "seven minutes of fights with no dodge blink");

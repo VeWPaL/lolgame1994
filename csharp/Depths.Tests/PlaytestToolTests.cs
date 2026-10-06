@@ -235,6 +235,47 @@ namespace Depths.Tests
 
         // ---- the report
 
+        [Test]
+        public void TheSignTestIsExact()
+        {
+            Assert.That(Report.SignTest(0, 0), Is.EqualTo(1));
+            Assert.That(Report.SignTest(5, 5), Is.EqualTo(1));
+            Assert.That(Report.SignTest(3, 0), Is.EqualTo(0.25).Within(1e-12));          // 2 * (1/8)
+            Assert.That(Report.SignTest(23, 2), Is.EqualTo(2.0 * 326 / 33554432).Within(1e-15));   // 2 * (1 + 25 + 300) / 2^25
+            Assert.That(Report.SignTest(2, 23), Is.EqualTo(Report.SignTest(23, 2)));
+            Assert.That(Report.SignTest(500, 400), Is.GreaterThan(0).And.LessThan(0.01));   // large n stays finite
+        }
+
+        [Test]
+        public void DeathsArePairedBySeedAndProfile()
+        {
+            RunResult R(uint seed, string prof, string end) => new RunResult { seed = seed, profile = prof, end = end };
+            // asymmetric (3 saved, 1 newly died), and one seed played by two profiles with opposite
+            // outcomes, so swapped columns or pairing on the seed alone both give a different answer
+            var a = new Batch { label = "a", seeds = { 1, 2, 3, 4 }, profiles = { "novice", "skilled" } };
+            var b = new Batch { label = "b", seeds = { 1, 2, 3, 4 }, profiles = { "novice", "skilled" } };
+            a.runs.Add(R(1, "novice", "death")); b.runs.Add(R(1, "novice", "timeout"));     // saved
+            a.runs.Add(R(1, "skilled", "timeout")); b.runs.Add(R(1, "skilled", "death"));   // newly died, same seed
+            a.runs.Add(R(2, "novice", "death")); b.runs.Add(R(2, "novice", "timeout"));     // saved
+            a.runs.Add(R(3, "novice", "death")); b.runs.Add(R(3, "novice", "timeout"));     // saved
+            a.runs.Add(R(4, "novice", "death")); b.runs.Add(R(4, "novice", "death"));       // both died
+            b.runs.Add(R(9, "novice", "death"));                                            // unpaired: ignored
+            void Is3(string? prof, int saved, int lost, double p)
+            {
+                var f = Report.Flips(a, b, prof);
+                Assert.That((f.saved, f.lost), Is.EqualTo((saved, lost)), prof ?? "all");
+                Assert.That(f.p, Is.EqualTo(p).Within(1e-12), prof ?? "all");
+            }
+            Is3(null, 3, 1, 0.625);       // 2 * (1 + 4) / 16
+            Is3("novice", 3, 0, 0.25);
+            Is3("skilled", 0, 1, 1.0);
+            string md = Report.Build(new[] { a, b });
+            Assert.That(md, Does.Contain("| b saved | b newly died | p |"));
+            Assert.That(Row(md, "all"), Does.Contain("| 3 | 1 | 0.625 |"));
+            Assert.That(Row(md, "skilled"), Does.Contain("| 0 | 1 | 1.000 |"));
+            Assert.That(Report.Build(new[] { a }), Does.Not.Contain("paired by seed"), "a single label has nothing to pair");
+        }
+
         static RunResult HandRun(string profile, string end, int hz, int floor = 2, double dmg2 = 2)
         {
             var r = new RunResult

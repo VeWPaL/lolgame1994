@@ -181,6 +181,7 @@ namespace Depths
                     for (int i = 0; i < ids.Count; i++)
                         run.pickups.Add(new Pickup { x = Balance.MidX + (i == 1 ? -85 : 85), y = Balance.MidY, r = 16, kind = "item", id = ids[i] });
                 }
+                r.Fought = run.enemies.Count > 0;   // the wave decides; PlanWave always plans 2+ bodies today
             }
             var p = run.player;
             if (from == Dir.N) { p.x = Balance.MidX; p.y = Balance.RoomTop + 34; }

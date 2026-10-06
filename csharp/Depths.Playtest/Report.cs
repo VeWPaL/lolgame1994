@@ -11,7 +11,7 @@ namespace Depths.Playtest
     public sealed class ProfileStats
     {
         public int n, deaths, stuck, errors;
-        public double floor, minPerFloor, dmgPerFloor, healPerFloor, regenPerFloor, bossS, acc, killsPerMin;
+        public double floor, minPerFloor, dmgPerFloor, healPerFloor, regenPerFloor, clearPerFloor, bossS, acc, killsPerMin;
         public double qPerRun, activesPerRun, maskedPerRun;
         public Dictionary<string, double> dmgSrc = new Dictionary<string, double>();
         public Dictionary<string, double> healSrc = new Dictionary<string, double>();
@@ -46,6 +46,7 @@ namespace Depths.Playtest
             s.dmgPerFloor = Mean(all.Select(f => f.dmg));
             s.healPerFloor = Mean(all.Select(f => f.healed));
             s.regenPerFloor = Mean(all.Select(f => f.regen));
+            s.clearPerFloor = Mean(all.Select(f => f.clear));
             s.bossS = Mean(done.Select(f => (double)f.bossTicks / hz));
             s.acc = runs.Sum(r => (double)r.hits) / Math.Max(1, runs.Sum(r => r.shots));
             s.killsPerMin = runs.Sum(r => (double)r.kills) / Math.Max(1e-9, mins);
@@ -75,6 +76,7 @@ namespace Depths.Playtest
             ("dmgPerFloor", "damage taken per floor (hp, 2 = 1 heart)", s => s.dmgPerFloor, false),
             ("healPerFloor", "healing per floor (hp, regen included)", s => s.healPerFloor, false),
             ("regenPerFloor", "  of which the regenerating heart", s => s.regenPerFloor, false),
+            ("clearPerFloor", "    of which its refill for winning a fight", s => s.clearPerFloor, false),
             ("bossS", "boss fight, seconds", s => s.bossS, false),
             ("acc", "accuracy", s => s.acc, false),
             ("killsPerMin", "kills per minute", s => s.killsPerMin, false),
@@ -100,6 +102,47 @@ namespace Depths.Playtest
 
         static ProfileStats St(Batch b, string? prof) =>
             ProfileStats.Of(b.runs.Where(r => prof == null || r.profile == prof).ToList(), Hz(b));
+
+        /// <summary>Deaths paired by seed and profile: runs B saved, runs B lost, and the sign test's p.</summary>
+        public static (int saved, int lost, double p) Flips(Batch a, Batch b, string? prof)
+        {
+            var before = a.runs.Where(r => prof == null || r.profile == prof).ToDictionary(r => (r.seed, r.profile));
+            int saved = 0, lost = 0;
+            foreach (var r in b.runs.Where(r => prof == null || r.profile == prof))
+            {
+                if (!before.TryGetValue((r.seed, r.profile), out var o)) continue;
+                bool was = o.end == "death", now = r.end == "death";
+                if (was && !now) saved++;
+                if (!was && now) lost++;
+            }
+            return (saved, lost, SignTest(saved, lost));
+        }
+
+        /// <summary>Exact two-sided sign test on the runs that flipped (computed in logs, so n can be large).</summary>
+        public static double SignTest(int x, int y)
+        {
+            int n = x + y, k = Math.Min(x, y);
+            if (n == 0) return 1;
+            double LnC(int m) => LnFact(n) - LnFact(m) - LnFact(n - m);
+            double tail = 0;
+            for (int i = 0; i <= k; i++) tail += Math.Exp(LnC(i) - n * Math.Log(2));
+            return Math.Min(1, 2 * tail);
+        }
+
+        static double LnFact(int m) { double s = 0; for (int i = 2; i <= m; i++) s += Math.Log(i); return s; }
+
+        static void Paired(StringBuilder sb, Batch a, Batch b, List<string?> groups)
+        {
+            sb.Append("\n## Deaths, paired by seed and profile\n\nOne changed HP point reroutes a whole run, so compare runs ")
+              .Append("that flipped. p under 0.05: unlikely to be chance; the default 18 runs are rarely enough.\n\n")
+              .Append("| | ").Append(b.label).Append(" saved | ").Append(b.label).Append(" newly died | p |\n|---|---:|---:|---:|\n");
+            foreach (var g in groups)
+            {
+                var (saved, lost, p) = Flips(a, b, g);
+                sb.Append("| ").Append(g ?? "all").Append(" | ").Append(saved).Append(" | ").Append(lost).Append(" | ")
+                  .Append(p < 0.001 ? p.ToString("0.0e0", Inv) : p.ToString("0.000", Inv)).Append(" |\n");
+            }
+        }
 
         /// <summary>What makes two labels not like for like, one line each; empty when they match.</summary>
         public static List<string> Mismatches(Batch a, Batch b)
@@ -159,11 +202,14 @@ namespace Depths.Playtest
                 }
             }
 
+            if (ab) Paired(sb, sets[0], sets[1], groups);
+
             sb.Append("\n## Where the damage comes from\n");
             foreach (var s in sets) Sources(sb, s, profiles, true);
             sb.Append("\n## Where the healing comes from\n");
             foreach (var s in sets) Sources(sb, s, profiles, false);
-            sb.Append("\n`regen` is the regenerating heart; `active` a Q item; `unseen:<layer>` a heal with no ")
+            sb.Append("\n`regen` is the regenerating heart's clock; `clear` its refill for winning a fight; `active` a Q item; ")
+              .Append("`unseen:<layer>` a heal with no ")
               .Append("pickup leaving the floor (a drop that spawned and was taken in the same tick).\n");
 
             foreach (var s in sets)
