@@ -24,7 +24,9 @@ namespace Depths.Unity
         static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
         RunState _run;
-        InputAction _move, _cast, _blast, _pause;
+        InputAction _move, _cast, _blast, _blink, _pause;
+        int _lastShots, _lastHits, _lastKills;
+        double _lastHp;
         RoomPainter _painter;
         Label _hud;
         double _acc;
@@ -39,6 +41,7 @@ namespace Depths.Unity
             _move = map.FindAction("Move", true);
             _cast = map.FindAction("Cast", true);
             _blast = map.FindAction("Blast", true);
+            _blink = map.FindAction("Blink", true);
             _pause = map.FindAction("Pause", true);
             map.Enable();
             var args = Environment.GetCommandLineArgs();
@@ -58,6 +61,7 @@ namespace Depths.Unity
             var p = _run.player;
             p.x = p.lagX = Balance.MidX; p.y = p.lagY = Balance.MidY + 120;
             p.hp = p.maxHp = 8;
+            _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
             _run.enemies.Clear();
             for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k);
         }
@@ -111,6 +115,10 @@ namespace Depths.Unity
             bool fire = _cast.IsPressed(), alt = _blast.IsPressed();
             if (_demo) { DemoInput(ref mv, ref fire, ref aim); alt = _demoT == 20; }
 
+            // the blink is a key press, so it lands between ticks, as in the game
+            if (_blink.WasPressedThisFrame() && TickOrder.TryBlink(_run, new Input(Math.Sign(mv.x), -Math.Sign(mv.y), aimX: aim.x, aimY: aim.y)))
+                Depths.Unity.Audio.SoundEngine.Play("blink");
+
             _acc += Math.Min(Time.unscaledDeltaTime * 1000.0, 250.0);
             while (_acc >= StepMs)
             {
@@ -126,13 +134,26 @@ namespace Depths.Unity
                 if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); }
                 _acc -= StepMs;
             }
+            PlayEvents();
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
             _hud.text = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
-                        "   armour " + pl.armor.ToString("0.#") + "   shots " + _run.shots + "  hits " + _run.hits + "  kills " + _run.kills +
+                        "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   shots " + _run.shots + "  hits " + _run.hits + "  kills " + _run.kills +
                         (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
                         "\nSandbox on the ported core: movement, guns, shells, lungers, shooters, gunners, loot.\nBrunch packs and the Warden join as they are ported." +
                         "\n\n1-4 guns    R new room    Esc menu";
+        }
+
+        // The simulation makes no sound; the view hears what changed since the last frame.
+        void PlayEvents()
+        {
+            var p = _run.player;
+            if (_run.shots > _lastShots) Depths.Unity.Audio.SoundEngine.Play("shot");
+            if (_run.hits > _lastHits) Depths.Unity.Audio.SoundEngine.Play("hit");
+            if (_run.kills > _lastKills) Depths.Unity.Audio.SoundEngine.Play("kill");
+            if (p.hp + p.armor < _lastHp) Depths.Unity.Audio.SoundEngine.Play("hurt");
+            if (_run.state != "playing" && _lastHp > 0 && p.hp <= 0) Depths.Unity.Audio.SoundEngine.Play("over");
+            _lastShots = _run.shots; _lastHits = _run.hits; _lastKills = _run.kills; _lastHp = p.hp + p.armor;
         }
 
         // Screenshot mode: strafe and shoot at the nearest target, so a still frame shows the sim running.

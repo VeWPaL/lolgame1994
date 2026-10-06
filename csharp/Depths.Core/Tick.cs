@@ -394,6 +394,51 @@ namespace Depths
 
         static double Dist(double dx, double dy) => System.Math.Sqrt(dx * dx + dy * dy);
 
+        /// <summary>tickBlink: a spent charge refills over BLINK_RECHARGE ticks, 9x faster in a cleared room.</summary>
+        public static void TickBlink(RunState run)
+        {
+            if (run.blinkCharges >= 2) return;
+            var p = run.player;
+            p.blinkRegen += run.enemies.Count == 0 ? Balance.BlinkFillClear : 1;
+            if (p.blinkRegen >= Balance.BlinkRecharge) { run.blinkCharges++; p.blinkRegen = 0; }
+        }
+
+        /// <summary>
+        /// The blink key (keydown in the game, so it lands BETWEEN ticks): only in a live room with a
+        /// charge, no pause, no transition and no ready freeze. Returns whether it blinked.
+        /// </summary>
+        public static bool TryBlink(RunState run, Input input)
+        {
+            if (run.state != "playing" || run.trans != null || run.readyT > 0 || run.blinkCharges <= 0) return false;
+            DoBlink(run, input);
+            return true;
+        }
+
+        /// <summary>
+        /// doBlink: BLINK_DIST along the held keys (else the current velocity, else the aim), clamped;
+        /// the enemies' hitbox stays where the player WAS; i-frames for the whole travel, a one-hit
+        /// grace, and a burst of speed in the blink's direction.
+        /// </summary>
+        public static void DoBlink(RunState run, Input input)
+        {
+            var p = run.player;
+            double ux, uy, len = Dist(input.dx, input.dy);
+            if (len > 0) { ux = input.dx / len; uy = input.dy / len; }
+            else if ((len = Dist(p.vx, p.vy)) > 0.1) { ux = p.vx / len; uy = p.vy / len; }
+            else { double a = System.Math.Atan2(input.aimY - p.y, input.aimX - p.x); ux = System.Math.Cos(a); uy = System.Math.Sin(a); }
+            double fromX = p.x, fromY = p.y;
+            p.x += ux * Balance.BlinkDist;
+            p.y += uy * Balance.BlinkDist;
+            run.blinkCharges--;
+            ClampPlayer(run);
+            p.lagX = fromX; p.lagY = fromY;
+            p.iframes = System.Math.Max(p.iframes, Balance.BlinkIframes + Balance.DashTrail);
+            run.blinkGrace = Balance.BlinkGrace;
+            run.graceSpent = false;
+            p.boost = Balance.BlinkBoost;
+            p.boostX = ux; p.boostY = uy;
+        }
+
         /// <summary>
         /// The projectile phase, src/60-tick.js tickProjectiles. Newest first, so a removal never skips
         /// one. Each shell moves, ages, and is culled 30px outside the room; then a friendly shell hits
@@ -747,12 +792,12 @@ namespace Depths
                 ? 1 + (Balance.BlinkBoostGain - 1) * System.Math.Max(0, align)
                 : 1;
 
-            /* The movement bonus is a PARAMETER, not a constant read internally. In the original it is
-               `Stats.value('speed') + momentum * MomentumSpeed`, capped - so it changes with the
-               player's build, and a phase that read a constant would be correct only for a run
-               carrying nothing. The C# port has no stats system yet, so the default is the measured
-               empty-run value and a caller with a build passes the real one. */
-            double bonus = System.Math.Min(Balance.MoveSpeedHardCap, moveSpeedBonus);
+            /* The SPEED STAT is a parameter (the stats system is not ported; the default is a run carrying
+               nothing), and Momentum's share is added here, as moveSpeedBonus() adds it in the game. */
+            // moveSpeedBonus() in the game: the speed STAT plus the Momentum meter's share, capped. The
+            // momentum term was missing here, invisible to every test that ran in an empty room (where
+            // momentum stays 0) until the blink parity walked a player past a body.
+            double bonus = System.Math.Min(Balance.MoveSpeedHardCap, moveSpeedBonus + p.momentum * Balance.MomentumSpeed);
             double spd = p.speed * p.slowMult * (1 + bonus) * boostMult;
             double targetVx = len != 0 ? (dx / len) * spd : 0;
             double targetVy = len != 0 ? (dy / len) * spd : 0;
@@ -869,6 +914,7 @@ namespace Depths
             // The walk cycle scales with distance covered, so a slow walk animates slowly.
             p.anim = sp > 0.12 ? p.anim + sp / Balance.Stride : 0;
 
+            TickBlink(run);
             if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1);
             if (p.altCooldown > 0) p.altCooldown--;
             if (p.iframes > 0) p.iframes--;
@@ -897,7 +943,7 @@ namespace Depths
         /// Keeps the player inside the room. Position only - the velocity clamp, and its door-gap
         /// exception, live in <see cref="TickPlayer"/> because they need the room and the mid-point.
         /// </summary>
-        private static void ClampPlayer(RunState run)
+        internal static void ClampPlayer(RunState run)
         {
             var p = run.player;
             double minX = Balance.RoomLeft + p.r, maxX = Balance.RoomRight - p.r;

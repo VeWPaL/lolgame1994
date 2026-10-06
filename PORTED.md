@@ -117,8 +117,10 @@ with no counterweight. It was invisible until there was a caller, because nothin
 called it. It surfaced as an acceleration curve reading 0.433763 where the game reads 0.433643, and
 that fourth-decimal difference is a momentum of 0.0017.
 
-Not ported inside the player phase: the boss warning, the blink, firing, the on-use field effects and
-the hook resistance. `CheckDoorTransition` is the geometry half only and returns false rather than
+Not ported inside the player phase: the boss warning, the on-use field effects and the hook resistance.
+Firing, the blink (TickBlink, TryBlink/DoBlink: BlinkParityTests, tools/blink-parity.js) and Momentum's
+share of the speed bonus are ported (2026-10-06; the momentum term was missing and only showed with a body
+in the room). `CheckDoorTransition` is the geometry half only and returns false rather than
 guessing, so a player at a wall is never teleported into the next room by a stub.
 
 `BrunchArcSlot` is PORTED - the single function that decides whether a Brunch is a shield
