@@ -58,7 +58,8 @@ namespace Depths.Unity.EditorTools
             // before it serialised as null, so the Game scene had no panel and drew nothing
             gdoc.panelSettings = AssetDatabase.LoadAssetAtPath<PanelSettings>(PanelPath);
             gdoc.visualTreeAsset = AssetDatabase.LoadAssetAtPath<VisualTreeAsset>(Root + "/UI/Game.uxml");
-            game.AddComponent<GameView>();
+            game.AddComponent<GameView>().controls =
+                AssetDatabase.LoadAssetAtPath<InputActionAsset>(Root + "/Input/DepthsControls.inputactions");
             EditorSceneManager.SaveScene(scene, Root + "/Scenes/Game.unity");
 
             EditorBuildSettings.scenes = new[]

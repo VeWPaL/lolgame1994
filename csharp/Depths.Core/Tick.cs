@@ -10,11 +10,16 @@ namespace Depths
     {
         public readonly double dx, dy;
         public readonly bool fire, alt, blink;
+        /// <summary>The aim, as a WORLD point (the game's mouseWorld()).</summary>
+        public readonly double aimX, aimY;
 
-        public Input(double dx, double dy, bool fire = false, bool alt = false, bool blink = false)
+        public Input(double dx, double dy, bool fire = false, bool alt = false, bool blink = false,
+                     double aimX = 0, double aimY = 0)
         {
             this.dx = dx;
             this.dy = dy;
+            this.aimX = aimX;
+            this.aimY = aimY;
             this.fire = fire;
             this.alt = alt;
             this.blink = blink;
@@ -728,8 +733,11 @@ namespace Depths
             if (p.cooldown > 0) p.cooldown = System.Math.Max(0, p.cooldown - 1);
             if (p.altCooldown > 0) p.altCooldown--;
             if (p.iframes > 0) p.iframes--;
+            if (run.blinkGrace > 0) run.blinkGrace--;   // its own clock, not folded into iframes
             if (p.muzzleTimer > 0) p.muzzleTimer--;
             if (p.shootSlow > 0) p.shootSlow = System.Math.Max(0, p.shootSlow - Balance.ShootSlowRecover);
+            // held fire shoots the moment the cooldown runs out (mouseDown in the game); the alt is not ported
+            if (input.fire && p.cooldown <= 0) Weapons.Fire(run, input.aimX, input.aimY);
 
             /* THE LAGGED HITBOX, and the publish. This trails the real position and catches up, so
                after a blink the enemies aim at where the player was for a moment - which is the

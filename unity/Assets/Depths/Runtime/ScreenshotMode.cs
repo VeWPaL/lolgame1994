@@ -41,7 +41,7 @@ namespace Depths.Unity
                 var m = FindAnyObjectByType<MainMenuController>();
                 if (m != null) m.ShowView(_view);
             }
-            for (int i = 0; i < 20; i++) yield return null;
+            for (int i = 0; i < (_view == "game" ? 150 : 20); i++) yield return null;   // the game view needs time to play
             ScreenCapture.CaptureScreenshot(_path);
             for (int i = 0; i < 10; i++) yield return null;
             Application.Quit();

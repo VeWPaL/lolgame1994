@@ -382,5 +382,28 @@ namespace Depths.Tests
                 "a standing player has no walk cycle, and a phase that leaves the phase running "
                 + "makes a statue shuffle");
         }
+
+        /// <summary>
+        /// Held fire: the ticks a held button shoots on, measured in the running game 2026-10-06
+        /// (mouseDown held from a standing start, empty room, 600 ticks). Every gun fires on tick 0 and
+        /// then once per cooldown/TEMPO, rounded up by the per-tick decrement.
+        /// </summary>
+        [TestCase(0, new[] { 0, 89, 178, 267, 356, 445 })]
+        [TestCase(1, new[] { 0, 154, 308, 462 })]
+        [TestCase(2, new[] { 0, 13, 26, 39, 52, 65 })]
+        [TestCase(3, new[] { 0, 56, 112, 168, 224, 280 })]
+        public void HeldFireShootsOnTheGamesTicks(int weapon, int[] expected)
+        {
+            var run = Standing();
+            run.player.weaponIdx = weapon;
+            var fired = new System.Collections.Generic.List<int>();
+            int shots = 0;
+            for (int t = 0; t < 600 && fired.Count < expected.Length; t++)
+            {
+                TickOrder.TickPlayer(run, new Input(0, 0, fire: true, aimX: run.player.x + 200, aimY: run.player.y));
+                if (run.shots != shots) { fired.Add(t); shots = run.shots; }
+            }
+            Assert.That(fired, Is.EqualTo(expected));
+        }
     }
 }
