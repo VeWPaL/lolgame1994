@@ -27,7 +27,7 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | `World.cs` | `20-world.js` — `Dir`, `RoomKind`, `Room`, `Map`, `Dungeon` | Signature must match byte for byte |
 | `SpawnPlan.cs` | `spawnPlan()` in `20-world.js` | Position, distance, and the **draw count** |
 | `Area.cs` | `areaForFloor()` in `00-balance.js` | Same thresholds. Takes a floor argument on both sides |
-| `Combat.cs` | `40-combat.js` + `50-run.js` — `falloffMult`, `alertEnemy`, `slowEnemy`, `killEnemy` | The projectile pass's leaf helpers. `killEnemy` drops nothing yet, asserted as partial |
+| `Combat.cs` | `40-combat.js` + `50-run.js` + `10-art.js` — `falloffMult`, `alertEnemy`, `slowEnemy`, `damagePlayer`, `killEnemy`, `dropLoot` | On `Enemy`, the live body. `killEnemy` drops loot (one run draw per kill) and takes the Warden's wall with it |
 | `RunState.cs` / `Actors.cs` / `Tick.cs` | the run holder and the `update()` gates in `50-run.js`/`60-tick.js` | Tick order and RNG discipline. **`Tick.Update` is a skeleton** |
 
 ## Deliberately NOT ported
@@ -101,7 +101,9 @@ gunner intercept solves against the position the player is visually leaving.
     phase              lines   C#
     update()              93   gates + dispatch, all four called in order
     tickPlayer()         169   PORTED - TickOrder.TickPlayer (movement core)
-    tickProjectiles()    160   stub
+    tickProjectiles()    160   PARTIAL - TickOrder.TickProjectiles: all but alt shells (blast/hook call
+                                explode, unported, so they throw). ProjectilePhaseParityTests, from
+                                tools/proj-parity.js, 2026-10-06
     tickBodies()         697   PARTIAL - AssemblePacks ported; the movement is a stub
     tickRoom()           109   PORTED - TickOrder.TickRoom
 

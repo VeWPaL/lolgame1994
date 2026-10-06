@@ -66,6 +66,9 @@ namespace Depths
         /// </summary>
         public int kills;
 
+        /// <summary>Damage the player was dealt this run, before armour (run.dmgTaken).</summary>
+        public double dmgTaken;
+
         /// <summary>
         /// The bodies in the room being fought, and the pickups on its floor. Both are needed by
         /// <c>killEnemy</c> (which splices a body out and pushes a drop) and neither existed on the
@@ -274,6 +277,7 @@ namespace Depths
             blinkCharges = 2;
             player.blinkRegen = 0;
             blinkGrace = 0;
+            graceSpent = false;
 
             fadeTicks = FadeDescend;
             fadeT = FadeDescend;
@@ -307,6 +311,9 @@ namespace Depths
 
         /// <summary>Ticks of post-blink invulnerability left. Cleared on a descent.</summary>
         public int blinkGrace;
+
+        /// <summary>Whether this blink's grace has already forgiven a hit (player.graceSpent).</summary>
+        public bool graceSpent;
 
         /// <summary>
         /// Frames elapsed. Read by the pack scan, which fires on

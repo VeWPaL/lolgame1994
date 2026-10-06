@@ -205,6 +205,13 @@ namespace Depths
     /// </summary>
     public const int HitFlash = 27;
 
+    // The projectile phase. Values read from the running game, 2026-10-06.
+    public static readonly int Iframes = Sec(1.0);          // IFRAMES 210
+    public const double MomentumHitKeep = 0.55;             // a hit keeps 55% of the meter
+    public const double PierceFalloff = 0.72;               // each body a piercing bolt drills through
+    public const int BrunchAbsorbFlash = 21;                // a Brunch flashes this long when it eats a shell
+    public const int BossWallId = -1;                       // the pack id of the statues the Warden calls
+
     /// <summary>
     /// How often, in ticks, an UNGUARDED pack looks for a body to shield. Read out of the
     /// running game: 20.

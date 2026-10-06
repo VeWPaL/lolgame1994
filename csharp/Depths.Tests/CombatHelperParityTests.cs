@@ -75,29 +75,29 @@ namespace Depths.Tests
         [Test]
         public void AlertingABodyRaisesItsAggroTimerAndNeverLowersIt()
         {
-            var e = new Body { AggroTimer = 5, NoticeTimer = 40 };
+            var e = new Enemy { aggroTimer = 5, noticeTimer = 40 };
             Combat.AlertEnemy(e);
             Assert.Multiple(() =>
             {
-                Assert.That(e.AggroTimer, Is.EqualTo(525),
+                Assert.That(e.aggroTimer, Is.EqualTo(525),
                     "AGGRO_TIME is sec(2.5) at TICK_HZ=210 - a body that has seen you gets the full window");
-                Assert.That(e.NoticeTimer, Is.Zero,
+                Assert.That(e.noticeTimer, Is.Zero,
                     "noticeTimer is the 'has it seen anything yet' dial and is reset by noticing");
-                Assert.That(e.Alerted, Is.True);
+                Assert.That(e.alerted, Is.True);
             });
 
             // and it only ever RAISES. A Max and not an assignment: this is the whole reason a fleeing
             // player cannot shake a gunner by breaking line of sight for a tick.
-            var committed = new Body { AggroTimer = 99999 };
+            var committed = new Enemy { aggroTimer = 99999 };
             Combat.AlertEnemy(committed);
-            Assert.That(committed.AggroTimer, Is.EqualTo(99999),
+            Assert.That(committed.aggroTimer, Is.EqualTo(99999),
                 "alerting a body that is already fully committed must not shorten its commitment - that "
                 + "would make a shell landing every so often reset the aggro clock rather than extend it");
 
             // and a body with no aggro timer at all does not gain one
-            var noAggro = new Body { AggroTimer = 0 };
-            Combat.AlertEnemy(noAggro, hasAggro: false);
-            Assert.That(noAggro.AggroTimer, Is.Zero,
+            var noAggro = new Enemy { aggroTimer = null };
+            Combat.AlertEnemy(noAggro);
+            Assert.That(noAggro.aggroTimer, Is.Null,
                 "the original guards on `e.aggroTimer!==undefined`; treating a missing timer as zero "
                 + "would hand a body that had no notion of aggro a full AGGRO_TIME window");
         }
@@ -105,13 +105,13 @@ namespace Depths.Tests
         [Test]
         public void AShellSlowsABodyAndInterruptsItsApproachRamp()
         {
-            var e = new Body { SlowT = 0, Pursuit = 77 };
+            var e = new Enemy { slowT = 0, pursuit = 77 };
             Combat.SlowEnemy(e);
             Assert.Multiple(() =>
             {
-                Assert.That(e.SlowT, Is.EqualTo(116),
+                Assert.That(e.slowT, Is.EqualTo(116),
                     "HIT_SLOW_TICKS is sec(0.55) at TICK_HZ=210");
-                Assert.That(e.Pursuit, Is.Zero,
+                Assert.That(e.pursuit, Is.Zero,
                     "the second half, and the one that is easy to drop: `pursuit` is the commitment "
                     + "ramp, so being hit starts the approach over rather than merely slowing it. A "
                     + "slowed Brunch that resumed at its built-up speed would not be what the game does");
@@ -122,19 +122,17 @@ namespace Depths.Tests
         public void KillingABodyRemovesItAndCountsTheKill()
         {
             var run = new RunState(new Rng(1));
-            var bodies = new List<Body>
-            {
-                new Body { X = 100, Y = 200 },
-                new Body { X = 300, Y = 400 },
-            };
+            run.enemies.Add(new Enemy { x = 100, y = 200 });
+            run.enemies.Add(new Enemy { x = 300, y = 400 });
+            var bodies = run.enemies;
             run.kills = 7;
 
-            Kills.KillEnemy(run, bodies, 0);
+            Kills.KillEnemy(run, 0);
 
             Assert.Multiple(() =>
             {
                 Assert.That(bodies, Has.Count.EqualTo(1));
-                Assert.That(bodies[0].X, Is.EqualTo(300),
+                Assert.That(bodies[0].x, Is.EqualTo(300),
                     "the splice is by INDEX, so a body removed from the middle must leave the right one");
                 Assert.That(run.kills, Is.EqualTo(8));
             });
@@ -142,19 +140,8 @@ namespace Depths.Tests
             // out of range throws rather than silently removing the wrong body. The original would throw
             // on `r.enemies[j]` being undefined too, so this is parity rather than hardening.
             Assert.Throws<System.ArgumentOutOfRangeException>(
-                () => Kills.KillEnemy(run, bodies, 5));
+                () => Kills.KillEnemy(run, 5));
         }
 
-        [Test]
-        public void TheDropIsTheOneDeliberatelyIncompletePiece()
-        {
-            // Asserted rather than left implicit: a partial function is the shape that gets mistaken for
-            // a complete one, so the fact that killEnemy drops nothing today is stated as a fact that
-            // will FAIL when the loot table lands and someone forgets this test.
-            Assert.That(Kills.DropsLoot, Is.False,
-                "the loot table is not ported. When it is, this goes true and the drop must draw from "
-                + "run.rng.run in the same place the original does - a drop that spent a draw would "
-                + "move every spawn-plan number, and those are asserted");
-        }
     }
 }

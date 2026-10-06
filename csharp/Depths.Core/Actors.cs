@@ -20,7 +20,7 @@ namespace Depths
     {
         public double x, y, vx, vy, kvx, kvy;
         public double hp, maxHp;
-        public int armor;
+        public double armor;   // fractional: armour absorbs a 1.8 shell from 2 and keeps 0.2, as in the game
         /// <summary>
         /// Weapon cooldowns in ticks, and iframes in ticks.
         /// <para>
@@ -198,6 +198,21 @@ namespace Depths
         /// </para>
         /// </summary>
         public List<Enemy>? shieldGuardFor;
+
+        // The fields the projectile phase reads and writes (src/60-tick.js tickProjectiles).
+        public double r, armour = 1, mass = 1;
+        public int hitFlash, noticeTimer, slowT, stun;
+        public int? aggroTimer;   // every spawned body has one; null models the game's `undefined` guard
+        public bool alerted;
+        public double pursuit;
+
+        /// <summary>A live body of a kind at a point, with the table's radius, armour, mass and health.</summary>
+        public static Enemy Of(BodyKind kind, double x, double y)
+        {
+            var row = Bodies.Of(kind);
+            return new Enemy { kind = kind, x = x, y = y, r = row.Radius, armour = row.Armour, mass = row.Mass,
+                               hp = row.Hp, maxHp = row.Hp, aggroTimer = kind == BodyKind.Boss ? 9999 : 0 };   // measured: every body has one; the boss starts committed
+        }
 }
 
     /// <summary>
@@ -265,22 +280,26 @@ namespace Depths
         /// Damage multiplier, multiplied down by PIERCE_FALLOFF on each body. This is what makes lining
         /// the pack up a decision rather than a free delete.
         /// </summary>
-        public double scale;
+        public double scale = 1;   // every bolt the game fires carries scale 1; 0 would silently do no damage
 
         /// <summary>The bodies this shell has already counted, so it cannot hit one twice.</summary>
-        public List<Body>? hit;
+        public List<Enemy>? hit;
 
         /// <summary>The shell's colour, for the view.</summary>
         public string color = "";
 
         /// <summary>Who fired it - the body, so a body cannot shoot itself.</summary>
-        public Body? owner;
+        public Enemy? owner;
 
         /// <summary>
         /// Which WEAPON the alt shell was cast with. Resolved on arrival rather than from whatever is
         /// held then: swapping to the other right-click mid-flight used to detonate a pull as a blast.
         /// </summary>
         public string mode = "";
+
+        /// <summary>The weapon's falloff band, carried by the shell (null fNear: no falloff).</summary>
+        public double? fNear;
+        public double fFar, fMin = 1;
     }
 
     /// <summary>

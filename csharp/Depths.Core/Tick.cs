@@ -111,6 +111,7 @@ namespace Depths
                 dmg = e.dmg,
                 friendly = false,
                 heavy = e.kind == BodyKind.Gunner,
+                owner = e,   // the game sets it; the Brunch guard check and the lunger block both read it
             });
         }
 
@@ -255,7 +256,110 @@ namespace Depths
                original's mid-function `return` - and that return SKIPS everything after the pickup
                loop, so it has to be honoured here or a descent would also re-open the boss exit on
                the same tick. */
+            TickProjectiles(run);
             TickRoom(run);
+        }
+
+        static double Dist(double dx, double dy) => System.Math.Sqrt(dx * dx + dy * dy);
+
+        /// <summary>
+        /// The projectile phase, src/60-tick.js tickProjectiles. Newest first, so a removal never skips
+        /// one. Each shell moves, ages, and is culled 30px outside the room; then a friendly shell hits
+        /// at most one body (for a piercing bolt, the first along its flight), and an enemy shell is eaten
+        /// by a Brunch (unless it guards the shooter), else blocked by a lunger, else lands on the
+        /// player's lagged hitbox. A landing shell does NOT stop the loop for the older ones - the game
+        /// had that bug until 2026-10-06. Alt shells throw until explode is ported. The sound and FX the
+        /// game makes here are the view's, not the simulation's.
+        /// </summary>
+        public static void TickProjectiles(RunState run)
+        {
+            var ps = run.projectiles;
+            var en = run.enemies;
+            for (int i = ps.Count - 1; i >= 0; i--)
+            {
+                var p = ps[i];
+                if (p.alt)
+                    throw new System.NotSupportedException("tickProjectiles: blast and hook shells call explode, "
+                        + "which is not ported. A silent no-op would be a port that plays differently.");
+                p.age++;
+                p.x += p.vx;
+                p.y += p.vy;
+                if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
+                    || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
+                {
+                    ps.RemoveAt(i);
+                    continue;
+                }
+                if (p.friendly)
+                {
+                    int best = -1;
+                    double bestA = double.PositiveInfinity;
+                    for (int j = en.Count - 1; j >= 0; j--)
+                    {
+                        var e = en[j];
+                        if (p.hit != null && p.hit.Contains(e)) continue;
+                        if (Dist(p.x - e.x, p.y - e.y) >= p.r + e.r) continue;
+                        if (p.pierce == 0) { best = j; break; }
+                        double a = (e.x - p.ox) * p.dx + (e.y - p.oy) * p.dy;
+                        if (a < bestA) { bestA = a; best = j; }
+                    }
+                    if (best < 0) continue;
+                    var t = en[best];
+                    t.hp -= p.dmg * Combat.FalloffMult(p) * t.armour * p.scale;
+                    t.hitFlash = Balance.HitFlash;
+                    run.hits++;
+                    Combat.AlertEnemy(t);
+                    Combat.SlowEnemy(t);
+                    if (t.hp <= 0) Kills.KillEnemy(run, best);
+                    if (p.pierce > 0)
+                    {
+                        p.pierce--;
+                        p.scale *= Balance.PierceFalloff;
+                        (p.hit ??= new List<Enemy>()).Add(t);
+                    }
+                    else ps.RemoveAt(i);
+                    continue;
+                }
+                bool hitSomething = false;
+                for (int j = en.Count - 1; j >= 0; j--)
+                {
+                    var b = en[j];
+                    if (b.kind != BodyKind.Brunch || b.hp <= 0) continue;
+                    if (p.owner != null && b.shieldTarget == p.owner) continue;   // a Brunch spares its own shooter's fire
+                    if (Dist(p.x - b.x, p.y - b.y) < p.r + b.r)
+                    {
+                        b.hitFlash = System.Math.Max(b.hitFlash, Balance.BrunchAbsorbFlash);
+                        hitSomething = true;
+                        break;
+                    }
+                }
+                if (!hitSomething)
+                {
+                    for (int j = en.Count - 1; j >= 0; j--)
+                    {
+                        var e2 = en[j];
+                        if (e2 == p.owner || e2.kind != BodyKind.Lunger) continue;
+                        if (Dist(p.x - e2.x, p.y - e2.y) < p.r + e2.r)
+                        {
+                            e2.hp -= 1;
+                            e2.hitFlash = Balance.HitFlash;
+                            Combat.AlertEnemy(e2);
+                            Combat.SlowEnemy(e2);
+                            hitSomething = true;
+                            if (e2.hp <= 0) Kills.KillEnemy(run, j);
+                            break;
+                        }
+                    }
+                }
+                if (!hitSomething && Hit.PlayerHit(p.x, p.y, p.r, run.player.lagX, run.player.lagY))
+                {
+                    double pn = Dist(p.vx, p.vy);
+                    if (pn == 0) pn = 1;
+                    Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain);
+                    hitSomething = true;
+                }
+                if (hitSomething) ps.RemoveAt(i);
+            }
         }
 
         /// <summary>
