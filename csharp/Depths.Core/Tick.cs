@@ -122,36 +122,45 @@ namespace Depths
         }
 
         /// <summary>
-        /// The Warden's move cadence, src/60-tick.js:146-181. This is the skeleton of the move
-        /// machine: phase thresholds, the idle/tell bookkeeping, the weighted bag, one run draw
-        /// for the pick and one jitter draw for the cooldown. The move bodies (volley, sweep,
-        /// wall) land with the boss fight itself.
+        /// The Warden's turn, src/60-tick.js stepBoss: the move clock, the statue sweep by age, the
+        /// wall's own expiry, the phase gates, then either resolving the committed move or, once idle
+        /// and off cooldown, one run draw for the move from a bag weighted by phase and one jitter draw
+        /// for the next cooldown. The boss does not walk; it moves by its sweep and by being knocked.
         /// </summary>
-        public static void StepBoss(RunState run, Enemy e, double roomPress)
+        public static void StepBoss(RunState run, Enemy e)
         {
-            if (e.maxHp > 0)
+            var room = run.enemies;
+            if (e.moveT > 0) e.moveT--;
+            for (int i = room.Count - 1; i >= 0; i--)
             {
-                double frac = e.hp / e.maxHp;
-                if (e.phase == 1 && frac <= Balance.BossPhase1) BossPhase(e, 2);
-                else if (e.phase == 2 && frac <= Balance.BossPhase2) BossPhase(e, 3);
+                var b = room[i];
+                if (b.packId != Balance.BossWallId) continue;
+                b.wallAge = b.wallAge.HasValue ? b.wallAge + 1 : 0;
+                if (b.wallAge > Balance.BossWallLife) room.RemoveAt(i);
             }
-
+            if (e.wallBodies != null)
+            {
+                e.wallT++;
+                bool standing = false;
+                foreach (var b in e.wallBodies) if (b.hp > 0) { standing = true; break; }
+                if (e.wallT > Balance.BossWallLife || !standing)
+                {
+                    foreach (var b in e.wallBodies) { int i = room.IndexOf(b); if (i >= 0) room.RemoveAt(i); }
+                    e.wallBodies = null;
+                }
+            }
+            double frac = e.hp / e.maxHp;
+            if (e.phase == 1 && frac <= Balance.BossPhase1) BossPhase(e, 2);
+            else if (e.phase == 2 && frac <= Balance.BossPhase2) BossPhase(e, 3);
             if (e.move != "idle") { ResolveBoss(run, e); return; }
-            if (e.moveT > 0) { e.moveT--; return; }
-
+            if (e.moveT > 0) return;
             e.bossCd -= 1;
             if (e.bossCd > 0) return;
-
-            // The bag by phase, so a phase is a different fight and not the same one with the
-            // dice rolled differently (src/60-tick.js:161-177).
-            var bag = new System.Collections.Generic.List<string> { "volley", "volley", "sweep" };
-            if (e.phase >= 2) bag.Add("wall");
-            if (e.phase >= 3) { bag.Add("volley"); bag.Add("sweep"); bag.Add("sweep"); }
-
-            string pick = bag[(int)(run.rng.Run() * bag.Count)];
-            e.bossCd = (e.cdMin > 0 ? e.cdMin : Balance.BossCdMin)
-                     + run.rng.Jitter() * (e.cdVar > 0 ? e.cdVar : Balance.BossCdVar);
-            e.bossCd *= (1 - Balance.PressureCadence * roomPress);
+            // the bag: volley, volley, sweep [, wall from phase 2] [, volley, sweep, sweep in phase 3]
+            int n = 3 + (e.phase >= 2 ? 1 : 0) + (e.phase >= 3 ? 3 : 0);
+            int k = (int)(run.rng.Run() * n);
+            string pick = k < 2 ? "volley" : k == 2 ? "sweep" : k == 3 ? "wall" : k == 4 ? "volley" : "sweep";
+            e.bossCd = (e.cdMin + run.rng.Jitter() * e.cdVar) * (1 - Balance.PressureCadence * Balance.RoomPressure(room.Count));
             BeginBoss(run, e, pick);
         }
 
@@ -160,25 +169,94 @@ namespace Depths
             e.phase = n;
             e.move = "idle";
             e.moveT = Balance.BossRecover;      // the phase change is itself a beat of recovery
+            e.volleyLeft = 0;
             e.bossCd = Balance.Sec(0.4);
         }
 
-        public static void BeginBoss(RunState run, Enemy e, string pick)
+        public static void BeginBoss(RunState run, Enemy e, string move)
         {
-            // 'run' is accepted for symmetry with the rest of the boss machine; the real begin
-            // reads the player position, which arrives with the player-step port.
-            e.move = pick;
-            // Every move opens with the cast tell, src/60-tick.js:199-211. The shell and the
-            // sweep land when the fight is ported; what must not move is that the tell precedes
-            // the hit.
-            e.moveT = pick == "wall" ? Balance.BossRecover : Balance.CastTime;
-            e.castReady = false;
+            var p = run.player;
+            e.move = move;
+            if (move == "volley")
+            {
+                e.castT = Balance.CastTime; e.castReady = false;
+                e.castAim = System.Math.Atan2(p.y - e.y, p.x - e.x);
+                e.volleyLeft = Balance.BossVolleyN;
+                e.volleyT = Balance.CastTime + 1;
+                e.moveT = Balance.CastTime + 1;
+            }
+            else if (move == "sweep")
+            {
+                e.castAim = System.Math.Atan2(p.y - e.y, p.x - e.x);
+                e.moveT = Balance.CastTime;   // the wind-up: a stopped body is a readable one
+            }
+            else if (move == "wall")
+            {
+                CallWall(run, e);
+                e.moveT = Balance.BossRecover;
+            }
         }
 
+        /// <summary>bossCallWall: five Brunch statues on the player's side of the boss, inert until struck.</summary>
+        static void CallWall(RunState run, Enemy e)
+        {
+            int n = Balance.BossWallHp;
+            double bx = System.Math.Max(Balance.RoomLeft + 60, System.Math.Min(Balance.RoomRight - 60, e.x + (e.x < run.player.x ? 70 : -70))), by = e.y;
+            var made = new List<Enemy>();
+            for (int i = 0; i < n; i++)
+            {
+                double a = (double)i / n * 6.283, rad = i % 2 == 1 ? 30 : 16;
+                var b = Spawn.Body(run, BodyKind.Brunch, bx + System.Math.Cos(a) * rad, by + System.Math.Sin(a) * rad);
+                b.hp = b.maxHp = Balance.BossWallHp * 2;
+                b.packId = Balance.BossWallId; b.packSlot = i;
+                b.noticeTimer = 1000000000; b.aggroTimer = 0; b.pursuit = 0;
+                run.enemies.Add(b);
+                made.Add(b);
+            }
+            e.wallBodies = made;
+            e.wallT = 0;
+        }
+
+        /// <summary>resolveBoss: the volley (a re-aimed shell per gap, the tell counting down to each), or the sweep.</summary>
         public static void ResolveBoss(RunState run, Enemy e)
         {
-            e.move = "idle";
-            e.moveT = Balance.BossRecover;
+            var p = run.player;
+            if (e.move == "volley")
+            {
+                if (e.volleyLeft > 0)
+                {
+                    e.volleyT--;
+                    if (e.volleyT <= 0)
+                    {
+                        e.castAim = System.Math.Atan2(p.y - e.y, p.x - e.x);
+                        run.projectiles.Add(new Projectile
+                        {
+                            x = e.x, y = e.y, vx = System.Math.Cos(e.castAim) * e.pspd, vy = System.Math.Sin(e.castAim) * e.pspd,
+                            r = e.pr, dmg = e.dmg, friendly = false, owner = e, heavy = true,
+                        });
+                        e.volleyLeft--;
+                        e.volleyT = Balance.BossVolleyGap;
+                    }
+                    e.castT = e.volleyLeft > 0 ? System.Math.Min(Balance.CastTime, e.volleyT) : 0;
+                }
+                else { e.move = "idle"; e.moveT = Balance.BossRecover; e.castT = 0; }
+            }
+            else if (e.move == "sweep")
+            {
+                if (e.moveT > 0) return;   // still winding up
+                if (!e.sweepDone)
+                {
+                    e.sweepDone = true;
+                    double a = e.castAim;
+                    e.x += System.Math.Cos(a) * Balance.BossSweepDist;
+                    e.y += System.Math.Sin(a) * Balance.BossSweepDist;
+                    Movement.Clamp(e);
+                    if (Dist(e.x - p.x, e.y - p.y) < e.r + p.r)
+                        Combat.DamagePlayer(run, e.dmg * 1.4, System.Math.Cos(a), System.Math.Sin(a), 3 * Balance.KnockPGain);
+                }
+                e.move = "idle"; e.moveT = Balance.BossRecover; e.sweepDone = false;
+            }
+            else e.move = "idle";
         }
 
         /// <summary>
@@ -387,8 +465,6 @@ namespace Depths
             {
                 if (e.hp <= 0) continue;   // killed earlier this tick
                 bool ranged = e.kind == BodyKind.Shooter || e.kind == BodyKind.Gunner;
-                if (e.kind != BodyKind.Lunger && e.kind != BodyKind.Brunch && !ranged)
-                    throw new System.NotSupportedException("tickBodies: " + e.kind + " movement is not ported yet");
                 if (e.hitFlash > 0) e.hitFlash--;
                 if (e.kvx != 0 || e.kvy != 0)
                 {
@@ -418,7 +494,8 @@ namespace Depths
                 if (e.kind == BodyKind.Gunner) Movement.GunnerDodge(run, e);
                 double edx = HitboxX - e.x, edy = HitboxY - e.y, dist = System.Math.Sqrt(edx * edx + edy * edy);
                 if (dist == 0) dist = 1;
-                if (!ranged)
+                if (e.kind == BodyKind.Boss) StepBoss(run, e);
+                else if (!ranged)
                 {
                     if (dist < aggro) e.aggroTimer = Balance.AggroTime;
                     else if (e.aggroTimer > 0) e.aggroTimer--;
@@ -440,7 +517,8 @@ namespace Depths
                     // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
                     bool brunch = e.kind == BodyKind.Brunch;
                     bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0;
-                    if (Combat.DamagePlayer(run, 1, edx / dist, edy / dist, 5.5 * Balance.KnockPGain) && (!brunch || holdingSlot))
+                    bool boss = e.kind == BodyKind.Boss;
+                    if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain) && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
                     if (brunch)
                     {

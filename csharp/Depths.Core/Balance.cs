@@ -232,6 +232,10 @@ namespace Depths
     public static string BrunchVariant = "A";
     public const double BrunchGuardLeash = 420;
 
+    // The Warden, read from the game 2026-10-06.
+    public const int BossVolleyN = 3, BossVolleyGap = 116, BossWallHp = 5, BossWallLife = 2940;   // sec(14)
+    public const double BossSweepDist = 150, BossShellDmg = 1.44;
+
     // The blink, read from the game 2026-10-06.
     public const int BlinkFillClear = 9;                    // a charge refills 9x faster in a cleared room
     public static readonly int BlinkIframes = Sec(0.17), BlinkGrace = Sec(0.6), DashTrail = Sec(0.23);   // 36, 126, 48

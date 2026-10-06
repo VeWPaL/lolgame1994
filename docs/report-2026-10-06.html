@@ -22,11 +22,11 @@ Baseline for A/B: git tag <code>pre-features-2026-10-06</code>, checked out at <
 
 <h2>At a glance</h2>
 <table>
-<tr><th>Gate (<code>.\verify.ps1</code>)</th><td><span class="tag ok">green</span> JS 246/246 at 3 viewports, C# 368/368, parity 0 diffs, 145 parity rows, 47/47 constants. About 3 min; it used to time out.</td></tr>
+<tr><th>Gate (<code>.\verify.ps1</code>)</th><td><span class="tag ok">green</span> JS 246/246 at 3 viewports, C# 371/371, parity 0 diffs, 145 parity rows, 47/47 constants. About 3 min; it used to time out.</td></tr>
 <tr><th>Bugs fixed</th><td>11 in the game, 4 in the port, 3 in the gate tooling. Each comes with a test that fails on the old code.</td></tr>
 <tr><th>Playtesting</th><td>A new bot plays 18 full runs in about 50s. It's deterministic and produces an A/B report. <code>node tools/playtest.js</code></td></tr>
 <tr><th>Unity</th><td><span class="tag ok">playable</span> A main menu with key binds and volume, a sound engine, and a sandbox room where you walk, shoot four guns and fight lungers. It all runs on the ported core.</td></tr>
-<tr><th>Port</th><td>New this session: the projectile phase and the blast (everything except the hook), the four guns, every regular enemy (lunger, shooter, gunner, Brunch), and the blink. The Warden is next. Each is checked against recordings from the running game.</td></tr>
+<tr><th>Port</th><td>New this session: the projectile phase and the blast (everything except the hook), the four guns, every enemy including the Warden, and the blink. What is left is the room-to-room game: doors, transitions, spawning waves, items. Each is checked against recordings from the running game.</td></tr>
 </table>
 
 <h2>1. Housekeeping and the gate</h2>
@@ -105,6 +105,7 @@ retreat across a big room from a shooter with a pack. Reports: <code>playtest/re
 <li><b>To play it:</b> build with the command in <code>docs/STATUS.md</code>, or open <code>unity/</code> in the Unity Hub and press Play in <code>Assets/Depths/Scenes/MainMenu</code>.</li>
 </ul>
 <div class="grid2"><img src="report-2026-10-06/unity-audio.png" alt="Audio options"><img src="report-2026-10-06/unity-game.png" alt="Sandbox"></div>
+<div class="grid2"><img src="report-2026-10-06/unity-boss.png" alt="Warden arena"></div>
 
 <h3>4.3 Sound engine <span class="tag ok">started</span></h3>
 <p><code>SoundEngine.Play("hit", pan)</code> plays any of the game's 12 sounds. They're rebuilt by a small synthesizer from the exact JS definitions, then pooled and routed through the SFX channel. The tests compare each one with the JS game's own render: pitch matches within 20% for 11 of the 12 (the exception is explained in the test). <b>Next step:</b> add a compressor on Master. The JS game has one, and the sounds may feel spikier without it.</p>
@@ -119,8 +120,9 @@ retreat across a big room from a shooter with a pack. Reports: <code>playtest/re
 <tr><td>The lunger (<code>Movement.cs</code>, <code>TickBodies</code>)</td><td>4 recorded fights, 200&ndash;420 ticks each, compared every 10 ticks to 1e-6</td></tr>
 <tr><td>Shooter and gunner (standoff, intercept aim, aim sweep, dodge)</td><td>5 recorded fights, including a moving, swerving player and a lunger in the line of fire</td></tr>
 <tr><td>Brunch packs (wall slots, chase, self-spend), <b>with all three guard rules A, B and A+</b></td><td>5 recorded fights, including one placed right at the B leash distance so the 420px value is pinned</td></tr>
+<tr><td>The Warden (volley with a tell per shell, sweep, the wall of statues, three phases) and the spawn routine</td><td>3 recorded fights of 2,500&ndash;16,000 ticks, the long one so every slot of the phase-3 move bag is drawn</td></tr>
 </table>
-<p>The Unity <b>Game</b> scene is now a sandbox room on that core. You move and shoot with your saved binds, switch guns with 1&ndash;4, and lungers hunt you down and lunge while a shooter and a gunner hold their distance and fire leading shots, and a Brunch pack walls them off. <b>Press V to switch the Brunch rule between A, B and A+ while you play.</b> It is the same decision as the JS URL flags, so you can feel it in either build. They can kill you, and their kills drop hearts and armour you can pick up. The Warden is the one body still to be ported. Anything not ported yet <i>refuses</i> to run instead of quietly misbehaving.</p>
+<p>The Unity <b>Game</b> scene is now a sandbox room on that core. You move and shoot with your saved binds, switch guns with 1&ndash;4, and lungers hunt you down and lunge while a shooter and a gunner hold their distance and fire leading shots, and a Brunch pack walls them off. <b>Press V to switch the Brunch rule between A, B and A+ while you play.</b> It is the same decision as the JS URL flags, so you can feel it in either build. They can kill you, and their kills drop hearts and armour you can pick up. Press <b>B</b> for a Warden arena: the boss volleys (a ring closes on it before each shell), sweeps and, below two thirds health, calls a wall of statues. Anything not ported yet <i>refuses</i> to run instead of quietly misbehaving.</p>
 </div>
 
 <h2>5. Decisions waiting for you</h2>

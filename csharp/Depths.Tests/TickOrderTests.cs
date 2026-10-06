@@ -290,16 +290,16 @@ namespace Depths.Tests
                 kind = BodyKind.Boss, move = "idle", moveT = 0, bossCd = 0,
                 phase = 1, hp = 100, maxHp = 100,
             };
-            TickOrder.StepBoss(run, boss, 0);
+            TickOrder.StepBoss(run, boss);
             Assert.That(run.rng.RunCalls, Is.EqualTo(1),
                 "the boss move pick is exactly one run draw - a second draw here renumbers every seed");
             Assert.That(run.rng.JitterCalls, Is.EqualTo(1), "the cadence roll is exactly one jitter draw");
             Assert.That(run.rng.ArtCalls, Is.EqualTo(0), "no art may draw in the update path");
             Assert.That(boss.move, Is.Not.EqualTo("idle"), "the pick commits the boss to a move");
 
-            // the committed move resolves on the next step and spends no randomness
-            TickOrder.StepBoss(run, boss, 0);
-            Assert.That(boss.move, Is.EqualTo("idle"), "resolve returns the boss to idle");
+            // the committed move plays out (a volley takes hundreds of ticks) and spends no randomness
+            for (int t = 0; t < 2000 && boss.move != "idle"; t++) TickOrder.StepBoss(run, boss);
+            Assert.That(boss.move, Is.EqualTo("idle"), "the move never finished");
             Assert.That(run.rng.RunCalls, Is.EqualTo(1), "resolving a commit does not re-roll the move");
             Assert.That(run.rng.JitterCalls, Is.EqualTo(1));
         }
@@ -309,7 +309,7 @@ namespace Depths.Tests
         {
             var run = PlayingRun();
             var boss = new Enemy { kind = BodyKind.Boss, move = "idle", moveT = 0, bossCd = -5, phase = 1, hp = 60, maxHp = 100 };
-            TickOrder.StepBoss(run, boss, 0);
+            TickOrder.StepBoss(run, boss);
             Assert.That(boss.phase, Is.EqualTo(2));
             Assert.That(boss.move, Is.EqualTo("idle"));
             Assert.That(run.rng.RunCalls, Is.EqualTo(0), "a phase gate is a health check, not a roll");
@@ -338,7 +338,7 @@ namespace Depths.Tests
             var e = new Enemy { kind = BodyKind.Gunner, castT = 0, castReady = true, cdMin = 5, cdVar = 3, pspd = 1.9, pr = 8, dmg = 1.44 };
             TickOrder.FireCommittedShot(run, e, 0);
             var boss = new Enemy { kind = BodyKind.Boss, move = "idle", moveT = 0, bossCd = 0, phase = 3, hp = 100, maxHp = 100 };
-            TickOrder.StepBoss(run, boss, 0);
+            TickOrder.StepBoss(run, boss);
             Assert.That(run.rng.RunCalls, Is.EqualTo(1), "only the boss pick draws from run");
             Assert.That(run.rng.JitterCalls, Is.EqualTo(2), "one cadence roll per fired commitment");
             Assert.That(run.rng.ArtCalls, Is.EqualTo(0), "nothing in the update path touches art");

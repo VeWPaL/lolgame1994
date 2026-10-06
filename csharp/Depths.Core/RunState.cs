@@ -75,6 +75,9 @@ namespace Depths
         /// <summary>Whether this run broke a secret wall (run.secret).</summary>
         public bool secret;
 
+        /// <summary>FLANK_CURSOR: the golden-angle flank handed to each walker spawned this run.</summary>
+        public double flankCursor;
+
         /// <summary>
         /// The bodies in the room being fought, and the pickups on its floor. Both are needed by
         /// <c>killEnemy</c> (which splices a body out and pushes a drop) and neither existed on the

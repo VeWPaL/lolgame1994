@@ -219,6 +219,13 @@ namespace Depths
         public double sense, close, far, speed;
         public int dodgeCd;
 
+        // The Warden.
+        public int volleyLeft, volleyT, wallT;
+        public bool sweepDone;
+        public List<Enemy>? wallBodies;
+        public int? wallAge;   // a called statue's age; null until its first sweep tick
+        public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
+
         /// <summary>A live body of a kind at a point, with the table's radius, armour, mass and health.</summary>
         public static Enemy Of(BodyKind kind, double x, double y)
         {

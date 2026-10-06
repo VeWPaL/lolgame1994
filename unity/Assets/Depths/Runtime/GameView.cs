@@ -46,11 +46,14 @@ namespace Depths.Unity
             map.Enable();
             var args = Environment.GetCommandLineArgs();
             int i = Array.IndexOf(args, "-depthsView");
-            _demo = i >= 0 && i + 1 < args.Length && args[i + 1] == "game";
+            _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss");
+            _bossRoom = i >= 0 && i + 1 < args.Length && args[i + 1] == "boss";
             NewRun();
         }
 
         void OnDestroy() { controls?.FindActionMap("Gameplay")?.Disable(); }
+
+        bool _bossRoom;
 
         void NewRun()
         {
@@ -63,6 +66,14 @@ namespace Depths.Unity
             p.hp = p.maxHp = 8;
             _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
             _run.enemies.Clear();
+            if (_bossRoom)
+            {
+                // the Warden, spawned the way the game spawns it (its own draws, its kit)
+                var w = Spawn.Body(_run, BodyKind.Boss, Balance.MidX, Balance.RoomTop + 120);
+                w.noticeTimer = 90;
+                _run.enemies.Add(w);
+                return;
+            }
             for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k);
             SpawnPack();
         }
@@ -112,6 +123,7 @@ namespace Depths.Unity
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
                 if (kb.rKey.wasPressedThisFrame) NewRun();
+                if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; NewRun(); }
                 if (kb.vKey.wasPressedThisFrame)   // cycle the Brunch guard rule under test
                     Balance.BrunchVariant = Balance.BrunchVariant == "A" ? "B" : Balance.BrunchVariant == "B" ? "A+" : "A";
             }
@@ -145,7 +157,7 @@ namespace Depths.Unity
                     TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
                 }
-                if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); }
+                if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); } }
                 _acc -= StepMs;
             }
             PlayEvents();
@@ -154,8 +166,8 @@ namespace Depths.Unity
             _hud.text = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
                         "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   shots " + _run.shots + "  hits " + _run.hits + "  kills " + _run.kills +
                         (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                        "\nSandbox on the ported core: movement, guns, shells, lungers, shooters, gunners, Brunch packs, loot.\nThe Warden joins next.   Brunch guard rule: " + Balance.BrunchVariant + " (V to switch)" +
-                        "\n\n1-4 guns    right-click blast    Shift blink    R new room    Esc menu";
+                        "\nSandbox on the ported core: movement, guns, shells, lungers, shooters, gunners, Brunch packs, the Warden, loot.\nBrunch guard rule: " + Balance.BrunchVariant + " (V to switch)" +
+                        "\n\n1-4 guns    right-click blast    Shift blink    B Warden arena    R new room    Esc menu";
         }
 
         // The simulation makes no sound; the view hears what changed since the last frame.
@@ -243,6 +255,16 @@ namespace Depths.Unity
             {
                 var c = W(e.x, e.y);
                 Disc(g, c, (float)e.r, e.hitFlash > 0 ? Color.white : BodyColor(e.kind));
+                if (e.castT > 0)
+                {
+                    // the tell: a ring that closes on the body as the shot comes
+                    float k = (float)e.castT / Balance.CastTime;
+                    g.strokeColor = new Color(1f, 0.6f, 0.3f, 0.9f);
+                    g.lineWidth = 2;
+                    g.BeginPath();
+                    g.Arc(c, (float)e.r + 4 + 18 * k, 0, 360);
+                    g.Stroke();
+                }
                 float frac = (float)Math.Max(0, e.hp / Math.Max(1e-9, e.maxHp)), w = (float)e.r * 2, top = (float)e.r + 9;
                 Rect(g, c + new Vector2(-w / 2, -top), c + new Vector2(w / 2, -top + 4), new Color(0, 0, 0, 0.6f));
                 Rect(g, c + new Vector2(-w / 2, -top), c + new Vector2(-w / 2 + w * frac, -top + 4), new Color32(94, 226, 122, 255));
