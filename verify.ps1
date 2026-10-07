@@ -15,7 +15,8 @@ param(
   [switch]$SkipCsharp,
   [switch]$SkipJs,
   [switch]$Deep,
-  [switch]$Quiet
+  [switch]$Quiet,
+  [switch]$Unity   # also the Unity lane (tools/unity.sh): EditMode tests, a build, the player checks. Minutes, not seconds.
 )
 
 $ErrorActionPreference = 'Stop'
@@ -454,10 +455,37 @@ if (-not (Test-Path $manifest)) {
     }
   }
 
+# ---------------------------------------------------------------- 7. the Unity lane (-Unity only)
+# Opt-in because a build takes minutes. Runs tools/unity.sh under Git Bash, not WSL's bash.exe and not
+# Start-Process -Wait (it can hang on Unity). The editor must not have this project open.
+if ($Unity) {
+  Note ""
+  Note "7. the Unity lane"
+  $bash = "$env:ProgramFiles\Git\bin\bash.exe"
+  if (-not (Test-Path $bash)) {
+    Bad "Git Bash not found at $bash, so the Unity lane did NOT run"
+  } else {
+    Push-Location $root
+    try {
+      foreach ($step in @('test', 'build', 'shot menu', 'shot game', 'shot hearts')) {
+        $ErrorActionPreference = 'Continue'
+        $out = & $bash -c "tools/unity.sh $step" 2>&1 | ForEach-Object { "$_" } | Out-String
+        $rc = $LASTEXITCODE
+        $ErrorActionPreference = 'Stop'
+        $summary = ($out -split "`n" | Where-Object { $_ -match 'total=|Build |check FAIL|wrote |no |error' } | ForEach-Object { $_.Trim() }) -join '; '
+        if ($rc -ne 0) { Bad "unity.sh $step exited $rc - $summary"; break }
+        Note "   $step ok  $summary"
+      }
+    } finally { Pop-Location }
+  }
+}
+
 # ---------------------------------------------------------------- verdict
 Note ""
 if ($failures.Count -eq 0) {
   Note "VERIFY: all mechanical checks passed, and the JavaScript suite RAN."
+  if ($Unity) { Note "VERIFY: the Unity lane RAN and passed (tests, build, player checks)." }
+  else { Note "         (Unity lane not run; add -Unity for EditMode tests, a build and the player checks)" }
   exit 0
 } else {
   Note ("VERIFY: " + $failures.Count + " problem(s).") -ForegroundColor Yellow

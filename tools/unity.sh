@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The Unity batch commands from docs/STATUS.md, one place, run from the repo root (bash, not
 # PowerShell: Start-Process -Wait can hang on Unity). Logs land in unity/Logs/ (ignored).
-#   tools/unity.sh bootstrap | test | build | shot <menu|controls|audio|game|hearts> [out.png]
+#   tools/unity.sh bootstrap | test | build | shot <menu|controls|audio|gameplay|game|hearts> [out.png]
+# The gate runs test, build and the menu/game/hearts shots with: .\verify.ps1 -Unity
 # `shot game` also checks the tick rate, `shot hearts` the health row's pixels; a failed check exits 1.
 # UNITY overrides the editor path.
 set -u
@@ -35,7 +36,7 @@ case "${1:-}" in
     grep -E "error CS|\[Depths\] Build" unity/Logs/build.log | head -20
     exit $rc ;;
   shot)
-    view=${2:?view: menu|controls|audio|game|hearts}
+    view=${2:?view: menu|controls|audio|gameplay|game|hearts}
     out=${3:-"$PWD/unity/Logs/shot-$view.png"}
     [ -x unity/Build/Depths.exe ] || { echo "build first: tools/unity.sh build"; exit 2; }
     rm -f "$out"

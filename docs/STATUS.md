@@ -21,7 +21,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
-  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner. EditMode 24/24
+  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner. EditMode 26/26
   (`TickClock`, `HeartRow`, menus, sound); the frame-to-tick step lives in `TickClock`, the heart
   row's layout and colours in `HeartRow`.
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
@@ -54,9 +54,12 @@ it from another checkout or the first command spends minutes importing.
 
 - `bash tools/unity.sh bootstrap`: regenerate scenes/mixer/settings (`-executeMethod Depths.Unity.EditorTools.Bootstrap.Run`).
   It rewrites the scenes' fileIDs every run; revert them if nothing else changed.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 24/24.
+- **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
+  shots; a few minutes; the editor must not have the project open). Use it before any commit that
+  touches `unity/` or `Depths.Core`.
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 26/26.
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|game|hearts`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts`: the player at 1280x720 with
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
   (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
   every heart against the colours in `HeartRow`. Each check logs `[Depths] check PASS|FAIL`; any
