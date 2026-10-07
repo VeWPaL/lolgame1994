@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  582/582, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  585/585, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -107,39 +107,55 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   210). Owner: decide whether 60 Hz difficulty wants a retune.
 - **Difficulty curve** (2026-10-07, C# only; owner to playtest). Owner's direction: a non-linear
   curve (hard start, easier-but-not-easy middle, hard end), scarce pickups, buffed enemies later on,
-  every part of the kit load-bearing. Built as seven named stages in `csharp/Depths.Core/Curve.cs`
-  laid over the depth ladder: `start` (1) and `peak` (2) are a bump while the player has no kit, `soft`
-  (3) and `middle` (4-10) a dip, `ramp` (11) and `climb` (12) a gate before the last area, `end` (13+)
-  the last area's mix and the exponential ladder. Dials per stage, each with its why in the file:
-  `Tough`, `Rate` (still under `DepthRateCap`), `Bodies`, `Pack`, `Heavy` (gunner chance), `Drops`
-  (kill drop chance x). No silent damage changes: a hit is worth the same on every floor. The targets
-  live in the same file (`Curve.Targets`). Tests run with the curve off (assembly `[CurveOn(false)]`), so
-  the 148 parity rows keep the JS ladder.
+  every part of the kit load-bearing. Built as eight named stages in `csharp/Depths.Core/Curve.cs`
+  laid over the depth ladder: `start` (1) and `peak` (2) a bump while the player has no kit, `soft` (3)
+  and `middle` (4-10) a dip, `ramp` (11) and `climb` (12) into the last area, `end` (13-16) and `deep`
+  (17+). Dials per stage, each with its why in the file: `Tough`, `Rate` (still under `DepthRateCap`),
+  `Bodies`, `Pack`, `Heavy` (gunner chance), `Drops` (kill drop chance x). A hit is worth the same on
+  every floor. From floor 11 on no floor is easier than the one before (body health, whole extra
+  bodies, gunners, packs; pinned by tests); the extra bodies step at 12 and 18. Targets live in the same
+  file (`Curve.Targets`). Tests run with the curve off (assembly `[CurveOn(false)]`), so the 148 parity
+  rows keep the JS ladder.
   Bot: `play --curve off` plays the JS ladder; `play --dial middle.Drops=0.15,end.Tough=1.2` tries a
-  value without a rebuild (recorded in the JSON header, flagged by `report`); `curve <label>` prints one
-  ok/MISS line per target with its rubric number, exits 2 on a miss, and writes
-  `playtest/curve-<label>.md`. The bot records damage and healing by source per floor.
-  Bot, 60 Hz, 60 min, seeds 101-300, 600 runs (hazard = deaths / floor entries, floors reached by 30+ runs):
+  value without a rebuild (recorded in the JSON header, flagged by `report`); `curve <label>
+  [--mid-rule original|recovery|pickups]` prints one ok/MISS line per target with its rubric number,
+  exits 2 on a miss, and writes `playtest/curve-<label>.md`. The bot records damage and healing by
+  source per floor. Bot, 60 Hz, 60 min, 600 runs a set, seeds 101-300 (the rubric's) / 301-500 (a
+  check against fitting to noise); hazard = deaths / floor entries, floors reached by 30+ runs:
 
-  | | START before > after | MIDDLE | END | HP leaving 2 | median floor | dmg / heal a floor, START and MIDDLE, after |
-  |---|---|---|---|---|---|---|
-  | novice | 1.26% > 12.3% | 0.45% > 2.72% | 4.80% > 28.8% | 8 > 5 | 17 > 12 | 13.2 / 11.2, 12.6 / 12.7 |
-  | average | 0.00% > 4.28% | 0.00% > 0.85% | 0.89% > 11.2% | 8 > 6 | 17 > 17 | 9.6 / 8.4, 9.0 / 9.3 |
-  | skilled | 0.00% > 2.26% | 0.06% > 0.54% | 0.50% > 4.98% | 8 > 7 | 17 > 17 | 7.8 / 6.9, 7.8 / 8.1 |
+  | | START (base 101-300 > now 101-300 / 301-500) | MIDDLE | END | HP leaving 2 | median floor |
+  |---|---|---|---|---|---|
+  | novice | 1.26% > 12.3% / 11.4% | 0.45% > 2.29% / 3.03% | 4.80% > 40.2% / 38.6% | 8 > 5 / 5 | 17 > 12 / 12 |
+  | average | 0.00% > 4.28% / 3.26% | 0.00% > 0.42% / 0.34% | 0.89% > 12.0% / 13.7% | 8 > 6 / 6 | 17 > 17 / 16 |
+  | skilled | 0.00% > 2.26% / 2.50% | 0.06% > 0.40% / 0.33% | 0.50% > 7.9% / 7.9% | 8 > 7 / 7 | 17 > 17 / 17 |
 
-  Novice hazard on floors 11-16: 16, 21, 15, 41, 37, 58% (16 is reached by 26 novices); 41% of novices
-  reach floor 13. What moved what: `Drops` 0 on floors 1-2 makes the start cost hearts (HP leaving 2:
-  8 > 5); the gunner's 4 HP shell decides deaths and skill barely dodges it, so fewer gunners (`Heavy`
-  -0.3) plus faster, dodgeable shooters (`Rate` 1.3) separate skilled from average; the dip is softer
-  bodies, one body less, fewer packs and gunners and scarce drops (x0.11); the gate is `Tough` 1.3.
-  **Owner decision, rubric 5 for MIDDLE:** "healing a floor below damage a floor" is missed by 0.2-0.3
-  HP for every profile. Over the band, healing minus damage is exactly the change in HP and armour, and
-  the start (by design) sends players into floor 3 at about 5 of 8, so a middle that never gives any of
-  it back has to drain an already hurt player; every drop rate that did that broke the middle's death
-  ceilings. Two restatements, both met by this curve: (a) "the middle gives back no more than the start
-  took plus new max HP" (survivors recover 2.8 / 3.1 / 2.8 against 4.0 / 3.4 / 3.2 allowed, novice /
-  average / skilled), or (b) "pickup healing a floor below damage a floor" (2.5 / 2.2 / 2.0 against
-  12.6 / 9.0 / 7.8). Pick one, or keep the original and accept a harder middle.
+  Every target except rubric 5 for MIDDLE holds on both sets. Thin margins, from the bot's profiles
+  rather than the curve: average and skilled die about equally often in a gentle middle (pooled over 8
+  matrices: 54 against 42 deaths, mostly to the gunner's shell), so the MIDDLE order average > skilled
+  (0.42 > 0.40, 0.34 > 0.33) rests on a death or two; skilled START sits at 2.3-2.5% under a 3% ceiling;
+  novice HP leaving 2 is exactly 5. Average hazard on floors 11-17 (101-300): 0.6, 4.6, 7.7, 11.0, 10.9,
+  13.0, 18.9%; skilled 0.5, 4.4, 8.0, 4.3, 9.0, 7.1, 11.6%; novice 11.9, 31.5, 39.5, 41.3, 48.2% (16-17
+  are reached by fewer than 30 novices). What moved what: `Drops` 0 on floors 1-2 makes the start cost
+  hearts (HP leaving 2: 8 > 5); fewer gunners (`Heavy`) and faster, dodgeable shooters (`Rate`) are what
+  separate skill; the dip is softer bodies, few gunners and scarce drops (x0.14, x0.35 on floor 3 so a
+  start with none can be survived); 11-12 add health and the extra body before the last area.
+  To playtest, not settled: floor 2 is the start's spike (novice 20%, average 6-7%, more than any END
+  floor before 17 for average); spreading it over 1-2 moved the start out of its targets on one seed set
+  or the other, so it is left for the owner to feel. And no kill ever drops anything on floors 1-2: a
+  player will read that as broken without a tell (a later UI idea, not built).
+  **Owner decision, rubric 5 for MIDDLE.** As written ("healing a floor below damage a floor") it is
+  missed by 0.2-0.4 HP a floor for every profile. Over the band, healing minus damage is exactly the
+  change in HP and armour, and the start (by design) sends players into floor 3 at about 5 of 8, so a
+  middle that gives none of it back has to drain an already hurt player; every drop rate that did broke
+  the middle's death ceilings. `Curve.MidRule` holds the choice (one line; default `Original`):
+  - `Recovery`: over the runs that leave floor 10, mean (HP + armour leaving 10) - (HP + armour entering
+    3) is at most mean (max HP entering 11) - (HP entering 3), i.e. the middle gives back no more than
+    the start took plus new max HP. Met: novice 3.22 <= 4.13 / 3.45 <= 4.54, average 3.45 <= 3.61 /
+    3.20 <= 3.58, skilled 3.10 <= 3.30 / 2.94 <= 3.15 (101-300 / 301-500; thin for average and skilled).
+    A median reading (median HP leaving 2) is not this formula and fails for average and skilled.
+  - `Pickups`: MIDDLE healing a floor less the regenerating heart (clock and refill) below MIDDLE damage
+    a floor. Met with room: novice 3.43 < 13.87 / 3.31 < 13.82, average 2.75 < 9.73 / 2.72 < 10.05,
+    skilled 2.60 < 8.37 / 2.55 < 8.50.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).
