@@ -73,7 +73,22 @@ namespace Depths.Unity
             long t0 = view.Ticks, sim0 = view.Run.ticks;
             int f0 = Time.frameCount;
             float s0 = Time.realtimeSinceStartup;
-            yield return new WaitForSecondsRealtime(seconds - 1f);
+            // the final mix, sampled while the demo shoots: a missing listener or a dead bus is silence
+            var mix = new float[1024];
+            float loudest = 0;
+            while (Time.realtimeSinceStartup - s0 < seconds - 1f)
+            {
+                AudioListener.GetOutputData(mix, 0);
+                foreach (var x in mix) loudest = Mathf.Max(loudest, Mathf.Abs(x));
+                yield return null;
+            }
+            Check(FindAnyObjectByType<AudioListener>() != null, "the scene has an AudioListener");
+            Check(loudest > 0.01f, "the game is audible: loudest sample of the mix " + loudest.ToString("0.000") + " while the demo fights");
+            var music = Depths.Unity.Audio.MusicEngine.Instance;
+            Check(music != null && music.IsPlaying && music.Playing == AreaRules.AreaForFloor(view.Run.floor),
+                  "the music plays the floor's area (" + (music != null ? music.Playing?.ToString() ?? "nothing" : "no engine") + ")");
+            Check(music != null && (view.Run.enemies.Count == 0 || music.FightLevel > 0.5f),
+                  "the fight layer is up while bodies live: " + (music != null ? music.FightLevel.ToString("0.00") : "-") + " with " + view.Run.enemies.Count + " bodies");
             double s = Time.realtimeSinceStartup - s0;
             long clock = view.Ticks - t0, sim = view.Run.ticks - sim0;   // the run's own count: the loop must really step it
             double hz = sim / s;

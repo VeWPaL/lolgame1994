@@ -19,7 +19,7 @@ git archive --format=zip -o "$dir/source.zip" HEAD
 git diff HEAD > "$dir/uncommitted.diff"
 [ -s "$dir/uncommitted.diff" ] || rm "$dir/uncommitted.diff"
 cp depths.html "$dir/" 2>/dev/null; mkdir -p "$dir/js" && cp -r src "$dir/js/" 2>/dev/null
-for v in menu game hearts; do
+for v in menu controls audio gameplay game hearts; do
   [ -f "unity/Logs/shot-$v.png" ] && cp "unity/Logs/shot-$v.png" "$dir/"
 done
 commit=$(git rev-parse --short HEAD)

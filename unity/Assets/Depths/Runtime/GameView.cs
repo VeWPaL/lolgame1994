@@ -59,7 +59,11 @@ namespace Depths.Unity
             NewRun();
         }
 
-        void OnDestroy() { controls?.FindActionMap("Gameplay")?.Disable(); }
+        void OnDestroy()
+        {
+            controls?.FindActionMap("Gameplay")?.Disable();
+            Depths.Unity.Audio.MusicEngine.SetFight(false);   // back to the menu: the calm layer only
+        }
 
         bool _bossRoom, _sandbox;
         bool RealRun => !_sandbox && !_bossRoom;
@@ -193,6 +197,8 @@ namespace Depths.Unity
                 }
             }
             PlayEvents();
+            Depths.Unity.Audio.MusicEngine.SetArea(AreaRules.AreaForFloor(_run.floor));
+            Depths.Unity.Audio.MusicEngine.SetFight(_run.state == "playing" && !_paused && _run.enemies.Count > 0);
             if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = 3; Depths.Unity.Audio.SoundEngine.Play("door"); }
             if (_bannerS > 0) _bannerS -= Time.unscaledDeltaTime;
             _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"

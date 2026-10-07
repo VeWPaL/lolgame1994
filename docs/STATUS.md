@@ -21,7 +21,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
-  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner. EditMode 26/26
+  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner. EditMode 35/35
   (`TickClock`, `HeartRow`, menus, sound); the frame-to-tick step lives in `TickClock`, the heart
   row's layout and colours in `HeartRow`.
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
@@ -57,7 +57,7 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 26/26.
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 35/35.
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
 - `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts`: the player at 1280x720 with
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -74,7 +74,7 @@ it from another checkout or the first command spends minutes importing.
 | 3 | Main menu: Start / Options / Quit, key binds, volume | Medium | done (gamepad + display options later) |
 | 4 | Finish the port | High | done |
 | 5 | Switch C# to 60 Hz, per-second units, re-baseline | Medium | done (see the 60 Hz entry below) |
-| 6 | New sound engine: event-based, sample assets, mixer | Medium | started: `SoundEngine.Play(name, pan)`, 12 voices, Sfx pool. Next: compressor, samples, music |
+| 6 | New sound engine: event-based, sample assets, mixer | Medium | done 2026-10-07: the game had no AudioListener and was silent until then; now one listener on `SoundEngine` with the JS master compressor (`Compressor`, `MasterBus`), sample overrides (`Resources/Sounds/<voice>.wav` replaces a synth voice), procedural music per area (`Score`, `MusicEngine`: calm + fight layers, 76 bpm, 8-bar seamless loops). Player check: the mix is audible, the area plays, the fight layer rises |
 
 ## Owner decisions
 
