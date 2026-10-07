@@ -18,7 +18,6 @@ namespace Depths.Unity
     {
         public InputActionAsset controls;
 
-        static double StepMs => 1000.0 / Balance.TickHz;   // the sim's rate, whatever it is set to
         static readonly Vector2 Offset = new Vector2(640 - 400, 360 - 355);   // room centre to screen centre
         static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
@@ -28,10 +27,17 @@ namespace Depths.Unity
         double _lastHp, _lastDmg;
         RoomPainter _painter;
         Label _hud;
-        double _acc;
+        readonly TickClock _clock = new TickClock();
         int _respawnT;
         bool _demo;
-        int _demoT;
+        float _demoS;   // seconds of demo input so far: the demo is timed, not counted in frames
+        bool _demoBlast;   // held until a tick takes it: at 150 fps most frames step no tick
+
+        /// <summary>For the screenshot checks: the run, the clock's ticks, and a freeze that stops ticking without an
+        /// overlay (input between ticks - blink, Q, keys - still reaches the run).</summary>
+        public RunState Run => _run;
+        public long Ticks => _clock.Ticks;
+        public bool Frozen { get; set; }
 
         void Start()
         {
@@ -159,7 +165,7 @@ namespace Depths.Unity
             }
             Vector2 mv = _move.ReadValue<Vector2>();
             bool fire = _cast.IsPressed(), alt = _blast.IsPressed();
-            if (_demo) { DemoInput(ref mv, ref fire, ref aim); alt = _demoT == 20; }
+            if (_demo) DemoInput(ref mv, ref fire, ref alt, ref aim);
 
             // the blink is a key press, so it lands between ticks, as in the game
             if (_blink.WasPressedThisFrame() && TickOrder.TryBlink(_run, new Input(Math.Sign(mv.x), -Math.Sign(mv.y), aimX: aim.x, aimY: aim.y)))
@@ -169,11 +175,11 @@ namespace Depths.Unity
             if (_active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
                 Depths.Unity.Audio.SoundEngine.Play("pickup");
 
-            _acc += _paused ? 0 : Math.Min(Time.unscaledDeltaTime * 1000.0, 250.0);
-            while (_acc >= StepMs)
+            for (int n = _clock.Advance(Time.unscaledDeltaTime, _paused || Frozen); n > 0; n--)
             {
                 // keys are -1/0/1 per axis in the game, and screen y points down
                 var input = new Input(Math.Sign(mv.x), -Math.Sign(mv.y), fire: fire, alt: alt, aimX: aim.x, aimY: aim.y);
+                _demoBlast = false;
                 if (RealRun) TickOrder.Update(_run, input);   // gates, transitions, then player, shells, bodies, room
                 else if (_run.state == "playing")
                 {
@@ -184,7 +190,6 @@ namespace Depths.Unity
                     TickOrder.TickRoom(_run);
                     if (_run.enemies.Count == 0 && ++_respawnT > Balance.Sec(2)) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
                 }
-                _acc -= StepMs;
             }
             PlayEvents();
             if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = 3; Depths.Unity.Audio.SoundEngine.Play("door"); }
@@ -229,13 +234,14 @@ namespace Depths.Unity
         }
 
         // Screenshot mode: strafe and shoot at the nearest target, so a still frame shows the sim running.
-        void DemoInput(ref Vector2 mv, ref bool fire, ref Vector2 aim)
+        void DemoInput(ref Vector2 mv, ref bool fire, ref bool alt, ref Vector2 aim)
         {
-            _demoT++;
+            float before = _demoS;
+            _demoS += Time.unscaledDeltaTime;
             var p = _run.player;
             var t = _run.enemies.OrderBy(e => (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y)).FirstOrDefault();
             if (t != null) aim = new Vector2((float)t.x, (float)t.y);
-            mv = new Vector2((_demoT / 40) % 2 == 0 ? 1 : -1, 0);
+            mv = new Vector2((int)(_demoS / 0.667f) % 2 == 0 ? 1 : -1, 0);   // turn every 2/3 s
             var room = _run.CurrentRoom;
             if (RealRun && t == null && room != null)
             {
@@ -250,7 +256,9 @@ namespace Depths.Unity
                 }
             }
             fire = t != null;
-            if (_demoT == 30) p.weaponIdx = 1;
+            _demoBlast |= before < 0.333f && _demoS >= 0.333f;   // one blast, a third of a second in
+            alt = _demoBlast;
+            if (before < 0.5f && _demoS >= 0.5f) p.weaponIdx = 1;
         }
     }
 
@@ -423,11 +431,8 @@ namespace Depths.Unity
             DrawHearts(g, pl);
         }
 
-        // the regenerating heart is a rose-violet: the red's family, a step toward purple, so it reads
-        // as a different kind of heart without shouting
-        static readonly Color HeartRed = new Color32(230, 57, 90, 255), ArmourGray = new Color32(170, 176, 186, 255),
-                              HeartEmpty = new Color32(58, 37, 48, 255),
-                              RegenRose = new Color32(205, 78, 150, 255), RegenEmpty = new Color32(70, 38, 64, 255);
+        // pickups share the row's colours (HeartRow)
+        static readonly Color HeartRed = HeartRow.Red, ArmourGray = HeartRow.Armour;
 
         // a heart of half-width s centred on c: two lobes and a point; half = the left half only
         static void Heart(Painter2D g, Vector2 c, float s, Color col, bool half = false)
@@ -445,26 +450,21 @@ namespace Depths.Unity
             g.ClosePath(); g.Fill();
         }
 
-        // the health row above the room: one heart per 2 HP (dark when empty), the regenerating heart,
-        // then armour in gray
-        static void DrawHearts(Painter2D g, Player pl)
+        /// <summary>The first heart's centre in panel units, just above the room's top-left corner.</summary>
+        public static Vector2 FirstHeart => W(Balance.RoomLeft, Balance.RoomTop) + new Vector2(HeartRow.Size, -34);
+
+        readonly System.Collections.Generic.List<HeartSlot> _row = new System.Collections.Generic.List<HeartSlot>();   // reused: no per-frame allocation
+
+        // the health row above the room; the regenerating heart is rose-violet, the red's family a
+        // step toward purple, so it reads as a different kind of heart without shouting
+        void DrawHearts(Painter2D g, Player pl)
         {
-            const float s = 10, step = 26;
-            var at = W(Balance.RoomLeft, Balance.RoomTop) + new Vector2(s, -34);
-            int hearts = (int)Math.Ceiling(pl.maxHp / 2), hp = (int)Math.Max(0, Math.Round(pl.hp));
-            for (int i = 0; i < hearts; i++, at.x += step)
+            foreach (var h in HeartRow.Layout(pl, FirstHeart, _row))
             {
-                Heart(g, at, s, HeartEmpty);
-                if (hp >= 2 * i + 1) Heart(g, at, s, HeartRed, hp == 2 * i + 1);
+                var unlit = HeartRow.Unlit(h.Kind);
+                if (unlit.HasValue) Heart(g, h.Centre, HeartRow.Size, unlit.Value);
+                if (h.Fill != HeartFill.Empty) Heart(g, h.Centre, HeartRow.Size, HeartRow.Lit(h.Kind), h.Fill == HeartFill.Half);
             }
-            int regenSlots = (int)Math.Ceiling(pl.regenHeartMax / 2), rg = (int)Math.Round(pl.regenHeart);
-            for (int i = 0; i < regenSlots; i++, at.x += step)
-            {
-                Heart(g, at, s, RegenEmpty);
-                if (rg >= 2 * i + 1) Heart(g, at, s, RegenRose, rg == 2 * i + 1);
-            }
-            int ar = (int)Math.Round(pl.armor);
-            for (int i = 0; 2 * i < ar; i++, at.x += step) Heart(g, at, s, ArmourGray, ar == 2 * i + 1);
         }
     }
 }

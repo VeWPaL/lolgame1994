@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-07 (the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-07 (Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
 
 ## Where things are
@@ -21,7 +21,9 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
-  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner.
+  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner. EditMode 24/24
+  (`TickClock`, `HeartRow`, menus, sound); the frame-to-tick step lives in `TickClock`, the heart
+  row's layout and colours in `HeartRow`.
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
   20 min in about 2 s; 4.8 s at `--hz 210`) and writes `playtest/<label>.json` (header `tickHz`):
   `DOTNET_ROLL_FORWARD=Major dotnet run --project csharp/Depths.Playtest -c Release -- play --label X
@@ -44,10 +46,21 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 
 ## Unity commands (batch mode, no editor window needed)
 
-- Regenerate scenes/mixer/settings: `Unity -batchmode -nographics -projectPath unity -executeMethod Depths.Unity.EditorTools.Bootstrap.Run -quit`
-- Tests: `Unity -batchmode -nographics -projectPath unity -runTests -testPlatform EditMode -testResults r.xml`
-- Build: `... -executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows -quit` -> `unity/Build/Depths.exe`
-- Screenshot a view: `unity/Build/Depths.exe -screen-fullscreen 0 -depthsShot out.png -depthsView menu|controls|audio|game`
+Editor on the owner's machine: **`C:\Program Files\Unity\Hub\Editor\6000.3.25f1\Editor\Unity.exe`**
+(Unity Hub default; bash: `/c/Program Files/Unity/Hub/Editor/6000.3.25f1/Editor/Unity.exe`).
+`tools/unity.sh` wraps all four commands from the repo root in bash (`UNITY=...` overrides the path;
+logs and screenshots go to `unity/Logs/`, ignored). A fresh worktree has no `unity/Library`: copy
+it from another checkout or the first command spends minutes importing.
+
+- `bash tools/unity.sh bootstrap`: regenerate scenes/mixer/settings (`-executeMethod Depths.Unity.EditorTools.Bootstrap.Run`).
+  It rewrites the scenes' fileIDs every run; revert them if nothing else changed.
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 24/24.
+- `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
+- `bash tools/unity.sh shot menu|controls|audio|game|hearts`: the player at 1280x720 with
+  `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
+  (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
+  every heart against the colours in `HeartRow`. Each check logs `[Depths] check PASS|FAIL`; any
+  FAIL exits 1.
 
 ## Plan
 
@@ -69,7 +82,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   Warden hits armour at full weight; what armour cannot cover spills to hearts at full weight. Loot
   splits each band: 9% half heart, 9% heart, 4% half armour, 4% armour (a quarter less healing per
   kill, same drop rate). Unity: placeholder heart sprites for pickups and a heart row above the room.
-  Not yet checked in the Unity editor (no Unity in the cloud session).
+  The heart row is checked by pixels in the built player (`tools/unity.sh shot hearts`).
 - **Regenerating heart** (done 2026-10-06, owner's request): the 4th starting heart is its own layer,
   6 red + 2 regen = 8. Damage order: armour, regen, red. Refills in a fight only: 4s without a hit,
   then +1 HP, then +1 HP per second; an empty room pauses the clock (owner: "stop the clock after the
@@ -171,8 +184,16 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 
 ## Known issues
 
-- 60 Hz in Unity is unverified (no editor in the cloud): `GameView` steps at `Balance.TickHz`, the
-  death clock and floor banner are in seconds; the screenshot demo's script still counts frames.
+- Verified in Unity 6000.3.25f1 on 2026-10-07 (was listed as unverified): **60 Hz**, measured in
+  the built player as run ticks against the wall clock, 59.95 Hz at 279 fps, the sim stepping every
+  clock tick (`TickClock`, 6 EditMode tests over steady, jittery, paused, NaN and hitch frames); the
+  **heart HUD**, by pixels in the player, 18/18 checks over full, half and empty red and regen
+  hearts and full/half armour (a mutant that drew half hearts full failed every half heart). The
+  demo input is now timed in seconds, not frames.
+  Not covered: a display at 59.94 Hz double-steps one frame every ~17 s (any fixed-step accumulator
+  does); `HeartRow` rounds with .NET's half-to-even, so armour 2.5 shows one heart (cannot happen
+  today: HP, regen and armour are whole outside `JsReference`); the hearts check samples positions
+  from `HeartRow.Step`, so it would not catch a wrong spacing.
 - C# leftovers: `Intercept.cs` is unused (older aiming model, stale test hash); `Pickup.shown` is set
   by Hunter's Mark and read by nothing; `run.unlocked` from the compass is not ported (nothing read it).
 - JS, left as found (reference behaviour): Brunch scan throttle is dead (`pickShield` every tick); stale
