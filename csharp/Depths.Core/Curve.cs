@@ -127,7 +127,8 @@ namespace Depths
             /// included).</summary>
             Original,
             /// <summary>Over the runs that leave floor 10: mean (HP + armour leaving 10) - (HP + armour entering 3)
-            /// is at most mean (max HP entering 11) - (HP entering 3): what START took plus the max HP gained.</summary>
+            /// is at most mean (max HP entering 11) - (HP entering 3): what START took plus the max HP
+            /// gained.</summary>
             Recovery,
             /// <summary>Pickup healing a MIDDLE floor (healing less the regenerating heart's clock and refill) below
             /// damage a floor.</summary>
