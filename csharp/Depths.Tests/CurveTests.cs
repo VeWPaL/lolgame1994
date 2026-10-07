@@ -325,7 +325,7 @@ namespace Depths.Tests
                 Has.Some.StartsWith("3 average END halves"));
             Assert.That(Misses(Synth(skilled: Average())), Has.Some.StartsWith("4 START orders"));
             Assert.That(Misses(Synth(novice: new Spec { HpOut2 = 6 })), Has.Some.StartsWith("1 novice median HP leaving floor 2 6"));
-            Assert.That(Misses(Synth(novice: new Spec { Heal = 10 })), Has.Some.StartsWith("5 novice MIDDLE heals 10"));
+            Assert.That(Misses(Synth(novice: new Spec { Heal = 10 })), Has.Some.StartsWith("5 novice MIDDLE healing a floor 10, wants below its damage 10"));
             Assert.That(Misses(Synth(novice: new Spec { Src = new Dictionary<string, double> { ["a"] = 6, ["b"] = 4 } })),
                 Has.Some.StartsWith("1 novice top START source a 60.00%"));
             Assert.That(Misses(Synth(novice: new Spec { Sources = false })), Has.Some.Contains("not recorded"));
@@ -342,7 +342,7 @@ namespace Depths.Tests
         {
             var misses = Misses(Synth(average: new Spec { Start = new[] { 0.04, 0.04 }, Middle = new[] { 0.01 }, Ramp = new[] { 0.05 },
                                                           End = new[] { 0.06, 0.08, 0.10, 0.12, 0.14 }, HpOut2 = 7, StartHeal = 10 }));
-            Assert.That(misses, Is.EqualTo(new[] { "5 average START heals 10 a floor, below its 10 damage" }), "that line, and only it");
+            Assert.That(misses, Is.EqualTo(new[] { "5 average START healing a floor 10, wants below its damage 10" }), "that line, and only it");
         }
 
         [Test]

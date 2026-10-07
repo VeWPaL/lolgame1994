@@ -186,10 +186,10 @@ namespace Depths.Playtest
                 }
                 T(c.medianFloor >= t.MedianFloorMin && c.medianFloor <= t.MedianFloorMax, "4 " + t.Profile + " median floor " + N(c.medianFloor) +
                   ", wants " + N(t.MedianFloorMin) + (t.MedianFloorMax < 1e9 ? "-" + N(t.MedianFloorMax) : "+"));
-                T(c.start.HealPerFloor < c.start.DmgPerFloor, "5 " + t.Profile + " START heals " + N(Math.Round(c.start.HealPerFloor, 2)) +
-                  " a floor, below its " + N(Math.Round(c.start.DmgPerFloor, 2)) + " damage");
-                T(c.middle.HealPerFloor < c.middle.DmgPerFloor, "5 " + t.Profile + " MIDDLE heals " + N(Math.Round(c.middle.HealPerFloor, 2)) +
-                  " a floor, below its " + N(Math.Round(c.middle.DmgPerFloor, 2)) + " damage");
+                T(c.start.HealPerFloor < c.start.DmgPerFloor, "5 " + t.Profile + " START healing a floor " + N(Math.Round(c.start.HealPerFloor, 2)) +
+                  ", wants below its damage " + N(Math.Round(c.start.DmgPerFloor, 2)));
+                T(c.middle.HealPerFloor < c.middle.DmgPerFloor, "5 " + t.Profile + " MIDDLE healing a floor " + N(Math.Round(c.middle.HealPerFloor, 2)) +
+                  ", wants below its damage " + N(Math.Round(c.middle.DmgPerFloor, 2)));
                 if (!c.start.srcKnown) T(false, "1 " + t.Profile + " START damage sources not recorded (a file from before per-floor sources)");
                 else T(topShare <= Curve.StartTopSourceMax, "1 " + t.Profile + " top START source " + (topKey ?? "none") + " " + P(topShare) +
                        ", at most " + P(Curve.StartTopSourceMax));
