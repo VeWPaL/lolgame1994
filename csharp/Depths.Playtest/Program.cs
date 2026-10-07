@@ -59,7 +59,7 @@ namespace Depths.Playtest
                                  double minutes, Action<RunResult>? each = null)
         {
             var b = new Batch { label = label, commit = BuildInfo.Commit, brunch = Balance.BrunchVariant,
-                                tickHz = Balance.TickHz, curve = Depths.Curve.On, minutes = minutes, seeds = seeds.ToList(),
+                                tickHz = Balance.TickHz, curve = Depths.Curve.On, dials = CurveDials.Applied.Count > 0 ? CurveDials.Applied.ToList() : null, minutes = minutes, seeds = seeds.ToList(),
                                 profiles = profiles.ToList() };
             foreach (var p in profiles)
                 foreach (var s in seeds)
@@ -80,6 +80,43 @@ namespace Depths.Playtest
             .FirstOrDefault(a => a.Key == "GitCommit")?.Value;
     }
 
+    /// <summary>`--dial stage.Field=value`: one Curve.Stages field changed for one play, recorded in the header, undone after.</summary>
+    public static class CurveDials
+    {
+        public static readonly List<string> Applied = new List<string>();
+        static readonly List<(Depths.Curve.Stage stage, FieldInfo field, double was)> Undo = new List<(Depths.Curve.Stage, FieldInfo, double)>();
+
+        public static (Depths.Curve.Stage stage, FieldInfo field, double value) Parse(string d)
+        {
+            int dot = d.IndexOf('.'), eq = d.IndexOf('=');
+            if (dot < 1 || eq < dot + 2) throw new UsageException("--dial: '" + d + "' is not stage.Field=value");
+            string sn = d.Substring(0, dot), fn = d.Substring(dot + 1, eq - dot - 1);
+            var st = Depths.Curve.Stages.FirstOrDefault(x => x.Name == sn)
+                ?? throw new UsageException("--dial: no stage '" + sn + "' (" + string.Join(", ", Depths.Curve.Stages.Select(x => x.Name)) + ")");
+            var f = typeof(Depths.Curve.Stage).GetField(fn);
+            if (f == null || f.IsInitOnly || f.FieldType != typeof(double))
+                throw new UsageException("--dial: no dial '" + fn + "' (Tough, Rate, Bodies, Pack, Heavy, Drops)");
+            if (!double.TryParse(d.Substring(eq + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) || double.IsNaN(v) || double.IsInfinity(v))
+                throw new UsageException("--dial: '" + d.Substring(eq + 1) + "' is not a number");
+            return (st, f, v);
+        }
+
+        public static void Set(string d)
+        {
+            var (st, f, v) = Parse(d);
+            Undo.Add((st, f, (double)f.GetValue(st)!));
+            f.SetValue(st, v);
+            Applied.Add(d);
+        }
+
+        /// <summary>Puts every dialled field back, last first.</summary>
+        public static void Reset()
+        {
+            for (int i = Undo.Count - 1; i >= 0; i--) Undo[i].field.SetValue(Undo[i].stage, Undo[i].was);
+            Undo.Clear(); Applied.Clear();
+        }
+    }
+
     /// <summary>A bad command line: printed as one line, exit code 1.</summary>
     public sealed class UsageException : Exception
     {
@@ -96,13 +133,14 @@ namespace Depths.Playtest
         public double Minutes = 20;
         public string? Brunch, Out;
         public bool Curve = true;   // the game's difficulty curve; off plays the JS ladder, for A/B
+        public List<string> Dials = new List<string>();   // --dial stage.Field=value, a retune without a rebuild
         public int? Hz;   // the sim's tick rate; the game's own when not given
         public List<string> Labels = new List<string>();
 
-        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve" };
+        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--out DIR]";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--out DIR]";
 
         static string Name(string s, string what)
         {
@@ -162,6 +200,9 @@ namespace Depths.Playtest
                         if (v != "A" && v != "B" && v != "A+") throw new UsageException("--brunch is A, B or A+");
                         c.Brunch = v;
                         break;
+                    case "dial":
+                        foreach (var d in v.Split(',')) { CurveDials.Parse(d); c.Dials.Add(d); }
+                        break;
                     case "curve":
                         if (v != "on" && v != "off") throw new UsageException("--curve is on or off");
                         c.Curve = v == "on";
@@ -217,15 +258,21 @@ namespace Depths.Playtest
             // the game's own comparison switch, recorded in the header
             if (c.Brunch != null) Balance.BrunchVariant = c.Brunch;
             if (c.Hz != null) Balance.TickHz = c.Hz.Value;   // recorded in the header too
-            Depths.Curve.On = c.Curve;
+            Depths.Curve.On = c.Curve;   // and this
             string dir = OutDir(c);
             Directory.CreateDirectory(dir);
             var sw = Stopwatch.StartNew();
-            var b = Matrix.Play(c.Label, c.Seeds, c.Profiles, c.Minutes, r =>
+            Batch b;
+            try
+            {
+                foreach (var d in c.Dials) CurveDials.Set(d);   // and these
+                b = Matrix.Play(c.Label, c.Seeds, c.Profiles, c.Minutes, r =>
                 Console.WriteLine($"{r.profile,-8} seed {r.seed,-6} floor {r.floor,-3} {r.end,-7} " +
                                   $"{Report.F1(r.ticks / (double)Balance.TickHz / 60)}min  " +
                                   $"dmg {Json.Text(r.dmgBySource)}" +
                                   (r.errors.Count > 0 ? "  ERRORS " + r.errors[0] : "")));
+            }
+            finally { CurveDials.Reset(); }
             string file = Path.Combine(dir, c.Label + ".json");
             Save(file, Json.Write(b));
             Console.WriteLine($"\n{b.runs.Count} runs in {sw.Elapsed.TotalSeconds:0.0}s, " +

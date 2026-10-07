@@ -12,6 +12,7 @@ namespace Depths.Playtest
         public int entries, deaths;
         public double dmg, healed;
         public readonly SortedDictionary<string, double> src = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        public readonly SortedDictionary<string, double> healBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
         public bool srcKnown = true;   // false when a floor in it came from a file without per-floor sources
         public List<int> floors = new List<int>();
 
@@ -33,6 +34,7 @@ namespace Depths.Playtest
             entries += f.entries; deaths += f.deaths; dmg += f.dmg; healed += f.healed;
             srcKnown &= f.srcKnown;
             foreach (var kv in f.src) src[kv.Key] = src.GetValueOrDefault(kv.Key) + kv.Value;
+            foreach (var kv in f.healBy) healBy[kv.Key] = healBy.GetValueOrDefault(kv.Key) + kv.Value;
             floors.AddRange(f.floors);
         }
     }
@@ -80,6 +82,7 @@ namespace Depths.Playtest
                     s.entries++; s.dmg += f.dmg; s.healed += f.healed;
                     if (f.dmgBySource == null) s.srcKnown = false;
                     else foreach (var kv in f.dmgBySource) s.src[kv.Key] = s.src.GetValueOrDefault(kv.Key) + kv.Value;
+                    if (f.healBy != null) foreach (var kv in f.healBy) s.healBy[kv.Key] = s.healBy.GetValueOrDefault(kv.Key) + kv.Value;
                 }
                 if (r.end == "death" && c.perFloor.TryGetValue(r.floor, out var d)) d.deaths++;
             }
@@ -115,18 +118,31 @@ namespace Depths.Playtest
         static string Range(Curve.Band t) =>
             t.Max >= 1 ? ">= " + P(t.Min) : t.Min <= 0 ? "<= " + P(t.Max) : P(t.Min) + "-" + P(t.Max);
 
-        /// <summary>Measures every target profile, checks every target; the text is Markdown, misses one line each.</summary>
+        static string Shares(SortedDictionary<string, double> d, int entries)
+        {
+            if (d.Count == 0 || entries == 0) return "none recorded";
+            return string.Join(", ", d.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal)
+                .Select(kv => kv.Key + " " + (kv.Value / entries).ToString("0.00", Inv)));
+        }
+
+        /// <summary>
+        /// Measures every target profile and checks every target: the text is Markdown with one "ok" or
+        /// "MISS" line per target, led by its rubric number; misses are the failed lines.
+        /// </summary>
         public static (string text, List<string> misses) Check(Batch b)
         {
-            var misses = new List<string>();
+            var lines = new List<(bool ok, string what)>();
+            void T(bool ok, string what) => lines.Add((ok, what));
             var sb = new StringBuilder();
             sb.Append("# Difficulty curve: ").Append(b.label).Append("\n\n")
               .Append(b.runs.Count).Append(" runs, ").Append(b.seeds.Count).Append(" seeds, ").Append(N(b.minutes))
-              .Append(" sim-min at ").Append(b.tickHz > 0 ? b.tickHz : 210).Append(" Hz, built from ")
-              .Append(b.commit ?? "an unknown commit").Append(".\n");
+              .Append(" sim-min at ").Append(b.tickHz > 0 ? b.tickHz : 210).Append(" Hz, curve ")
+              .Append(b.curve == null ? "unrecorded" : b.curve.Value ? "on" : "off")
+              .Append(b.dials != null ? " dialled " + string.Join(",", b.dials) : "")
+              .Append(", built from ").Append(b.commit ?? "an unknown commit").Append(".\n");
             if (b.tickHz != Balance.GameHz || b.minutes != 60 || b.seeds.Count < 200)
                 sb.Append("\nNote: the targets are for the game rate, 60 minutes and seeds 101-300; this file is not that.\n");
-            sb.Append("\nHazard = deaths / floor entries; START floors ").Append(1).Append('-').Append(Curve.StartLast)
+            sb.Append("\nHazard = deaths / floor entries; START floors 1-").Append(Curve.StartLast)
               .Append(", MIDDLE ").Append(Curve.MiddleFirst).Append('-').Append(Curve.MiddleLast)
               .Append(", END ").Append(Curve.EndFirst).Append("+, each floor counted only with ").Append(Curve.MinEntries)
               .Append("+ runs of the profile.\n\n")
@@ -137,7 +153,7 @@ namespace Depths.Playtest
             var curves = new List<ProfileCurve>();
             foreach (var t in Curve.Targets)
             {
-                if (!b.profiles.Contains(t.Profile)) { misses.Add(t.Profile + ": not played"); continue; }
+                if (!b.profiles.Contains(t.Profile)) { T(false, "1-5 " + t.Profile + ": not played"); continue; }
                 var c = Measure(b, t.Profile);
                 curves.Add(c);
                 var (h1, h2) = c.EndHalves();
@@ -151,53 +167,49 @@ namespace Depths.Playtest
                   .Append(" | ").Append(!c.start.srcKnown ? "n/a" : topKey == null ? "none" : topKey + " " + P(topShare))
                   .Append(" | ").Append(P(c.heartShare)).Append(" |\n");
 
-                void InBand(string band, BandStat s, Curve.Band want)
+                void InBand(string rubric, string band, BandStat s, Curve.Band want)
                 {
-                    if (s.entries == 0) { misses.Add(t.Profile + " " + band + ": no floor reached by " + Curve.MinEntries + "+ runs"); return; }
-                    double h = s.Hazard;
-                    if (h < want.Min || h > want.Max)
-                        misses.Add(t.Profile + " " + band + " hazard " + P(h) + ", wants " + Range(want));
+                    if (s.entries == 0) { T(false, rubric + " " + t.Profile + " " + band + ": no floor reached by " + Curve.MinEntries + "+ runs"); return; }
+                    T(s.Hazard >= want.Min && s.Hazard <= want.Max, rubric + " " + t.Profile + " " + band + " hazard " + P(s.Hazard) + ", wants " + Range(want));
                 }
-                InBand("START", c.start, t.Start);
-                InBand("MIDDLE", c.middle, t.Middle);
-                InBand("END", c.end, t.End);
-                if (c.middle.entries > 0 && !(c.middle.Hazard < c.start.Hazard && c.middle.Hazard < c.end.Hazard))
-                    misses.Add(t.Profile + ": MIDDLE " + P(c.middle.Hazard) + " is not below both START " + P(c.start.Hazard) + " and END " + P(c.end.Hazard));
-                if (h1.entries == 0 || h2.entries == 0)
-                    misses.Add(t.Profile + ": END has fewer than two floors to compare");
+                InBand("1", "START", c.start, t.Start);
+                InBand("2", "MIDDLE", c.middle, t.Middle);
+                InBand("3", "END", c.end, t.End);
+                T(c.middle.entries > 0 && c.middle.Hazard < c.start.Hazard && c.middle.Hazard < c.end.Hazard,
+                  "2 " + t.Profile + " MIDDLE " + P(c.middle.Hazard) + " below both START " + P(c.start.Hazard) + " and END " + P(c.end.Hazard));
+                if (h1.entries == 0 || h2.entries == 0) T(false, "3 " + t.Profile + " END has fewer than two floors to compare");
                 else
                 {
                     double se = Math.Sqrt(h1.Hazard * (1 - h1.Hazard) / h1.entries + h2.Hazard * (1 - h2.Hazard) / h2.entries);
-                    if (h2.Hazard < h1.Hazard - Curve.EndFallSe * se)
-                        misses.Add(t.Profile + ": END falls, " + P(h1.Hazard) + " then " + P(h2.Hazard) + " (more than " + N(Curve.EndFallSe) + " standard errors)");
+                    T(h2.Hazard >= h1.Hazard - Curve.EndFallSe * se, "3 " + t.Profile + " END halves " + P(h1.Hazard) + " then " + P(h2.Hazard) +
+                      ", not falling by more than " + N(Curve.EndFallSe) + " standard errors (" + P(Curve.EndFallSe * se) + ")");
                 }
-                if (c.medianFloor < t.MedianFloorMin || c.medianFloor > t.MedianFloorMax)
-                    misses.Add(t.Profile + ": median floor " + N(c.medianFloor) + ", wants " + N(t.MedianFloorMin) +
-                               (t.MedianFloorMax < 1e9 ? "-" + N(t.MedianFloorMax) : "+"));
-                if (!(c.start.HealPerFloor < c.start.DmgPerFloor))
-                    misses.Add(t.Profile + ": START heals " + N(Math.Round(c.start.HealPerFloor, 2)) + " a floor against " + N(Math.Round(c.start.DmgPerFloor, 2)) + " damage");
-                if (!(c.middle.HealPerFloor < c.middle.DmgPerFloor))
-                    misses.Add(t.Profile + ": MIDDLE heals " + N(Math.Round(c.middle.HealPerFloor, 2)) + " a floor against " + N(Math.Round(c.middle.DmgPerFloor, 2)) + " damage");
-                if (!c.start.srcKnown) misses.Add(t.Profile + ": START damage sources not recorded (a file from before per-floor sources)");
-                else if (topShare > Curve.StartTopSourceMax)
-                    misses.Add(t.Profile + ": " + topKey + " deals " + P(topShare) + " of START damage, over " + P(Curve.StartTopSourceMax));
-                if (c.heartShare < Curve.HeartShareMin)
-                    misses.Add(t.Profile + ": heart pickups are " + P(c.heartShare) + " of healing, under " + P(Curve.HeartShareMin));
+                T(c.medianFloor >= t.MedianFloorMin && c.medianFloor <= t.MedianFloorMax, "4 " + t.Profile + " median floor " + N(c.medianFloor) +
+                  ", wants " + N(t.MedianFloorMin) + (t.MedianFloorMax < 1e9 ? "-" + N(t.MedianFloorMax) : "+"));
+                T(c.start.HealPerFloor < c.start.DmgPerFloor, "5 " + t.Profile + " START heals " + N(Math.Round(c.start.HealPerFloor, 2)) +
+                  " a floor, below its " + N(Math.Round(c.start.DmgPerFloor, 2)) + " damage");
+                T(c.middle.HealPerFloor < c.middle.DmgPerFloor, "5 " + t.Profile + " MIDDLE heals " + N(Math.Round(c.middle.HealPerFloor, 2)) +
+                  " a floor, below its " + N(Math.Round(c.middle.DmgPerFloor, 2)) + " damage");
+                if (!c.start.srcKnown) T(false, "1 " + t.Profile + " START damage sources not recorded (a file from before per-floor sources)");
+                else T(topShare <= Curve.StartTopSourceMax, "1 " + t.Profile + " top START source " + (topKey ?? "none") + " " + P(topShare) +
+                       ", at most " + P(Curve.StartTopSourceMax));
+                T(c.heartShare >= Curve.HeartShareMin, "5 " + t.Profile + " heart pickups " + P(c.heartShare) + " of healing, at least " + P(Curve.HeartShareMin));
             }
 
             // the least skilled profile is the one the start has to cost hearts
             var first = curves.FirstOrDefault(c => c.profile == Curve.Targets[0].Profile);
-            if (first != null && !(first.hpLeavingStart <= Curve.NoviceHpLeavingStartMax))
-                misses.Add(first.profile + ": median HP leaving floor " + Curve.StartLast + " is " +
-                           (first.hpLeavingStart.HasValue ? N(first.hpLeavingStart.Value) : "n/a") + ", wants <= " + N(Curve.NoviceHpLeavingStartMax));
+            if (first != null)
+                T(first.hpLeavingStart <= Curve.NoviceHpLeavingStartMax, "1 " + first.profile + " median HP leaving floor " + Curve.StartLast + " " +
+                  (first.hpLeavingStart.HasValue ? N(first.hpLeavingStart.Value) : "n/a") + ", at most " + N(Curve.NoviceHpLeavingStartMax));
 
             // skill matters: in every band each profile dies less than the one before it in Targets
             if (curves.Count == Curve.Targets.Length)
                 foreach (var (band, get) in new (string, Func<ProfileCurve, BandStat>)[] { ("START", c => c.start), ("MIDDLE", c => c.middle), ("END", c => c.end) })
-                    for (int i = 1; i < curves.Count; i++)
-                        if (!(get(curves[i]).Hazard < get(curves[i - 1]).Hazard))
-                            misses.Add(band + ": " + curves[i].profile + " " + P(get(curves[i]).Hazard) + " is not below " +
-                                       curves[i - 1].profile + " " + P(get(curves[i - 1]).Hazard));
+                {
+                    bool ok = true;
+                    for (int i = 1; i < curves.Count; i++) ok &= get(curves[i]).Hazard < get(curves[i - 1]).Hazard;
+                    T(ok, "4 " + band + " orders " + string.Join(" > ", curves.Select(c => c.profile + " " + P(get(c).Hazard))));
+                }
 
             sb.Append("\n| floor |");
             foreach (var c in curves) sb.Append(' ').Append(c.profile).Append(" reach / die / hazard |");
@@ -210,9 +222,15 @@ namespace Depths.Playtest
                 sb.Append('\n');
             }
 
-            sb.Append("\n## Targets\n\n");
-            if (misses.Count == 0) sb.Append("Every target met.\n");
-            else foreach (var m in misses) sb.Append("- MISS ").Append(m).Append('\n');
+            sb.Append("\n## Healing by source, HP a floor\n\n");
+            foreach (var c in curves)
+                sb.Append("- ").Append(c.profile).Append(" START: ").Append(Shares(c.start.healBy, c.start.entries))
+                  .Append("; MIDDLE: ").Append(Shares(c.middle.healBy, c.middle.entries)).Append('\n');
+
+            sb.Append("\n## Targets (rubric number first)\n\n");
+            foreach (var (ok, what) in lines) sb.Append(ok ? "ok   " : "MISS ").Append(what).Append('\n');
+            var misses = lines.Where(l => !l.ok).Select(l => l.what).ToList();
+            sb.Append('\n').Append(misses.Count == 0 ? "PASS: every target met" : "FAIL: " + misses.Count + " of " + lines.Count + " targets missed").Append('\n');
             return (sb.ToString(), misses);
         }
     }

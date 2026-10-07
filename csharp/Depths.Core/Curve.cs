@@ -1,7 +1,7 @@
 namespace Depths
 {
     /// <summary>
-    /// The difficulty curve (C# only, 2026-10-06): a per-floor shape laid over the depth ladder, plus
+    /// The difficulty curve (C# only, 2026-10-07): a per-floor shape laid over the depth ladder, plus
     /// the targets the playtest bot's `curve` command checks it against. The JS ladder is untouched.
     /// </summary>
     public static class Curve
@@ -9,63 +9,51 @@ namespace Depths
         /// <summary>Whether the shape applies. The game: always. Tests default it off (assembly [Curve]) so the parity rows keep the JS ladder.</summary>
         public static bool On = true;
 
-        /// <summary>One floor's shape. Tough, Rate, Hit and Drops multiply; Bodies, Pack and Heavy (the gunner chance) add.</summary>
-        public readonly struct Step
+        /// <summary>
+        /// One stage of the shape, from floor First until the next stage's First. Tough, Rate and Drops
+        /// multiply; Bodies, Pack and Heavy add. Fields, not constants, so the bot's --dial can try a value.
+        /// </summary>
+        public sealed class Stage
         {
-            public readonly double Tough, Rate, Bodies, Pack, Heavy, Hit, Drops;
-            public Step(double tough, double rate, double bodies, double pack, double heavy, double hit, double drops)
-            { Tough = tough; Rate = rate; Bodies = bodies; Pack = pack; Heavy = heavy; Hit = hit; Drops = drops; }
+            public readonly string Name;
+            public readonly int First;
+            public double Tough = 1, Rate = 1, Bodies, Pack, Heavy, Drops = 1;
+            public Stage(string name, int first) { Name = name; First = first; }
             public override string ToString() =>
-                $"tough x{Tough} rate x{Rate} bodies {Bodies:+0.##;-0.##;0} pack {Pack:+0.##;-0.##;0} heavy {Heavy:+0.##;-0.##;0} hit x{Hit} drops x{Drops}";
+                $"{Name} (from floor {First}): tough x{Tough} rate x{Rate} bodies {Bodies:+0.##;-0.##;0} pack {Pack:+0.##;-0.##;0} heavy {Heavy:+0.##;-0.##;0} drops x{Drops}";
         }
 
         /// <summary>
-        /// The shape, floor 1 first; floors past the end repeat the last row (the ladder under it keeps
-        /// climbing). START (1-2) is a bump while the player has no kit, MIDDLE (3-10) a dip, then the climb.
+        /// The shape. START (1-2) is a bump while the player has no kit, MIDDLE (3-10) a dip, then the
+        /// climb; the last stage holds from its floor on while the exponential ladder under it keeps climbing.
         /// </summary>
-        // Why each column (measured with the bot's curve command, 2026-10-07):
+        // Why each column (measured with the bot's curve command):
         //   Tough   health: longer fights cost more HP; the dip's main dial.
         //   Rate    cadence and ranged approach (still under DepthRateCap): shells reward dodging, so it widens the skill gap.
-        //   Bodies  added to each room's roll; fewer bodies is also fewer kills, so fewer drops.
+        //   Bodies  added to each room's roll (a fraction only counts once the ladder's own adds it to a whole body); fewer bodies, fewer kills, fewer drops.
         //   Pack    added to the Brunch pack chance; packs are the middle's main attrition.
         //   Heavy   added to the area's gunner chance; the gunner's 4 HP shell is what kills, and skill barely dodges it.
-        //   Hit     enemy hits x this, whole HP; 0.75 turns only the big hits down (gunner 4 to 3, sweep 3 to 2).
         //   Drops   the kill drop chance x this; 0 in START so the first floors cost hearts for real.
-        public static readonly Step[] Default =
+        public static readonly Stage[] Stages =
         {
-            new Step(0.85, 1.30, 0.0, 0.00, 0.00, 0.75, 0.0),   // 1  START: fast shooters, no pickups
-            new Step(0.90, 1.30, 0.5, 0.00, 0.00, 0.75, 0.0),   // 2  the peak: half a body more
-            new Step(0.75, 1.00, -0.5, -0.15, -0.30, 1.0, 0.3),   // 3  MIDDLE: the softest floor, a first trickle of pickups
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 4  lighter rooms, fewer packs and gunners, scarce drops
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 5
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 6
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 7
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 8
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 9
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 10
-            new Step(1.00, 1.00, 0.0, 0.00, 0.00, 1.0, 0.25),   // 11 the ramp: the bare ladder
-            new Step(1.10, 1.00, 0.5, 0.00, 0.05, 1.0, 0.25),   // 12
-            new Step(1.15, 1.00, 0.5, 0.00, 0.10, 1.0, 0.25),   // 13 END: the exponential ladder climbs on top
+            new Stage("start", 1) { Tough = 0.85, Rate = 1.30, Heavy = -0.30, Drops = 0 },                  // fast shooters, fewer gunners, no pickups
+            new Stage("peak", 2) { Tough = 0.90, Rate = 1.30, Heavy = -0.30, Drops = 0 },                   // a little tougher
+            new Stage("soft", 3) { Tough = 0.75, Bodies = -0.5, Pack = -0.15, Heavy = -0.30, Drops = 0.2 }, // the softest floor, a first trickle of pickups
+            new Stage("middle", 4) { Tough = 0.90, Bodies = -0.5, Pack = -0.10, Heavy = -0.35, Drops = 0.11 }, // one body less, fewer packs and gunners, scarce drops
+            new Stage("ramp", 11) { Tough = 1.30, Drops = 0.25 },                                           // the gate before the last area
+            new Stage("climb", 12) { Tough = 1.30, Heavy = 0.10, Drops = 0.25 },                            // and a gunner more often
+            new Stage("end", 13) { Drops = 0.25 },   // the last area's mix and the exponential ladder carry the climb from here
         };
 
-        /// <summary>The table in force; the game never swaps it, the tests that pin the shape and the check do.</summary>
-        public static Step[] Table = Default;
+        static readonly Stage Flat = new Stage("off", 1);
 
-        static readonly Step Flat = new Step(1, 1, 0, 0, 0, 1, 1);
-
-        /// <summary>The shape at a floor: the flat row when the curve is off, the last row past the table's end.</summary>
-        public static Step At(int floor)
+        /// <summary>The stage in force on a floor: the flat stage when the curve is off.</summary>
+        public static Stage At(int floor)
         {
-            if (!On || Table.Length == 0) return Flat;
-            int i = System.Math.Max(1, floor) - 1;
-            return Table[System.Math.Min(i, Table.Length - 1)];
-        }
-
-        /// <summary>An enemy hit at this floor in whole HP: the base times the floor's Hit, rounded half up, never below 1.</summary>
-        public static double HitAt(int floor, double amount)
-        {
-            if (!On || Balance.JsReference || amount <= 0) return amount;
-            return System.Math.Max(1, System.Math.Floor(amount * At(floor).Hit + 0.5));
+            if (!On) return Flat;
+            var at = Stages[0];
+            foreach (var s in Stages) if (s.First <= floor) at = s;
+            return at;
         }
 
         // ------------------------------------------------------------- targets

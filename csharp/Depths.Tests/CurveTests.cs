@@ -14,45 +14,70 @@ namespace Depths.Tests
     [TestFixture, Category("csharp-only"), CurveOn(true)]
     public sealed class CurveTests
     {
-        static Curve.Step Row(int floor) => Curve.Default[Math.Min(floor, Curve.Default.Length) - 1];
+        static Curve.Stage S(string name) => Curve.Stages.First(x => x.Name == name);
 
         // the pressure a floor's shape puts on the bare ladder: health times cadence times room size
-        static double Press(Curve.Step s) => s.Tough * s.Rate * (3.5 + s.Bodies) / 3.5;
+        static double Press(int floor)
+        {
+            var s = Curve.At(floor);
+            return s.Tough * s.Rate * (3.5 + s.Bodies) / 3.5;
+        }
 
         static double Mean(IEnumerable<double> a) => a.Average();
+
+        static RunState Started(int floor)
+        {
+            var run = new RunState(new Rng(4242));
+            run.Start(4242);
+            run.enemies.Clear(); run.pickups.Clear();
+            run.floor = floor;   // the harness moves the floor number only; the hooks read nothing else
+            return run;
+        }
 
         // ---- the shape
 
         [Test]
+        public void TheStagesRunInFloorOrderFromTheFirstFloor()
+        {
+            Assert.That(Curve.Stages[0].First, Is.EqualTo(1));
+            for (int i = 1; i < Curve.Stages.Length; i++)
+                Assert.That(Curve.Stages[i].First, Is.GreaterThan(Curve.Stages[i - 1].First), Curve.Stages[i].Name);
+            Assert.That(Curve.Stages.Select(x => x.Name).Distinct().Count(), Is.EqualTo(Curve.Stages.Length), "names are dial addresses");
+            Assert.That(Curve.At(7), Is.SameAs(S("middle")), "a stage holds until the next one");
+            Assert.That(Curve.At(100), Is.SameAs(Curve.Stages[Curve.Stages.Length - 1]), "the last stage holds from its floor on");
+        }
+
+        [Test]
         public void TheStartIsABumpOverTheMiddle()
         {
-            double start = Mean(new[] { 1, 2 }.Select(f => Press(Row(f))));
-            double middle = Mean(Enumerable.Range(3, 8).Select(f => Press(Row(f))));
+            double start = Mean(new[] { 1, 2 }.Select(Press));
+            double middle = Mean(Enumerable.Range(3, 8).Select(Press));
             Assert.That(start, Is.GreaterThan(middle * 1.2), "START presses harder than MIDDLE");
-            Assert.That(new[] { 1, 2 }.Max(f => Row(f).Drops), Is.LessThan(Enumerable.Range(3, 8).Min(f => Row(f).Drops)),
+            Assert.That(new[] { 1, 2 }.Max(f => Curve.At(f).Drops), Is.LessThan(Enumerable.Range(3, 8).Min(f => Curve.At(f).Drops)),
                 "the start pays fewer pickups than any middle floor: no kit yet, no free hearts");
         }
 
         [Test]
         public void TheMiddleIsADipBelowBothEnds()
         {
-            double middleMax = Enumerable.Range(3, 8).Max(f => Press(Row(f)));
-            Assert.That(Press(Row(2)), Is.GreaterThan(middleMax));
-            Assert.That(Press(Row(Curve.EndFirst)), Is.GreaterThan(middleMax));
-            for (int f = 3; f <= 10; f++)
-                Assert.That(Row(f).Heavy + Bodies.MixFor(AreaRules.AreaForFloor(f)).Heavy, Is.GreaterThanOrEqualTo(0),
-                    "the gunner chance never goes negative on floor " + f);
+            double middleMax = Enumerable.Range(3, 8).Max(Press);
+            Assert.That(Press(2), Is.GreaterThan(middleMax));
+            Assert.That(Press(11), Is.GreaterThan(middleMax));
+            Assert.That(Balance.DepthTough(Curve.EndFirst), Is.GreaterThan(Enumerable.Range(3, 8).Max(Balance.DepthTough)),
+                "END bodies are tougher than any MIDDLE body");
+            for (int f = 1; f <= 40; f++)
+                Assert.That(Curve.At(f).Heavy + Bodies.MixFor(AreaRules.AreaForFloor(f)).Heavy, Is.InRange(0, 1),
+                    "the gunner chance stays a chance on floor " + f);
         }
 
         [Test]
         public void TheEndClimbsAndKeepsClimbing()
         {
-            for (int f = 11; f < Curve.Default.Length; f++)
-                Assert.That(Press(Row(f + 1)), Is.GreaterThanOrEqualTo(Press(Row(f))), "shape from floor " + f);
             for (int f = Curve.EndFirst; f < 40; f++)
+            {
                 Assert.That(Balance.DepthTough(f + 1), Is.GreaterThan(Balance.DepthTough(f)), "health at floor " + (f + 1));
-            Assert.That(Curve.At(100).Tough, Is.EqualTo(Curve.Default[Curve.Default.Length - 1].Tough),
-                "floors past the table repeat its last row");
+                Assert.That(Balance.DepthBodies(f + 1, 0), Is.GreaterThanOrEqualTo(Balance.DepthBodies(f, 0)), "density at floor " + (f + 1));
+            }
         }
 
         [Test]
@@ -60,8 +85,8 @@ namespace Depths.Tests
         {
             for (int f = 1; f <= 60; f++)
                 Assert.That(Balance.DepthRate(f), Is.LessThanOrEqualTo(Balance.DepthRateCap), "floor " + f);
-            Assert.That(Balance.DepthPack(1, 0), Is.GreaterThanOrEqualTo(0));
-            Assert.That(Balance.DepthPack(5, 0), Is.GreaterThanOrEqualTo(0), "a negative pack step is floored at 0");
+            for (int f = 1; f <= 60; f++)
+                Assert.That(Balance.DepthPack(f, 0), Is.GreaterThanOrEqualTo(0), "a negative pack step is floored at 0, floor " + f);
         }
 
         [Test]
@@ -70,8 +95,11 @@ namespace Depths.Tests
             var s = Curve.At(1);
             Assert.That(Balance.DepthTough(1), Is.EqualTo(s.Tough).Within(1e-12));
             Assert.That(Balance.DepthRate(1), Is.EqualTo(Math.Min(Balance.DepthRateCap, s.Rate)).Within(1e-12));
-            Assert.That(Balance.DepthBodies(1, 3), Is.EqualTo(3 + s.Bodies).Within(1e-12));
-            Assert.That(Balance.DepthPack(1, 0.45), Is.EqualTo(Math.Max(0, 0.45 + s.Pack)).Within(1e-12));
+            var m = Curve.At(5);
+            Assert.That(Balance.DepthBodies(5, 3), Is.EqualTo(3 + 0.085 * (Math.Exp(0.12 * 1.7 * 4) - 1) + m.Bodies).Within(1e-12));
+            Assert.That(Balance.DepthPack(5, 0.5), Is.EqualTo(Math.Max(0, 0.5 + 0.035 * 4 + m.Pack)).Within(1e-12));
+            Assert.That(Spawn.Body(Started(5), BodyKind.Lunger, 300, 300).maxHp,
+                Is.EqualTo(Enemy.Of(BodyKind.Lunger, 0, 0).maxHp * Balance.DepthTough(5)).Within(1e-9), "a spawned body carries it");
         }
 
         [Test, CurveOn(false)]
@@ -80,8 +108,8 @@ namespace Depths.Tests
             Assert.That(Curve.At(1).Tough, Is.EqualTo(1));
             Assert.That(Balance.DepthTough(1), Is.EqualTo(1.0));
             Assert.That(Balance.DepthTough(14), Is.EqualTo(2.5035).Within(0.005), "the parity row for floor 14");
-            Assert.That(Curve.HitAt(1, 4), Is.EqualTo(4));
             Assert.That(Curve.At(1).Drops, Is.EqualTo(1));
+            Assert.That(Curve.At(1).Heavy, Is.EqualTo(0));
         }
 
         [Test]
@@ -91,33 +119,13 @@ namespace Depths.Tests
             Assert.That(Curve.On, Is.True);
             var a = (CurveOnAttribute)Attribute.GetCustomAttribute(typeof(CurveTests).Assembly, typeof(CurveOnAttribute))!;
             Assert.That(a, Is.Not.Null);
-            bool was = Curve.On;
             a.BeforeTest(null!);
             try { Assert.That(Curve.On, Is.False); }
             finally { a.AfterTest(null!); }
-            Assert.That(Curve.On, Is.EqualTo(was));
+            Assert.That(Curve.On, Is.True);
         }
 
-        // ---- the hit and the drops
-
-        [Test]
-        public void AHitIsWholeHpRoundedHalfUpAndNeverBelowOne()
-        {
-            var saved = Curve.Table;
-            try
-            {
-                Curve.Table = new[] { new Curve.Step(1, 1, 0, 0, 0, 0.75, 1), new Curve.Step(1, 1, 0, 0, 0, 1.5, 1) };
-                Assert.That(Curve.HitAt(1, 1), Is.EqualTo(1), "contact 0.75 stays 1");
-                Assert.That(Curve.HitAt(1, 2), Is.EqualTo(2), "a shell 1.5 rounds up to 2");
-                Assert.That(Curve.HitAt(1, 4), Is.EqualTo(3), "a gunner shell 3");
-                Assert.That(Curve.HitAt(1, 3), Is.EqualTo(2), "the sweep 2.25 is 2");
-                Assert.That(Curve.HitAt(2, 1), Is.EqualTo(2), "1.5 rounds half up");
-                Assert.That(Curve.HitAt(2, 0), Is.EqualTo(0), "no hit stays no hit");
-                Balance.JsReference = true;
-                Assert.That(Curve.HitAt(2, 1.8), Is.EqualTo(1.8), "the JS damage rules are left alone");
-            }
-            finally { Curve.Table = saved; Balance.JsReference = false; }
-        }
+        // ---- the game calls each hook
 
         [Test]
         public void DropsScaleTheLootRollAndSpendOneDraw()
@@ -134,10 +142,103 @@ namespace Depths.Tests
             Assert.That(full / 20000.0, Is.EqualTo(0.26).Within(0.01));
             Assert.That(half / (double)full, Is.EqualTo(0.5).Within(0.03));
             Assert.That(Count(0.5, "heart") / (double)Count(1, "heart"), Is.EqualTo(0.5).Within(0.08), "every band shrinks alike");
-            // one draw each, whatever the scale: the run stream stays where it was
             var a = new Rng(3); var b = new Rng(3);
             Loot.Drop(a, 0, 0, 1); Loot.Drop(b, 0, 0, 0);
-            Assert.That(a.Run(), Is.EqualTo(b.Run()));
+            Assert.That(a.Run(), Is.EqualTo(b.Run()), "one draw whatever the scale: the run stream stays put");
+        }
+
+        // a kill's loot, through the game's own kill path, at a floor
+        static double KillDropRate(int floor, int n = 6000)
+        {
+            var run = Started(floor);
+            for (int i = 0; i < n; i++)
+            {
+                run.enemies.Add(Enemy.Of(BodyKind.Lunger, 300, 300));
+                Kills.KillEnemy(run, 0);
+            }
+            return run.pickups.Count / (double)n;
+        }
+
+        [Test]
+        public void AKillDropsWhatItsFloorSays()
+        {
+            Assert.That(KillDropRate(1), Is.EqualTo(0), "START: no kill drops");
+            Assert.That(KillDropRate(5), Is.EqualTo(0.26 * Curve.At(5).Drops).Within(0.012), "MIDDLE: scarce");
+            Assert.That(KillDropRate(Curve.EndFirst), Is.EqualTo(0.26 * Curve.At(Curve.EndFirst).Drops).Within(0.02));
+        }
+
+        [Test, CurveOn(false)]
+        public void OffAKillDropsTheJsChance() => Assert.That(KillDropRate(1), Is.EqualTo(0.26).Within(0.02));
+
+        // gunners per three-plus-body wave, through the game's own planner, at a floor
+        static double GunnerRate(int floor)
+        {
+            var planner = new WavePlanner(new Rng(99));
+            int waves = 0, gunners = 0;
+            for (int i = 0; i < 4000; i++)
+            {
+                var w = planner.PlanWave(floor, Dir.N, AreaRules.AreaForFloor(floor));
+                if (w.Slots.Count < 3) continue;
+                waves++;
+                if (w.Slots.Any(x => x.Kind == BodyKind.Gunner)) gunners++;
+            }
+            return gunners / (double)waves;
+        }
+
+        [Test]
+        public void AWavesGunnerChanceIsTheAreasPlusItsFloors()
+        {
+            foreach (int f in new[] { 1, 5, 12 })
+            {
+                double want = Bodies.MixFor(AreaRules.AreaForFloor(f)).Heavy + Curve.At(f).Heavy;
+                Assert.That(GunnerRate(f), Is.EqualTo(want).Within(0.03), "floor " + f);
+            }
+        }
+
+        [Test, CurveOn(false)]
+        public void OffAWavesGunnerChanceIsTheAreas() =>
+            Assert.That(GunnerRate(1), Is.EqualTo(Bodies.MixFor(Area.Area1).Heavy).Within(0.03));
+
+        [Test]
+        public void AWaveCarriesItsFloorsDensity()
+        {
+            // the middle takes a body off every wave; a wave never falls under two
+            var on = new WavePlanner(new Rng(5));
+            double sum = 0;
+            for (int i = 0; i < 3000; i++)
+            {
+                var w = on.PlanWave(5, Dir.N, Area.Area2);
+                Assert.That(w.Slots.Count, Is.GreaterThanOrEqualTo(2));
+                sum += w.Slots.Count;
+            }
+            Curve.On = false;
+            try
+            {
+                var off = new WavePlanner(new Rng(5));
+                double sumOff = 0;
+                for (int i = 0; i < 3000; i++) sumOff += off.PlanWave(5, Dir.N, Area.Area2).Slots.Count;
+                Assert.That(sum / 3000, Is.LessThan(sumOff / 3000 - 0.6), "about one slot fewer");
+            }
+            finally { Curve.On = true; }
+        }
+
+        // ---- the bot books it
+
+        [Test]
+        public void AFloorsSourcesSumToItsDamageAndHealing()
+        {
+            var r = new Runner(31337, "novice", 2.5).Play();
+            Assert.That(r.floors.Sum(f => f.dmg), Is.GreaterThan(0), "the fixture took no damage");
+            Assert.That(r.floors.Sum(f => f.healed), Is.GreaterThan(0), "the fixture healed nothing");
+            foreach (var f in r.floors)
+            {
+                Assert.That(f.dmgBySource!.Values.Sum(), Is.EqualTo(f.dmg).Within(1e-9), "floor " + f.floor);
+                Assert.That(f.healBy!.Values.Sum(), Is.EqualTo(f.healed).Within(1e-9), "floor " + f.floor);
+            }
+            foreach (var kv in r.dmgBySource)
+                Assert.That(r.floors.Sum(f => f.dmgBySource!.GetValueOrDefault(kv.Key)), Is.EqualTo(kv.Value).Within(1e-9), kv.Key);
+            foreach (var kv in r.healBy)
+                Assert.That(r.floors.Sum(f => f.healBy!.GetValueOrDefault(kv.Key)), Is.EqualTo(kv.Value).Within(1e-9), kv.Key);
         }
 
         // ---- the check
@@ -145,7 +246,7 @@ namespace Depths.Tests
         sealed class Spec
         {
             public double[] Start = { 0.10, 0.10 }, Middle = { 0.03 }, Ramp = { 0.3 }, End = { 0.35, 0.4, 0.45, 0.5, 0.55 };
-            public double HpOut2 = 5, Dmg = 10, Heal = 8, HeartHeal = 1;
+            public double HpOut2 = 5, Dmg = 10, Heal = 8, StartHeal = 8, HeartHeal = 1;
             public bool Sources = true;
             public Dictionary<string, double> Src = new Dictionary<string, double> { ["a"] = 5, ["b"] = 5 };
 
@@ -181,7 +282,7 @@ namespace Depths.Tests
                     {
                         var r = alive[i];
                         bool dies = i < k, end = f == last;
-                        r.floors.Add(new FloorRecord { floor = f, dmg = spec.Dmg, healed = spec.Heal, bossKilled = !dies && !end,
+                        r.floors.Add(new FloorRecord { floor = f, dmg = spec.Dmg, healed = f <= Curve.StartLast ? spec.StartHeal : spec.Heal, bossKilled = !dies && !end,
                             hpOut = dies ? 0 : f == 2 ? spec.HpOut2 : 7,
                             dmgBySource = spec.Sources ? new SortedDictionary<string, double>(spec.Src) : null });
                         r.floor = f;
@@ -201,7 +302,7 @@ namespace Depths.Tests
         {
             var (text, misses) = CurveCheck.Check(Synth());
             Assert.That(misses, Is.Empty, text);
-            Assert.That(text, Does.Contain("Every target met."));
+            Assert.That(text, Does.Contain("PASS: every target met"));
             var nov = CurveCheck.Measure(Synth(), "novice");
             Assert.That(nov.start.Hazard, Is.EqualTo(0.10).Within(0.002));
             Assert.That(nov.start.floors, Is.EqualTo(new[] { 1, 2 }));
@@ -212,28 +313,47 @@ namespace Depths.Tests
         }
 
         [Test]
-        public void EachMissIsNamed()
+        public void EachMissIsNamedWithItsRubricNumber()
         {
             Assert.That(Misses(Synth(novice: new Spec { Start = new[] { 0.2, 0.2 } })),
-                Has.Some.Contains("novice START hazard"));
+                Has.Some.StartsWith("1 novice START hazard"));
             Assert.That(Misses(Synth(skilled: new Spec { Start = new[] { 0.01, 0.01 }, Middle = new[] { 0.02 }, Ramp = new[] { 0.02 },
                                                          End = new[] { 0.03, 0.04, 0.05, 0.06, 0.07 }, HpOut2 = 7 })),
-                Has.Some.Match("^skilled: MIDDLE .* is not below both"));
+                Has.Some.Match("^2 skilled MIDDLE .* below both"));
             Assert.That(Misses(Synth(average: new Spec { Start = new[] { 0.04, 0.04 }, Middle = new[] { 0.01 }, Ramp = new[] { 0.05 },
                                                          End = new[] { 0.6, 0.6, 0.6, 0.02, 0.02 }, HpOut2 = 7 })),
-                Has.Some.Contains("average: END falls"));
-            Assert.That(Misses(Synth(skilled: Average())), Has.Some.Contains("START: skilled"));
-            Assert.That(Misses(Synth(novice: new Spec { HpOut2 = 6 })), Has.Some.Contains("median HP leaving floor 2 is 6"));
-            Assert.That(Misses(Synth(novice: new Spec { Heal = 10 })), Has.Some.Contains("novice: MIDDLE heals 10"));
+                Has.Some.StartsWith("3 average END halves"));
+            Assert.That(Misses(Synth(skilled: Average())), Has.Some.StartsWith("4 START orders"));
+            Assert.That(Misses(Synth(novice: new Spec { HpOut2 = 6 })), Has.Some.StartsWith("1 novice median HP leaving floor 2 6"));
+            Assert.That(Misses(Synth(novice: new Spec { Heal = 10 })), Has.Some.StartsWith("5 novice MIDDLE heals 10"));
             Assert.That(Misses(Synth(novice: new Spec { Src = new Dictionary<string, double> { ["a"] = 6, ["b"] = 4 } })),
-                Has.Some.Contains("novice: a deals 60.00% of START damage"));
+                Has.Some.StartsWith("1 novice top START source a 60.00%"));
             Assert.That(Misses(Synth(novice: new Spec { Sources = false })), Has.Some.Contains("not recorded"));
-            Assert.That(Misses(Synth(novice: new Spec { HeartHeal = 0 })), Has.Some.Contains("heart pickups are 0.00%"));
+            Assert.That(Misses(Synth(novice: new Spec { HeartHeal = 0 })), Has.Some.StartsWith("5 novice heart pickups 0.00%"));
             Assert.That(Misses(Synth(novice: new Spec { Ramp = new[] { 0.0 }, End = new[] { 0.10, 0.12, 0.14, 0.16, 0.18 } })),
-                Has.Some.Contains("novice: median floor"));
+                Has.Some.StartsWith("4 novice median floor"));
             var noSkilled = Synth();
             noSkilled.runs.RemoveAll(r => r.profile == "skilled"); noSkilled.profiles.Remove("skilled");
-            Assert.That(Misses(noSkilled), Has.Some.EqualTo("skilled: not played"));
+            Assert.That(Misses(noSkilled), Has.Some.EqualTo("1-5 skilled: not played"));
+        }
+
+        [Test]
+        public void AStartThatHealsAsMuchAsItTakesFails()
+        {
+            var misses = Misses(Synth(average: new Spec { Start = new[] { 0.04, 0.04 }, Middle = new[] { 0.01 }, Ramp = new[] { 0.05 },
+                                                          End = new[] { 0.06, 0.08, 0.10, 0.12, 0.14 }, HpOut2 = 7, StartHeal = 10 }));
+            Assert.That(misses, Is.EqualTo(new[] { "5 average START heals 10 a floor, below its 10 damage" }), "that line, and only it");
+        }
+
+        [Test]
+        public void EveryTargetPrintsOneLineOkOrMiss()
+        {
+            var (text, _) = CurveCheck.Check(Synth());
+            var lines = text.Split('\n').Where(l => l.StartsWith("ok   ") || l.StartsWith("MISS ")).ToList();
+            Assert.That(lines.Count, Is.EqualTo(3 * 10 + 1 + 3), "ten a profile, the novice HP, three orderings");
+            Assert.That(lines.All(l => char.IsDigit(l[5])), "each led by its rubric number");
+            Assert.That(text, Does.Contain("PASS: every target met"));
+            Assert.That(text, Does.Contain("## Healing by source"));
         }
 
         [Test]
@@ -271,14 +391,56 @@ namespace Depths.Tests
         }
 
         [Test]
-        public void PlayRecordsTheCurveAndCanTurnItOff()
+        public void PlayRecordsTheCurveAndTheDials()
         {
             Assert.That(Cli.Parse(new[] { "play" }).Curve, Is.True);
             Assert.That(Cli.Parse(new[] { "play", "--curve", "off" }).Curve, Is.False);
             Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--curve", "maybe" }));
-            var b = Matrix.Play("x", new uint[] { 1 }, new[] { "novice" }, 0.05);
-            Assert.That(b.curve, Is.True);
-            Assert.That(b.runs[0].floors[0].dmgBySource, Is.Not.Null, "damage sources are kept per floor");
+            string dir = Path.Combine(Path.GetTempPath(), "depths-curve-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                Batch Played(params string[] extra)
+                {
+                    var args = new List<string> { "play", "--label", "p", "--seeds", "3", "--profiles", "novice", "--minutes", "0.5", "--out", dir };
+                    args.AddRange(extra);
+                    Assert.That(Program.Main(args.ToArray()), Is.EqualTo(0));
+                    return Json.Read(File.ReadAllText(Path.Combine(dir, "p.json")), "p");
+                }
+                var off = Played("--curve", "off");
+                Assert.That(off.curve, Is.False, "--curve off reaches the game");
+                Curve.On = false;
+                var direct = Matrix.Play("p", new uint[] { 3 }, new[] { "novice" }, 0.5);
+                Curve.On = true;
+                Assert.That(Json.Text(off.runs), Is.EqualTo(Json.Text(direct.runs)), "and plays the JS ladder");
+                var on = Played();
+                Assert.That(on.curve, Is.True);
+                Assert.That(on.dials, Is.Null);
+                Assert.That(Json.Text(on.runs), Is.Not.EqualTo(Json.Text(off.runs)), "the curve changes the run");
+                double was = S("start").Tough;
+                var dialled = Played("--dial", "start.Tough=3,start.Drops=1");
+                Assert.That(dialled.dials, Is.EqualTo(new[] { "start.Tough=3", "start.Drops=1" }), "recorded in the header");
+                Assert.That(S("start").Tough, Is.EqualTo(was), "and undone after the play");
+                Assert.That(Json.Text(dialled.runs), Is.Not.EqualTo(Json.Text(on.runs)), "a dial changes the run");
+                Assert.That(Report.Mismatches(on, dialled), Has.Some.Contains("curve dials differ"));
+            }
+            finally { Directory.Delete(dir, true); }
+        }
+
+        [Test]
+        public void ADialIsAStageFieldAndABadOneIsRefused()
+        {
+            var (st, f, v) = CurveDials.Parse("middle.Drops=0.15");
+            Assert.That(st, Is.SameAs(S("middle")));
+            Assert.That(f.Name, Is.EqualTo("Drops"));
+            Assert.That(v, Is.EqualTo(0.15));
+            Assert.Throws<UsageException>(() => CurveDials.Parse("nowhere.Tough=1"));
+            Assert.Throws<UsageException>(() => CurveDials.Parse("middle.Nothing=1"));
+            Assert.Throws<UsageException>(() => CurveDials.Parse("middle.First=4"), "a stage's floor is not a dial");
+            Assert.Throws<UsageException>(() => CurveDials.Parse("middle.Tough=x"));
+            Assert.Throws<UsageException>(() => CurveDials.Parse("middle.Tough"));
+            Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--dial", "end.Rate=NaN" }));
+            Assert.That(Program.Main(new[] { "play", "--dial", "bad" }), Is.EqualTo(1));
         }
     }
 }

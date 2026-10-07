@@ -156,6 +156,7 @@ namespace Depths.Playtest
             Cmp("Brunch variants", a.brunch, b.brunch);
             static string On(bool? v) => v == null ? "unrecorded" : v.Value ? "on" : "off";
             Cmp("difficulty curves", On(a.curve), On(b.curve));
+            Cmp("curve dials", a.dials == null ? "none" : string.Join(",", a.dials), b.dials == null ? "none" : string.Join(",", b.dials));
             return w;
         }
 
@@ -171,6 +172,7 @@ namespace Depths.Playtest
                 sb.Append("- ").Append(s.label).Append(": ").Append(s.runs.Count).Append(" runs, seeds ")
                   .Append(string.Join(", ", s.seeds)).Append(", up to ").Append(s.minutes.ToString(Inv))
                   .Append(" sim-min each at ").Append(Hz(s)).Append(" Hz, Brunch ").Append(s.brunch)
+                  .Append(s.dials != null ? ", curve dialled " + string.Join(",", s.dials) : "")
                   .Append(", built from ").Append(s.commit ?? "an unknown commit").Append('\n');
             if (ab)
                 foreach (var m in Mismatches(sets[0], sets[1]))
