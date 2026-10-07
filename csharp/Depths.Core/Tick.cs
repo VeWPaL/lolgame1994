@@ -255,7 +255,7 @@ namespace Depths
                     e.y += System.Math.Sin(a) * Balance.BossSweepDist;
                     Movement.Clamp(e);
                     if (Dist(e.x - p.x, e.y - p.y) < e.r + p.r)
-                        Combat.DamagePlayer(run, Balance.JsReference ? e.dmg * Balance.JsBossSweepMult : Balance.BossSweepDmg, System.Math.Cos(a), System.Math.Sin(a), 3 * Balance.KnockPGain, true);
+                        Combat.DamagePlayer(run, Balance.JsReference ? e.dmg * Balance.JsBossSweepMult : Curve.HitAt(run.floor, Balance.BossSweepDmg), System.Math.Cos(a), System.Math.Sin(a), 3 * Balance.KnockPGain, true);
                 }
                 e.move = "idle"; e.moveT = Balance.BossRecover; e.sweepDone = false;
             }
@@ -543,7 +543,7 @@ namespace Depths
                     bool brunch = e.kind == BodyKind.Brunch;
                     bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0;
                     bool boss = e.kind == BodyKind.Boss;
-                    if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, boss) && (!brunch || holdingSlot))
+                    if (Combat.DamagePlayer(run, Curve.HitAt(run.floor, boss ? 2 : 1), edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, boss) && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
                     if (brunch)
                     {
@@ -717,7 +717,7 @@ namespace Depths
             {
                 double pn = Dist(p.vx, p.vy);
                 if (pn == 0) pn = 1;
-                Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
+                Combat.DamagePlayer(run, Curve.HitAt(run.floor, p.dmg), p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
                 hitSomething = true;
             }
             if (hitSomething) ps.RemoveAt(i);

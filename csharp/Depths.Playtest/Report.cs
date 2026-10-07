@@ -154,6 +154,8 @@ namespace Depths.Playtest
             Cmp("minutes", a.minutes.ToString(Inv), b.minutes.ToString(Inv));
             Cmp("tick rates", Hz(a).ToString(Inv), Hz(b).ToString(Inv));
             Cmp("Brunch variants", a.brunch, b.brunch);
+            static string On(bool? v) => v == null ? "unrecorded" : v.Value ? "on" : "off";
+            Cmp("difficulty curves", On(a.curve), On(b.curve));
             return w;
         }
 

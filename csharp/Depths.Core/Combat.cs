@@ -221,7 +221,7 @@ namespace Depths
                 for (int i = en.Count - 1; i >= 0; i--)
                     if (en[i].packId == Balance.BossWallId) en.RemoveAt(i);
             run.kills++;
-            var d = Loot.Drop(run.rng, e.x, e.y);
+            var d = Loot.Drop(run.rng, e.x, e.y, Curve.At(run.floor).Drops);
             if (d != null) run.pickups.Add(d);
         }
     }
@@ -233,10 +233,11 @@ namespace Depths
         /// one draw. The JS has no halves (18% heart, 8% armour); the split, 2026-10-06, cuts the
         /// healing a kill pays by a quarter while keeping the same draws and the same drop rate.
         /// </summary>
-        public static Pickup? Drop(Rng rng, double x, double y)
+        public static Pickup? Drop(Rng rng, double x, double y, double scale = 1)
         {
             double roll = rng.Run();
             if (Balance.JsReference) return roll < 0.18 ? Pickup.Of("heart", x, y, 10) : roll < 0.26 ? Pickup.Of("armor", x, y, 10) : null;
+            roll /= scale;   // the curve's Drops: every band shrinks (or grows) by one factor, still one draw
             if (roll < 0.09) return Pickup.Of("halfheart", x, y, 10);
             if (roll < 0.18) return Pickup.Of("heart", x, y, 10);
             if (roll < 0.22) return Pickup.Of("halfarmor", x, y, 10);

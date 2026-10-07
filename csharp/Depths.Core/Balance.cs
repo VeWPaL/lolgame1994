@@ -991,9 +991,10 @@ namespace Depths
         public static double Ramp(int steps, double growth, double rate) =>
             1 + growth * (System.Math.Exp(rate * steps) - 1);
 
-        public static double DepthTough(int floor) => Ramp(DepthSteps(floor), DepthGrowth, DepthPow);
+        // Tough and Rate carry the floor's Curve shape; the rate cap still binds after it.
+        public static double DepthTough(int floor) => Ramp(DepthSteps(floor), DepthGrowth, DepthPow) * Curve.At(floor).Tough;
         public static double DepthRate(int floor) =>
-            System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55));
+            System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55) * Curve.At(floor).Rate);
 
         /// <summary>
         /// Density is its own exponent rather than the health one, because it is a different kind of
@@ -1005,9 +1006,9 @@ namespace Depths
         /// one is a dial that was retuned without anybody deciding to retune floor one.
         /// </summary>
         public static double DepthBodies(int floor, int rolled) =>
-            System.Math.Min(DepthBodyCap, rolled + DepthBodyPow * (System.Math.Exp(DepthPow * 1.7 * DepthSteps(floor)) - 1));
+            System.Math.Min(DepthBodyCap, rolled + DepthBodyPow * (System.Math.Exp(DepthPow * 1.7 * DepthSteps(floor)) - 1) + Curve.At(floor).Bodies);
 
         public static double DepthPack(int floor, double brunchChance) =>
-            System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor));
+            System.Math.Max(0, System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor) + Curve.At(floor).Pack));
     }
 }

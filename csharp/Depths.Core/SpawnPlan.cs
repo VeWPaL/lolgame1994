@@ -267,7 +267,7 @@ namespace Depths
             // At most one gunner, and only where there are enough bodies to space it from the rest.
             // The n>=3 test SHORT-CIRCUITS, so a two-body room does not draw here at all. That is
             // load-bearing: it is why a two-body room costs 644 draws and a four-body room 647.
-            var heavy = n >= 3 && _rng.Run() < mix.Heavy;
+            var heavy = n >= 3 && _rng.Run() < mix.Heavy + Curve.At(floor).Heavy;
 
             // A pack is the most interesting thing a room can contain and the most reliable cover, so
             // if deep floors were only tougher they would be the same rooms with longer fights. Capped

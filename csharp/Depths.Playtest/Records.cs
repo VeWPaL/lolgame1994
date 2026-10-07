@@ -15,6 +15,8 @@ namespace Depths.Playtest
         public double? hpOut;          // after the step that left the floor (or at the run's end)
         public double armorIn;
         public double? armorOut;
+        // damage on this floor by source, as the run's; null in files from before 2026-10-06
+        public SortedDictionary<string, double>? dmgBySource;
     }
 
     public sealed class RunResult
@@ -43,6 +45,7 @@ namespace Depths.Playtest
         public string label = "";
         public string? commit;
         public string brunch = "";
+        public bool? curve;   // Curve.On when played; null in files from before the curve
         public int tickHz;
         public double minutes;
         public List<uint> seeds = new List<uint>();

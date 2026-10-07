@@ -59,7 +59,7 @@ namespace Depths.Playtest
                                  double minutes, Action<RunResult>? each = null)
         {
             var b = new Batch { label = label, commit = BuildInfo.Commit, brunch = Balance.BrunchVariant,
-                                tickHz = Balance.TickHz, minutes = minutes, seeds = seeds.ToList(),
+                                tickHz = Balance.TickHz, curve = Depths.Curve.On, minutes = minutes, seeds = seeds.ToList(),
                                 profiles = profiles.ToList() };
             foreach (var p in profiles)
                 foreach (var s in seeds)
@@ -95,13 +95,14 @@ namespace Depths.Playtest
         public List<string> Profiles = new List<string> { "novice", "average", "skilled" };
         public double Minutes = 20;
         public string? Brunch, Out;
+        public bool Curve = true;   // the game's difficulty curve; off plays the JS ladder, for A/B
         public int? Hz;   // the sim's tick rate; the game's own when not given
         public List<string> Labels = new List<string>();
 
-        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz" };
+        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--out DIR]  |  report A [B] [--out DIR]";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--out DIR]";
 
         static string Name(string s, string what)
         {
@@ -113,13 +114,13 @@ namespace Depths.Playtest
 
         public static Cli Parse(string[] a)
         {
-            if (a.Length == 0 || (a[0] != "play" && a[0] != "report")) throw new UsageException(Usage);
+            if (a.Length == 0 || (a[0] != "play" && a[0] != "report" && a[0] != "curve")) throw new UsageException(Usage);
             var c = new Cli { Command = a[0] };
             for (int i = 1; i < a.Length; i++)
             {
                 if (!a[i].StartsWith("--", StringComparison.Ordinal))
                 {
-                    if (c.Command != "report") throw new UsageException("unexpected argument '" + a[i] + "'");
+                    if (c.Command == "play") throw new UsageException("unexpected argument '" + a[i] + "'");
                     c.Labels.Add(Name(a[i], "label"));
                     continue;
                 }
@@ -161,11 +162,16 @@ namespace Depths.Playtest
                         if (v != "A" && v != "B" && v != "A+") throw new UsageException("--brunch is A, B or A+");
                         c.Brunch = v;
                         break;
+                    case "curve":
+                        if (v != "on" && v != "off") throw new UsageException("--curve is on or off");
+                        c.Curve = v == "on";
+                        break;
                 }
             }
             if (c.Command == "play" && c.Seeds.Count == 0) throw new UsageException("--seeds is empty");
             if (c.Command == "report" && (c.Labels.Count < 1 || c.Labels.Count > 2))
                 throw new UsageException("report takes one label, or two to compare");
+            if (c.Command == "curve" && c.Labels.Count != 1) throw new UsageException("curve takes one label");
             return c;
         }
     }
@@ -191,7 +197,7 @@ namespace Depths.Playtest
             try
             {
                 var c = Cli.Parse(args);
-                return c.Command == "play" ? Play(c) : ReportCmd(c);
+                return c.Command == "play" ? Play(c) : c.Command == "curve" ? CurveCmd(c) : ReportCmd(c);
             }
             catch (UsageException e) { Console.Error.WriteLine(e.Message); return 1; }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
@@ -211,6 +217,7 @@ namespace Depths.Playtest
             // the game's own comparison switch, recorded in the header
             if (c.Brunch != null) Balance.BrunchVariant = c.Brunch;
             if (c.Hz != null) Balance.TickHz = c.Hz.Value;   // recorded in the header too
+            Depths.Curve.On = c.Curve;
             string dir = OutDir(c);
             Directory.CreateDirectory(dir);
             var sw = Stopwatch.StartNew();
@@ -226,17 +233,31 @@ namespace Depths.Playtest
             return 0;
         }
 
+        static Batch Load(string dir, string label)
+        {
+            string f = Path.Combine(dir, label + ".json");
+            if (!File.Exists(f))
+                throw new UsageException("no playtest file " + f + " (play it with --label " + label + ")");
+            return Json.Read(File.ReadAllText(f), f);
+        }
+
+        /// <summary>The curve check: 0 when every target is met, 2 when one is missed.</summary>
+        static int CurveCmd(Cli c)
+        {
+            string dir = OutDir(c);
+            var (md, misses) = CurveCheck.Check(Load(dir, c.Labels[0]));
+            string file = Path.Combine(dir, "curve-" + c.Labels[0] + ".md");
+            Save(file, md);
+            Console.Write(md);
+            Console.WriteLine("\nwrote " + file);
+            return misses.Count == 0 ? 0 : 2;
+        }
+
         static int ReportCmd(Cli c)
         {
             string dir = OutDir(c);
             var sets = new List<Batch>();
-            foreach (var l in c.Labels)
-            {
-                string f = Path.Combine(dir, l + ".json");
-                if (!File.Exists(f))
-                    throw new UsageException("no playtest file " + f + " (play it with --label " + l + ")");
-                sets.Add(Json.Read(File.ReadAllText(f), f));
-            }
+            foreach (var l in c.Labels) sets.Add(Load(dir, l));
             string md = Report.Build(sets);
             string file = Path.Combine(dir, "report-" + string.Join("-vs-", c.Labels) + ".md");
             Save(file, md);
