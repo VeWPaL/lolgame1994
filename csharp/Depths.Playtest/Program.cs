@@ -59,7 +59,7 @@ namespace Depths.Playtest
                                  double minutes, Action<RunResult>? each = null)
         {
             var b = new Batch { label = label, commit = BuildInfo.Commit, brunch = Balance.BrunchVariant,
-                                tickHz = Balance.TickHz, minutes = minutes, seeds = seeds.ToList(),
+                                tickHz = Balance.TickHz, curve = Depths.Curve.On, dials = CurveDials.Applied.Count > 0 ? CurveDials.Applied.ToList() : null, minutes = minutes, seeds = seeds.ToList(),
                                 profiles = profiles.ToList() };
             foreach (var p in profiles)
                 foreach (var s in seeds)
@@ -80,6 +80,43 @@ namespace Depths.Playtest
             .FirstOrDefault(a => a.Key == "GitCommit")?.Value;
     }
 
+    /// <summary>`--dial stage.Field=value`: one Curve.Stages field changed for one play, recorded in the header, undone after.</summary>
+    public static class CurveDials
+    {
+        public static readonly List<string> Applied = new List<string>();
+        static readonly List<(Depths.Curve.Stage stage, FieldInfo field, double was)> Undo = new List<(Depths.Curve.Stage, FieldInfo, double)>();
+
+        public static (Depths.Curve.Stage stage, FieldInfo field, double value) Parse(string d)
+        {
+            int dot = d.IndexOf('.'), eq = d.IndexOf('=');
+            if (dot < 1 || eq < dot + 2) throw new UsageException("--dial: '" + d + "' is not stage.Field=value");
+            string sn = d.Substring(0, dot), fn = d.Substring(dot + 1, eq - dot - 1);
+            var st = Depths.Curve.Stages.FirstOrDefault(x => x.Name == sn)
+                ?? throw new UsageException("--dial: no stage '" + sn + "' (" + string.Join(", ", Depths.Curve.Stages.Select(x => x.Name)) + ")");
+            var f = typeof(Depths.Curve.Stage).GetField(fn);
+            if (f == null || f.IsInitOnly || f.FieldType != typeof(double))
+                throw new UsageException("--dial: no dial '" + fn + "' (Tough, Rate, Bodies, Pack, Heavy, Drops)");
+            if (!double.TryParse(d.Substring(eq + 1), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) || double.IsNaN(v) || double.IsInfinity(v))
+                throw new UsageException("--dial: '" + d.Substring(eq + 1) + "' is not a number");
+            return (st, f, v);
+        }
+
+        public static void Set(string d)
+        {
+            var (st, f, v) = Parse(d);
+            Undo.Add((st, f, (double)f.GetValue(st)!));
+            f.SetValue(st, v);
+            Applied.Add(d);
+        }
+
+        /// <summary>Puts every dialled field back, last first.</summary>
+        public static void Reset()
+        {
+            for (int i = Undo.Count - 1; i >= 0; i--) Undo[i].field.SetValue(Undo[i].stage, Undo[i].was);
+            Undo.Clear(); Applied.Clear();
+        }
+    }
+
     /// <summary>A bad command line: printed as one line, exit code 1.</summary>
     public sealed class UsageException : Exception
     {
@@ -95,13 +132,16 @@ namespace Depths.Playtest
         public List<string> Profiles = new List<string> { "novice", "average", "skilled" };
         public double Minutes = 20;
         public string? Brunch, Out;
+        public bool Curve = false;   // the difficulty curve, off by default until signed off; on to play it
+        public List<string> Dials = new List<string>();
+        public Depths.Curve.MiddleRule? MidRule;   // curve --mid-rule: which rubric-5 MIDDLE reading to check   // --dial stage.Field=value, a retune without a rebuild
         public int? Hz;   // the sim's tick rate; the game's own when not given
         public List<string> Labels = new List<string>();
 
-        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz" };
+        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--out DIR]  |  report A [B] [--out DIR]";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]";
 
         static string Name(string s, string what)
         {
@@ -113,24 +153,29 @@ namespace Depths.Playtest
 
         public static Cli Parse(string[] a)
         {
-            if (a.Length == 0 || (a[0] != "play" && a[0] != "report")) throw new UsageException(Usage);
+            if (a.Length == 0 || (a[0] != "play" && a[0] != "report" && a[0] != "curve")) throw new UsageException(Usage);
             var c = new Cli { Command = a[0] };
             for (int i = 1; i < a.Length; i++)
             {
                 if (!a[i].StartsWith("--", StringComparison.Ordinal))
                 {
-                    if (c.Command != "report") throw new UsageException("unexpected argument '" + a[i] + "'");
+                    if (c.Command == "play") throw new UsageException("unexpected argument '" + a[i] + "'");
                     c.Labels.Add(Name(a[i], "label"));
                     continue;
                 }
                 string k = a[i].Substring(2);
-                if (c.Command == "play" ? Array.IndexOf(PlayOpts, k) < 0 : k != "out")
+                if (c.Command == "play" ? Array.IndexOf(PlayOpts, k) < 0 : k != "out" && !(c.Command == "curve" && k == "mid-rule"))
                     throw new UsageException("unknown option --" + k);
                 if (i + 1 >= a.Length) throw new UsageException("--" + k + " needs a value");
                 string v = a[++i];
                 switch (k)
                 {
                     case "label": c.Label = Name(v, "--label"); break;
+                    case "mid-rule":
+                        if (!Enum.TryParse<Depths.Curve.MiddleRule>(v, true, out var mr) || !Enum.IsDefined(typeof(Depths.Curve.MiddleRule), mr) || int.TryParse(v, out _))
+                            throw new UsageException("--mid-rule is original, recovery or pickups");
+                        c.MidRule = mr;
+                        break;
                     case "out":
                         if (v.Trim().Length == 0) throw new UsageException("--out needs a folder");
                         c.Out = v;
@@ -161,11 +206,19 @@ namespace Depths.Playtest
                         if (v != "A" && v != "B" && v != "A+") throw new UsageException("--brunch is A, B or A+");
                         c.Brunch = v;
                         break;
+                    case "dial":
+                        foreach (var d in v.Split(',')) { CurveDials.Parse(d); c.Dials.Add(d); }
+                        break;
+                    case "curve":
+                        if (v != "on" && v != "off") throw new UsageException("--curve is on or off");
+                        c.Curve = v == "on";
+                        break;
                 }
             }
             if (c.Command == "play" && c.Seeds.Count == 0) throw new UsageException("--seeds is empty");
             if (c.Command == "report" && (c.Labels.Count < 1 || c.Labels.Count > 2))
                 throw new UsageException("report takes one label, or two to compare");
+            if (c.Command == "curve" && c.Labels.Count != 1) throw new UsageException("curve takes one label");
             return c;
         }
     }
@@ -191,7 +244,7 @@ namespace Depths.Playtest
             try
             {
                 var c = Cli.Parse(args);
-                return c.Command == "play" ? Play(c) : ReportCmd(c);
+                return c.Command == "play" ? Play(c) : c.Command == "curve" ? CurveCmd(c) : ReportCmd(c);
             }
             catch (UsageException e) { Console.Error.WriteLine(e.Message); return 1; }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
@@ -211,14 +264,21 @@ namespace Depths.Playtest
             // the game's own comparison switch, recorded in the header
             if (c.Brunch != null) Balance.BrunchVariant = c.Brunch;
             if (c.Hz != null) Balance.TickHz = c.Hz.Value;   // recorded in the header too
+            Depths.Curve.On = c.Curve;   // and this
             string dir = OutDir(c);
             Directory.CreateDirectory(dir);
             var sw = Stopwatch.StartNew();
-            var b = Matrix.Play(c.Label, c.Seeds, c.Profiles, c.Minutes, r =>
+            Batch b;
+            try
+            {
+                foreach (var d in c.Dials) CurveDials.Set(d);   // and these
+                b = Matrix.Play(c.Label, c.Seeds, c.Profiles, c.Minutes, r =>
                 Console.WriteLine($"{r.profile,-8} seed {r.seed,-6} floor {r.floor,-3} {r.end,-7} " +
                                   $"{Report.F1(r.ticks / (double)Balance.TickHz / 60)}min  " +
                                   $"dmg {Json.Text(r.dmgBySource)}" +
                                   (r.errors.Count > 0 ? "  ERRORS " + r.errors[0] : "")));
+            }
+            finally { CurveDials.Reset(); }
             string file = Path.Combine(dir, c.Label + ".json");
             Save(file, Json.Write(b));
             Console.WriteLine($"\n{b.runs.Count} runs in {sw.Elapsed.TotalSeconds:0.0}s, " +
@@ -226,17 +286,31 @@ namespace Depths.Playtest
             return 0;
         }
 
+        static Batch Load(string dir, string label)
+        {
+            string f = Path.Combine(dir, label + ".json");
+            if (!File.Exists(f))
+                throw new UsageException("no playtest file " + f + " (play it with --label " + label + ")");
+            return Json.Read(File.ReadAllText(f), f);
+        }
+
+        /// <summary>The curve check: 0 when every target is met, 2 when one is missed.</summary>
+        static int CurveCmd(Cli c)
+        {
+            string dir = OutDir(c);
+            var (md, misses) = CurveCheck.Check(Load(dir, c.Labels[0]), c.MidRule);
+            string file = Path.Combine(dir, "curve-" + c.Labels[0] + ".md");
+            Save(file, md);
+            Console.Write(md);
+            Console.WriteLine("\nwrote " + file);
+            return misses.Count == 0 ? 0 : 2;
+        }
+
         static int ReportCmd(Cli c)
         {
             string dir = OutDir(c);
             var sets = new List<Batch>();
-            foreach (var l in c.Labels)
-            {
-                string f = Path.Combine(dir, l + ".json");
-                if (!File.Exists(f))
-                    throw new UsageException("no playtest file " + f + " (play it with --label " + l + ")");
-                sets.Add(Json.Read(File.ReadAllText(f), f));
-            }
+            foreach (var l in c.Labels) sets.Add(Load(dir, l));
             string md = Report.Build(sets);
             string file = Path.Combine(dir, "report-" + string.Join("-vs-", c.Labels) + ".md");
             Save(file, md);

@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-06 (C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-07 (the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
 
 ## Where things are
@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  559/559, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  585/585, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -105,11 +105,66 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   enemy and Warden cooldowns (each carries its overrun; the Bolt was 2% slow, the Beam 7%, enemy fire
   2%), shells and body contact (4 sub-steps at 60 Hz; contact damage 145 -> 154 an hour, 152 at
   210). Owner: decide whether 60 Hz difficulty wants a retune.
-- **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
-  curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
-  area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,
-  consumables) load-bearing. Bot data (C#, 210 Hz, 60 min, seeds 101-300, with the won-fight refill):
-  healing = damage per floor (15.2 hp), median floor 17, 105 of 600 runs die (68 of them novice).
+- **Difficulty curve** (2026-10-07, C# only; **off by default, BLOCKED on the owner**). `Curve.On`
+  is false and the bot plays the JS ladder unless given `--curve on`; flip `Curve.On` (one line) once
+  the owner signs the tune off. Three cold critic rounds scored it 7/10 each (stall rule), verdicts
+  outside the repo. Open decisions: rubric 5 for MIDDLE (below), the floor-2 and floor-12 spikes, and
+  whether to drop the middle's gunners so skill orders deaths more clearly. Owner's direction: a non-linear
+  curve (hard start, easier-but-not-easy middle, hard end), scarce pickups, buffed enemies later on,
+  every part of the kit load-bearing. Built as eight named stages in `csharp/Depths.Core/Curve.cs`
+  laid over the depth ladder: `start` (1) and `peak` (2) a bump while the player has no kit, `soft` (3)
+  and `middle` (4-10) a dip, `ramp` (11) and `climb` (12) into the last area, `end` (13-16) and `deep`
+  (17+). Dials per stage, each with its why in the file: `Tough`, `Rate` (still under `DepthRateCap`),
+  `Bodies`, `Pack`, `Heavy` (gunner chance), `Drops` (kill drop chance x). A hit is worth the same on
+  every floor. From floor 11 on no floor is easier than the one before (body health, whole extra
+  bodies, gunners, packs; pinned by tests); the extra bodies step at 12 and 18. Targets live in the same
+  file (`Curve.Targets`). Tests run with the curve off (assembly `[CurveOn(false)]`), so the 148 parity
+  rows keep the JS ladder.
+  Bot: `play --curve on` plays the curve (off plays the JS ladder); `play --dial middle.Drops=0.15,end.Tough=1.2` tries a
+  value without a rebuild (recorded in the JSON header, flagged by `report`); `curve <label>
+  [--mid-rule original|recovery|pickups]` prints one ok/MISS line per target with its rubric number,
+  exits 2 on a miss, and writes `playtest/curve-<label>.md`. The bot records damage and healing by
+  source per floor. Bot, 60 Hz, 60 min, 600 runs a set, seeds 101-300 (the rubric's) / 301-500 (a
+  check against fitting to noise); hazard = deaths / floor entries, floors reached by 30+ runs:
+
+  | | START (base 101-300 > now 101-300 / 301-500) | MIDDLE | END | HP leaving 2 | median floor |
+  |---|---|---|---|---|---|
+  | novice | 1.26% > 12.3% / 11.4% | 0.45% > 2.29% / 3.03% | 4.80% > 40.2% / 38.6% | 8 > 5 / 5 | 17 > 12 / 12 |
+  | average | 0.00% > 4.28% / 3.26% | 0.00% > 0.42% / 0.34% | 0.89% > 12.0% / 13.7% | 8 > 6 / 6 | 17 > 17 / 16 |
+  | skilled | 0.00% > 2.26% / 2.50% | 0.06% > 0.40% / 0.33% | 0.50% > 7.9% / 7.9% | 8 > 7 / 7 | 17 > 17 / 17 |
+
+  Every target except rubric 5 for MIDDLE holds on both sets. Thin margins, from the bot's profiles
+  rather than the curve: average and skilled die about equally often in a gentle middle (pooled over 8
+  matrices: 54 against 42 deaths, mostly to the gunner's shell), so the MIDDLE order average > skilled
+  (0.42 > 0.40, 0.34 > 0.33) rests on a death or two; skilled START sits at 2.3-2.5% under a 3% ceiling;
+  novice HP leaving 2 is exactly 5. Average hazard on floors 11-17 (101-300): 0.6, 4.6, 7.7, 11.0, 10.9,
+  13.0, 18.9%; skilled 0.5, 4.4, 8.0, 4.3, 9.0, 7.1, 11.6%; novice 11.9, 31.5, 39.5, 41.3, 48.1% (15-17
+  are reached by fewer than 30 novices). What moved what: `Drops` 0 on floors 1-2 makes the start cost
+  hearts (HP leaving 2: 8 > 5); fewer gunners (`Heavy`) and faster, dodgeable shooters (`Rate`) are what
+  separate skill; the dip is softer bodies, few gunners and scarce drops (x0.14, x0.35 on floor 3 so a
+  start with none can be survived); 11-12 add health and the extra body before the last area.
+  To playtest, not settled: floor 2 is the start's spike (novice 20%, average 6-7%, the highest
+  MIDDLE-or-earlier floor; every END floor is above it); spreading it over 1-2 moved the start out of
+  its targets on one seed set or the other, so it is left for the owner to feel. Floor 12 (`climb`) is
+  the novice wall: 31.5% / 22.8% of novices who reach it die there, novice END hazard is 40% and the
+  novice median floor (12) sits at it; a smaller `climb.Tough`, or the body step moved to 13, would
+  soften it. And no kill ever drops anything on floors 1-2: a
+  player will read that as broken without a tell (a later UI idea, not built).
+  **Owner decision, rubric 5 for MIDDLE.** As written ("healing a floor below damage a floor") it is
+  missed by 0.2-0.4 HP a floor for every profile. Over the band, healing minus damage is exactly the
+  change in HP and armour, and the start (by design) sends players into floor 3 at about 5 of 8, so a
+  middle that gives none of it back has to drain an already hurt player; every drop rate that did broke
+  the middle's death ceilings. `Curve.MidRule` holds the choice (one line; default `Original`):
+  - `Recovery`: over the runs that leave floor 10, mean (HP + armour leaving 10) - (HP + armour entering
+    3) is at most mean (max HP entering 11) - (HP entering 3), i.e. the middle gives back no more than
+    the start took plus new max HP. Met: novice 3.22 <= 4.13 / 3.45 <= 4.54, average 3.45 <= 3.61 /
+    3.20 <= 3.58, skilled 3.10 <= 3.30 / 2.94 <= 3.15 (101-300 / 301-500; thin for average and skilled).
+    A median reading (median HP leaving 2) is not this formula and fails for average and skilled.
+  - `Pickups`: MIDDLE healing a floor less the regenerating heart (clock and refill) below MIDDLE damage
+    a floor. Met with room: novice 3.43 < 13.87 / 3.31 < 13.82, average 2.75 < 9.73 / 2.72 < 10.05,
+    skilled 2.60 < 8.37 / 2.55 < 8.50.
+  Recommended: `Pickups`. The critic showed `Recovery` cannot fail on HP alone (`CurveCheck.cs`, the
+  recovery check), so it only measures armour.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).

@@ -115,11 +115,11 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **559 checks**, parity-verified against the JavaScript except the 171 in
+- C# `Depths.Tests` has **585 checks**, parity-verified against the JavaScript except the 197 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests`,
-  `PlaytestToolTests` and `RateTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
+  `PlaytestToolTests`, `RateTests` and `CurveTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
   `verify.ps1` skips when it counts parity rows). Parity tests whose recordings take player damage run
-  with `Balance.JsReference = true` (the JS damage rules); the whole suite runs at 210 Hz.
+  with `Balance.JsReference = true` (the JS damage rules); the whole suite runs at 210 Hz and with the difficulty curve off (assembly `[CurveOn(false)]`; `CurveTests` turns it on).
 - `verify.ps1` asserts both numbers above; keep them current.
 
 ## Archived design decisions (`docs/history/conventions-archive.md`)

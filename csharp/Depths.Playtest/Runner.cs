@@ -47,7 +47,9 @@ namespace Depths.Playtest
         {
             var p = Run.player;
             _f = new FloorRecord { floor = Run.floor, hpIn = Hearts(p), maxHpIn = p.maxHp + p.regenHeartMax,
-                                   armorIn = p.armor };
+                                   armorIn = p.armor,
+                                   dmgBySource = new SortedDictionary<string, double>(StringComparer.Ordinal),
+                                   healBy = new SortedDictionary<string, double>(StringComparer.Ordinal) };
             Result.floors.Add(_f);
         }
 
@@ -218,6 +220,8 @@ namespace Depths.Playtest
             {
                 src ??= Source();
                 Result.dmgBySource[src] = Result.dmgBySource.TryGetValue(src, out var v) ? v + dmg : dmg;
+                var fs = _f.dmgBySource!;
+                fs[src] = fs.TryGetValue(src, out var w) ? w + dmg : dmg;
                 _f.dmg += dmg;
             }
             if (dRg > 0) Regen(dRg);
@@ -273,6 +277,8 @@ namespace Depths.Playtest
         void Heal(string by, double gain)
         {
             Result.healed += gain; _f.healed += gain;
+            var fh = _f.healBy!;
+            fh[by] = fh.TryGetValue(by, out var w) ? w + gain : gain;
             Result.healBy[by] = Result.healBy.TryGetValue(by, out var v) ? v + gain : gain;
         }
 
