@@ -134,7 +134,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   matrices: 54 against 42 deaths, mostly to the gunner's shell), so the MIDDLE order average > skilled
   (0.42 > 0.40, 0.34 > 0.33) rests on a death or two; skilled START sits at 2.3-2.5% under a 3% ceiling;
   novice HP leaving 2 is exactly 5. Average hazard on floors 11-17 (101-300): 0.6, 4.6, 7.7, 11.0, 10.9,
-  13.0, 18.9%; skilled 0.5, 4.4, 8.0, 4.3, 9.0, 7.1, 11.6%; novice 11.9, 31.5, 39.5, 41.3, 48.2% (16-17
+  13.0, 18.9%; skilled 0.5, 4.4, 8.0, 4.3, 9.0, 7.1, 11.6%; novice 11.9, 31.5, 39.5, 41.3, 48.1% (15-17
   are reached by fewer than 30 novices). What moved what: `Drops` 0 on floors 1-2 makes the start cost
   hearts (HP leaving 2: 8 > 5); fewer gunners (`Heavy`) and faster, dodgeable shooters (`Rate`) are what
   separate skill; the dip is softer bodies, few gunners and scarce drops (x0.14, x0.35 on floor 3 so a
