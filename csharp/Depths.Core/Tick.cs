@@ -436,7 +436,6 @@ namespace Depths
             e.shootCd--;
             if (e.castT > 0 || e.castReady) { FireCommittedShot(run, e, roomPress); return; }
             if (e.shootCd > 0) return;
-            double dz = Balance.SwerveDeadzone(), reach = System.Math.Max(0, System.Math.Min(1, (dist - dz) / (Balance.SwerveFull() - dz)));
             double conf = System.Math.Max(0, 1 - p.swerve * (roots ? Balance.SwerveTrustRooted : Balance.SwerveTrustWalking));
             double bvx = p.vx * conf, bvy = p.vy * conf, ty = HitboxY + Balance.PlayerHitDy;
             double mx = e.x, my = e.y;
@@ -459,7 +458,7 @@ namespace Depths
                 sx = HitboxX + bvx * need - mx;
                 sy = ty + bvy * need - my;
             }
-            double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * (0.02 + Balance.SwerveAim * p.swerve * reach);
+            double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist);
             var shot = Movement.ClearShot(run, e, want);
             // off the JS rate the tick's overrun is kept, so a cadence is exact in seconds (held fire does the same)
             double over = Balance.TickHz == Balance.JsHz ? 0 : e.shootCd;
@@ -1260,8 +1259,9 @@ namespace Depths
             foreach (var e in run.enemies)
             {
                 if (e.kind != BodyKind.Brunch || !e.packId.HasValue || e.shieldTarget == null) continue;
-                var g = e.shieldTarget.shieldGuardFor ?? (e.shieldTarget.shieldGuardFor = new List<Enemy>());
-                g.Add(e);
+                var t = e.shieldTarget;
+                if (t.shieldGuardFor == null) { t.shieldGuardFor = t.guardBuf ??= new List<Enemy>(); t.shieldGuardFor.Clear(); }   // null stays "unguarded"; the list is reused
+                t.shieldGuardFor.Add(e);
             }
         }
 

@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  585/585, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  579/579, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -194,8 +194,10 @@ it from another checkout or the first command spends minutes importing.
   does); `HeartRow` rounds with .NET's half-to-even, so armour 2.5 shows one heart (cannot happen
   today: HP, regen and armour are whole outside `JsReference`); the hearts check samples positions
   from `HeartRow.Step`, so it would not catch a wrong spacing.
-- C# leftovers: `Intercept.cs` is unused (older aiming model, stale test hash); `Pickup.shown` is set
-  by Hunter's Mark and read by nothing; `run.unlocked` from the compass is not ported (nothing read it).
+- C# leftovers cleared 2026-10-07: `Intercept.cs` deleted (its spread/reach live on in `Aim.cs`, which
+  the gunner now calls); `Pickup.shown` gone (a Mark in a cleared room with loot no longer spends a
+  charge); `AssemblePacks` allocation-free once warm (`AllocationTests`). Still open: `run.unlocked`
+  from the compass is not ported (nothing read it); the 96px separation grid is not ported.
 - JS, left as found (reference behaviour): Brunch scan throttle is dead (`pickShield` every tick); stale
   `packSlot` skews a shrinking wall; boss can spawn on the player; body-contact hitbox is 20px off the
   shot hitbox; Lab eats the first S press.

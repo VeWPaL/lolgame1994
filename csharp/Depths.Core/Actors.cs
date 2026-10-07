@@ -203,6 +203,8 @@ namespace Depths
         /// </para>
         /// </summary>
         public List<Enemy>? shieldGuardFor;
+        /// <summary>The list <see cref="shieldGuardFor"/> borrows when set: the guard lists are rebuilt every tick, so this keeps that allocation-free.</summary>
+        internal List<Enemy>? guardBuf;
 
         // The fields the projectile phase reads and writes (src/60-tick.js tickProjectiles).
         public double r, armour = 1, mass = 1;
@@ -374,7 +376,6 @@ namespace Depths
         public string id = "";
         /// <summary>Charges for an <c>item</c> pickup.</summary>
         public int? charges;   // an item's charges as it lies here; null: the definition's own
-        public bool shown;     // set by Hunter's Mark; nothing reads it yet
         /// <summary>Suppress re-collection until the player steps off. See the note above.</summary>
         public bool hold;
 
