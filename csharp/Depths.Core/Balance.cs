@@ -991,7 +991,7 @@ namespace Depths
         public static double Ramp(int steps, double growth, double rate) =>
             1 + growth * (System.Math.Exp(rate * steps) - 1);
 
-        // Tough and Rate carry the floor's Curve shape; the rate cap still binds after it.
+        // All four dials carry the floor's Curve shape (identity when Curve.On is false); the rate cap binds after it.
         public static double DepthTough(int floor) => Ramp(DepthSteps(floor), DepthGrowth, DepthPow) * Curve.At(floor).Tough;
         public static double DepthRate(int floor) =>
             System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55) * Curve.At(floor).Rate);

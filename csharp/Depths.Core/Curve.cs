@@ -23,21 +23,29 @@ namespace Depths
         /// The shape, floor 1 first; floors past the end repeat the last row (the ladder under it keeps
         /// climbing). START (1-2) is a bump while the player has no kit, MIDDLE (3-10) a dip, then the climb.
         /// </summary>
+        // Why each column (measured with the bot's curve command, 2026-10-07):
+        //   Tough   health: longer fights cost more HP; the dip's main dial.
+        //   Rate    cadence and ranged approach (still under DepthRateCap): shells reward dodging, so it widens the skill gap.
+        //   Bodies  added to each room's roll; fewer bodies is also fewer kills, so fewer drops.
+        //   Pack    added to the Brunch pack chance; packs are the middle's main attrition.
+        //   Heavy   added to the area's gunner chance; the gunner's 4 HP shell is what kills, and skill barely dodges it.
+        //   Hit     enemy hits x this, whole HP; 0.75 turns only the big hits down (gunner 4 to 3, sweep 3 to 2).
+        //   Drops   the kill drop chance x this; 0 in START so the first floors cost hearts for real.
         public static readonly Step[] Default =
         {
-            new Step(0.85, 1.30, 0.0, 0.00, 0.00, 0.75, 0.0),   // 1
-            new Step(0.90, 1.30, 0.5, 0.00, 0.00, 0.75, 0.0),   // 2
-            new Step(0.75, 1.00, -0.5, -0.15, -0.30, 1.0, 0.3),   // 3
-            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 4
+            new Step(0.85, 1.30, 0.0, 0.00, 0.00, 0.75, 0.0),   // 1  START: fast shooters, no pickups
+            new Step(0.90, 1.30, 0.5, 0.00, 0.00, 0.75, 0.0),   // 2  the peak: half a body more
+            new Step(0.75, 1.00, -0.5, -0.15, -0.30, 1.0, 0.3),   // 3  MIDDLE: the softest floor, a first trickle of pickups
+            new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 4  lighter rooms, fewer packs and gunners, scarce drops
             new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 5
             new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 6
             new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 7
             new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 8
             new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 9
             new Step(0.85, 1.00, -0.5, -0.10, -0.20, 1.0, 0.2),   // 10
-            new Step(1.00, 1.00, 0.0, 0.00, 0.00, 1.0, 0.25),   // 11
+            new Step(1.00, 1.00, 0.0, 0.00, 0.00, 1.0, 0.25),   // 11 the ramp: the bare ladder
             new Step(1.10, 1.00, 0.5, 0.00, 0.05, 1.0, 0.25),   // 12
-            new Step(1.15, 1.00, 0.5, 0.00, 0.10, 1.0, 0.25),   // 13
+            new Step(1.15, 1.00, 0.5, 0.00, 0.10, 1.0, 0.25),   // 13 END: the exponential ladder climbs on top
         };
 
         /// <summary>The table in force; the game never swaps it, the tests that pin the shape and the check do.</summary>
