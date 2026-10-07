@@ -135,7 +135,7 @@ namespace Depths
             Pickups,
         }
 
-        public static MiddleRule MidRule = MiddleRule.Original;
+        public static MiddleRule MidRule = MiddleRule.Pickups;   // owner's choice 2026-10-07
 
         /// <summary>END must not fall: its second half's hazard may sit below its first half's by at most this many
         /// standard errors.</summary>

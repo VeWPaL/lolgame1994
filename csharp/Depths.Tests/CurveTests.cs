@@ -326,7 +326,7 @@ namespace Depths.Tests
             return b;
         }
 
-        static List<string> Misses(Batch b) => CurveCheck.Check(b).misses;
+        static List<string> Misses(Batch b) => CurveCheck.Check(b, Curve.MiddleRule.Original).misses;   // the rubric as written: these tests name every miss
 
         [Test]
         public void AFileThatMeetsEveryTargetPasses()
@@ -398,7 +398,7 @@ namespace Depths.Tests
         [Test]
         public void TheMiddleRuleIsSelectableAndEachReadingIsItsFormula()
         {
-            Assert.That(Curve.MidRule, Is.EqualTo(Curve.MiddleRule.Original), "the rubric as written until the owner chooses");
+            Assert.That(Curve.MidRule, Is.EqualTo(Curve.MiddleRule.Pickups), "the owner chose Pickups (2026-10-07)");
             // healing 10 a floor against 10 damage, 5 of it the regenerating heart: original misses, pickups holds
             var b = MidBatch(10, 5);
             Assert.That(CurveCheck.Check(b, Curve.MiddleRule.Original).misses, Has.Some.StartsWith("5 novice MIDDLE healing a floor 10"));
@@ -413,8 +413,8 @@ namespace Depths.Tests
             var saved = Curve.MidRule;
             try
             {
-                Curve.MidRule = Curve.MiddleRule.Pickups;
-                Assert.That(CurveCheck.Check(b).misses, Is.Empty, "the check reads the line the game ships");
+                Curve.MidRule = Curve.MiddleRule.Original;
+                Assert.That(CurveCheck.Check(b).misses, Has.Some.StartsWith("5 novice MIDDLE healing"), "the check reads the line the game ships");
             }
             finally { Curve.MidRule = saved; }
         }
@@ -450,7 +450,8 @@ namespace Depths.Tests
                 Assert.That(Program.Main(new[] { "curve", "good", "bad", "--out", dir }), Is.EqualTo(1));
                 Assert.That(Program.Main(new[] { "curve", "good", "--seeds", "1" }), Is.EqualTo(1));
                 File.WriteAllText(Path.Combine(dir, "mid.json"), Json.Write(MidBatch(10, 5)));
-                Assert.That(Program.Main(new[] { "curve", "mid", "--out", dir }), Is.EqualTo(2), "the rubric as written");
+                Assert.That(Program.Main(new[] { "curve", "mid", "--mid-rule", "original", "--out", dir }), Is.EqualTo(2), "the rubric as written");
+                Assert.That(Program.Main(new[] { "curve", "mid", "--out", dir }), Is.EqualTo(0), "no flag reads the shipped rule, Pickups");
                 Assert.That(Program.Main(new[] { "curve", "mid", "--mid-rule", "pickups", "--out", dir }), Is.EqualTo(0));
                 Assert.That(Program.Main(new[] { "curve", "mid", "--mid-rule", "recovery", "--out", dir }), Is.EqualTo(0));
                 Assert.That(File.ReadAllText(Path.Combine(dir, "curve-mid.md")), Does.Contain("read as: recovery"));

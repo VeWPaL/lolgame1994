@@ -66,6 +66,7 @@ namespace Depths.Unity
 
         void NewRun()
         {
+            new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
             uint seed = (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
             {
@@ -211,7 +212,7 @@ namespace Depths.Unity
                 _hud.text = stats + "   " + (pl.hasSilver ? "[silver key] " : "") + (pl.hasGold ? "[gold key] " : "") +
                             (_run.state == "playing" ? "" : "\nYOU DIED on floor " + _run.floor + " - R for a new run") +
                             "\nFloor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room: " + (room != null ? room.Type.ToString() : "?") +
-                            "   seed " + Rng.Encode(_run.rootSeed) + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                            "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
                             "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc pause";
             }
             else
