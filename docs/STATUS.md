@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-07 (the difficulty curve, `Curve.cs`; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-07 (the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
 
 ## Where things are
@@ -105,7 +105,11 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   enemy and Warden cooldowns (each carries its overrun; the Bolt was 2% slow, the Beam 7%, enemy fire
   2%), shells and body contact (4 sub-steps at 60 Hz; contact damage 145 -> 154 an hour, 152 at
   210). Owner: decide whether 60 Hz difficulty wants a retune.
-- **Difficulty curve** (2026-10-07, C# only; owner to playtest). Owner's direction: a non-linear
+- **Difficulty curve** (2026-10-07, C# only; **off by default, BLOCKED on the owner**). `Curve.On`
+  is false and the bot plays the JS ladder unless given `--curve on`; flip `Curve.On` (one line) once
+  the owner signs the tune off. Three cold critic rounds scored it 7/10 each (stall rule), verdicts
+  outside the repo. Open decisions: rubric 5 for MIDDLE (below), the floor-2 and floor-12 spikes, and
+  whether to drop the middle's gunners so skill orders deaths more clearly. Owner's direction: a non-linear
   curve (hard start, easier-but-not-easy middle, hard end), scarce pickups, buffed enemies later on,
   every part of the kit load-bearing. Built as eight named stages in `csharp/Depths.Core/Curve.cs`
   laid over the depth ladder: `start` (1) and `peak` (2) a bump while the player has no kit, `soft` (3)
@@ -116,7 +120,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   bodies, gunners, packs; pinned by tests); the extra bodies step at 12 and 18. Targets live in the same
   file (`Curve.Targets`). Tests run with the curve off (assembly `[CurveOn(false)]`), so the 148 parity
   rows keep the JS ladder.
-  Bot: `play --curve off` plays the JS ladder; `play --dial middle.Drops=0.15,end.Tough=1.2` tries a
+  Bot: `play --curve on` plays the curve (off plays the JS ladder); `play --dial middle.Drops=0.15,end.Tough=1.2` tries a
   value without a rebuild (recorded in the JSON header, flagged by `report`); `curve <label>
   [--mid-rule original|recovery|pickups]` prints one ok/MISS line per target with its rubric number,
   exits 2 on a miss, and writes `playtest/curve-<label>.md`. The bot records damage and healing by
@@ -139,9 +143,12 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   hearts (HP leaving 2: 8 > 5); fewer gunners (`Heavy`) and faster, dodgeable shooters (`Rate`) are what
   separate skill; the dip is softer bodies, few gunners and scarce drops (x0.14, x0.35 on floor 3 so a
   start with none can be survived); 11-12 add health and the extra body before the last area.
-  To playtest, not settled: floor 2 is the start's spike (novice 20%, average 6-7%, more than any END
-  floor before 17 for average); spreading it over 1-2 moved the start out of its targets on one seed set
-  or the other, so it is left for the owner to feel. And no kill ever drops anything on floors 1-2: a
+  To playtest, not settled: floor 2 is the start's spike (novice 20%, average 6-7%, the highest
+  MIDDLE-or-earlier floor; every END floor is above it); spreading it over 1-2 moved the start out of
+  its targets on one seed set or the other, so it is left for the owner to feel. Floor 12 (`climb`) is
+  the novice wall: 31.5% / 22.8% of novices who reach it die there, novice END hazard is 40% and the
+  novice median floor (12) sits at it; a smaller `climb.Tough`, or the body step moved to 13, would
+  soften it. And no kill ever drops anything on floors 1-2: a
   player will read that as broken without a tell (a later UI idea, not built).
   **Owner decision, rubric 5 for MIDDLE.** As written ("healing a floor below damage a floor") it is
   missed by 0.2-0.4 HP a floor for every profile. Over the band, healing minus damage is exactly the
@@ -156,6 +163,8 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   - `Pickups`: MIDDLE healing a floor less the regenerating heart (clock and refill) below MIDDLE damage
     a floor. Met with room: novice 3.43 < 13.87 / 3.31 < 13.82, average 2.75 < 9.73 / 2.72 < 10.05,
     skilled 2.60 < 8.37 / 2.55 < 8.50.
+  Recommended: `Pickups`. The critic showed `Recovery` cannot fail on HP alone (`CurveCheck.cs`, the
+  recovery check), so it only measures armour.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).

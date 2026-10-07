@@ -464,7 +464,8 @@ namespace Depths.Tests
         [Test]
         public void PlayRecordsTheCurveAndTheDials()
         {
-            Assert.That(Cli.Parse(new[] { "play" }).Curve, Is.True);
+            Assert.That(Cli.Parse(new[] { "play" }).Curve, Is.False, "the curve is off until the owner signs it off");
+            Assert.That(Cli.Parse(new[] { "play", "--curve", "on" }).Curve, Is.True);
             Assert.That(Cli.Parse(new[] { "play", "--curve", "off" }).Curve, Is.False);
             Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--curve", "maybe" }));
             string dir = Path.Combine(Path.GetTempPath(), "depths-curve-" + Guid.NewGuid().ToString("N"));
@@ -484,12 +485,12 @@ namespace Depths.Tests
                 var direct = Matrix.Play("p", new uint[] { 3 }, new[] { "novice" }, 0.5);
                 Curve.On = true;
                 Assert.That(Json.Text(off.runs), Is.EqualTo(Json.Text(direct.runs)), "and plays the JS ladder");
-                var on = Played();
+                var on = Played("--curve", "on");
                 Assert.That(on.curve, Is.True);
                 Assert.That(on.dials, Is.Null);
                 Assert.That(Json.Text(on.runs), Is.Not.EqualTo(Json.Text(off.runs)), "the curve changes the run");
                 double was = S("start").Tough;
-                var dialled = Played("--dial", "start.Tough=3,start.Drops=1");
+                var dialled = Played("--curve", "on", "--dial", "start.Tough=3,start.Drops=1");
                 Assert.That(dialled.dials, Is.EqualTo(new[] { "start.Tough=3", "start.Drops=1" }), "recorded in the header");
                 Assert.That(S("start").Tough, Is.EqualTo(was), "and undone after the play");
                 Assert.That(Json.Text(dialled.runs), Is.Not.EqualTo(Json.Text(on.runs)), "a dial changes the run");

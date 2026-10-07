@@ -8,7 +8,7 @@ namespace Depths
     {
         /// <summary>Whether the shape applies. The game: always. Tests default it off (assembly [CurveOn]) so the
         /// parity rows keep the JS ladder.</summary>
-        public static bool On = true;
+        public static bool On = false;   // off until the owner signs the tune off (STATUS); --curve on to play it
 
         /// <summary>
         /// One stage of the shape, from floor First until the next stage's First. Tough, Rate and Drops

@@ -132,7 +132,7 @@ namespace Depths.Playtest
         public List<string> Profiles = new List<string> { "novice", "average", "skilled" };
         public double Minutes = 20;
         public string? Brunch, Out;
-        public bool Curve = true;   // the game's difficulty curve; off plays the JS ladder, for A/B
+        public bool Curve = false;   // the difficulty curve, off by default until signed off; on to play it
         public List<string> Dials = new List<string>();
         public Depths.Curve.MiddleRule? MidRule;   // curve --mid-rule: which rubric-5 MIDDLE reading to check   // --dial stage.Field=value, a retune without a rebuild
         public int? Hz;   // the sim's tick rate; the game's own when not given
