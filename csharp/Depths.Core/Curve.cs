@@ -6,7 +6,7 @@ namespace Depths
     /// </summary>
     public static class Curve
     {
-        /// <summary>Whether the shape applies. The game: always. Tests default it off (assembly [Curve]) so the parity rows keep the JS ladder.</summary>
+        /// <summary>Whether the shape applies. The game: always. Tests default it off (assembly [CurveOn]) so the parity rows keep the JS ladder.</summary>
         public static bool On = true;
 
         /// <summary>
