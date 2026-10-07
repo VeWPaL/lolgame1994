@@ -14,21 +14,75 @@ namespace Depths
     {
         // ------------------------------------------------------------- pacing
 
-        /// <summary>
-        /// The simulation runs faster than wall-clock. Every per-tick distance is unchanged by this
-        /// and every counter is multiplied by it, so the game reads at its designed speed on a 210Hz
-        /// tick rather than being tuned twice.
-        /// </summary>
-        public const double Speedup = 3.5;
+        /// <summary>The JS reference rate (60 x its 3.5 speedup). The parity rows were recorded at it.</summary>
+        public const int JsHz = 210;
+
+        /// <summary>The game's rate: one tick per frame at 60 fps.</summary>
+        public const int GameHz = 60;
+
+        static int _tickHz = GameHz;
 
         /// <summary>
-        /// Not a const: <c>Math.Round</c> is not a compile-time constant, and a dials file full of
-        /// mystery static initialisers is worse than one that says why.
+        /// The one tick-rate setting. Every per-tick number in the core derives from it when read, so
+        /// set it before a run starts (tests switch it, then reset it), never during one.
         /// </summary>
-        public static readonly int TickHz = (int)System.Math.Round(60 * Speedup);
+        public static int TickHz
+        {
+            get => _tickHz;
+            set
+            {
+                if (value < 1 || value > 10000) throw new System.ArgumentOutOfRangeException(nameof(value), "a tick rate in Hz, 1 to 10000");
+                _tickHz = value;
+                Recompute();
+            }
+        }
 
-        /// <summary>Seconds to ticks. The rounding is in the original and is load-bearing.</summary>
+        static Balance() => Recompute();
+
+        /// <summary>Seconds to whole ticks. The rounding is in the original and is load-bearing.</summary>
         public static int Sec(double seconds) => (int)System.Math.Round(seconds * TickHz);
+
+        /// <summary>Seconds to fractional ticks, for counters the game keeps as doubles (cooldowns).</summary>
+        public static double SecF(double seconds) => Snap(seconds * TickHz);
+
+        /// <summary>A per-second quantity (px/s, or a meter's units/s) as its per-tick step.</summary>
+        public static double PerSec(double perSecond) => Snap(perSecond / TickHz);
+
+        /// <summary>A multiplicative per-tick factor defined at the JS tick: f^(JsHz/hz), so f^JsHz per second holds.</summary>
+        public static double Decay(double perJsTick) =>
+            TickHz == JsHz ? perJsTick : System.Math.Pow(perJsTick, (double)JsHz / TickHz);
+
+        /// <summary>A lerp share per JS tick (x += (target - x) * a) at this rate: what is left, 1 - a, decays exactly.</summary>
+        public static double Ease(double perJsTick) =>
+            TickHz == JsHz ? perJsTick : 1 - System.Math.Pow(1 - perJsTick, (double)JsHz / TickHz);
+
+        /// <summary>Ease(a) / a, appended to an expression that multiplies by a, so the JS-rate arithmetic stays bit-exact.</summary>
+        public static double EaseK(double perJsTick) => TickHz == JsHz ? 1 : Ease(perJsTick) / perJsTick;
+
+        /// <summary>A per-JS-tick probability at this rate, keeping the chance of at least one success per second.</summary>
+        public static double Chance(double perJsTick) => Ease(perJsTick);
+
+        // Fifteen significant digits: a decimal dial divided by the rate lands on the same double as its old literal.
+        static double Snap(double x)
+        {
+            if (x == 0 || double.IsNaN(x) || double.IsInfinity(x)) return x;
+            int digits = 15 - (int)System.Math.Ceiling(System.Math.Log10(System.Math.Abs(x)));
+            return digits < 0 ? x : System.Math.Round(x, System.Math.Min(15, digits));
+        }
+
+        /// <summary>Parts a shell's move and a body's contact test are cut into per tick: none longer than a JS tick's, so neither steps over a hitbox.</summary>
+        public static int Substeps => TickHz >= JsHz ? 1 : (JsHz + TickHz - 1) / TickHz;
+
+        static double _knockFriction, _knockPFriction, _knockScale, _knockPScale;
+
+        static void Recompute()
+        {
+            _knockFriction = Decay(KnockFrictionJs);
+            _knockPFriction = Decay(KnockPFrictionJs);
+            // a knock is defined by how far it coasts, v / (1 - f); scaling v by this keeps that distance exact
+            _knockScale = (1 - _knockFriction) / (1 - KnockFrictionJs);
+            _knockPScale = (1 - _knockPFriction) / (1 - KnockPFrictionJs);
+        }
 
         // ------------------------------------------------------------- the room
 
@@ -142,7 +196,7 @@ namespace Depths
         /// because in C# there is no load-order reason for a constant to live in the wrong file, and
         /// leaving it there would be a load-order bug wearing a costume.
         /// </summary>
-        public const double PlayerMove = 1.2;
+        public static double PlayerMove => PerSec(252);   // px/s (1.2 px per JS tick)
 
         public const double TempoRate = 1.5;
         public const double PressureRate = 1.5;
@@ -151,10 +205,11 @@ namespace Depths
         /// THE MOMENTUM DIALS, straight from src/00-balance.js:1020-1024. Momentum is charged on
         /// movement under pressure: below the floor it decays rather than holds, which is the whole
         /// difference between a meter that reads a fight and a meter that reads a held key.
+        /// The gain is per pixel moved, so it needs no rate.
         /// </summary>
         public const double MomentumGain = 0.0056;
-        public const double MomentumStallDecay = 0.006;
-        public const double MomentumMoveFloor = 0.3;
+        public static double MomentumStallDecay => PerSec(1.26);   // meter per second
+        public static double MomentumMoveFloor => PerSec(63);       // px/s: slower than this stalls
 
         /// <summary>
         /// How much a crowded room shortens a body's cadence, src/00-balance.js:1160
@@ -170,6 +225,8 @@ namespace Depths
         public static int BossCdMin => Sec(3.2);
         public static int BossCdVar => Sec(1.0);
         public static int BossRecover => Sec(1.1);
+        public static int BossFirstCd => Sec(1.2);   // the Warden's first move comes this soon
+        public static int BossPhaseCd => Sec(0.4);   // and the first after a phase change
         public const double BossPhase1 = 0.66, BossPhase2 = 0.33;   // fractions of max HP
 
         /// <summary>The fade out of a room transition, src/00-balance.js:251 (FADE_OUT).</summary>
@@ -177,6 +234,12 @@ namespace Depths
 
         /// <summary>The ready window after entering a room, src/00-balance.js:251 (READY).</summary>
         public static int Ready => Sec(0.75);
+
+        /// <summary>The fade in at the start of a run, src/50-run.js:109 (fadeTicks=sec(0.4)).</summary>
+        public static int FadeStart => Sec(0.4);
+
+        /// <summary>A fresh body notices the player within this many ticks: 16 frames at the JS's old 60 fps.</summary>
+        public static double NoticeWindow => SecF(16 / 60.0);
 
         /// <summary>
         /// DY slides the hit circle down onto the actual mass of the character - the chest and waist,
@@ -203,51 +266,91 @@ namespace Depths
     /// reads as one sustained hit instead of a stutter of separate ones.
     /// </para>
     /// </summary>
-    public const int HitFlash = 27;
+    public static int HitFlash => Sec(0.13);   // 27 at the JS rate
 
     // The projectile phase. Values read from the running game, 2026-10-06.
-    public static readonly int Iframes = Sec(1.0);          // IFRAMES 210
+    public static int Iframes => Sec(1.0);                  // IFRAMES
     public const double MomentumHitKeep = 0.55;             // a hit keeps 55% of the meter
     public const double PierceFalloff = 0.72;               // each body a piercing bolt drills through
-    public const int BrunchAbsorbFlash = 21;                // a Brunch flashes this long when it eats a shell
+    public static int BrunchAbsorbFlash => Sec(0.1);        // a Brunch flashes this long when it eats a shell
     public const int BossWallId = -1;                       // the pack id of the statues the Warden calls
-    public const double KnockMax = 5, KnockTrade = 0.09;    // a hit shoves, never launches; below this speed no trade
-    public const int KnockStun = 88;                        // KNOCK_STUN
-    public const int WanderTicks = 210;                     // WANDER_TICKS
+    // a hit shoves, never launches (5 px per JS tick, as coast distance); below KnockTrade no trade
+    public static double KnockMax => 5 * _knockScale;
+    public static double KnockTrade => 0.09 * _knockScale;
+    public static int KnockStun => Sec(0.42);               // KNOCK_STUN
+    public static int WanderTicks => Sec(1);                // WANDER_TICKS
     public const int PressureSpan = 4;                      // PRESSURE_SPAN
     public const double PressureFloor = 0.25;               // PRESSURE_FLOOR
-    // GUNNER_DODGE: a gunner sees a bolt coming within `sight`, sidesteps half the time, on a cooldown
-    public const double GunnerDodgeSight = 250, GunnerDodgeChance = 0.5, GunnerDodgeKick = 0.6;
-    public const int GunnerDodgeCd = 126;
+    // GUNNER_DODGE: a gunner sees a bolt coming within `sight`, sidesteps half the time (a chance per tick), on a cooldown
+    public const double GunnerDodgeSight = 250;
+    public static double GunnerDodgeChance => Chance(0.5);
+    public static double GunnerDodgeKick => 0.6 * _knockScale;
+    public static int GunnerDodgeCd => Sec(0.6);
 
     // The right-click blast, ALT_WEAPON, read from the game 2026-10-06.
-    public const int AltCooldown = 756;                     // sec(3.6); /TEMPO at the cast
-    public const double AltSpeed = 1.87, AltR = 12, AltAoe = 100, AltKnock = 2.7;
+    public static int AltCooldown => Sec(3.6);              // /TEMPO at the cast
+    public static double AltSpeed => PerSec(392.7);         // px/s (2.2 * 0.85 px per JS tick)
+    public const double AltR = 12, AltAoe = 100, AltKnock = 2.7;
     public const double AltPool = 18 * 1.35 / 0.66 * 1.02;  // 18*TOUGH/ARMOUR*1.02 = 37.5545...
     /// <summary>
     /// The Brunch guard rule, as the JS playtest flag ?brunch= (A: guard the shooter wherever the
     /// player is; B: leash at BrunchGuardLeash; A+: the wall advances once the player leaves the
-    /// target's reach). A is the reference until the owner chooses.
+    /// target's reach). A+ is the game (owner's choice 2026-10-06); A and B are for comparison only.
     /// </summary>
-    public static string BrunchVariant = "A";
+    public static string BrunchVariant = "A+";
     public const double BrunchGuardLeash = 420;
 
+    // Hearts, 2026-10-06 (C# only): HP is whole numbers, 1 HP = half a heart, 8 at the start.
+    // Armour takes ArmorTake x a normal enemy's hit, rounded down but never below 1; the Warden hits
+    // armour at full weight. Pickups come whole (2) or half (1).
+    public const double ArmorTake = 0.6;
+    public const int HeartHeal = 2, HalfHeal = 1;
+    // The regenerating heart: the last of the starting 8 HP. After RegenDelay without taking damage, while
+    // the room has live bodies, +1 HP, then +1 every RegenStep; clearing a fought room refills it fully.
+    public const int RegenHp = 2;
+    public static int RegenDelay => Sec(4);
+    public static int RegenStep => Sec(1);
+    /// <summary>
+    /// The JS game's damage rules (fractional hits, armour 1:1, no half pickups), for the parity tests
+    /// whose recordings hold them. Never true in the game.
+    /// </summary>
+    public static bool JsReference = false;
+    public const double JsShotDmg = 1.8, JsBossShellDmg = 1.44, JsBossSweepMult = 1.4;
+
+    // Placeholder item effects (C# only, 2026-10-06; the item overhaul replaces them).
+    public static int MarkTicks => Sec(5);           // Hunter's Mark: how long a body stays marked
+    public const double MarkVuln = 1.5;              // and the damage it takes meanwhile
+
     // Doors and rooms, read from the game 2026-10-06.
-    public static readonly int UnlockTime = Sec(0.5), FadeClear = Sec(0.15);   // 105, 32
+    public static int UnlockTime => Sec(0.5);
+    public static int FadeClear => Sec(0.15);
     public const double UnlockRange = 64;
 
     // The Warden, read from the game 2026-10-06.
-    public const int BossVolleyN = 3, BossVolleyGap = 116, BossWallHp = 5, BossWallLife = 2940;   // sec(14)
-    public const double BossSweepDist = 150, BossShellDmg = 1.44;
+    public const int BossVolleyN = 3, BossWallHp = 5;
+    public static int BossVolleyGap => Sec(0.55);
+    public static int BossWallLife => Sec(14);
+    public static double BossShotSpeed => PerSec(399);   // px/s
+    public const double BossSweepDist = 150, BossShellDmg = 2, BossSweepDmg = 3;   // whole HP since 2026-10-06 (JS: 1.44, and the sweep was shell x 1.4)
 
     // The hook (HOOK_WEAPON and its field), read from the game 2026-10-06.
-    public const double HookSpeed = 2.04, HookR = 14, HookAoe = 118, HookPull = 1.2, HookSuck = 0.24, HookDps = 3.5;
-    public const int HookHold = 147, HookField = 378, HookForget = 1470, HookEarlyMin = 38;
+    public static double HookSpeed => PerSec(428.4);     // px/s
+    public static double HookSuck => PerSec(50.4);       // px/s at full power
+    public const double HookR = 14, HookAoe = 118, HookPull = 1.2, HookDps = 3.5;   // HookDps is per second
+    public static int HookHold => Sec(0.7);
+    public static int HookField => Sec(1.8);
+    public static int HookForget => Sec(7);
+    public static int HookEarlyMin => Sec(0.18);
+    // a body in a field stays stunned and lit while it is in it: 3 and 1 JS ticks per unit of power
+    public static double HookFieldStun => SecF(3.0 / JsHz);
+    public static double HookFieldFlash => SecF(1.0 / JsHz);
     public static readonly double[] HookResist = { 1, 0.7, 0.45, 0.2, 0.08 };
 
     // The blink, read from the game 2026-10-06.
     public const int BlinkFillClear = 9;                    // a charge refills 9x faster in a cleared room
-    public static readonly int BlinkIframes = Sec(0.17), BlinkGrace = Sec(0.6), DashTrail = Sec(0.23);   // 36, 126, 48
+    public static int BlinkIframes => Sec(0.17);
+    public static int BlinkGrace => Sec(0.6);
+    public static int DashTrail => Sec(0.23);
     public const double AltKnockNear = 2, AltKnockFar = 0.35, Disperse = 2.3, ShootSlowAlt = 0.45;
 
     /// <summary>roomPressure: 1 with one body or none, easing to PRESSURE_FLOOR at PRESSURE_SPAN+1 bodies.</summary>
@@ -262,7 +365,7 @@ namespace Depths
     /// How often, in ticks, an UNGUARDED pack looks for a body to shield. Read out of the
     /// running game: 20.
     /// </summary>
-    public const int BrunchScanTicks = 20;
+    public static int BrunchScanTicks => Sec(0.095);   // 20 at the JS rate
 
     /// <summary>
     /// The smallest pack that will form a shield arc. Below this a pack walks at the player
@@ -281,19 +384,19 @@ namespace Depths
     /// out: 0.72 - slower than the guard's own approach, so a guarded body is genuinely easier to
     /// reach than an unguarded one.
     /// </summary>
-    public const double BrunchShieldSpeed = 0.72;
+    public static double BrunchShieldSpeed => PerSec(151.2);   // px/s
 
     /// <summary>
     /// How fast a pack gains speed when closing on its slot. Read out: 0.09.
     /// </summary>
-    public const double BrunchAccel = 0.09;
+    public static double BrunchAccel => Ease(0.09);   // per JS tick
 
     /// <summary>
     /// How fast a pack sheds speed when leaving a slot. Deliberately FASTER than
     /// <see cref="BrunchAccel"/> (0.16 against 0.09), so a pack does not drift on after its target
     /// moves - a pack that eases out slowly feels like it is following you.
     /// </summary>
-    public const double BrunchDecel = 0.16;
+    public static double BrunchDecel => Ease(0.16);
 
     /// <summary>
     /// How close a Brunch must be before it stops steering and simply reaches. Read out: 6.
@@ -351,7 +454,7 @@ namespace Depths
     /// </summary>
     public const double BrunchArcCeil = 1.0471975511965976;
 
-    public const double BrunchRun = 2.1;
+    public static double BrunchRun => PerSec(441);   // px/s
 
     /// <summary>
     /// A Brunch's walk speed - its starting point, and its speed while it has not committed. Read out
@@ -362,7 +465,7 @@ namespace Depths
     /// stated as a curve from a known starting point, which is how the game states it.
     /// </para>
     /// </summary>
-    public const double BrunchWalkSpeed = 0.624;
+    public static double BrunchWalkSpeed => PerSec(131.04);   // px/s
 
     /// <summary>
     /// The angular gap between two Brunch holding a shield arc, in pixels at the target's
@@ -406,10 +509,10 @@ namespace Depths
 
 
     /// <summary>
-    /// Ticks the boss warning stays on screen once the boss room comes into view. Read
-    /// out of the running game: 672, which at 210 ticks a second is 3.2 seconds.
+    /// Ticks the boss warning stays on screen once the boss room comes into view: 3.2 seconds
+    /// (672 at the JS rate). Nothing in the port sets the warning yet.
     /// </summary>
-    public const int BossWarnTime = 672;
+    public static int BossWarnTime => Sec(3.2);
 
     /// <summary>
     /// The width of a doorway in the wall, and the half-width the player must be inside for a
@@ -421,21 +524,28 @@ namespace Depths
     /// Below this magnitude a knockback component is set to exactly zero, so a body that has
     /// all but stopped does not keep feeding the audio and the hit-flash for ever.
     /// </summary>
-    public const double KnockCut = 0.006;
+    public static double KnockCut => 0.006 * _knockScale;
+
+    /// <summary>The same cut on the player's knockback, which coasts on its own friction.</summary>
+    public static double KnockPCut => 0.006 * _knockPScale;
 
     /// <summary>
     /// Per-tick decay on the PLAYER's knockback, distinct from <see cref="KnockFriction"/>
     /// which is the body's. Read out of the running game: 0.958, against the body's 0.976 - the
     /// player's knockback dies faster, which is what makes a trade feel like an escape.
     /// </summary>
-    public const double KnockPFriction = 0.958;
+    public const double KnockPFrictionJs = 0.958;
+    public static double KnockPFriction => _knockPFriction;
+
+    /// <summary>What a knock impulse on the player is multiplied by at this rate (1 at the JS rate).</summary>
+    public static double KnockPScale => _knockPScale;
 
     /// <summary>
     /// How fast the player's direction-of-travel estimate chases the real velocity. Lower
     /// than <see cref="LungeTrack"/> because this one feeds the lunger's belief about where the
     /// player is going, and a belief that updates too eagerly is a lunger that never commits.
     /// </summary>
-    public const double LungeBeliefTrack = 0.14;
+    public static double LungeBeliefTrack => Ease(0.14);   // per JS tick
 
     /// <summary>
     /// How much a full Momentum meter improves acceleration. Read out of the running
@@ -448,7 +558,7 @@ namespace Depths
     /// game: 0.116, which is why the player takes about 40 ticks to reach top speed rather than
     /// snapping to it - the ramp is the feel.
     /// </summary>
-    public const double MoveAccel = 0.116;
+    public const double MoveAccel = 0.116;   // per JS tick; TickPlayer converts it with momentum's share (Ease)
 
     /// <summary>
     /// The hard ceiling on the movement bonus. Read out of the running game: 0.44.
@@ -481,19 +591,26 @@ namespace Depths
     /// Below this speed the player's direction-of-travel estimate stops updating, so a
     /// player standing still is not read as jittering by the enemies that aim at them.
     /// </summary>
-    public const double PlayerSpeedEps = 0.05;
+    public static double PlayerSpeedEps => PerSec(10.5);   // px/s
+
+    // Speeds below which something counts as still: a held direction (and a body's walk cycle), the
+    // player's walk cycle, a blink's fallback direction, a Brunch's eased velocity. 0.05, 0.12, 0.1, 0.02 px per JS tick.
+    public static double MoveEps => PerSec(10.5);
+    public static double PlayerAnimEps => PerSec(25.2);
+    public static double BlinkDirEps => PerSec(21);
+    public static double BrunchStill => PerSec(4.2);
 
     /// <summary>
     /// Per-tick recovery of the firing slow-motion. Fractional on purpose: the meter
     /// eases and rounding it would make the recovery visibly steppy.
     /// </summary>
-    public const double ShootSlowRecover = 0.105;
+    public static double ShootSlowRecover => PerSec(22.05);   // per second
 
     /// <summary>
     /// Per-tick easing of the firing slow-motion toward its target of 1. The lower this is,
     /// the longer the player spends slowed after a shot, which is the cost of firing on the move.
     /// </summary>
-    public const double SlowEase = 0.079;
+    public static double SlowEase => Ease(0.079);   // per JS tick
 
     /// <summary>
     /// Pixels of animation phase per pixel travelled. Dividing by it is what makes the walk
@@ -512,29 +629,19 @@ namespace Depths
     /// to 368 would make the refund half a tick larger on every cleared room.
     /// </para>
     /// </summary>
-    public const int BlinkRecharge = 735;
+    public static int BlinkRecharge => Sec(3.5);
 
     /// <summary>
-    /// Per-weapon cooldowns in ticks, in roster order: Bolt, Scatter, Arcane Beam, Voidball.
-    /// <para>
-    /// Read out of the running game rather than transcribed. The third value is 18.2, not 18 - the
-    /// Arcane Beam is a continuous weapon and its cadence is genuinely fractional, so this table is
-    /// <c>double</c> rather than <c>int</c>. Rounding it to 18 would be a silent balance change that
-    /// no test comparing a whole number would catch.
-    /// </para>
-    /// </summary>
-    public static readonly double[] WeaponCooldowns = { 133, 231, 18.2, 84 };
-
-    /// <summary>
-    /// The cooldown of weapon <paramref name="index"/>. Out-of-range indices clamp to the last
-    /// entry rather than throwing: the room phase calls this with whatever a pickup carried, and a
-    /// malformed pickup should not be able to end a run with an exception from the tick.
+    /// The cooldown of weapon <paramref name="index"/>, in ticks (the weapon table holds it in seconds).
+    /// Out-of-range indices clamp to the last entry rather than throwing: the room phase calls this
+    /// with whatever a pickup carried, and a malformed pickup should not end a run from the tick.
     /// </summary>
     public static double WeaponCooldown(int index)
     {
+        var all = Weapons.All;
         if (index < 0) index = 0;
-        if (index >= WeaponCooldowns.Length) index = WeaponCooldowns.Length - 1;
-        return WeaponCooldowns[index];
+        if (index >= all.Length) index = all.Length - 1;
+        return all[index].Cooldown;
     }
 
         /// <summary>
@@ -542,7 +649,7 @@ namespace Depths
         /// the reaction window a blink is supposed to buy. Without it a gunner that was already
         /// tracking you gets a free intercept shot the instant you vanish.
         /// </summary>
-        public const double HitboxLagEase = 0.05;
+        public static double HitboxLagEase => Ease(0.05);   // per JS tick
 
         /// <summary>
         /// How long a body stays noticed after something hits it. A DURATION, so it is a constant and
@@ -555,7 +662,7 @@ namespace Depths
         /// not lose interest because the next shell took longer to arrive.
         /// </para>
         /// </summary>
-        public static readonly int AggroTime = Sec(2.5);
+        public static int AggroTime => Sec(2.5);
 
         /// <summary>
         /// The slow a landed shell applies, in ticks, and what fraction of speed it leaves behind.
@@ -569,7 +676,7 @@ namespace Depths
         /// the game has - not that it must already have a caller here.
         /// </para>
         /// </summary>
-        public static readonly int HitSlowTicks = Sec(0.55);
+        public static int HitSlowTicks => Sec(0.55);
         public const double HitSlowMult = 0.62;
 
         /// <summary>
@@ -596,14 +703,19 @@ namespace Depths
 
         // ------------------------------------------------------------- knockback
 
-        public const double KnockFriction = 0.976, KnockGain = 0.294, KnockPGain = 0.3, KnockBounce = 0.6;
+        // Frictions are per JS tick; Decay converts them. Gains are impulses, scaled by KnockScale where applied.
+        public const double KnockFrictionJs = 0.976, KnockGain = 0.294, KnockPGain = 0.3, KnockBounce = 0.6;
+        public static double KnockFriction => _knockFriction;
+
+        /// <summary>What a knock impulse on a body is multiplied by at this rate (1 at the JS rate).</summary>
+        public static double KnockScale => _knockScale;
 
         /// <summary>
         /// A knock of speed v coasts v/(1-friction) pixels, so to cover a distance d you want
         /// v = d*(1-friction). The hook's pull is the overshoot on top, a little over 1 so bodies
         /// cross the centre and knot up instead of merely touching it.
         /// </summary>
-        public const double HookPullGain = 1 - KnockFriction;
+        public const double HookPullGain = 1 - KnockFrictionJs;   // Knock scales it to this rate's friction
 
         // ------------------------------------------------------------- lungers
 
@@ -622,8 +734,8 @@ namespace Depths
         /// that does not shoot back does not ramp, so a Brunch pack still closes at the speed it is
         /// supposed to.
         /// </summary>
-        public const double LungerAccel = 0.0058;
-        public const double WanderSpeed = 0.25;
+        public const double LungerAccel = 0.0058;   // per JS tick; the callers scale it, then convert (EaseK)
+        public static double WanderSpeed => PerSec(52.5);   // px/s
 
         /// <summary>
         /// The Brunch ramp: ticks over which a pack's chase speed climbs from its walk to its run.
@@ -695,7 +807,7 @@ namespace Depths
         /// bait buys a weaker attack instead of a free one, which is the trade the mechanic was
         /// missing.
         /// </summary>
-        public const double LungeTrack = 0.014;
+        public static double LungeTrack => Ease(0.014);   // per JS tick
         public const double LungeConfMin = 0.30;
 
         /// <summary>
@@ -709,10 +821,11 @@ namespace Depths
 
         public static int LungeCd => Sec(1.15);
         public static int LungeWindup => Sec(0.34);
-        public const double LungeSpeed = 4.2;
+        public static double LungeSpeed => PerSec(882);   // px/s
         public static int LungeRecover => Sec(0.55);
         public const int LungeRange = 178;
-        public const double LungerNear = 0.55, LungerFar = 1.3;
+        public static double LungerNear => PerSec(115.5);   // px/s
+        public static double LungerFar => PerSec(273);
 
         /// <summary>Two lungers meeting mid-charge come off both worse.</summary>
         public const double LungeClash = 5.5;
@@ -725,7 +838,7 @@ namespace Depths
         /// Scaling it by the approach speed instead does nothing at all, because the approach speed
         /// is zero inside the standoff - which is exactly where a pack spends most of its time.
         /// </summary>
-        public const double LungerSpread = 0.9;
+        public static double LungerSpread => PerSec(189);   // px/s
 
         // ------------------------------------------------------------- counterstrafing
 
@@ -749,7 +862,7 @@ namespace Depths
         /// after one second, which is 0.0035 a tick.
         /// </para>
         /// </summary>
-        public const double SwerveDecay = 0.0035;
+        public static double SwerveDecay => PerSec(0.735);   // meter per second
 
         // SwerveDeadzone and SwerveFull used to live here, reading (RoomRight - RoomLeft) / 2 and
         // +220 - which is 350 and 570, where the JavaScript reads 300 and 430. They now sit beside
@@ -768,6 +881,12 @@ namespace Depths
         /// a tax.
         /// </summary>
         public static int CastTime => Sec(0.5);
+
+        /// <summary>
+        /// A cast's shell leaves the tick after the cast ends: 1/210 s at the JS rate, a whole 1/60 s at 60.
+        /// Off the JS rate a ranged body takes back the difference (in ticks) from its next cooldown.
+        /// </summary>
+        public static double CastLag => TickHz == JsHz ? 0 : 1 - (double)TickHz / JsHz;
 
         /// <summary>
         /// Iterations for the gunner's intercept. Fourteen, and the number is not arbitrary.
@@ -872,9 +991,10 @@ namespace Depths
         public static double Ramp(int steps, double growth, double rate) =>
             1 + growth * (System.Math.Exp(rate * steps) - 1);
 
-        public static double DepthTough(int floor) => Ramp(DepthSteps(floor), DepthGrowth, DepthPow);
+        // All four dials carry the floor's Curve shape (identity when Curve.On is false); the rate cap binds after it.
+        public static double DepthTough(int floor) => Ramp(DepthSteps(floor), DepthGrowth, DepthPow) * Curve.At(floor).Tough;
         public static double DepthRate(int floor) =>
-            System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55));
+            System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55) * Curve.At(floor).Rate);
 
         /// <summary>
         /// Density is its own exponent rather than the health one, because it is a different kind of
@@ -886,9 +1006,9 @@ namespace Depths
         /// one is a dial that was retuned without anybody deciding to retune floor one.
         /// </summary>
         public static double DepthBodies(int floor, int rolled) =>
-            System.Math.Min(DepthBodyCap, rolled + DepthBodyPow * (System.Math.Exp(DepthPow * 1.7 * DepthSteps(floor)) - 1));
+            System.Math.Min(DepthBodyCap, rolled + DepthBodyPow * (System.Math.Exp(DepthPow * 1.7 * DepthSteps(floor)) - 1) + Curve.At(floor).Bodies);
 
         public static double DepthPack(int floor, double brunchChance) =>
-            System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor));
+            System.Math.Max(0, System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor) + Curve.At(floor).Pack));
     }
 }

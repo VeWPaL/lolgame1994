@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The playtest bot: plays whole runs on Depths.Core and writes playtest/<label>.json.
+       net9.0 like Depths.Tests; it is a tool, not part of the Unity package. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Depths.Playtest</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- one JIT tier, no PGO: inlining, and so an error's recorded frame, is the same on every run -->
+    <TieredCompilation>false</TieredCompilation>
+    <TieredPGO>false</TieredPGO>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Depths.Core\Depths.Core.csproj" />
+    <InternalsVisibleTo Include="Depths.Tests" />
+  </ItemGroup>
+
+  <!-- Stamp the commit this bot is built from (+dirty for uncommitted changes) into the assembly, so a
+       baseline built in another worktree records its own commit. No git: no stamp. -->
+  <Target Name="StampGitCommit" BeforeTargets="GetAssemblyAttributes">
+    <Exec Command="git rev-parse --short HEAD" WorkingDirectory="$(MSBuildProjectDirectory)" ConsoleToMSBuild="true"
+          IgnoreExitCode="true" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="DepthsCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="DepthsCommitExit" />
+    </Exec>
+    <Exec Command="git status --porcelain --untracked-files=no" WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true" IgnoreExitCode="true" ContinueOnError="true"
+          StandardOutputImportance="low" StandardErrorImportance="low" Condition="'$(DepthsCommitExit)' == '0'">
+      <Output TaskParameter="ConsoleOutput" PropertyName="DepthsDirty" />
+    </Exec>
+    <!-- a new, not yet added source file under csharp/ is compiled too, so it also makes the build dirty -->
+    <Exec Command="git ls-files --others --exclude-standard -- .." WorkingDirectory="$(MSBuildProjectDirectory)"
+          ConsoleToMSBuild="true" IgnoreExitCode="true" ContinueOnError="true"
+          StandardOutputImportance="low" StandardErrorImportance="low" Condition="'$(DepthsCommitExit)' == '0'">
+      <Output TaskParameter="ConsoleOutput" PropertyName="DepthsUntracked" />
+    </Exec>
+    <PropertyGroup>
+      <DepthsCommit Condition="'$(DepthsCommitExit)' != '0'"></DepthsCommit>
+      <DepthsCommit Condition="'$(DepthsCommit)' != '' And '$(DepthsDirty)$(DepthsUntracked)' != ''"
+        >$(DepthsCommit)+dirty</DepthsCommit>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(DepthsCommit)' != ''">
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>GitCommit</_Parameter1>
+        <_Parameter2>$(DepthsCommit)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+
+</Project>

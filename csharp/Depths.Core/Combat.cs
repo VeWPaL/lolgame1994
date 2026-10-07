@@ -47,10 +47,11 @@ namespace Depths
         /// <summary>
         /// src/40-combat.js damagePlayer. Returns whether the hit landed. Order matters and is the
         /// game's: i-frames refuse it; an unspent blink grace forgives it (knockback and the momentum
-        /// cost still apply, no i-frames); otherwise armour absorbs first, momentum keeps 55%, the
-        /// knock is applied and i-frames start. The lab cannot die.
+        /// cost still apply, no i-frames); otherwise armour absorbs first (at ArmorCost, the rest
+        /// passing on at full weight), then the regenerating heart, then the red; the regen clock
+        /// restarts, momentum keeps 55%, the knock is applied and i-frames start. The lab cannot die.
         /// </summary>
-        public static bool DamagePlayer(RunState run, double amount, double kx, double ky, double force)
+        public static bool DamagePlayer(RunState run, double amount, double kx, double ky, double force, bool fromBoss = false)
         {
             var p = run.player;
             if (p.iframes > 0) return false;
@@ -58,21 +59,35 @@ namespace Depths
             {
                 run.blinkGrace = 0;
                 run.graceSpent = true;
-                if (force != 0) { p.kvx += kx * force; p.kvy += ky * force; }
+                if (force != 0) { p.kvx += kx * force * Balance.KnockPScale; p.kvy += ky * force * Balance.KnockPScale; }
                 p.momentum *= Balance.MomentumHitKeep;
                 return false;
             }
             run.dmgTaken += amount;
             double rem = amount;
-            if (p.armor > 0) { double used = System.Math.Min(p.armor, rem); p.armor -= used; rem -= used; }
+            if (p.armor > 0 && Balance.JsReference) { double used = System.Math.Min(p.armor, rem); p.armor -= used; rem -= used; }
+            else if (p.armor > 0)
+            {
+                // armour pays its own, smaller, cost; what it cannot cover reaches the hearts at full weight
+                double cost = ArmorCost(amount, fromBoss);
+                double paid = System.Math.Min(p.armor, cost);
+                p.armor -= paid;
+                rem = System.Math.Ceiling(amount * (cost - paid) / cost);
+            }
+            if (rem > 0 && p.regenHeart > 0) { double r = System.Math.Min(p.regenHeart, rem); p.regenHeart -= r; rem -= r; }
             if (rem > 0) p.hp -= rem;
+            p.regenHeartT = 0;   // any hit that lands, armour-only included, restarts the refill clock
             if (p.hp < 0 && p.hp > -1e-6) p.hp = 0;   // a float epsilon is not a death
             if (run.state == "dev" && p.hp < 1) p.hp = 1;
             p.momentum *= Balance.MomentumHitKeep;
-            if (force != 0) { p.kvx += kx * force; p.kvy += ky * force; }
+            if (force != 0) { p.kvx += kx * force * Balance.KnockPScale; p.kvy += ky * force * Balance.KnockPScale; }   // scaled as Knock scales a body's
             p.iframes = Balance.Iframes;
             return true;
         }
+
+        /// <summary>What a hit costs in armour: ArmorTake x, rounded down, at least 1; the Warden's at full weight.</summary>
+        public static double ArmorCost(double amount, bool fromBoss) =>
+            fromBoss ? amount : System.Math.Max(1, System.Math.Floor(amount * Balance.ArmorTake));
     }
 
     /// <summary>The right-click blast going off: src/40-combat.js explode (the blast mode) and tryBreakSecret.</summary>
@@ -102,7 +117,7 @@ namespace Depths
                 if (!Caught.Contains(e)) continue;
                 double dist = System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y));
                 double t = System.Math.Min(1, dist / (aoe + e.r));
-                if (share != 0) { e.hp -= share * e.armour; e.hitFlash = Balance.HitFlash; }
+                if (share != 0) { e.hp -= share * e.Vuln; e.hitFlash = Balance.HitFlash; }
                 Combat.AlertEnemy(e);
                 Combat.SlowEnemy(e);
                 if (hook)
@@ -145,10 +160,10 @@ namespace Depths
                         e.hookCalm = 0;
                     }
                     double power = e.hookPower;
-                    e.stun = System.Math.Max(e.stun, 3 * power);
+                    e.stun = System.Math.Max(e.stun, Balance.HookFieldStun * power);
                     if (d > 1) { e.x += dx / d * Balance.HookSuck * power; e.y += dy / d * Balance.HookSuck * power; }
-                    e.hp -= Balance.HookDps * power / Balance.TickHz * e.armour;
-                    e.hitFlash = System.Math.Max(e.hitFlash, power);
+                    e.hp -= Balance.HookDps * power / Balance.TickHz * e.Vuln;
+                    e.hitFlash = System.Math.Max(e.hitFlash, Balance.HookFieldFlash * power);
                     Combat.AlertEnemy(e);
                     if (e.hp <= 0) Kills.KillEnemy(run, j);
                 }
@@ -174,12 +189,19 @@ namespace Depths
             double px = d == Dir.E ? Balance.RoomRight : d == Dir.W ? Balance.RoomLeft : Balance.MidX;
             double py = d == Dir.S ? Balance.RoomBottom : d == Dir.N ? Balance.RoomTop : Balance.MidY;
             if (System.Math.Sqrt((x - px) * (x - px) + (y - py) * (y - py)) > Balance.AltAoe * 0.8) return false;
+            OpenSecret(run, room);
+            return true;
+        }
+
+        /// <summary>Open a room's fake wall, both sides, and count the secret found.</summary>
+        public static void OpenSecret(RunState run, Room room)
+        {
+            var d = room.Secret!.Value;
             var sec = run.dungeon.Neighbour(room, d);
             room.Secret = null;
             room.Doors.Add(d);
             if (sec != null) sec.Doors.Add(d == Dir.N ? Dir.S : d == Dir.S ? Dir.N : d == Dir.E ? Dir.W : Dir.E);
             run.secret = true;
-            return true;
         }
     }
 
@@ -199,18 +221,26 @@ namespace Depths
                 for (int i = en.Count - 1; i >= 0; i--)
                     if (en[i].packId == Balance.BossWallId) en.RemoveAt(i);
             run.kills++;
-            var d = Loot.Drop(run.rng, e.x, e.y);
+            var d = Loot.Drop(run.rng, e.x, e.y, Curve.At(run.floor).Drops);
             if (d != null) run.pickups.Add(d);
         }
     }
 
     public static class Loot
     {
-        /// <summary>src/10-art.js dropLoot: 18% a heart, 8% armour, otherwise nothing. Always one draw.</summary>
-        public static Pickup? Drop(Rng rng, double x, double y)
+        /// <summary>
+        /// dropLoot: 9% a half heart, 9% a heart, 4% half armour, 4% armour, otherwise nothing. Always
+        /// one draw. The JS has no halves (18% heart, 8% armour); the split, 2026-10-06, cuts the
+        /// healing a kill pays by a quarter while keeping the same draws and the same drop rate.
+        /// </summary>
+        public static Pickup? Drop(Rng rng, double x, double y, double scale = 1)
         {
             double roll = rng.Run();
+            if (Balance.JsReference) return roll < 0.18 ? Pickup.Of("heart", x, y, 10) : roll < 0.26 ? Pickup.Of("armor", x, y, 10) : null;
+            roll /= scale;   // the curve's Drops: every band shrinks (or grows) by one factor, still one draw
+            if (roll < 0.09) return Pickup.Of("halfheart", x, y, 10);
             if (roll < 0.18) return Pickup.Of("heart", x, y, 10);
+            if (roll < 0.22) return Pickup.Of("halfarmor", x, y, 10);
             if (roll < 0.26) return Pickup.Of("armor", x, y, 10);
             return null;
         }

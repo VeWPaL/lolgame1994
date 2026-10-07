@@ -87,13 +87,25 @@ namespace Depths
             run.stats.Reset();
             foreach (var s in run.loadout) foreach (var (stat, v) in Def(s.Id).StatFx) run.stats.Flat(stat, v);
             ApplyVitals(run);
+            CompassOpens(run);   // picking the compass up in the room with the fake wall opens it at once
+        }
+
+        /// <summary>
+        /// Brass Compass (placeholder, C# only): carried into the room that hides the floor's fake
+        /// wall, the wall opens by itself. Called on entering a room and on every rebuild.
+        /// </summary>
+        public static void CompassOpens(RunState run)
+        {
+            if (run.dungeon == null) return;   // a bare RunState in a test has no floor yet
+            var r = run.CurrentRoom;
+            if (r != null && r.Secret.HasValue && Equipped(run, "brass_compass") != null) Blast.OpenSecret(run, r);
         }
 
         /// <summary>applyVitals: Vigor IS maximum health; a lower maximum clips the current.</summary>
         public static void ApplyVitals(RunState run)
         {
             var p = run.player;
-            double max = System.Math.Max(1, run.stats.Value("vigor"));
+            double max = System.Math.Max(1, run.stats.Value("vigor") - p.regenHeartMax);   // Vigor counts the regenerating heart
             if (max != p.maxHp) { p.maxHp = max; if (p.hp > max) p.hp = max; }
         }
 
@@ -165,9 +177,15 @@ namespace Depths
                 case "reveal_room":
                 {
                     int n = 0;
-                    foreach (var e in run.enemies) if (!e.alerted) { e.alerted = true; n++; }
-                    foreach (var pk in run.pickups) if (!pk.shown) { pk.shown = true; n++; }
-                    return n > 0;
+                    // placeholder (C# only): the mark. Every live body is marked for MarkTicks and takes
+                    // MarkVuln x damage; re-marking counts, so a charge is never wasted on a live room
+                    foreach (var e in run.enemies)
+                    {
+                        if (e.hp <= 0) continue;
+                        if (!e.alerted) e.alerted = true;
+                        e.markT = Balance.MarkTicks; n++;
+                    }
+                    return n > 0;   // the JS also "revealed" pickups; nothing in the port draws that, so loot alone spends nothing
                 }
                 case "pull_pickups":
                 {

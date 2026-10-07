@@ -4307,8 +4307,8 @@ test('every stat on the sheet changes something, or it is not a stat',()=>{
     run=undefined;
   });
 
-  test('Brunch guard variants: A guards anywhere, B leashes, A+ advances the wall; A is the default',()=>{
-    eq(VARIANT.brunch,'A','the test page is not running the reference Brunch behaviour');
+  test('Brunch guard variants: A guards anywhere, B leashes, A+ advances the wall; A+ is the default',()=>{
+    eq(VARIANT.brunch,'A+','the test page is not running the chosen Brunch rule (A+)');
     const saved=VARIANT.brunch;
     try{
       startGame(5);

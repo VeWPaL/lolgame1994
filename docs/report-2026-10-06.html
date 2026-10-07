@@ -22,11 +22,11 @@ Baseline for A/B: git tag <code>pre-features-2026-10-06</code>, checked out at <
 
 <h2>At a glance</h2>
 <table>
-<tr><th>Gate (<code>.\verify.ps1</code>)</th><td><span class="tag ok">green</span> JS 246/246 at 3 viewports, C# 380/380, parity 0 diffs, 145 parity rows, 47/47 constants. About 3 min; it used to time out.</td></tr>
-<tr><th>Bugs fixed</th><td>11 in the game, 4 in the port, 3 in the gate tooling. Each comes with a test that fails on the old code.</td></tr>
+<tr><th>Gate (<code>.\verify.ps1</code>)</th><td><span class="tag ok">green</span> JS 246/246 at 3 viewports, C# 388/388, parity 0 diffs, 148 parity rows, 47/47 constants. About 3 min; it used to time out.</td></tr>
+<tr><th>Bugs fixed</th><td>11 in the game, 7 in the port (including a missing momentum speed bonus and a double-rolled trait), 3 in the gate tooling. Each comes with a test that fails on the old code.</td></tr>
 <tr><th>Playtesting</th><td>A new bot plays 18 full runs in about 50s. It's deterministic and produces an A/B report. <code>node tools/playtest.js</code></td></tr>
 <tr><th>Unity</th><td><span class="tag ok">playable game</span> Start Game plays a real seeded run: rooms, doors, keys, waves of every enemy, the Warden, and the way down. It runs on the ported core, plus a menu, key binds, volume and sound. F1 opens a sandbox and B a Warden arena.</td></tr>
-<tr><th>Port</th><td>New this session: the projectile phase and the blast (everything except the hook), the four guns, every enemy including the Warden, the blink, and the room-to-room game. What is left: items and stats, the hook, larger-than-screen rooms, and a proper renderer. Each is checked against recordings from the running game.</td></tr>
+<tr><th>Port</th><td>New this session: the projectile phase and the blast (everything except the hook), the four guns, every enemy including the Warden, the blink, and the room-to-room game. Since then, items and stats (item rooms offer items; Q uses them) and the hook were ported too, also checked against the game. In Unity, Esc pauses, a death shows the run, and descending shows the floor. What is left is real art and rendering, the 60 Hz switch, and small leftovers listed in STATUS. Each is checked against recordings from the running game.</td></tr>
 </table>
 
 <h2>1. Housekeeping and the gate</h2>

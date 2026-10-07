@@ -55,7 +55,7 @@ namespace Depths.Tests
             Assert.That(shooter.Far, Is.EqualTo(250));
             Assert.That(shooter.CdMin, Is.EqualTo(105));   // sec(0.5)
             Assert.That(shooter.CdVar, Is.EqualTo(84));    // sec(0.4)
-            Assert.That(shooter.Dmg, Is.EqualTo(1.8));
+            Assert.That(shooter.Dmg, Is.EqualTo(2), "whole HP since 2026-10-06; the JS 1.8 is Balance.JsShotDmg");
             Assert.That(shooter.PShotSpeed, Is.EqualTo(2.2));
             Assert.That(shooter.PShotRadius, Is.EqualTo(5));
             Assert.That(shooter.Walk, Is.Null, "a shooter with a walk speed stops being a shooter");
@@ -71,7 +71,7 @@ namespace Depths.Tests
             Assert.That(gunner.Far, Is.EqualTo(200));
             Assert.That(gunner.CdMin, Is.EqualTo(168));   // sec(0.8)
             Assert.That(gunner.CdVar, Is.EqualTo(126));   // sec(0.6)
-            Assert.That(gunner.Dmg, Is.EqualTo(3.6));     // SHOT_DMG*2
+            Assert.That(gunner.Dmg, Is.EqualTo(4));       // SHOT_DMG*2; the JS 3.6 under JsReference
             Assert.That(gunner.PShotRadius, Is.EqualTo(7));
             Assert.That(gunner.Armour, Is.EqualTo(0.66).Within(1e-9));
 

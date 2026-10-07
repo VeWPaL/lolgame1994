@@ -63,12 +63,13 @@ namespace Depths
         public bool Visited, Spawned;
 
         /// <summary>
-        /// The room has been fought to empty, at least once. Set by <c>tickRoom</c>, and read only
-        /// to make the half-blink charge a one-off rather than a per-tick top-up: without the flag a
-        /// cleared room would hand back a blink charge every tick for as long as the player stood
-        /// in it, which is a different resource economy from the one the original has.
+        /// The room has been emptied, at least once. Set by <c>tickRoom</c> (the Unity sandbox resets it per
+        /// wave), so its one-off rewards (half a blink charge; a fought room's regen refill) are paid once.
         /// </summary>
         public bool Cleared;
+        /// <summary>Its wave spawned bodies (a Normal room's plan, the Warden): the wave decides, not the type.
+        /// Only clearing such a room refills the regen heart; a real run's start, item and secret rooms never do.</summary>
+        public bool Fought;
 
         /// <summary>
         /// The silver key has been dropped here, so it must not be dropped twice. One-shot, like
