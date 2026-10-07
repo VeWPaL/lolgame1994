@@ -4,7 +4,7 @@ The handoff file. Any session (including an unattended or scheduled one) starts 
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
 _Last updated: 2026-10-07 (Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
-session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
+session's write-up is `docs/report-2026-10-06.html` (its numbers are from the end of that session: 388 C# tests, before 60 Hz and the curve)._
 
 ## Where things are
 
