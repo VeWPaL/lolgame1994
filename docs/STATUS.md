@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-06 (C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-07 (the difficulty curve, `Curve.cs`; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-session: 380 C# tests)._
 
 ## Where things are
@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  559/559, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  573/573, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -105,11 +105,35 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from mid-se
   enemy and Warden cooldowns (each carries its overrun; the Bolt was 2% slow, the Beam 7%, enemy fire
   2%), shells and body contact (4 sub-steps at 60 Hz; contact damage 145 -> 154 an hour, 152 at
   210). Owner: decide whether 60 Hz difficulty wants a retune.
-- **Difficulty / healing**: deferred until the mechanics are done. Owner's direction: a non-linear
-  curve (hard start, easier-but-not-easy middle, hard end); scarce pickups; different enemies per
-  area and buffed enemies later on; more complex rooms; every part of the kit (items, weapons,
-  consumables) load-bearing. Bot data (C#, 210 Hz, 60 min, seeds 101-300, with the won-fight refill):
-  healing = damage per floor (15.2 hp), median floor 17, 105 of 600 runs die (68 of them novice).
+- **Difficulty curve** (2026-10-07, C# only, branch `curve-a`; owner to playtest). Owner's direction: a
+  non-linear curve (hard start, easier-but-not-easy middle, hard end), scarce pickups, buffed enemies
+  later on, every part of the kit load-bearing. Built as a per-floor shape
+  table in `csharp/Depths.Core/Curve.cs` laid over the depth ladder: START (floors 1-2) a bump while
+  the player has no kit, MIDDLE (3-10) a dip, then the climb (11-12 a ramp, END 13+ the exponential
+  ladder on top). Columns, each with its why in the file: `Tough`, `Rate` (still under
+  `DepthRateCap`), `Bodies`, `Pack`, `Heavy` (gunner chance), `Hit` (enemy hits x, whole HP), `Drops`
+  (kill drop chance x). The targets live in the same file (`Curve.Targets`, a proposal from the frozen
+  rubric). The tests run with the curve off (assembly `[CurveOn(false)]`), so the 148 parity rows keep
+  the JS ladder; `play --curve off` plays the JS ladder for A/B. Check a playtest with
+  `... -- curve <label>` (exit 2 on a missed target; writes `playtest/curve-<label>.md`); the bot now
+  records damage sources per floor. Bot, 60 Hz, 60 min, seeds 101-300, 600 runs (hazard = deaths /
+  floor entries, floors reached by 30+ runs):
+
+  | | START before > after | MIDDLE | END | novice HP leaving 2 | median floor | dmg / heal a floor START, MIDDLE |
+  |---|---|---|---|---|---|---|
+  | novice | 1.26% > 8.48% | 0.45% > 1.71% | 4.80% > 45.2% | 8 > 5 | 17 > 12 | 14.2/14.8, 15.8/15.9 > 12.9/11.1, 12.2/12.6 |
+  | average | 0.00% > 3.26% | 0.00% > 0.55% | 0.89% > 17.5% | 8 > 7 | 17 > 16 | 10.1/11.2, 10.8/11.0 > 9.0/7.9, 8.7/9.1 |
+  | skilled | 0.00% > 1.26% | 0.06% > 0.06% | 0.50% > 11.6% | 8 > 7 | 17 > 17 | 8.1/9.4, 9.2/9.4 > 7.8/6.9, 7.5/7.9 |
+
+  Every rubric target is met except one: MIDDLE healing stays above damage (by 0.4 HP a floor for
+  every profile). It is the player recovering what START took (red HP, and the extra max HP Vigor items add);
+  every drop rate that stopped it (0.05 to 0.15 in the middle) pushed novice MIDDLE deaths past 4% and
+  skilled past 0.7%. Owner: accept a middle that gives the start's hearts back, or trade it for harder
+  middle floors. Levers that moved what: `Drops` 0 in START is what makes the start cost hearts (HP
+  leaving 2: 8 > 5); the gunner (4 HP shell) decides deaths and skill barely dodges it, so `Hit` 0.75
+  in START (gunner 3) plus `Rate` 1.3 (more, dodgeable shells) is what separates skilled from average;
+  the middle dip is `Tough` 0.85, half a body less, fewer packs and gunners; the end is the bare
+  ladder plus `Tough` 1.15, half a body and more gunners.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).
