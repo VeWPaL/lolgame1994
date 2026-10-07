@@ -133,14 +133,15 @@ namespace Depths.Playtest
         public double Minutes = 20;
         public string? Brunch, Out;
         public bool Curve = true;   // the game's difficulty curve; off plays the JS ladder, for A/B
-        public List<string> Dials = new List<string>();   // --dial stage.Field=value, a retune without a rebuild
+        public List<string> Dials = new List<string>();
+        public Depths.Curve.MiddleRule? MidRule;   // curve --mid-rule: which rubric-5 MIDDLE reading to check   // --dial stage.Field=value, a retune without a rebuild
         public int? Hz;   // the sim's tick rate; the game's own when not given
         public List<string> Labels = new List<string>();
 
         static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--out DIR]";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]";
 
         static string Name(string s, string what)
         {
@@ -163,13 +164,18 @@ namespace Depths.Playtest
                     continue;
                 }
                 string k = a[i].Substring(2);
-                if (c.Command == "play" ? Array.IndexOf(PlayOpts, k) < 0 : k != "out")
+                if (c.Command == "play" ? Array.IndexOf(PlayOpts, k) < 0 : k != "out" && !(c.Command == "curve" && k == "mid-rule"))
                     throw new UsageException("unknown option --" + k);
                 if (i + 1 >= a.Length) throw new UsageException("--" + k + " needs a value");
                 string v = a[++i];
                 switch (k)
                 {
                     case "label": c.Label = Name(v, "--label"); break;
+                    case "mid-rule":
+                        if (!Enum.TryParse<Depths.Curve.MiddleRule>(v, true, out var mr) || !Enum.IsDefined(typeof(Depths.Curve.MiddleRule), mr) || int.TryParse(v, out _))
+                            throw new UsageException("--mid-rule is original, recovery or pickups");
+                        c.MidRule = mr;
+                        break;
                     case "out":
                         if (v.Trim().Length == 0) throw new UsageException("--out needs a folder");
                         c.Out = v;
@@ -292,7 +298,7 @@ namespace Depths.Playtest
         static int CurveCmd(Cli c)
         {
             string dir = OutDir(c);
-            var (md, misses) = CurveCheck.Check(Load(dir, c.Labels[0]));
+            var (md, misses) = CurveCheck.Check(Load(dir, c.Labels[0]), c.MidRule);
             string file = Path.Combine(dir, "curve-" + c.Labels[0] + ".md");
             Save(file, md);
             Console.Write(md);

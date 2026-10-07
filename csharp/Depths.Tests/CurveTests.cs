@@ -8,8 +8,8 @@ using NUnit.Framework;
 namespace Depths.Tests
 {
     /// <summary>
-    /// The difficulty curve (C# only): the shape of Curve.Default, how it reaches the ladder, the hit and
-    /// the drops, the switch the parity rows rely on, and the bot's `curve` check on hand-built files.
+    /// The difficulty curve (C# only): the shape of Curve.Stages, that the game and the bot call each hook,
+    /// the switch the parity rows rely on, and the bot's `curve` check on hand-built files.
     /// </summary>
     [TestFixture, Category("csharp-only"), CurveOn(true)]
     public sealed class CurveTests
@@ -68,6 +68,36 @@ namespace Depths.Tests
             for (int f = 1; f <= 40; f++)
                 Assert.That(Curve.At(f).Heavy + Bodies.MixFor(AreaRules.AreaForFloor(f)).Heavy, Is.InRange(0, 1),
                     "the gunner chance stays a chance on floor " + f);
+        }
+
+        [Test]
+        public void FromTheRampOnNoFloorIsEasierThanTheOneBefore()
+        {
+            // the curve's own stat terms: body health, the room's extra bodies (whole ones), packs, gunners
+            int Extra(int f) => (int)Math.Floor(Balance.DepthBodies(f, 0));
+            double Gun(int f) => Bodies.MixFor(AreaRules.AreaForFloor(f)).Heavy + Curve.At(f).Heavy;
+            double Pack(int f) => Balance.DepthPack(f, Bodies.MixFor(AreaRules.AreaForFloor(f)).Brunch);
+            for (int f = 11; f < 40; f++)
+            {
+                Assert.That(Balance.DepthTough(f + 1), Is.GreaterThan(Balance.DepthTough(f)), "health at floor " + (f + 1));
+                Assert.That(Extra(f + 1), Is.GreaterThanOrEqualTo(Extra(f)), "bodies at floor " + (f + 1));
+                Assert.That(Gun(f + 1), Is.GreaterThanOrEqualTo(Gun(f)), "gunners at floor " + (f + 1));
+                Assert.That(Pack(f + 1), Is.GreaterThanOrEqualTo(Pack(f)), "packs at floor " + (f + 1));
+            }
+            Assert.That(Balance.DepthTough(Curve.EndFirst), Is.GreaterThanOrEqualTo(Balance.DepthTough(Curve.EndFirst - 1) * 1.05),
+                "the last area opens tougher than the floor before it");
+        }
+
+        [Test]
+        public void TheExtraBodiesComeOneStepAtATime()
+        {
+            // a whole extra body per room is the curve's biggest single step; no floor in reach adds two at once,
+            // and the first END floors do not add one on top of the area change
+            int Extra(int f) => (int)Math.Floor(Balance.DepthBodies(f, 0));
+            for (int f = 11; f < 18; f++) Assert.That(Extra(f + 1) - Extra(f), Is.LessThanOrEqualTo(1), "floor " + (f + 1));
+            Assert.That(Extra(12), Is.EqualTo(Extra(11) + 1), "the step comes on the ramp");
+            Assert.That(Extra(16), Is.EqualTo(Extra(12)), "and holds through 16");
+            Assert.That(Extra(17), Is.EqualTo(Extra(16)), "the deep stage holds the second step off floor 17");
         }
 
         [Test]
@@ -202,12 +232,12 @@ namespace Depths.Tests
         [Test]
         public void AWaveCarriesItsFloorsDensity()
         {
-            // the middle takes a body off every wave; a wave never falls under two
+            // the soft floor takes a body off every wave; a wave never falls under two
             var on = new WavePlanner(new Rng(5));
             double sum = 0;
             for (int i = 0; i < 3000; i++)
             {
-                var w = on.PlanWave(5, Dir.N, Area.Area2);
+                var w = on.PlanWave(3, Dir.N, Area.Area1);
                 Assert.That(w.Slots.Count, Is.GreaterThanOrEqualTo(2));
                 sum += w.Slots.Count;
             }
@@ -216,7 +246,7 @@ namespace Depths.Tests
             {
                 var off = new WavePlanner(new Rng(5));
                 double sumOff = 0;
-                for (int i = 0; i < 3000; i++) sumOff += off.PlanWave(5, Dir.N, Area.Area2).Slots.Count;
+                for (int i = 0; i < 3000; i++) sumOff += off.PlanWave(3, Dir.N, Area.Area1).Slots.Count;
                 Assert.That(sum / 3000, Is.LessThan(sumOff / 3000 - 0.6), "about one slot fewer");
             }
             finally { Curve.On = true; }
@@ -246,7 +276,7 @@ namespace Depths.Tests
         sealed class Spec
         {
             public double[] Start = { 0.10, 0.10 }, Middle = { 0.03 }, Ramp = { 0.3 }, End = { 0.35, 0.4, 0.45, 0.5, 0.55 };
-            public double HpOut2 = 5, Dmg = 10, Heal = 8, StartHeal = 8, HeartHeal = 1;
+            public double HpOut2 = 5, HpOut10 = 7, Dmg = 10, Heal = 8, StartHeal = 8, Regen = 0, HeartHeal = 1;
             public bool Sources = true;
             public Dictionary<string, double> Src = new Dictionary<string, double> { ["a"] = 5, ["b"] = 5 };
 
@@ -283,7 +313,8 @@ namespace Depths.Tests
                         var r = alive[i];
                         bool dies = i < k, end = f == last;
                         r.floors.Add(new FloorRecord { floor = f, dmg = spec.Dmg, healed = f <= Curve.StartLast ? spec.StartHeal : spec.Heal, bossKilled = !dies && !end,
-                            hpOut = dies ? 0 : f == 2 ? spec.HpOut2 : 7,
+                            regen = f <= Curve.StartLast ? 0 : spec.Regen, hpIn = 7, maxHpIn = 8,
+                            hpOut = dies ? 0 : f == 2 ? spec.HpOut2 : f == Curve.MiddleLast ? spec.HpOut10 : 7,
                             dmgBySource = spec.Sources ? new SortedDictionary<string, double>(spec.Src) : null });
                         r.floor = f;
                         if (dies) r.end = "death";
@@ -356,6 +387,38 @@ namespace Depths.Tests
             Assert.That(text, Does.Contain("## Healing by source"));
         }
 
+        static Spec Mid(Spec s, double heal, double regen, double hpOut10 = 7)
+        {
+            s.Heal = heal; s.Regen = regen; s.HpOut10 = hpOut10; return s;
+        }
+
+        static Batch MidBatch(double heal, double regen, double hpOut10 = 7) =>
+            Synth(Mid(Novice(), heal, regen, hpOut10), Mid(Average(), heal, regen, hpOut10), Mid(Skilled(), heal, regen, hpOut10));
+
+        [Test]
+        public void TheMiddleRuleIsSelectableAndEachReadingIsItsFormula()
+        {
+            Assert.That(Curve.MidRule, Is.EqualTo(Curve.MiddleRule.Original), "the rubric as written until the owner chooses");
+            // healing 10 a floor against 10 damage, 5 of it the regenerating heart: original misses, pickups holds
+            var b = MidBatch(10, 5);
+            Assert.That(CurveCheck.Check(b, Curve.MiddleRule.Original).misses, Has.Some.StartsWith("5 novice MIDDLE healing a floor 10"));
+            Assert.That(CurveCheck.Check(b, Curve.MiddleRule.Pickups).misses, Is.Empty);
+            Assert.That(CurveCheck.Check(b, Curve.MiddleRule.Recovery).misses, Is.Empty, "7 in, 7 out: nothing given back");
+            Assert.That(CurveCheck.Check(MidBatch(10, 0), Curve.MiddleRule.Pickups).misses,
+                Has.Some.StartsWith("5 average MIDDLE (pickups) pickup healing a floor 10, wants below its damage 10"));
+            // entering 3 at 7 of 8 and max HP staying 8: leaving 10 at 8 is the 1 START took, at 9 one more
+            Assert.That(CurveCheck.Check(MidBatch(8, 0, 8), Curve.MiddleRule.Recovery).misses, Is.Empty);
+            Assert.That(CurveCheck.Check(MidBatch(8, 0, 9), Curve.MiddleRule.Recovery).misses,
+                Has.Some.StartsWith("5 skilled MIDDLE (recovery) gives back 2 HP + armour, wants at most START's loss plus new max HP 1"));
+            var saved = Curve.MidRule;
+            try
+            {
+                Curve.MidRule = Curve.MiddleRule.Pickups;
+                Assert.That(CurveCheck.Check(b).misses, Is.Empty, "the check reads the line the game ships");
+            }
+            finally { Curve.MidRule = saved; }
+        }
+
         [Test]
         public void TheCheckReadsTheTargetsTheGameShips()
         {
@@ -386,6 +449,14 @@ namespace Depths.Tests
                 Assert.That(Program.Main(new[] { "curve", "missing", "--out", dir }), Is.EqualTo(1));
                 Assert.That(Program.Main(new[] { "curve", "good", "bad", "--out", dir }), Is.EqualTo(1));
                 Assert.That(Program.Main(new[] { "curve", "good", "--seeds", "1" }), Is.EqualTo(1));
+                File.WriteAllText(Path.Combine(dir, "mid.json"), Json.Write(MidBatch(10, 5)));
+                Assert.That(Program.Main(new[] { "curve", "mid", "--out", dir }), Is.EqualTo(2), "the rubric as written");
+                Assert.That(Program.Main(new[] { "curve", "mid", "--mid-rule", "pickups", "--out", dir }), Is.EqualTo(0));
+                Assert.That(Program.Main(new[] { "curve", "mid", "--mid-rule", "recovery", "--out", dir }), Is.EqualTo(0));
+                Assert.That(File.ReadAllText(Path.Combine(dir, "curve-mid.md")), Does.Contain("read as: recovery"));
+                Assert.That(Program.Main(new[] { "curve", "mid", "--mid-rule", "2", "--out", dir }), Is.EqualTo(1));
+                Assert.That(Program.Main(new[] { "curve", "mid", "--mid-rule", "kind", "--out", dir }), Is.EqualTo(1));
+                Assert.That(Program.Main(new[] { "play", "--mid-rule", "pickups" }), Is.EqualTo(1), "a check option, not a play one");
             }
             finally { Directory.Delete(dir, true); }
         }
@@ -423,6 +494,8 @@ namespace Depths.Tests
                 Assert.That(S("start").Tough, Is.EqualTo(was), "and undone after the play");
                 Assert.That(Json.Text(dialled.runs), Is.Not.EqualTo(Json.Text(on.runs)), "a dial changes the run");
                 Assert.That(Report.Mismatches(on, dialled), Has.Some.Contains("curve dials differ"));
+                Assert.That(Report.Mismatches(off, on), Has.Some.EqualTo("difficulty curves differ: off vs on"));
+                Assert.That(Report.Mismatches(on, on), Is.Empty);
             }
             finally { Directory.Delete(dir, true); }
         }

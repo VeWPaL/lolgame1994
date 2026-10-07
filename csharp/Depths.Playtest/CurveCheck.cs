@@ -49,6 +49,9 @@ namespace Depths.Playtest
         public double medianFloor;
         public double? hpLeavingStart;   // median HP out of the last START floor, over the runs that left it
         public double heartShare;        // heart and half-heart pickups' share of all healing
+        public int midLeft;              // runs that left the last MIDDLE floor (rubric 5, recovery reading)
+        public double midRecovery, midAllowed;   // their mean HP + armour gained over MIDDLE, and the allowance
+        public double midPickups;        // MIDDLE healing a floor less the regenerating heart (clock and refill)
 
         /// <summary>END's first and second halves by floor (an odd middle floor sits in neither).</summary>
         public (BandStat first, BandStat second) EndHalves()
@@ -101,6 +104,20 @@ namespace Depths.Playtest
             double heal = runs.Sum(r => r.healBy.Values.Sum());
             double hearts = runs.Sum(r => r.healBy.GetValueOrDefault("heart") + r.healBy.GetValueOrDefault("halfheart"));
             c.heartShare = heal > 0 ? hearts / heal : 0;
+            double rec = 0, allow = 0;
+            foreach (var r in runs)
+            {
+                var first = r.floors.FirstOrDefault(f => f.floor == Curve.MiddleFirst);
+                var last = r.floors.FirstOrDefault(f => f.floor == Curve.MiddleLast && f.bossKilled && f.hpOut != null);
+                var next = r.floors.FirstOrDefault(f => f.floor == Curve.MiddleLast + 1);
+                if (first == null || last == null || next == null) continue;
+                c.midLeft++;
+                rec += last.hpOut!.Value + (last.armorOut ?? 0) - first.hpIn - first.armorIn;
+                allow += next.maxHpIn - first.hpIn;
+            }
+            if (c.midLeft > 0) { c.midRecovery = rec / c.midLeft; c.midAllowed = allow / c.midLeft; }
+            var mid = runs.SelectMany(r => r.floors).Where(f => f.floor >= Curve.MiddleFirst && f.floor <= Curve.MiddleLast).ToList();
+            c.midPickups = mid.Count > 0 ? mid.Average(f => f.healed - f.regen) : 0;
             return c;
         }
 
@@ -129,8 +146,9 @@ namespace Depths.Playtest
         /// Measures every target profile and checks every target: the text is Markdown with one "ok" or
         /// "MISS" line per target, led by its rubric number; misses are the failed lines.
         /// </summary>
-        public static (string text, List<string> misses) Check(Batch b)
+        public static (string text, List<string> misses) Check(Batch b, Curve.MiddleRule? rule = null)
         {
+            var midRule = rule ?? Curve.MidRule;
             var lines = new List<(bool ok, string what)>();
             void T(bool ok, string what) => lines.Add((ok, what));
             var sb = new StringBuilder();
@@ -139,7 +157,8 @@ namespace Depths.Playtest
               .Append(" sim-min at ").Append(b.tickHz > 0 ? b.tickHz : 210).Append(" Hz, curve ")
               .Append(b.curve == null ? "unrecorded" : b.curve.Value ? "on" : "off")
               .Append(b.dials != null ? " dialled " + string.Join(",", b.dials) : "")
-              .Append(", built from ").Append(b.commit ?? "an unknown commit").Append(".\n");
+              .Append(", built from ").Append(b.commit ?? "an unknown commit").Append(".\n")
+              .Append("\nRubric 5 for MIDDLE read as: ").Append(midRule.ToString().ToLowerInvariant()).Append(".\n");
             if (b.tickHz != Balance.GameHz || b.minutes != 60 || b.seeds.Count < 200)
                 sb.Append("\nNote: the targets are for the game rate, 60 minutes and seeds 101-300; this file is not that.\n");
             sb.Append("\nHazard = deaths / floor entries; START floors 1-").Append(Curve.StartLast)
@@ -188,8 +207,16 @@ namespace Depths.Playtest
                   ", wants " + N(t.MedianFloorMin) + (t.MedianFloorMax < 1e9 ? "-" + N(t.MedianFloorMax) : "+"));
                 T(c.start.HealPerFloor < c.start.DmgPerFloor, "5 " + t.Profile + " START healing a floor " + N(Math.Round(c.start.HealPerFloor, 2)) +
                   ", wants below its damage " + N(Math.Round(c.start.DmgPerFloor, 2)));
-                T(c.middle.HealPerFloor < c.middle.DmgPerFloor, "5 " + t.Profile + " MIDDLE healing a floor " + N(Math.Round(c.middle.HealPerFloor, 2)) +
-                  ", wants below its damage " + N(Math.Round(c.middle.DmgPerFloor, 2)));
+                if (midRule == Curve.MiddleRule.Recovery)
+                    T(c.midLeft > 0 && c.midRecovery <= c.midAllowed, "5 " + t.Profile + " MIDDLE (recovery) gives back " +
+                      N(Math.Round(c.midRecovery, 2)) + " HP + armour, wants at most START's loss plus new max HP " + N(Math.Round(c.midAllowed, 2)) +
+                      " (" + c.midLeft + " runs left floor " + Curve.MiddleLast + ")");
+                else if (midRule == Curve.MiddleRule.Pickups)
+                    T(c.midPickups < c.middle.DmgPerFloor, "5 " + t.Profile + " MIDDLE (pickups) pickup healing a floor " +
+                      N(Math.Round(c.midPickups, 2)) + ", wants below its damage " + N(Math.Round(c.middle.DmgPerFloor, 2)));
+                else
+                    T(c.middle.HealPerFloor < c.middle.DmgPerFloor, "5 " + t.Profile + " MIDDLE healing a floor " + N(Math.Round(c.middle.HealPerFloor, 2)) +
+                      ", wants below its damage " + N(Math.Round(c.middle.DmgPerFloor, 2)));
                 if (!c.start.srcKnown) T(false, "1 " + t.Profile + " START damage sources not recorded (a file from before per-floor sources)");
                 else T(topShare <= Curve.StartTopSourceMax, "1 " + t.Profile + " top START source " + (topKey ?? "none") + " " + P(topShare) +
                        ", at most " + P(Curve.StartTopSourceMax));
