@@ -94,6 +94,7 @@ namespace Depths.Unity.Audio
             var env = new Param(0).Set(0, 0).Linear(v.A, v.Peak).Linear(v.A + v.D, v.Peak * v.Sustain)
                 .Exp(v.A + v.D + v.Release, 0.0001);
             double z1 = 0, z2 = 0, x1 = 0, x2 = 0;   // biquad state
+            double lastF0 = double.NaN, b0 = 0, b1 = 0, b2 = 0, a0 = 1, a1 = 0, a2 = 0;   // coefficients, reused while the cutoff holds
             int stop = (int)Math.Ceiling(v.Stop * Rate);
             for (int i = 0; i < n && i < stop; i++)
             {
@@ -106,12 +107,16 @@ namespace Depths.Unity.Audio
                 if (noise != null) s += i < noise.Length ? noise[i] : 0;
                 if (v.FilterType != Filter.None)
                 {
-                    // RBJ cookbook, coefficients recomputed per sample because the cutoff can sweep
-                    double f0 = Math.Min(v.FilterFreq.At(t), Rate * 0.45), w0 = 2 * Math.PI * f0 / Rate;
-                    double cw = Math.Cos(w0), alpha = Math.Sin(w0) / (2 * v.Q);
-                    double b0, b1, b2, a0 = 1 + alpha, a1 = -2 * cw, a2 = 1 - alpha;
-                    if (v.FilterType == Filter.Lowpass) { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = (1 - cw) / 2; }
-                    else { b0 = alpha; b1 = 0; b2 = -alpha; }
+                    // RBJ cookbook; recomputed only when the cutoff moves (a sweep), same numbers either way
+                    double f0 = Math.Min(v.FilterFreq.At(t), Rate * 0.45);
+                    if (f0 != lastF0)
+                    {
+                        lastF0 = f0;
+                        double w0 = 2 * Math.PI * f0 / Rate, cw = Math.Cos(w0), alpha = Math.Sin(w0) / (2 * v.Q);
+                        a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha;
+                        if (v.FilterType == Filter.Lowpass) { b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = (1 - cw) / 2; }
+                        else { b0 = alpha; b1 = 0; b2 = -alpha; }
+                    }
                     double y = (b0 * s + b1 * x1 + b2 * x2 - a1 * z1 - a2 * z2) / a0;
                     x2 = x1; x1 = s; z2 = z1; z1 = y; s = y;
                 }

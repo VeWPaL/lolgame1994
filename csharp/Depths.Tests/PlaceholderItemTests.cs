@@ -48,6 +48,17 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void HuntersMarkOnAClearedRoomWithLootCostsNothing()
+        {
+            // the JS "reveal" of pickups draws nothing in the port, so loot alone must not spend a charge
+            var run = Run();
+            run.pickups.Add(Pickup.Of("heart", 400, 300, 16));
+            Items.Give(run, "hunters_mark");
+            Assert.That(Items.UseActive(run), Is.False);
+            Assert.That(Items.ActiveItem(run)!.Charges, Is.EqualTo(2));
+        }
+
+        [Test]
         public void AMarkedBodyTakesHalfAgainTheBlast()
         {
             double Loss(bool marked)

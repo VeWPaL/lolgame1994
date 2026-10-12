@@ -20,4 +20,26 @@ namespace Depths.Unity
         public void SetFloat(string key, float value) => PlayerPrefs.SetFloat(key, value);
         public void Save() => PlayerPrefs.Save();
     }
+
+    /// <summary>
+    /// Gameplay options, saved like the volume. The difficulty curve (Depths.Core <c>Curve.On</c>) is read
+    /// per floor, so it is applied when a run starts, never mid-run.
+    /// </summary>
+    public sealed class GameplaySettings
+    {
+        public const string CurveKey = "depths.gameplay.curve";
+        readonly ISettingsStore _store;
+
+        public GameplaySettings(ISettingsStore store) { _store = store; }
+
+        /// <summary>Off until the player turns it on (the curve is not signed off yet; STATUS).</summary>
+        public bool Curve
+        {
+            get => _store.GetString(CurveKey, "off") == "on";
+            set { _store.SetString(CurveKey, value ? "on" : "off"); _store.Save(); }
+        }
+
+        /// <summary>Call at the start of a run.</summary>
+        public void Apply() => Depths.Curve.On = Curve;
+    }
 }

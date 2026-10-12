@@ -185,8 +185,7 @@ namespace Depths
                         if (!e.alerted) e.alerted = true;
                         e.markT = Balance.MarkTicks; n++;
                     }
-                    foreach (var pk in run.pickups) if (!pk.shown) { pk.shown = true; n++; }
-                    return n > 0;
+                    return n > 0;   // the JS also "revealed" pickups; nothing in the port draws that, so loot alone spends nothing
                 }
                 case "pull_pickups":
                 {

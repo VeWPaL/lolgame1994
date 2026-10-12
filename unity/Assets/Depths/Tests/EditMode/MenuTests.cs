@@ -4,6 +4,7 @@ using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UIElements;
 
 namespace Depths.Unity.Tests
 {
@@ -17,6 +18,45 @@ namespace Depths.Unity.Tests
         public float GetFloat(string k, float fb) => F.TryGetValue(k, out var v) ? v : fb;
         public void SetFloat(string k, float v) => F[k] = v;
         public void Save() => Saves++;
+    }
+
+    public class GameplaySettingsTests
+    {
+        [Test]
+        public void TheCurveIsOffUntilChosenAndAChoiceIsSavedAndApplied()
+        {
+            bool saved = Depths.Curve.On;
+            try
+            {
+                var store = new MemoryStore();
+                var g = new GameplaySettings(store);
+                Depths.Curve.On = true;   // a stale in-process value must not leak into the default
+                Assert.That(g.Curve, Is.False, "a fresh install plays the curve");
+                g.Apply();
+                Assert.That(Depths.Curve.On, Is.False);
+
+                g.Curve = true;
+                Assert.That(store.S[GameplaySettings.CurveKey], Is.EqualTo("on"));
+                Assert.That(store.Saves, Is.EqualTo(1), "the choice is not written to disk");
+                Assert.That(new GameplaySettings(store).Curve, Is.True, "the choice does not survive a restart");
+                g.Apply();
+                Assert.That(Depths.Curve.On, Is.True);
+
+                store.S[GameplaySettings.CurveKey] = "garbage";
+                Assert.That(g.Curve, Is.False, "an unreadable value turns the curve on");
+            }
+            finally { Depths.Curve.On = saved; }
+        }
+
+        [Test]
+        public void TheOptionsHaveAGameplayPageWithTheCurveToggle()
+        {
+            var tree = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>("Assets/Depths/UI/MainMenu.uxml");
+            var root = tree.Instantiate();
+            Assert.That(root.Q<UnityEngine.UIElements.Button>("tabGameplay"), Is.Not.Null);
+            Assert.That(root.Q("gameplayPage"), Is.Not.Null);
+            Assert.That(root.Q<UnityEngine.UIElements.Toggle>("curve"), Is.Not.Null, "the menu reads a toggle named curve");
+        }
     }
 
     public class VolumeTests
