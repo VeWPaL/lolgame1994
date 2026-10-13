@@ -174,6 +174,14 @@ it from another checkout or the first command spends minutes importing.
   skilled 2.60 < 8.37 / 2.55 < 8.50 (measured before the 2026-10-07 regen nerf).
   The alternatives, `Original` and `Recovery`, stay selectable (`curve <label> --mid-rule`); `Recovery`
   cannot fail on HP alone (the critic), so it only measures armour.
+- **Idea (owner, 2026-10-12): a middle enemy in place of the gunner.** Keep the gunner for floors 11+
+  and give floors 3-10 their own enemy whose threat a skilled player can read and dodge (the gunner's
+  4 HP shell kills average and skilled players about equally there). Ideas, none built:
+  - Splitter: slow shot that bursts into 3 small shots at a set range; punishes standing still.
+  - Mortar: lobs a shell at where you stand, with a ground marker 1 s ahead; 2 HP, movement beats it.
+  - Burrower: digs in, surfaces under your last spot after a visible tell; contact 1-2 HP.
+  - Sprayer: short cone of weak shots on a long wind-up; teaches reading tells, low damage each.
+  - Turret egg: stationary, fires a slow ring every few seconds; shapes the room, never chases.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).
