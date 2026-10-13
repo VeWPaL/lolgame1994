@@ -65,11 +65,16 @@ namespace Depths.Unity.Tests
                             if (c != '.') Assert.That(pal.ContainsKey(c), what + " has no colour for '" + c + "'");
             }
             Covers(Sprites.PlayerUpper, Sprites.PlayerPal, "player");
-            Covers(Sprites.LungerUpper, Sprites.LungerPal, "lunger");
-            Covers(Sprites.LungerUpper, Sprites.BossPal, "warden");
-            Covers(Sprites.LungerUpper, Sprites.BrunchPal, "brunch");
-            Covers(Sprites.ShooterUpper, Sprites.ShooterPal, "shooter");
-            Covers(Sprites.ShooterUpper, Sprites.GunnerPal, "gunner");
+            foreach (BodyKind k in System.Enum.GetValues(typeof(BodyKind)))
+                for (int f = 0; f < 4; f++)
+                {
+                    var (rows, pal) = SpriteSet.BodyArt(k, f);
+                    foreach (var row in rows)
+                    {
+                        Assert.That(row.Length, Is.EqualTo(rows[0].Length), k + " rows are one width");
+                        foreach (char c in row) if (c != '.') Assert.That(pal.ContainsKey(c), k + " has no colour for '" + c + "'");
+                    }
+                }
         }
 
         [Test]
@@ -174,7 +179,7 @@ namespace Depths.Unity.Tests
         public void TheGameAtlasHoldsEveryNamedSpriteAndReadsBackItsPixels()
         {
             var atlas = SpriteSet.Atlas;
-            foreach (BodyKind k in new[] { BodyKind.Lunger, BodyKind.Brunch, BodyKind.Shooter, BodyKind.Gunner, BodyKind.Boss })
+            foreach (BodyKind k in System.Enum.GetValues(typeof(BodyKind)))
                 for (int f = 0; f < 4; f++) { Assert.That(atlas.Has(SpriteSet.Body(k, f, false)), k + " " + f); Assert.That(atlas.Has(SpriteSet.Body(k, f, true))); }
             foreach (var id in ItemArt.Ids) Assert.That(atlas.Has(SpriteSet.Item(id, 26)), id);
             Assert.That(atlas.Has(SpriteSet.Item("unknown", 26)), "an unknown item falls back to the generic tile");
@@ -254,6 +259,20 @@ namespace Depths.Unity.Tests
             fx.Update(run, 0.016f);
             Assert.That(fx.Count, Is.EqualTo(1));
             Assert.That(fx[0].Ring && fx[0].Dir == -1 && fx[0].R == (float)Balance.HookAoe, "the hook's ring collapses, at the hook's reach");
+        }
+
+        [Test]
+        public void AWarmFrameAllocatesNothing()
+        {
+            // the view's per-frame work outside the mesh: derived FX over a live fight, and the colour lookups a frame makes
+            var run = Run();
+            for (int i = 0; i < 6; i++) run.enemies.Add(Enemy.Of(i % 2 == 0 ? BodyKind.Lunger : BodyKind.Shooter, 200 + i * 60, 250));
+            run.projectiles.Add(new Projectile { x = 300, y = 300, alt = true, mode = "blast", color = Sprites.BlastColor });
+            var fx = new FxTracker();
+            for (int i = 0; i < 10; i++) { fx.Update(run, 0.016f); Hex.Of("#ffb03a"); Hex.Of(Sprites.HookColor); }
+            long before = System.GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 200; i++) { fx.Update(run, 0.016f); Hex.Of("#ffb03a"); Hex.Of(Sprites.HookColor); }
+            Assert.That(System.GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0), "bytes allocated over 200 warm frames");
         }
 
         [Test]

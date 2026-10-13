@@ -91,7 +91,7 @@ namespace Depths
                     // two lungers on one line meet mid-charge and both come off worse
                     foreach (var o in room)
                     {
-                        if (o == e) continue;
+                        if (o == e || o.buried) continue;   // a lunge passes over a Burrower underground
                         double ox = o.x - e.x, oy = o.y - e.y, d = Hyp(ox, oy);
                         if (d > e.r + o.r) continue;
                         double nx = d > 0.01 ? ox / d : System.Math.Cos(e.flank), ny = d > 0.01 ? oy / d : System.Math.Sin(e.flank);
@@ -176,7 +176,7 @@ namespace Depths
         static void Bounce(RunState run, Enemy a, Enemy b)
         {
             double dx = b.x - a.x, dy = b.y - a.y, d = Hyp(dx, dy), min = a.r + b.r;
-            if (d >= min) return;
+            if (d >= min || a.buried || b.buried) return;   // a Burrower underground passes under the others
             double nx, ny;
             if (d < 0.001) { double ang = run.rng.Jitter() * 6.283; nx = System.Math.Cos(ang); ny = System.Math.Sin(ang); }
             else { nx = dx / d; ny = dy / d; }
@@ -210,7 +210,7 @@ namespace Depths
                 bool clear = true;
                 foreach (var o in run.enemies)
                 {
-                    if (o == e) continue;
+                    if (o == e || o.buried) continue;   // shells pass over a buried Burrower, so it blocks no line
                     if (e.shieldGuardFor != null && e.shieldGuardFor.Contains(o)) continue;
                     double ox = o.x - e.x, oy = o.y - e.y, along = ox * dx + oy * dy;
                     if (along <= 0 || along >= reach) continue;

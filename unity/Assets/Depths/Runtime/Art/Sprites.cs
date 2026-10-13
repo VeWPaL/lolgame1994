@@ -38,6 +38,20 @@ namespace Depths.Unity.Art
         public static readonly Dictionary<char, Color32> GunnerPal = Pal(('k', "#5a2436"), ('d', "#1a0c12"), ('e', "#ffe08a"), ('m', "#8a2f4a"), ('t', "#6d2238"), ('s', "#ff9db0"), ('b', "#2a1018"));
         public static readonly Dictionary<char, Color32> BrunchPal = Pal(('h', "#eef7a4"), ('d', "#5f6d1c"), ('y', "#f6ff3d"), ('k', "#171c08"), ('m', "#bfe04a"), ('t', "#9cc033"), ('b', "#3b4712"), ('p', "#5d6d1a"));
 
+        // ---- the middle enemies (C# only, after js-final): new placeholder art in the same grammar,
+        // a silhouette each so they read apart at a glance: prongs, a tube, claws, nozzles, a shell ----
+        public static readonly string[] SplitterUpper = Mirror(".k...k", ".kk..k", "..kkkk", "..keed", "..kddd", ".mmttt", "mmtttt", "mstttt", ".ttttt", "..tttt", "..tttt", ".ttttt");
+        public static readonly Dictionary<char, Color32> SplitterPal = Pal(('k', "#7a2a6a"), ('e', "#ffd1f4"), ('d', "#1f0a1a"), ('m', "#c2449c"), ('t', "#9b2f7d"), ('s', "#ff9de0"), ('b', "#2a0f24"));
+        public static readonly string[] MortarUpper = Mirror("....pp", "....pp", ".kkkpp", "kkkkkk", "kkkeek", ".kkddd", "mmtttt", "mttttt", "tttttt", "tttttt", ".ttttt");
+        public static readonly Dictionary<char, Color32> MortarPal = Pal(('p', "#3b2a1a"), ('k', "#6b4a2a"), ('e', "#ffe08a"), ('d', "#1a1008"), ('m', "#b8742e"), ('t', "#8a5420"), ('b', "#2a1a0c"));
+        public static readonly string[] BurrowerUpper = Mirror("...hhh", "..hhhh", ".hhhhh", ".hheyh", ".hhhyy", "chhhhh", "cchhhh", ".chhhh", "..hhhh", "...hhh");
+        public static readonly Dictionary<char, Color32> BurrowerPal = Pal(('h', "#5a4636"), ('e', "#0d0907"), ('y', "#e8a0a0"), ('c', "#e8d8b0"), ('b', "#2a1f18"));
+        public static readonly string[] SprayerUpper = Mirror("...nn.", "...nn.", "..kkkk", ".kkeek", ".kkkkk", ".mmttt", "mmtttt", "mstttt", ".ttttt", ".ttttt", "tttttt");
+        public static readonly Dictionary<char, Color32> SprayerPal = Pal(('n', "#c9ffd0"), ('k', "#2f6b3a"), ('e', "#ff4d4d"), ('m', "#4c9a5a"), ('t', "#357a45"), ('s', "#9cf0a8"), ('b', "#183a20"));
+        /// <summary>The egg has no legs: every frame is the same shell on its base.</summary>
+        public static readonly string[] EggRows = Mirror("....ss", "...sss", "..ssss", "..sscc", ".ssccc", ".sccce", ".scccc", "sscccc", "sscccc", ".scccc", ".sssss", "..bbbb", "...bbb");
+        public static readonly Dictionary<char, Color32> EggPal = Pal(('s', "#e8f5c0"), ('c', "#9ad84a"), ('e', "#2a0a0a"), ('b', "#4a5a2a"));
+
         public static string[] Frame(string[] upper, int f)
         {
             var r = new string[upper.Length + 2];

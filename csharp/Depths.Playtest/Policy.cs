@@ -80,7 +80,8 @@ namespace Depths.Playtest
                 if (e.hp <= 0) continue;
                 live++;
                 if (target == null && e.kind == BodyKind.Boss) target = e;
-                double d = Hyp(e.x - pl.x, e.y - pl.y);
+                // a buried Burrower cannot be shot: aim at what can, and only face the mound when nothing else is up
+                double d = Hyp(e.x - pl.x, e.y - pl.y) + (e.buried ? 1e9 : 0);
                 if (d < nd) { nd = d; nearest = e; }
             }
             return live > 0 ? Fight(run, r, t, target ?? nearest!) : Quiet(run, r);

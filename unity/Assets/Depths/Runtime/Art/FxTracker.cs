@@ -32,7 +32,7 @@ namespace Depths.Unity.Art
         sealed class Lunger { public string State = ""; public float FromX, FromY, PuffT; public int Seen; }
         readonly Dictionary<Enemy, Lunger> _lungers = new Dictionary<Enemy, Lunger>();
         readonly List<Enemy> _gone = new List<Enemy>();
-        struct Shell { public Projectile P; public float X, Y; public bool Hook; public Color32 Color; public int Seen; }
+        struct Shell { public Projectile P; public float X, Y, R; public bool Hook; public Color32 Color; public int Seen; }
         readonly Shell[] _shells = new Shell[64];
         int _shellCount, _frame;
 
@@ -99,19 +99,20 @@ namespace Depths.Unity.Art
             for (int i = 0; i < _shellCount; i++) _shells[i].Seen = 0;
             foreach (var s in run.projectiles)
             {
-                if (!s.alt) continue;
+                if (!s.alt && !s.lob) continue;   // the alt shells, and a mortar's lob (it rings where it lands)
                 int at = -1;
                 for (int i = 0; i < _shellCount; i++) if (ReferenceEquals(_shells[i].P, s)) { at = i; break; }
                 if (at < 0 && _shellCount < _shells.Length) at = _shellCount++;
                 if (at < 0) continue;
-                _shells[at] = new Shell { P = s, X = (float)s.x, Y = (float)s.y, Hook = s.mode == "hook", Color = Hex.C(string.IsNullOrEmpty(s.color) ? Sprites.BlastColor : s.color), Seen = 1 };
+                _shells[at] = new Shell { P = s, X = (float)(s.lob ? s.tx : s.x), Y = (float)(s.lob ? s.ty : s.y), Hook = s.mode == "hook",
+                    R = s.lob ? (float)s.blastR : 0, Color = Hex.Of(string.IsNullOrEmpty(s.color) ? Sprites.BlastColor : s.color), Seen = 1 };
             }
             for (int i = _shellCount - 1; i >= 0; i--)
             {
                 if (_shells[i].Seen == 1) continue;
                 var sh = _shells[i];
                 if (ReferenceEquals(run.CurrentRoom, _room) && run.state == "playing")   // a room change clears shells; that is not a burst
-                    Add(new Fx { X = sh.X, Y = sh.Y, Life = BurstLife, Max = BurstLife, R = sh.Hook ? (float)Balance.HookAoe : (float)Balance.AltAoe, Color = sh.Color, Dir = (sbyte)(sh.Hook ? -1 : 1), Ring = true });
+                    Add(new Fx { X = sh.X, Y = sh.Y, Life = BurstLife, Max = BurstLife, R = sh.R > 0 ? sh.R : sh.Hook ? (float)Balance.HookAoe : (float)Balance.AltAoe, Color = sh.Color, Dir = (sbyte)(sh.Hook ? -1 : 1), Ring = true });
                 _shells[i] = _shells[--_shellCount];
             }
 
@@ -120,7 +121,7 @@ namespace Depths.Unity.Art
             if (ReferenceEquals(room, _room) && _secret.HasValue && room != null && !room.Secret.HasValue)
             {
                 var (dx, dy) = Rooms.DoorPoint(_secret.Value);
-                Add(new Fx { X = (float)dx, Y = (float)dy, Life = SecretBurst, Max = SecretBurst, R = 46, Color = Hex.C("#ff9640"), Dir = 1, Ring = true });
+                Add(new Fx { X = (float)dx, Y = (float)dy, Life = SecretBurst, Max = SecretBurst, R = 46, Color = Hex.Of("#ff9640"), Dir = 1, Ring = true });
             }
             Snapshot(run);
         }

@@ -88,6 +88,29 @@ namespace Depths
             new BodyRow { Mass = 4, Radius = 28, Art = 4, Bar = 40, Hp = 343 * Tough, Armour = Armour,
                       Base = Balance.PerSec(126) * Balance.LungerPay,
                       Walk = 0.42 * Balance.PlayerMove, Run = 0.72 * Balance.PlayerMove },
+
+            // the middle enemies (Middle.cs), C# only. Ranged rows walk a standoff like the shooter
+            // splitter: a slow shell that bursts at its range, so it keeps a little further out
+            new BodyRow { Mass = 0.9, Radius = 14, Art = 2, Bar = 26, Hp = 6 * Tough, Armour = Armour,
+                      Base = Balance.PerSec(85) * Balance.LungerPay, Sense = 620, Range = 520, Close = 170, Far = 280,
+                      CdMin = Balance.Sec(1.1), CdVar = Balance.Sec(0.5), Dmg = ShotDmg,
+                      PShotSpeed = Balance.PerSec(300), PShotRadius = 6 },
+            // mortar: heavy and far back; the lob ignores shot speed (Middle.LobFlight)
+            new BodyRow { Mass = 1.6, Radius = 16, Art = 2, Bar = 28, Hp = 7 * Tough, Armour = Armour,
+                      Base = Balance.PerSec(55) * Balance.LungerPay, Sense = 700, Range = 640, Close = 230, Far = 360,
+                      CdMin = Balance.Sec(1.6), CdVar = Balance.Sec(0.6), Dmg = Middle.LobDmg,
+                      PShotSpeed = Balance.PerSec(400), PShotRadius = 7 },
+            // burrower: the toughest of the five, because it is only hittable between dives
+            new BodyRow { Mass = 1.2, Radius = 15, Art = 2, Bar = 26, Hp = 9 * Tough, Armour = Armour },
+            // sprayer: has to come close for its short cone; weak shots, many of them
+            new BodyRow { Mass = 0.9, Radius = 14, Art = 2, Bar = 26, Hp = 6 * Tough, Armour = Armour,
+                      Base = Balance.PerSec(90) * Balance.LungerPay, Sense = 560, Range = 360, Close = 110, Far = 190,
+                      CdMin = Balance.Sec(1.4), CdVar = Balance.Sec(0.6), Dmg = 1,
+                      PShotSpeed = Balance.PerSec(400), PShotRadius = 4 },
+            // turret egg: never moves (mass is so a shove barely does), so it gets the most health
+            new BodyRow { Mass = 40, Radius = 18, Art = 2, Bar = 30, Hp = 12 * Tough, Armour = Armour,
+                      Base = 0, Sense = 100000, CdMin = Balance.Sec(2.6), CdVar = Balance.Sec(0.8), Dmg = 1,
+                      PShotSpeed = Balance.PerSec(190), PShotRadius = 5 },
         };
 
         public static BodyRow Of(BodyKind kind) => Rows[(int)kind];

@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  579/579, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  594/594, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -21,7 +21,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
-  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner. EditMode 35/35
+  real seeded run drawn with the JS pixel art (`Runtime/Art/`, `WorldView`): pause (Esc), death summary, floor banner. F2 is the lab (`LabMode`). EditMode 53/53
   (`TickClock`, `HeartRow`, menus, sound); the frame-to-tick step lives in `TickClock`, the heart
   row's layout and colours in `HeartRow`.
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
@@ -57,7 +57,7 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 35/35.
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 53/53. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
 - `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts`: the player at 1280x720 with
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -174,14 +174,23 @@ it from another checkout or the first command spends minutes importing.
   skilled 2.60 < 8.37 / 2.55 < 8.50 (measured before the 2026-10-07 regen nerf).
   The alternatives, `Original` and `Recovery`, stay selectable (`curve <label> --mid-rule`); `Recovery`
   cannot fail on HP alone (the critic), so it only measures armour.
-- **Idea (owner, 2026-10-12): a middle enemy in place of the gunner.** Keep the gunner for floors 11+
-  and give floors 3-10 their own enemy whose threat a skilled player can read and dodge (the gunner's
-  4 HP shell kills average and skilled players about equally there). Ideas, none built:
-  - Splitter: slow shot that bursts into 3 small shots at a set range; punishes standing still.
-  - Mortar: lobs a shell at where you stand, with a ground marker 1 s ahead; 2 HP, movement beats it.
-  - Burrower: digs in, surfaces under your last spot after a visible tell; contact 1-2 HP.
-  - Sprayer: short cone of weak shots on a long wind-up; teaches reading tells, low damage each.
-  - Turret egg: stationary, fires a slow ring every few seconds; shapes the room, never chases.
+- **Middle enemies (owner's idea 2026-10-12; all five built 2026-10-12, LAB ONLY).** Keep the gunner
+  for floors 11+ and give floors 3-10 enemies a skilled player can read and dodge (the gunner's 4 HP
+  shell kills average and skilled players about equally there). `csharp/Depths.Core/Middle.cs`, C#
+  only; spawn them in the Unity lab (F2, then F4 to arm, F7/F8 to drop). NOT in the spawn pool
+  (`MiddleTests.NoneOfThemSpawnsInARun` sweeps 20 seeds x 12 floors). Dials are named in `Middle.cs`:
+  - Splitter: slow pink shell (2 HP) that bursts into 3 shards (1 HP each, +-0.42 rad) 170 px out.
+  - Mortar: lobs at where you stand; the mark fills for the whole 1 s flight; 2 HP inside 34 px.
+  - Burrower: walks 1.6 s, digs (0.45 s tell), runs under to the spot you stood on when it dug
+    (untouchable: no shell, blast, field, contact or shove), a 0.6 s crack tell, then up: 2 HP within 30 px.
+  - Sprayer: 1 s wind-up (the shooter's is 0.5), then a cone of 5 weak shots (1 HP each, +-0.35 rad).
+  - Turret egg: never walks and the hook cannot drag it (`Middle.Anchored`); a 0.6 s tell, then a
+    ring of 8 slow shots (1 HP) every ~2-2.5 s.
+  A buried Burrower blocks no other body's shot and is never the bot's or the demo's target; the
+  Burrower's walk and dive speed up with depth like every body. A cold critic pass (2026-10-13) found
+  the lunge clash still shoving it underground; fixed, with a test that fails on the old code.
+  Unplaytested: the HP, cooldowns and damage are first guesses. Next: the owner plays them in the lab;
+  then a bot A/B with them in the middle pool (`SpawnPlan` mix) against the gunner, for the hazard table.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).

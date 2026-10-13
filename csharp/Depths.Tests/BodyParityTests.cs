@@ -114,7 +114,8 @@ namespace Depths.Tests
         [Test]
         public void EveryRowDeclaresTheSameArmour()
         {
-            Assert.That(Bodies.Rows.Length, Is.EqualTo(5), "the body table lost or gained a row");
+            Assert.That((int)BodyKind.Splitter, Is.EqualTo(5), "the JS body table (the first five kinds) lost or gained a row");
+            Assert.That(Bodies.Rows.Length, Is.EqualTo(Enum.GetValues(typeof(BodyKind)).Length), "C# appends the middle enemies after it, a row each");
 
             var line = Bodies.Of(BodyKind.Lunger).Radius;
             var wrong = new System.Collections.Generic.List<string>();

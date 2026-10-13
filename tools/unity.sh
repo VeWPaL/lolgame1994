@@ -48,7 +48,7 @@ case "${1:-}" in
     unity/Build/Depths.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 \
       -depthsShot "$out" -depthsView "$view" -logFile "unity/Logs/shot-$view.log" > /dev/null
     rc=$?
-    grep -F "[Depths] check" "unity/Logs/shot-$view.log"
+    grep -E '\[Depths\] (check|note)' "unity/Logs/shot-$view.log"
     [ -f "$out" ] && echo "wrote $out" || { echo "no screenshot; see unity/Logs/shot-$view.log"; exit 1; }
     grep -qF "[Depths] check FAIL" "unity/Logs/shot-$view.log" && exit 1
     exit $rc ;;

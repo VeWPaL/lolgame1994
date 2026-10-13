@@ -31,6 +31,7 @@ namespace Depths
             }
             e.cdMin /= rate; e.cdVar /= rate;
             e.shootCd = e.cdMin + run.rng.Jitter() * e.cdVar;
+            if (kind == BodyKind.Burrower || kind == BodyKind.Egg) return e;   // no standoff band, so no trait: and no run draw for one
             ApplyTrait(e, trait ?? RollTrait(run.rng, run.player.weaponIdx));
             return e;
         }

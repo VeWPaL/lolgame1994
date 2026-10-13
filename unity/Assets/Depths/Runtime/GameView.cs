@@ -56,8 +56,11 @@ namespace Depths.Unity
             _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss");
             _bossRoom = i >= 0 && i + 1 < args.Length && args[i + 1] == "boss";
             _sandbox = i >= 0 && i + 1 < args.Length && args[i + 1] == "sandbox";
-            _demo |= _sandbox;
+            bool labRow = i >= 0 && i + 1 < args.Length && args[i + 1] == "labrow";   // the row, frozen and unshot: every sprite
+            _inLab = labRow || (i >= 0 && i + 1 < args.Length && args[i + 1] == "lab");
+            _demo |= _sandbox || (_inLab && !labRow);
             NewRun();
+            if (_inLab && !labRow) _lab.SetFrozen(false, _run);   // the screenshot wants the row at work
         }
 
         void OnDestroy()
@@ -66,8 +69,11 @@ namespace Depths.Unity
             Depths.Unity.Audio.MusicEngine.SetFight(false);   // back to the menu: the calm layer only
         }
 
-        bool _bossRoom, _sandbox;
-        bool RealRun => !_sandbox && !_bossRoom;
+        bool _bossRoom, _sandbox, _inLab;
+        readonly LabMode _lab = new LabMode();
+        bool RealRun => !_sandbox && !_bossRoom && !_inLab;
+
+        void LeaveLab() { if (_inLab) { _lab.Leave(); _inLab = false; } }
 
         void NewRun()
         {
@@ -99,6 +105,7 @@ namespace Depths.Unity
                 _run.enemies.Add(w);
                 return;
             }
+            if (_inLab) { _lab.Enter(_run); return; }
             for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k);
             SpawnPack();
         }
@@ -128,8 +135,18 @@ namespace Depths.Unity
         float _bannerS;   // seconds the floor banner has left
         int _lastFloor = 1;
 
+        // This frame's seconds, from the wall clock rather than Time.unscaledDeltaTime, so the deltas sum to
+        // real time by construction. Once, with three other Unity editors running, the player measured
+        // 61.65 Hz; the cause is not identified (CPU load alone matches the wall clock), and the check now
+        // logs Unity's own delta sum next to the wall clock so a repeat says which side drifted.
+        double _lastFrameAt = -1;
+        float _frameS;
+
         void Update()
         {
+            double now = Time.realtimeSinceStartupAsDouble;
+            _frameS = _lastFrameAt < 0 ? 0 : (float)(now - _lastFrameAt);
+            _lastFrameAt = now;
             var kb = Keyboard.current;
             if (_painter == null)
             {
@@ -150,6 +167,7 @@ namespace Depths.Unity
                 _hud.style.left = 190;
                 _hud.style.width = 900;
                 root.Add(_hud);
+                _lab.Attach(root);
             }
             // Esc pauses, as in the game; M from the pause (or after a death) goes back to the menu
             if (_pause.WasPressedThisFrame() && _run.state == "playing") _paused = !_paused;
@@ -158,8 +176,9 @@ namespace Depths.Unity
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
                 if (kb.rKey.wasPressedThisFrame) { NewRun(); _paused = false; _lastFloor = 1; }
-                if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; NewRun(); }
-                if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; NewRun(); }
+                if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; LeaveLab(); NewRun(); }
+                if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; LeaveLab(); NewRun(); }
+                if (kb.f2Key.wasPressedThisFrame) { bool enter = !_inLab; _sandbox = _bossRoom = false; LeaveLab(); _inLab = enter; NewRun(); _paused = false; }
                 if (kb.vKey.wasPressedThisFrame)   // cycle the Brunch guard rule under test
                     Balance.BrunchVariant = Balance.BrunchVariant == "A" ? "B" : Balance.BrunchVariant == "B" ? "A+" : "A";
             }
@@ -176,6 +195,7 @@ namespace Depths.Unity
             Vector2 mv = _move.ReadValue<Vector2>();
             bool fire = _cast.IsPressed(), alt = _blast.IsPressed();
             if (_demo) DemoInput(ref mv, ref fire, ref alt, ref aim);
+            if (_inLab) _lab.Keys(kb, _run, aim);
 
             // the blink is a key press, so it lands between ticks, as in the game
             if (_blink.WasPressedThisFrame() && TickOrder.TryBlink(_run, new Input(Math.Sign(mv.x), -Math.Sign(mv.y), aimX: aim.x, aimY: aim.y)))
@@ -185,7 +205,7 @@ namespace Depths.Unity
             if (_active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
                 Depths.Unity.Audio.SoundEngine.Play("pickup");
 
-            for (int n = _clock.Advance(Time.unscaledDeltaTime, _paused || Frozen); n > 0; n--)
+            for (int n = _clock.Advance(_frameS, _paused || Frozen); n > 0; n--)
             {
                 // keys are -1/0/1 per axis in the game, and screen y points down
                 var input = new Input(Math.Sign(mv.x), -Math.Sign(mv.y), fire: fire, alt: alt, aimX: aim.x, aimY: aim.y);
@@ -198,19 +218,21 @@ namespace Depths.Unity
                     TickOrder.TickProjectiles(_run);
                     TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
-                    if (_run.enemies.Count == 0 && ++_respawnT > Balance.Sec(2)) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
+                    if (!_inLab && _run.enemies.Count == 0 && ++_respawnT > Balance.Sec(2)) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
                 }
             }
+            _lab.AfterTicks(_run, _paused || Frozen ? 0 : _frameS);
+            _lab.Draw();
             PlayEvents();
             Depths.Unity.Audio.MusicEngine.SetArea(AreaRules.AreaForFloor(_run.floor));
             Depths.Unity.Audio.MusicEngine.SetFight(_run.state == "playing" && !_paused && _run.enemies.Count > 0);
             if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = 3; Depths.Unity.Audio.SoundEngine.Play("door"); }
-            if (_bannerS > 0) _bannerS -= Time.unscaledDeltaTime;
+            if (_bannerS > 0) _bannerS -= _frameS;
             _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"
                 : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / Balance.TickHz / 60) + ":" + (_run.ticks / Balance.TickHz % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
                 : _bannerS > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
             _world.Aim = aim;
-            _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : Time.unscaledDeltaTime);
+            _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : _frameS);
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
             var act = Items.ActiveItem(_run);
@@ -230,7 +252,7 @@ namespace Depths.Unity
             }
             else
                 _hud.text = stats + (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                            "\n" + (_bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core.   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                            "\n" + (_inLab ? "The lab: every body, the five middle ones too (not in runs yet)" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core.   Brunch rule " + Balance.BrunchVariant + " (V)" +
                             "\n\n1-4 guns   right-click blast   Shift blink   R new room   F1 real run   B Warden arena   Esc pause";
         }
 
@@ -251,9 +273,9 @@ namespace Depths.Unity
         void DemoInput(ref Vector2 mv, ref bool fire, ref bool alt, ref Vector2 aim)
         {
             float before = _demoS;
-            _demoS += Time.unscaledDeltaTime;
+            _demoS += _frameS;
             var p = _run.player;
-            var t = _run.enemies.OrderBy(e => (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y)).FirstOrDefault();
+            var t = _run.enemies.Where(e => !e.buried).OrderBy(e => (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y)).FirstOrDefault();
             if (t != null) aim = new Vector2((float)t.x, (float)t.y);
             mv = new Vector2((int)(_demoS / 0.667f) % 2 == 0 ? 1 : -1, 0);   // turn every 2/3 s
             var room = _run.CurrentRoom;

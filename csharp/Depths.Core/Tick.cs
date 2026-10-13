@@ -108,6 +108,7 @@ namespace Depths
             e.castReady = false;
             e.shootCd = (e.cdMin + run.rng.Jitter() * e.cdVar) * (1 - Balance.PressureCadence * roomPress);
             if (Balance.TickHz != Balance.JsHz) { e.shootCd += e.cdCarry; e.cdCarry = 0; }
+            if (Middle.Is(e.kind)) { Middle.Release(run, e); return; }
             run.projectiles.Add(new Projectile
             {
                 x = e.x,
@@ -425,6 +426,7 @@ namespace Depths
         static void StepRanged(RunState run, Enemy e, double edx, double edy, double dist, double sm, double roomPress)
         {
             var p = run.player;
+            int cast = Middle.CastTime(e.kind);   // Balance.CastTime for the shooter and gunner
             bool guarded = e.shieldGuardFor != null && e.shieldGuardFor.Count > 0;
             double standoff = (guarded ? e.far * Balance.GuardStandoffMult : e.far) - (e.far - e.close) * roomPress * Balance.PressureClosure;
             bool roots = e.kind == BodyKind.Gunner;
@@ -441,8 +443,8 @@ namespace Depths
             double mx = e.x, my = e.y;
             if (!roots)
             {
-                double step = Balance.CastTime / 24.0, v = e.speed * sm * step;
-                for (double t = step; t <= Balance.CastTime + 0.5; t += step)
+                double step = cast / 24.0, v = e.speed * sm * step;
+                for (double t = step; t <= cast + 0.5; t += step)
                 {
                     double px = HitboxX + bvx * t, py = ty + bvy * t, ax = px - mx, ay = py - my;
                     double ad = System.Math.Sqrt(ax * ax + ay * ay);
@@ -454,15 +456,15 @@ namespace Depths
             double sx = HitboxX - mx, sy = ty - my;
             for (int k = 0; k < 14; k++)
             {
-                double need = Balance.CastTime + System.Math.Sqrt(sx * sx + sy * sy) / e.pspd;
+                double need = cast + System.Math.Sqrt(sx * sx + sy * sy) / e.pspd;
                 sx = HitboxX + bvx * need - mx;
                 sy = ty + bvy * need - my;
             }
             double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist);
-            var shot = Movement.ClearShot(run, e, want);
+            var shot = e.kind == BodyKind.Mortar ? want : Movement.ClearShot(run, e, want);   // a lob goes over bodies
             // off the JS rate the tick's overrun is kept, so a cadence is exact in seconds (held fire does the same)
             double over = Balance.TickHz == Balance.JsHz ? 0 : e.shootCd;
-            if (shot.HasValue) { e.castAim = shot.Value; e.castT = Balance.CastTime; e.cdCarry = over - Balance.CastLag; }
+            if (shot.HasValue) { e.castAim = shot.Value; e.castT = cast; e.cdCarry = over - Balance.CastLag; }
             else if (Balance.TickHz == Balance.JsHz) e.shootCd = e.cdMin * 0.25;
             else e.shootCd = e.cdMin * 0.25 + over;
         }
@@ -480,7 +482,7 @@ namespace Depths
             foreach (var e in Snapshot)
             {
                 if (e.hp <= 0) continue;   // killed earlier this tick
-                bool ranged = e.kind == BodyKind.Shooter || e.kind == BodyKind.Gunner;
+                bool ranged = e.kind == BodyKind.Shooter || e.kind == BodyKind.Gunner || Middle.Ranged(e.kind) || e.kind == BodyKind.Egg;
                 if (e.hitFlash > 0) e.hitFlash--;
                 if (e.kvx != 0 || e.kvy != 0)
                 {
@@ -512,6 +514,8 @@ namespace Depths
                 double edx = HitboxX - e.x, edy = HitboxY - e.y, dist = System.Math.Sqrt(edx * edx + edy * edy);
                 if (dist == 0) dist = 1;
                 if (e.kind == BodyKind.Boss) StepBoss(run, e);
+                else if (e.kind == BodyKind.Egg) Middle.StepEgg(run, e, roomPress);
+                else if (e.kind == BodyKind.Burrower) Middle.StepBurrower(run, e, edx, edy, dist, sm);
                 else if (!ranged)
                 {
                     if (dist < aggro) e.aggroTimer = Balance.AggroTime;
@@ -530,8 +534,8 @@ namespace Depths
                 Movement.Clamp(e);
                 double cy = edy - Balance.PlayerHitDy;
                 // off the JS rate the body's move this tick is swept in JS-tick parts, as Substeps does for shells
-                bool touching = System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR;
-                for (int k = 1, sub = Balance.Substeps; !touching && k < sub; k++)
+                bool touching = !e.buried && System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR;
+                for (int k = 1, sub = Balance.Substeps; !touching && !e.buried && k < sub; k++)
                 {
                     double qx = HitboxX - (ox + (e.x - ox) * k / sub), qy = HitboxY - Balance.PlayerHitDy - (oy + (e.y - oy) * k / sub);
                     touching = System.Math.Sqrt(qx * qx + qy * qy) < e.r + Balance.PlayerHitR;
@@ -628,6 +632,11 @@ namespace Depths
             var ps = run.projectiles;
             var en = run.enemies;
             var p = ps[i];
+            if (p.lob)   // a mortar shell: moves once a tick, touches nothing in flight, lands on its mark
+            {
+                if (first && Middle.StepLob(run, p)) { ps.RemoveAt(i); return true; }
+                return false;
+            }
             if (p.alt)
             {
                 // stop on the point, not past it
@@ -650,6 +659,7 @@ namespace Depths
                 return true;
             }
             if (p.alt && p.phase) return false;   // the hook flies through bodies and acts only at its point
+            if (p.splitAt > 0 && Dist(p.x - p.ox, p.y - p.oy) >= p.splitAt) { Middle.Split(run, p); ps.RemoveAt(i); return true; }
             if (p.friendly)
             {
                 int best = -1;
@@ -657,7 +667,7 @@ namespace Depths
                 for (int j = en.Count - 1; j >= 0; j--)
                 {
                     var e = en[j];
-                    if (p.hit != null && p.hit.Contains(e)) continue;
+                    if (e.buried || (p.hit != null && p.hit.Contains(e))) continue;
                     if (Dist(p.x - e.x, p.y - e.y) >= p.r + e.r) continue;
                     if (p.pierce == 0) { best = j; break; }
                     double a = (e.x - p.ox) * p.dx + (e.y - p.oy) * p.dy;

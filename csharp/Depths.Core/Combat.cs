@@ -109,7 +109,7 @@ namespace Depths
             var en = run.enemies;
             Caught.Clear();
             foreach (var e in en)
-                if (System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y)) < aoe + e.r) Caught.Add(e);
+                if (!e.buried && System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y)) < aoe + e.r) Caught.Add(e);
             double share = Caught.Count > 0 ? pool / System.Math.Pow(Caught.Count, Balance.Disperse) : 0;
             for (int j = en.Count - 1; j >= 0; j--)
             {
@@ -123,7 +123,7 @@ namespace Depths
                 if (hook)
                 {
                     // the yank to the point, scaled by how far out and by mass so the catch arrives together, then held
-                    Movement.Knock(run, e, x - e.x, y - e.y, Balance.HookPull * dist * Balance.HookPullGain * e.mass);
+                    if (!Middle.Anchored(e.kind)) Movement.Knock(run, e, x - e.x, y - e.y, Balance.HookPull * dist * Balance.HookPullGain * e.mass);
                     e.stun = System.Math.Max(e.stun, Balance.HookHold);
                 }
                 else
@@ -150,7 +150,7 @@ namespace Depths
                 {
                     var e = en[j];
                     double dx = f.x - e.x, dy = f.y - e.y, d = System.Math.Sqrt(dx * dx + dy * dy);
-                    if (d > f.r + e.r) continue;
+                    if (d > f.r + e.r || e.buried) continue;
                     if (e.hookMark != f.id)
                     {
                         e.hookMark = f.id;
@@ -161,7 +161,7 @@ namespace Depths
                     }
                     double power = e.hookPower;
                     e.stun = System.Math.Max(e.stun, Balance.HookFieldStun * power);
-                    if (d > 1) { e.x += dx / d * Balance.HookSuck * power; e.y += dy / d * Balance.HookSuck * power; }
+                    if (d > 1 && !Middle.Anchored(e.kind)) { e.x += dx / d * Balance.HookSuck * power; e.y += dy / d * Balance.HookSuck * power; }
                     e.hp -= Balance.HookDps * power / Balance.TickHz * e.Vuln;
                     e.hitFlash = System.Math.Max(e.hitFlash, Balance.HookFieldFlash * power);
                     Combat.AlertEnemy(e);

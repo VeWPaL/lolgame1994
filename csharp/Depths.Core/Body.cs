@@ -8,6 +8,12 @@ namespace Depths
         Shooter,
         Gunner,
         Boss,
+        // the middle enemies (Middle.cs; C# only, lab-only until they join the pool). Appended: Bodies.Rows is indexed by kind
+        Splitter,
+        Mortar,
+        Burrower,
+        Sprayer,
+        Egg,
     }
 
     /// <summary>

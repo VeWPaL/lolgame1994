@@ -35,6 +35,13 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | `Combat.cs` | `40-combat.js` + `50-run.js` + `10-art.js` — `falloffMult`, `alertEnemy`, `slowEnemy`, `damagePlayer`, `killEnemy`, `dropLoot` | On `Enemy`, the live body. `killEnemy` drops loot (one run draw per kill) and takes the Warden's wall with it |
 | `RunState.cs` / `Actors.cs` / `Tick.cs` | the run holder and the `update()` gates in `50-run.js`/`60-tick.js` | Tick order and RNG discipline. **`Tick.Update` is a skeleton** |
 
+## C# only (after `js-final`): no JS counterpart, nothing to keep matching
+
+| C# | What | Rule |
+|---|---|---|
+| `Curve.cs` | the difficulty curve's eight stages over the depth ladder (off by default) | Tests run with it off (`[CurveOn(false)]`), so the parity rows keep the JS ladder |
+| `Middle.cs` | the five middle enemies (Splitter, Mortar, Burrower, Sprayer, Turret egg), 2026-10-12 | Appended after the JS kinds (`BodyKind`, `Bodies.Rows`); never in the spawn pool until the owner says so (`MiddleTests.NoneOfThemSpawnsInARun`). The shared code they touch keeps every JS path bit-identical: the cast time by kind is `Balance.CastTime` for the JS bodies, `buried` is false for them |
+
 ## Deliberately NOT ported
 
 The HUD, the boss bar, the character sheet, Scatter recoil, the hook rework, the Brunch-arc AI, and

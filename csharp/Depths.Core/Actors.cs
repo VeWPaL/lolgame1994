@@ -241,6 +241,8 @@ namespace Depths
         public double Vuln => markT > 0 ? armour * Balance.MarkVuln : armour;
         public double hookPower;
         public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
+        public bool buried;            // a Burrower underground: no shell, blast, field, contact or shove reaches it
+        public double markX, markY;    // where it will surface
 
         /// <summary>A live body of a kind at a point, with the table's radius, armour, mass and health.</summary>
         public static Enemy Of(BodyKind kind, double x, double y)
@@ -340,6 +342,12 @@ namespace Depths
         /// <summary>The weapon's falloff band, carried by the shell (null fNear: no falloff).</summary>
         public double? fNear;
         public double fFar, fMin = 1;
+
+        // the middle enemies' shells (Middle.cs): a lob flies to (tx, ty) over flightMax ticks and only
+        // lands there, hitting within blastR; a shell with splitAt bursts into shards that far from (ox, oy)
+        public bool lob;
+        public int flight, flightMax;
+        public double blastR, splitAt;
     }
 
     /// <summary>

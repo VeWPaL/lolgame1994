@@ -108,6 +108,15 @@ namespace Depths.Unity.Art
                                Convert.ToByte(s.Substring(4, 2), 16), (byte)Mathf.RoundToInt(a * 255));
         }
 
+        static readonly System.Collections.Generic.Dictionary<string, Color32> Parsed = new System.Collections.Generic.Dictionary<string, Color32>();
+
+        /// <summary>C, parsed once: for colours drawn every frame (a shell's own colour), so a frame parses and allocates nothing.</summary>
+        public static Color32 Of(string h)
+        {
+            if (!Parsed.TryGetValue(h, out var c)) Parsed[h] = c = C(h);
+            return c;
+        }
+
         public static Color32 Rgba(int r, int g, int b, float a) => new Color32((byte)r, (byte)g, (byte)b, (byte)Mathf.RoundToInt(a * 255));
 
         /// <summary>mixHex: t is how much of b lands in the result; both ends exact.</summary>

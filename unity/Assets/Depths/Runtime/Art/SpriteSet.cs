@@ -28,7 +28,24 @@ namespace Depths.Unity.Art
 
         static string BodyName(BodyKind k) => k switch
         {
-            BodyKind.Brunch => "brunch", BodyKind.Shooter => "shooter", BodyKind.Gunner => "gunner", BodyKind.Boss => "boss", _ => "lunger",
+            BodyKind.Brunch => "brunch", BodyKind.Shooter => "shooter", BodyKind.Gunner => "gunner", BodyKind.Boss => "boss",
+            BodyKind.Splitter => "splitter", BodyKind.Mortar => "mortar", BodyKind.Burrower => "burrower", BodyKind.Sprayer => "sprayer", BodyKind.Egg => "egg",
+            _ => "lunger",
+        };
+
+        /// <summary>Every body kind's rows for a walk frame and its palette.</summary>
+        public static (string[] rows, Dictionary<char, Color32> pal) BodyArt(BodyKind k, int f) => k switch
+        {
+            BodyKind.Shooter => (Sprites.Frame(Sprites.ShooterUpper, f), Sprites.ShooterPal),
+            BodyKind.Gunner => (Sprites.Frame(Sprites.ShooterUpper, f), Sprites.GunnerPal),
+            BodyKind.Brunch => (Sprites.Frame(Sprites.LungerUpper, f), Sprites.BrunchPal),
+            BodyKind.Boss => (Sprites.Frame(Sprites.LungerUpper, f), Sprites.BossPal),
+            BodyKind.Splitter => (Sprites.Frame(Sprites.SplitterUpper, f), Sprites.SplitterPal),
+            BodyKind.Mortar => (Sprites.Frame(Sprites.MortarUpper, f), Sprites.MortarPal),
+            BodyKind.Burrower => (Sprites.Frame(Sprites.BurrowerUpper, f), Sprites.BurrowerPal),
+            BodyKind.Sprayer => (Sprites.Frame(Sprites.SprayerUpper, f), Sprites.SprayerPal),
+            BodyKind.Egg => (Sprites.EggRows, Sprites.EggPal),
+            _ => (Sprites.Frame(Sprites.LungerUpper, f), Sprites.LungerPal),
         };
 
         /// <summary>The pixel size each body is drawn at (ENEMY[...].art).</summary>
@@ -52,12 +69,9 @@ namespace Depths.Unity.Art
                 var pr = Sprites.Frame(Sprites.PlayerUpper, f);
                 list.Add((Player(f, false), Sprites.Bake(pr, Sprites.PlayerPal, 2)));
                 list.Add((Player(f, true), Sprites.Bake(pr, Sprites.PlayerPal, 2, Flash)));
-                foreach (BodyKind k in new[] { BodyKind.Lunger, BodyKind.Brunch, BodyKind.Boss, BodyKind.Shooter, BodyKind.Gunner })
+                foreach (BodyKind k in System.Enum.GetValues(typeof(BodyKind)))
                 {
-                    bool ranged = k == BodyKind.Shooter || k == BodyKind.Gunner;
-                    var rows = Sprites.Frame(ranged ? Sprites.ShooterUpper : Sprites.LungerUpper, f);
-                    var pal = k == BodyKind.Gunner ? Sprites.GunnerPal : k == BodyKind.Brunch ? Sprites.BrunchPal
-                            : k == BodyKind.Shooter ? Sprites.ShooterPal : k == BodyKind.Boss ? Sprites.BossPal : Sprites.LungerPal;
+                    var (rows, pal) = BodyArt(k, f);
                     list.Add((Body(k, f, false), Sprites.Bake(rows, pal, Art(k))));
                     list.Add((Body(k, f, true), Sprites.Bake(rows, pal, Art(k), Flash)));
                 }

@@ -219,7 +219,7 @@ namespace Depths.Unity
 
         void DrawHookFields(Painter2D g, RunState run)
         {
-            var col = Hex.C(Sprites.HookColor);
+            var col = Hex.Of(Sprites.HookColor);
             foreach (var f in run.hookFields)
             {
                 float left = f.life / (float)Math.Max(1, f.max), fade = left < 0.34f ? left / 0.34f : 1;
@@ -232,7 +232,7 @@ namespace Depths.Unity
                     float spin = t * (1.5f + (i % 3) * 0.35f) + i * 0.9f;
                     float rad = (float)f.r * (0.5f + 0.48f * (1 - Frac(t * 0.22f + i * 0.14f)));
                     float mx = (float)f.x + Mathf.Cos(spin) * rad, my = (float)f.y + Mathf.Sin(spin) * rad * 0.86f;
-                    Rect(Mathf.Round(mx) - 1, Mathf.Round(my) - 1, 2, 2, Hex.C("#e8fffb", (0.75f - 0.35f * ((i * 7) % 5) / 5f) * fade));
+                    Rect(Mathf.Round(mx) - 1, Mathf.Round(my) - 1, 2, 2, QuadBatch.Tint(Hex.Of("#e8fffb"), (0.75f - 0.35f * ((i * 7) % 5) / 5f) * fade));
                 }
             }
         }
@@ -242,7 +242,7 @@ namespace Depths.Unity
         // ---- the committed line: a lunger's windup and its lunge ----
         void DrawLungeLines(Painter2D g, RunState run)
         {
-            var col = Hex.C("#ff9a6b");
+            var col = Hex.Of("#ff9a6b");
             foreach (var e in run.enemies)
             {
                 if (e.lungeState != "wind" && e.lungeState != "lunge") continue;
@@ -288,7 +288,7 @@ namespace Depths.Unity
                     case "halfheart": Spr(SpriteSet.Heart(Sprites.HeartScheme.Red, 2, 0.5f), pk.x, pk.y); break;
                     case "armor": Spr(SpriteSet.Heart(Sprites.HeartScheme.Gray, 2, 1), pk.x, pk.y); break;
                     case "halfarmor": Spr(SpriteSet.Heart(Sprites.HeartScheme.Gray, 2, 0.5f), pk.x, pk.y); break;
-                    default: Dot(pk.x, pk.y, 6, 6, Hex.C("#50dcbe")); break;
+                    default: Dot(pk.x, pk.y, 6, 6, Hex.Of("#50dcbe")); break;
                 }
             }
         }
@@ -314,8 +314,48 @@ namespace Depths.Unity
         }
 
         // ---- the bodies ----
-        static float BarHeight(BodyKind k) => k == BodyKind.Brunch ? 11 : k == BodyKind.Gunner ? 32 : k == BodyKind.Boss ? 40 : 26;
-        static string CastColor(BodyKind k) => k == BodyKind.Gunner ? "#ffb03a" : "#ff4d4d";
+        static float BarHeight(BodyKind k) => (float)Bodies.Of(k).Bar;
+        static string CastColor(BodyKind k) => k switch
+        {
+            BodyKind.Gunner => "#ffb03a", BodyKind.Splitter => Middle.SplitColor, BodyKind.Mortar => Middle.LobColor,
+            BodyKind.Egg => Middle.EggColor, _ => "#ff4d4d",
+        };
+        static readonly Color32 Dirt = Hex.C("#3a2a1c"), DirtLit = Hex.C("#7a5a3a"), Crack = Hex.C("#ff8a5a");
+
+        /// <summary>The Burrower when it is not a body you can hit: sinking, a mound running under the
+        /// floor, then the crack at its mark that is the whole warning.</summary>
+        bool DrawBurrow(Painter2D g, Enemy e, int frame)
+        {
+            if (e.move == "dig")
+            {
+                float sink = Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig);
+                Spr(SpriteSet.Body(e.kind, frame, false), e.x, e.y - 2 + (1 - sink) * 8, 0.25f + 0.75f * sink);
+                for (int i = 0; i < 5; i++)   // dust thrown up as it digs
+                {
+                    float a = Fc * 0.2f + i * 1.26f, r = (float)e.r + 2 + 4 * (1 - sink);
+                    Rect(e.x + Mathf.Cos(a) * r - 1, e.y + 8 + Mathf.Sin(a) * r * 0.4f - 1, 3, 3, QuadBatch.Tint(DirtLit, 0.8f));
+                }
+                return true;
+            }
+            if (!e.buried) return false;
+            if (e.move == "rise")
+            {
+                float p = 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowRise), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * 0.5f);
+                Dot(e.x, e.y, (float)Middle.BurrowHitR, (float)Middle.BurrowHitR * 0.5f, QuadBatch.Tint(Dirt, 0.35f + 0.4f * p));
+                Ring(g, e.x, e.y, (float)Middle.BurrowHitR, 2, QuadBatch.Tint(Crack, 0.35f + 0.5f * p * pulse + 0.15f));
+                for (int i = 0; i < 6; i++)   // cracks reach out further as it comes
+                {
+                    float a = i * 1.047f + 0.3f, len = 6 + 18 * p;
+                    for (float s = 4; s < len; s += 2) Rect(e.x + Mathf.Cos(a) * s - 1, e.y + Mathf.Sin(a) * s * 0.55f - 1, 2, 2, QuadBatch.Tint(Crack, 0.5f + 0.4f * p));
+                }
+                return true;
+            }
+            // under: a low mound of earth heaving along the floor
+            Dot(e.x, e.y + 4, 13, 6, QuadBatch.Tint(Dirt, 0.85f));
+            for (int i = 0; i < 4; i++)
+                Rect(e.x - 8 + i * 5, e.y + 1 + Mathf.Sin(Fc * 0.4f + i) * 2, 3, 2, QuadBatch.Tint(DirtLit, 0.9f));
+            return true;
+        }
 
         void DrawBodies(Painter2D g, RunState run)
         {
@@ -326,6 +366,7 @@ namespace Depths.Unity
                 bool boss = e.kind == BodyKind.Boss;
                 float bob = fr == 1 || fr == 3 ? -2 : 0;
                 float hop = run.readyT > 0 ? -Mathf.Abs(Mathf.Sin(readyProg * Mathf.PI * 2)) * 6 : 0;
+                if (e.kind == BodyKind.Burrower && DrawBurrow(g, e, frame)) continue;
                 Dot(e.x, e.y + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
                 double ey = e.y - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop;
                 Spr(SpriteSet.Body(e.kind, frame, false), e.x, ey);
@@ -341,14 +382,14 @@ namespace Depths.Unity
                     Rect(e.x - e.r, barY, e.r * 2 * frac, 4, Green);
                 }
                 if (e.stun > 0) DrawStunStars(e.x, ey - e.r - 6, (float)e.stun);
-                if (e.castT > 0) DrawCastFlash(g, e.x, e.y, e.castT, Balance.CastTime, Hex.C(CastColor(e.kind)));
+                if (e.castT > 0) DrawCastFlash(g, e.x, e.y, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
             }
         }
 
         void DrawStunStars(double x, double y, float stun)
         {
             float t = Fc * 0.09f, left = stun / Balance.HookHold, a = Mathf.Min(1, left * 3) * 0.95f;
-            var c = Hex.C("#ffe9a8", a);
+            var c = QuadBatch.Tint(Hex.Of("#ffe9a8"), a);
             for (int i = 0; i < 3; i++)
             {
                 float ang = t + i * 2.094f, r = 8 + 2 * Mathf.Sin(t * 1.7f + i);
@@ -376,8 +417,19 @@ namespace Depths.Unity
             string bolt = Weapons.All[0].Color;
             foreach (var p in run.projectiles)
             {
-                var col = string.IsNullOrEmpty(p.color) ? HostileDefault : Hex.C(p.color);
+                var col = string.IsNullOrEmpty(p.color) ? HostileDefault : Hex.Of(p.color);
                 float alpha = 1;
+                if (p.lob)   // the mortar: the mark it will land on fills as it comes, the shell arcs over
+                {
+                    float t = p.flight / (float)Math.Max(1, p.flightMax);
+                    Dot(p.tx, p.ty, (float)p.blastR, (float)p.blastR * 0.55f, QuadBatch.Tint(col, 0.10f + 0.22f * t));
+                    Ring(g, p.tx, p.ty, (float)p.blastR * (1.25f - 0.25f * t), 2, QuadBatch.Tint(col, 0.45f + 0.5f * t));
+                    Dot(p.x, p.y, (float)p.r, (float)p.r * 0.45f, Shadow);
+                    double arc = p.y - Mathf.Sin(t * Mathf.PI) * 70;
+                    Glow(p.x, arc, (float)p.r * 3, col, 0.7f);
+                    Dot(p.x, arc, (float)p.r, (float)p.r, col);
+                    continue;
+                }
                 if (p.alt)
                 {
                     bool hook = p.mode == "hook";
@@ -398,10 +450,10 @@ namespace Depths.Unity
                 }
                 else
                 {
-                    if (p.heavy)   // the gunner's shell: a glow and a hot core, readable without its colour
+                    if (p.heavy || p.splitAt > 0)   // the gunner's shell (and the splitter's): a glow and a hot core, readable without the colour
                     {
                         Glow(p.x, p.y, Mathf.Round((float)p.r * 4), col, 0.8f);
-                        Dot(p.x, p.y, (float)p.r * 0.55f, (float)p.r * 0.55f, Hex.C("#fff4e0"));
+                        Dot(p.x, p.y, (float)p.r * 0.55f, (float)p.r * 0.55f, Hex.Of("#fff4e0"));
                     }
                     Dot(p.x, p.y, (float)p.r, (float)p.r, QuadBatch.Tint(col, alpha));
                 }
@@ -419,14 +471,14 @@ namespace Depths.Unity
             float hop = run.readyT > 0 ? -Mathf.Sin(readyProg * Mathf.PI) * 7 : 0;
             bool flick = pl.iframes > 0 && (pl.iframes / Math.Max(1, Balance.Sec(0.067))) % 2 == 0;
             double oy = pl.y + bob + hop;
-            var wandCol = Hex.C(Weapons.All[pl.weaponIdx].Color);
+            var wandCol = Hex.Of(Weapons.All[pl.weaponIdx].Color);
             bool behind = Mathf.Sin(a) < -0.35f;
 
             double lagD = Math.Sqrt((pl.lagX - pl.x) * (pl.lagX - pl.x) + (pl.lagY - pl.y) * (pl.lagY - pl.y));
             if (lagD > 3)   // the trailing hitbox after a blink, drawn faintly where it really is
             {
                 float fade = Mathf.Min(1, (float)lagD / Balance.BlinkDist);
-                Ring(g, pl.lagX, pl.lagY + Balance.PlayerHitDy, Balance.PlayerHitR, 1, Hex.C("#66d9ff", 0.5f * fade));
+                Ring(g, pl.lagX, pl.lagY + Balance.PlayerHitDy, Balance.PlayerHitR, 1, QuadBatch.Tint(Hex.Of("#66d9ff"), 0.5f * fade));
                 Spr(SpriteSet.Player(frame, false), pl.lagX, pl.lagY + bob + hop - 4, 0.18f * fade);
             }
             Dot(pl.x, pl.y + 13, 11, 4, Shadow);

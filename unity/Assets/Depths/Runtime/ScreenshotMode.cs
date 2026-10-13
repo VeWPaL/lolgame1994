@@ -46,7 +46,7 @@ namespace Depths.Unity
         IEnumerator Start()
         {
             for (int i = 0; i < 10; i++) yield return null;
-            bool inGame = _view == "game" || _view == "boss" || _view == "sandbox" || _view == "hearts";
+            bool inGame = _view == "game" || _view == "boss" || _view == "sandbox" || _view == "hearts" || _view == "lab" || _view == "labrow";
             if (inGame) SceneManager.LoadScene("Game");
             else
             {
@@ -57,6 +57,8 @@ namespace Depths.Unity
             if (_view == "game") yield return MeasureTickRate(5f);
             else if (_view == "boss") yield return new WaitForSecondsRealtime(4f);
             else if (_view == "sandbox") yield return new WaitForSecondsRealtime(1.5f);
+            else if (_view == "lab") yield return new WaitForSecondsRealtime(3.2f);   // long enough for a dive, a lob and a ring
+            else if (_view == "labrow") yield return new WaitForSecondsRealtime(1f);
             else if (_view == "hearts") { yield return CheckHearts(); yield break; }
             else for (int i = 0; i < 20; i++) yield return null;
             ScreenCapture.CaptureScreenshot(_path);
@@ -76,8 +78,10 @@ namespace Depths.Unity
             // the final mix, sampled while the demo shoots: a missing listener or a dead bus is silence
             var mix = new float[1024];
             float loudest = 0;
+            double unityDt = 0;   // Unity's own frame deltas over the window, logged against the wall clock
             while (Time.realtimeSinceStartup - s0 < seconds - 1f)
             {
+                unityDt += Time.unscaledDeltaTime;
                 AudioListener.GetOutputData(mix, 0);
                 foreach (var x in mix) loudest = Mathf.Max(loudest, Mathf.Abs(x));
                 yield return null;
@@ -90,6 +94,7 @@ namespace Depths.Unity
             Check(music != null && (view.Run.enemies.Count == 0 || music.FightLevel > 0.5f),
                   "the fight layer is up while bodies live: " + (music != null ? music.FightLevel.ToString("0.00") : "-") + " with " + view.Run.enemies.Count + " bodies");
             double s = Time.realtimeSinceStartup - s0;
+            Debug.Log("[Depths] note Time.unscaledDeltaTime summed " + unityDt.ToString("0.000") + " s over " + s.ToString("0.000") + " s of wall clock");
             long clock = view.Ticks - t0, sim = view.Run.ticks - sim0;   // the run's own count: the loop must really step it
             double hz = sim / s;
             Check(Balance.TickHz == Balance.GameHz, "Balance.TickHz is " + Balance.TickHz + " in the player (want " + Balance.GameHz + ")");
