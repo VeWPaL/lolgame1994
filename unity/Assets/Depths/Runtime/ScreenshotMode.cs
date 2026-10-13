@@ -134,26 +134,28 @@ namespace Depths.Unity
 
             float scale = tex.width / 1280f;   // the panel's reference width; the player opens at 16:9
             Check(Math.Abs(tex.height - 720f * scale) < 1.5f, "hearts: screen is 16:9 (" + tex.width + "x" + tex.height + ")");
-            // each kind is its own written line on the body page; the index within the kind places it
-            var seen = new int[3];
+            // one row in Isaac order (red, the regen heart, armour): the i-th heart of the spec is the i-th slot
             for (int i = 0; i < Expected.Length; i++)
             {
                 var (kind, fill) = Expected[i];
-                var tl = HudLayout.HeartTopLeft(kind, seen[(int)kind]++);
+                var tl = HudLayout.HeartTopLeft(i);
                 Color left = Sample(tex, HudLayout.LeftLobe(tl), scale), right = Sample(tex, HudLayout.RightLobe(tl), scale);
                 string at = "heart " + (i + 1) + " " + kind + " " + fill;
                 Lobe(at + ": left lobe ", left, fill != HeartFill.Empty, kind);
                 Lobe(at + ": right lobe ", right, fill == HeartFill.Full, kind);
             }
-            // nothing after the last heart of each kind: the lines are exactly as long as the fixture
-            foreach (HeartKind k in new[] { HeartKind.Red, HeartKind.Regen, HeartKind.Armour })
-            {
-                var tl = HudLayout.HeartTopLeft(k, seen[(int)k]);
-                Color after = Sample(tex, HudLayout.LeftLobe(tl), scale);
-                bool anyHeart = Near(after, HeartRow.Red) || Near(after, HeartRow.Regen) || Near(after, HeartRow.Armour) ||
-                                Near(after, HeartRow.RedEmpty) || Near(after, HeartRow.RegenEmpty);
-                Check(!anyHeart, "no " + k + " heart past the " + seen[(int)k] + " the fixture has: " + Hex(after));
-            }
+            // nothing after the last heart: the row is exactly as long as the fixture
+            var past = HudLayout.HeartTopLeft(Expected.Length);
+            Color after = Sample(tex, HudLayout.LeftLobe(past), scale);
+            bool anyHeart = Near(after, HeartRow.Red) || Near(after, HeartRow.Regen) || Near(after, HeartRow.Armour) ||
+                            Near(after, HeartRow.RedEmpty) || Near(after, HeartRow.RegenEmpty);
+            Check(!anyHeart, "no heart past the " + Expected.Length + "th: " + Hex(after));
+            // exact halves: the half regen heart is lit up to the middle of its centre column and dark after it
+            var rh = HudLayout.HeartTopLeft(4);
+            float mid = 2 + 3.5f * HudLayout.HeartPx, rowY = 2 + 3 * HudLayout.HeartPx + HudLayout.HeartPx / 2f;
+            Color justLeft = Sample(tex, rh + new Vector2(mid - 1.5f, rowY), scale), justRight = Sample(tex, rh + new Vector2(mid + 0.5f, rowY), scale);
+            Check(Near(justLeft, HeartRow.Regen) && Near(justRight, HeartRow.RegenEmpty),
+                  "half a heart is exactly half: " + Hex(justLeft) + " | " + Hex(justRight) + " across the middle of the centre column");
             Destroy(tex);
             for (int i = 0; i < 3; i++) yield return null;
             Application.Quit(_failed ? 1 : 0);
@@ -239,13 +241,40 @@ namespace Depths.Unity
             p.altCooldown = (int)(Balance.AltCooldown / Balance.TempoRate * 0.7);
             run.blinkCharges = 1; p.blinkRegen = Balance.BlinkRecharge * 0.45;
             run.kills = 23;
-            int marked = 0;
-            for (int i = 0; i < run.dungeon.AllRooms.Count && marked < 6; i++)
+            // the chart: walk the floor breadth-first from the start, the path to the Warden included, and leave
+            // a heart and the gold key lying in two walked rooms, so every mark the map can make is on it
+            var d = run.dungeon;
+            var start = run.CurrentRoom;
+            var parent = new Dictionary<Room, Room>();
+            var order = new List<Room> { start };
+            parent[start] = null;
+            for (int q = 0; q < order.Count; q++)
+                foreach (Dir dir in new[] { Dir.N, Dir.E, Dir.S, Dir.W })
+                {
+                    if (!order[q].Doors.Contains(dir)) continue;
+                    var n = d.Neighbour(order[q], dir);
+                    if (n == null || parent.ContainsKey(n)) continue;
+                    parent[n] = order[q];
+                    order.Add(n);
+                }
+            Room boss = null;
+            foreach (var r in order) if (r.Type == RoomKind.Boss) boss = r;
+            for (var r = boss; r != null; r = parent[r]) r.Visited = true;
+            if (boss != null) boss.Cleared = false;   // walked in on, not finished: the threat mark
+            int walked = 0;
+            foreach (var r in order)
             {
-                var r = run.dungeon.AllRooms[i];
-                if (r.Type == RoomKind.Boss) continue;
-                r.Visited = true; r.Cleared = true; marked++;
+                if (walked >= 7 || r.Type == RoomKind.Item) continue;
+                if (!r.Visited) { r.Visited = true; r.Cleared = true; }
+                walked++;
             }
+            var lying = new List<Room>();
+            foreach (var r in order) if (r.Visited && r != start && r.Type != RoomKind.Boss) lying.Add(r);
+            if (lying.Count > 0) lying[0].Pickups.Add(new Pickup { kind = "heart" });
+            if (lying.Count > 1) lying[lying.Count - 1].Pickups.Add(new Pickup { kind = "goldkey" });
+            int visited = 0;
+            foreach (var r in d.AllRooms) if (r.Visited) visited++;
+            Check(boss != null && boss.Visited && visited >= 6, "ledger: the chart has " + visited + " walked rooms and the Warden's");
             for (int i = 0; i < 10; i++) yield return null;
             Check(Items.ActiveItem(run) != null, "ledger: the fixture holds an active item");
         }

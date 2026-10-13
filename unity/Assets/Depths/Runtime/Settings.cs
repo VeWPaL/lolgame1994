@@ -21,6 +21,18 @@ namespace Depths.Unity
         public void Save() => PlayerPrefs.Save();
     }
 
+    /// <summary>Settings that live only as long as the process (the screenshot mode's fixtures).</summary>
+    public sealed class MemorySettingsStore : ISettingsStore
+    {
+        readonly System.Collections.Generic.Dictionary<string, string> _s = new System.Collections.Generic.Dictionary<string, string>();
+        readonly System.Collections.Generic.Dictionary<string, float> _f = new System.Collections.Generic.Dictionary<string, float>();
+        public string GetString(string key, string fallback) => _s.TryGetValue(key, out var v) ? v : fallback;
+        public void SetString(string key, string value) => _s[key] = value;
+        public float GetFloat(string key, float fallback) => _f.TryGetValue(key, out var v) ? v : fallback;
+        public void SetFloat(string key, float value) => _f[key] = value;
+        public void Save() { }
+    }
+
     /// <summary>
     /// Gameplay options, saved like the volume. The difficulty curve (Depths.Core <c>Curve.On</c>) is read
     /// per floor, so it is applied when a run starts, never mid-run.

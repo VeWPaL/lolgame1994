@@ -35,46 +35,162 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
-        public void EveryHeartTheBodyPageCanHoldSitsOnItsPaper()
+        public void TheBoardsStandTheHeightOfTheScreenBesideTheRoom()
         {
-            var paper = new Rect(HudLayout.LeftX + HudLayout.PaperPad, HudLayout.LecternTop + HudLayout.PaperPad,
-                                 HudLayout.LecternW - HudLayout.PaperPad * 2, HudLayout.LecternH - HudLayout.PaperPad * 2);
-            foreach (HeartKind k in Enum.GetValues(typeof(HeartKind)))
-                for (int i = 0; i < HudLayout.HeartCapacity(k); i++)
-                {
-                    var tl = HudLayout.HeartTopLeft(k, i);
-                    var r = new Rect(tl.x, tl.y, HudLayout.HeartW, HudLayout.HeartH);
-                    Assert.That(paper.Contains(r.min) && paper.Contains(r.max), k + " heart " + i + " at " + r + " falls off the page " + paper);
-                    Assert.That(tl.x, Is.GreaterThan(HudLayout.MarginX + 3), "hearts are written right of the red margin");
-                }
-            Assert.That(HudLayout.HeartTopLeft(HeartKind.Red, 1).x - HudLayout.HeartTopLeft(HeartKind.Red, 0).x, Is.EqualTo(HudLayout.HeartStep));
-            Assert.That(HudLayout.HeartTopLeft(HeartKind.Red, HudLayout.HeartsPerLine).y, Is.GreaterThan(HudLayout.HeartTopLeft(HeartKind.Red, 0).y), "the seventh red heart wraps");
-            Assert.That(HudLayout.HeartTopLeft(HeartKind.Regen, 0).y, Is.GreaterThan(HudLayout.HeartTopLeft(HeartKind.Red, HudLayout.HeartsPerLine).y), "mending is written under blood");
-            Assert.That(HudLayout.HeartTopLeft(HeartKind.Armour, 0).y, Is.GreaterThan(HudLayout.HeartTopLeft(HeartKind.Regen, 0).y), "mail is written under mending");
+            foreach (bool left in new[] { true, false })
+            {
+                var b = HudLayout.Board(left);
+                Assert.That(b.yMin, Is.LessThanOrEqualTo(16)); Assert.That(b.yMax, Is.GreaterThanOrEqualTo(704), "no dead band above or below the boards");
+            }
+            Assert.That(HudLayout.Banner.yMax, Is.LessThan(HudLayout.Room.yMin), "the heading lives in the band above the room");
+            Assert.That(HudLayout.Banner.xMin, Is.GreaterThan(HudLayout.Board(true).xMax)); Assert.That(HudLayout.Banner.xMax, Is.LessThan(HudLayout.Board(false).xMin));
         }
 
         [Test]
-        public void TheRowsOfThePageDoNotRunIntoEachOther()
+        public void TheHeartsAreOneRowThatWrapsOnTheBodyPage()
         {
-            for (int i = 1; i < HudLayout.LeftRows.Length; i++)
-                Assert.That(HudLayout.LeftRows[i] - HudLayout.LeftRows[i - 1], Is.GreaterThanOrEqualTo(28), "row " + HudLayout.LeftLabels[i]);
-            Assert.That(HudLayout.RowBottom(HudLayout.LeftRows.Length - 1), Is.LessThan(HudLayout.LecternTop + HudLayout.LecternH - HudLayout.PaperPad));
+            var paper = new Rect(HudLayout.LeftX + HudLayout.PaperPad, HudLayout.BoardTop + HudLayout.PaperPad,
+                                 HudLayout.BoardW - HudLayout.PaperPad * 2, HudLayout.BoardH - HudLayout.PaperPad * 2);
+            for (int i = 0; i < HudLayout.HeartCapacity; i++)
+            {
+                var tl = HudLayout.HeartTopLeft(i);
+                var r = new Rect(tl.x, tl.y, HudLayout.HeartW, HudLayout.HeartH);
+                Assert.That(paper.Contains(r.min) && paper.Contains(r.max), "heart " + i + " at " + r + " falls off the page " + paper);
+            }
+            Assert.That(HudLayout.HeartTopLeft(1).x - HudLayout.HeartTopLeft(0).x, Is.EqualTo(HudLayout.HeartStep));
+            Assert.That(HudLayout.HeartTopLeft(HudLayout.HeartsPerLine).y, Is.GreaterThan(HudLayout.HeartTopLeft(0).y), "the row wraps");
+            Assert.That(HudLayout.HeartW - 4, Is.GreaterThanOrEqualTo(28), "hearts are drawn at twice the old 14px");
+        }
+
+        [Test]
+        public void TheRowsOfThePagesDoNotRunIntoEachOther()
+        {
+            Assert.That(HudLayout.HeartsBox.yMax, Is.LessThan(HudLayout.Rule1));
+            Assert.That(HudLayout.KeyWell(0).yMax, Is.LessThan(HudLayout.BlinkLabelY));
+            Assert.That(HudLayout.BlinkWell(0).yMax, Is.LessThan(HudLayout.MomentumLabelY));
+            Assert.That(HudLayout.MomentumWell.yMax, Is.LessThan(HudLayout.Rule2));
+            Assert.That(HudLayout.DepthSeal.yMax, Is.LessThan(HudLayout.AreaY));
+            Assert.That(HudLayout.SeedTag.yMax, Is.LessThan(HudLayout.BoardTop + HudLayout.BoardH - HudLayout.PaperPad));
             Assert.That(HudLayout.Map.yMax, Is.LessThan(HudLayout.KitHeaderY), "the map and the kit's heading");
-            Assert.That(HudLayout.Slot(2).xMax, Is.LessThanOrEqualTo(HudLayout.RightX + HudLayout.LecternW - HudLayout.PaperPad), "the third slot is on the page");
-            Assert.That(HudLayout.CarryY + HudLayout.CarryStep * 2, Is.LessThan(HudLayout.LecternTop + HudLayout.LecternH - HudLayout.PaperPad));
+            Assert.That(HudLayout.Plate(2).xMax, Is.LessThanOrEqualTo(HudLayout.RightX + HudLayout.BoardW - HudLayout.PaperPad), "plates are on the page");
+            Assert.That(HudLayout.Slot(2).yMax, Is.LessThan(HudLayout.CarryLabelY));
+            Assert.That(HudLayout.CarryY + HudLayout.CarryStep * 2, Is.LessThan(HudLayout.BoardTop + HudLayout.BoardH - HudLayout.PaperPad));
+            Assert.That(HudLayout.Map.width, Is.GreaterThanOrEqualTo(0.8f * HudLayout.InkW), "the map fills its page");
         }
 
         [Test]
         public void TheLobesTheCheckSamplesAreInsideTheHeartSprite()
         {
-            // heartRows row 2 is "#######": both sampled cells are heart, clear of the highlight on row 0
             var tl = new Vector2(100, 50);
             Vector2 l = HudLayout.LeftLobe(tl) - tl, r = HudLayout.RightLobe(tl) - tl;
             int px = HudLayout.HeartPx;
             Assert.That(Sprites.HeartRows[(int)((l.y - 2) / px)][(int)((l.x - 2) / px)], Is.EqualTo('#'));
             Assert.That(Sprites.HeartRows[(int)((r.y - 2) / px)][(int)((r.x - 2) / px)], Is.EqualTo('#'));
-            Assert.That((int)((l.x - 2) / px), Is.LessThan(3.5f), "the left lobe is lit by a half heart");
-            Assert.That((int)((r.x - 2) / px), Is.GreaterThan(3.5f), "the right lobe is not");
+            Assert.That((l.x - 2) / px, Is.LessThan(3.5f), "the left lobe is lit by a half heart");
+            Assert.That((r.x - 2) / px, Is.GreaterThan(3.5f), "the right lobe is not");
+        }
+    }
+
+    public class LedgerArtTests
+    {
+        [Test]
+        public void HalfAHeartIsExactlyHalfItsPixels()
+        {
+            // 1 HP is half a heart: the lit pixels of a half heart are half of a full one's, split down the middle
+            foreach (var s in new[] { Sprites.HeartScheme.Red, Sprites.HeartScheme.Regen, Sprites.HeartScheme.Gray })
+            {
+                var pal = Sprites.HeartPal(s);
+                var full = LedgerArt.Heart(s, 2, 4); var half = LedgerArt.Heart(s, 1, 4); var none = LedgerArt.Heart(s, 0, 4);
+                int Lit(Img g) => g.Px.Count(c => !c.Equals(Sprites.Outline) && c.a > 0 && (Same(c, pal['R']) || Same(c, pal['H'])));
+                Assert.That(Lit(half) * 2, Is.EqualTo(Lit(full)), s + ": half a heart is not half the lit pixels");
+                Assert.That(Lit(none), Is.EqualTo(0));
+                int split = 2 + 14;
+                for (int y = 0; y < half.H; y++)
+                    for (int x = split; x < half.W; x++)
+                        Assert.That(Same(half.Get(x, y), pal['R']) || Same(half.Get(x, y), pal['H']), Is.False, s + " lit right of the middle at " + x + "," + y);
+            }
+        }
+
+        static bool Same(Color32 a, Color32 b) => a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+
+        [Test]
+        public void TheHudHandHasEveryLetterItWrites()
+        {
+            var words = new List<string> { "THE BODY", "THE MAP", "THE KIT", "KEYS", "BLINK", "MOMENTUM", "DEPTH", "SLAIN", "SEED", "CARRYING", "THE WARDEN", "PHASE 3",
+                                           "SOMETHING HEAVY IS DOWN THERE", "Empty", "nothing yet", "x12", "+3", "Blast", "Hook" };
+            words.AddRange(LedgerHud.AreaNames);
+            words.AddRange(Weapons.All.Select(w => w.Name));
+            words.AddRange(Items.All.Select(i => i.Name));
+            foreach (var w in words)
+                foreach (var ch in w) Assert.That(LedgerType.Has(ch), "the 5x7 hand has no '" + ch + "' for \"" + w + "\"");
+        }
+
+        [Test]
+        public void TheWrapBreaksAtSpacesAndNeverLosesALetter()
+        {
+            string s = "The Flooded Galleries";
+            int from = 0, lines = 0; var got = "";
+            while (from < s.Length)
+            {
+                var (end, next) = LedgerType.Wrap(s, from, LedgerHud.AreaNames.Length * 0 + 140, 2);
+                Assert.That(LedgerType.Width(end - from, 2), Is.LessThanOrEqualTo(140), "line " + lines + " is too wide");
+                got += (lines > 0 ? " " : "") + s.Substring(from, end - from);
+                from = next; lines++;
+            }
+            Assert.That(got, Is.EqualTo(s));
+            Assert.That(lines, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void TheBoardsAreBakedAtTheirLayoutSizeWithTheirLabelsStruck()
+        {
+            foreach (bool left in new[] { true, false })
+            {
+                var img = LedgerArt.Board(left);
+                var at = HudLayout.Board(left);
+                Assert.That(img.W, Is.EqualTo((int)at.width)); Assert.That(img.H, Is.EqualTo((int)at.height));
+                var rim = img.Get(0, img.H / 2);
+                Assert.That(rim.r + rim.g + rim.b, Is.LessThan(150), "no dark rim on the plank: " + rim);
+            }
+            // a label is ink on the page where the layout says: "KEYS" at the keys row
+            var body = LedgerArt.Board(true);
+            int ox = HudLayout.Ink0(true) - HudLayout.LeftX, oy = HudLayout.KeysLabelY - HudLayout.BoardTop, ink = 0;
+            for (int y = oy; y < oy + 14; y++) for (int x = ox; x < ox + 46; x++) { var c = body.Get(x, y); if (c.r + c.g + c.b < 330) ink++; }
+            Assert.That(ink, Is.GreaterThan(40), "the KEYS label is not struck on the page");
+            // the wells are dark with a lit bevel at their foot
+            var w = HudLayout.BlinkWell(0);
+            int wx = (int)w.x - HudLayout.LeftX, wy = (int)w.y - HudLayout.BoardTop;
+            var inside = body.Get(wx + 10, wy + 8); var foot = body.Get(wx + 10, wy + (int)w.height - 1);
+            Assert.That(inside.r + inside.g + inside.b, Is.LessThan(120), "the blink well is not dark");
+            Assert.That(foot.r + foot.g + foot.b, Is.GreaterThan(inside.r + inside.g + inside.b + 100), "the well has no lit bevel");
+        }
+
+        [Test]
+        public void TheBannerStrikesTheFloorInTheAreasAccent()
+        {
+            var img = HudOverlays.BannerArt(5);
+            var accent = Hex.C(AreaPalette.For(Area.Area2).Accent);
+            int hits = img.Px.Count(c => c.r == accent.r && c.g == accent.g && c.b == accent.b);
+            Assert.That(hits, Is.GreaterThan(200), "FLOOR 5 is not struck in the Kiln Works' accent");
+        }
+    }
+
+    public class RunRecordsTests
+    {
+        [Test]
+        public void ARecordIsKeptOnlyWhenBeatenAndSurvivesARestart()
+        {
+            var store = new MemoryStore();
+            var r = new RunRecords(store);
+            var first = r.Record(2, 5);
+            Assert.That(first.NewFloor && first.NewRooms, "a first run sets both records");
+            Assert.That(store.Saves, Is.EqualTo(1));
+            var same = r.Record(2, 5);
+            Assert.That(same.NewFloor || same.NewRooms, Is.False, "matching a record is not a new one");
+            var deeper = new RunRecords(store).Record(4, 3);
+            Assert.That(deeper.NewFloor, Is.True); Assert.That(deeper.NewRooms, Is.False);
+            Assert.That(deeper.DeepestFloor, Is.EqualTo(4)); Assert.That(deeper.BestRooms, Is.EqualTo(5), "a worse count does not lower the best");
+            Assert.That(new RunRecords(store).DeepestFloor, Is.EqualTo(4), "the record did not survive a restart");
         }
     }
 
@@ -87,23 +203,15 @@ namespace Depths.Unity.Tests
             return run;
         }
 
-        static IEnumerable<string> Texts(VisualElement root) => root.Query<Label>().ToList().Select(l => l.text);
-
         [Test]
-        public void ThePagesNameEveryLineTheJsHudCarries()
+        public void TheHudHasItsBoardsItsSeedTagAndNoDevLineByDefault()
         {
             var hud = new LedgerHud();
             var run = Run();
-            Items.Give(run, "tin_cup");
             hud.Refresh(run, 1 / 60f);
-            var texts = Texts(hud).ToList();
-            foreach (var line in new[] { "Blood", "Mending", "Mail", "Keys", "Blink", "Momentum", "Depth", "Slain", "Seed" })
-                Assert.That(texts, Does.Contain(line), "the body page has no line for " + line);
-            Assert.That(texts, Does.Contain("The Shallows"), "the depth line names the area");
-            Assert.That(texts, Does.Contain(Weapons.All[run.player.weaponIdx].Name), "the weapon slot is captioned");
-            Assert.That(texts, Does.Contain("Blast"), "the right-click slot is captioned");
-            Assert.That(texts, Does.Contain("Tin Cup"), "the held item is named");
-            Assert.That(hud.Q("stand-left"), Is.Not.Null); Assert.That(hud.Q("stand-right"), Is.Not.Null);
+            Assert.That(hud.Q("board-left"), Is.Not.Null); Assert.That(hud.Q("board-right"), Is.Not.Null);
+            Assert.That(hud.Q("seed-tag").style.backgroundImage.value.texture, Is.Not.Null, "the seed is not on its tag");
+            Assert.That(hud.SeedShown, Is.EqualTo(run.rootSeed));
             Assert.That(hud.DevVisible, Is.False, "the developer line is hidden until F3");
         }
 
@@ -142,7 +250,7 @@ namespace Depths.Unity.Tests
                 p.hp = i % 40 < 20 ? 6 : 1;   // in and out of the last-heart pulse
                 hud.Refresh(run, 1 / 60f);
             }
-            for (int i = 0; i < 60; i++) Frame(i);   // warm: labels written, every branch taken once
+            for (int i = 0; i < 60; i++) Frame(i);   // warm: the seed tag stamped, every branch taken once
             int before = hud.Repaints;
             long bytes = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 100; i++) Frame(i);
@@ -166,9 +274,12 @@ namespace Depths.Unity.Tests
             run.player.hasSilver = true;
             hud.Refresh(run, 1 / 60f);
             Assert.That(hud.Repaints, Is.EqualTo(n + 2), "picking up a key did not repaint");
+            run.kills++;
+            hud.Refresh(run, 1 / 60f);
+            Assert.That(hud.Repaints, Is.EqualTo(n + 3), "a kill did not repaint the count");
             run.player.cooldown += 1e-6;
             hud.Refresh(run, 1 / 60f);
-            Assert.That(hud.Repaints, Is.EqualTo(n + 2), "a cooldown change smaller than a pixel repainted");
+            Assert.That(hud.Repaints, Is.EqualTo(n + 3), "a cooldown change smaller than a pixel repainted");
         }
 
         [Test]
@@ -184,13 +295,13 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
-        public void TheAccountIsTheJsSummaryRows()
+        public void TheAccountIsTheJsSummaryRowsAndItsRecords()
         {
             var run = Run();
             run.floor = 3; run.kills = 37; run.dmgTaken = 9; run.shots = 120; run.hits = 88;
             run.ticks = Balance.TickHz * 75 + Balance.TickHz / 2; run.floorTicks = Balance.TickHz * 4;
             var o = new HudOverlays();
-            o.Fill(run);
+            o.Fill(run, new RunRecords.Result(3, 9, true, false));
             Assert.That(HudOverlays.SummaryRows, Is.EqualTo(new[] { "Floor reached", "Time on this floor", "Time", "Rooms explored", "Enemies defeated", "Damage taken", "Accuracy", "Weapon", "Seed" }));
             Assert.That(o.SummaryValue(0), Is.EqualTo("3"));
             Assert.That(o.SummaryValue(1), Is.EqualTo("0:04.0"));
@@ -201,6 +312,9 @@ namespace Depths.Unity.Tests
             Assert.That(o.SummaryValue(6), Is.EqualTo("73%  (88/120)"));
             Assert.That(o.SummaryValue(7), Is.EqualTo("Bolt"));
             Assert.That(o.SummaryValue(8), Is.EqualTo(Rng.Encode(7)));
+            Assert.That(o.RecordValue(0), Is.EqualTo("3")); Assert.That(o.RecordValue(1), Is.EqualTo("9"));
+            Assert.That(o.NewFloorShown, Is.True, "a new deepest floor is tagged NEW");
+            Assert.That(o.NewRoomsShown, Is.False);
             o.Release();
         }
 
@@ -232,32 +346,6 @@ namespace Depths.Unity.Tests
             Assert.That(HudOverlays.WarningAlpha(run), Is.EqualTo(0), "no warning without its timer");
             run.bossWarnT = Balance.BossWarnTime / 2;
             Assert.That(HudOverlays.WarningAlpha(run), Is.EqualTo(1).Within(0.02f));
-        }
-
-        [Test]
-        public void TheBannerStrikesTheFloorInTheAreasAccent()
-        {
-            var img = HudOverlays.BannerArt(5);
-            var accent = Hex.C(AreaPalette.For(Area.Area2).Accent);
-            int hits = img.Px.Count(c => c.r == accent.r && c.g == accent.g && c.b == accent.b);
-            Assert.That(hits, Is.GreaterThan(200), "FLOOR 5 is not struck in the Kiln Works' accent");
-        }
-
-        [Test]
-        public void TheStandsAreBakedAtTheirLayoutSize()
-        {
-            foreach (bool left in new[] { true, false })
-            {
-                var img = LedgerArt.Stand(left);
-                var at = HudLayout.Stand(left);
-                Assert.That(img.W, Is.EqualTo((int)at.width)); Assert.That(img.H, Is.EqualTo((int)at.height));
-                // the page is paper (light) in the middle of the plate, and the plate's rim is dark wood
-                int px = (left ? HudLayout.LeftX : HudLayout.RightX) - (int)at.x, py = HudLayout.LecternTop - (int)at.y;
-                var mid = img.Get(px + HudLayout.LecternW - 30, py + HudLayout.LecternH - 60);
-                Assert.That(mid.r + mid.g + mid.b, Is.GreaterThan(450), "no paper where the page should be: " + mid);
-                var rim = img.Get(px + 0, py + HudLayout.LecternH / 2);
-                Assert.That(rim.r + rim.g + rim.b, Is.LessThan(150), "no dark rim on the plate: " + rim);
-            }
         }
     }
 }

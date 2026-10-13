@@ -2,7 +2,7 @@
 
 /* The dropdown's list opens on the panel's root, outside the menu's own sheet, so its ledger
    styling lives here: a slip of paper with a wooden edge, ink entries, a red-ink pick. */
-.unity-base-dropdown__container-outer { background-color: rgb(226, 214, 186); border-width: 2px; border-color: rgb(58, 34, 16); border-radius: 2px; }
+.unity-base-dropdown__container-outer { background-color: rgb(226, 214, 186); border-width: 4px; border-color: rgb(107, 68, 35); border-top-color: rgb(185, 138, 85); border-left-color: rgb(185, 138, 85); border-bottom-color: rgb(58, 34, 16); border-right-color: rgb(58, 34, 16); border-radius: 0; padding: 2px; }
 .unity-base-dropdown__container-inner { background-color: rgb(226, 214, 186); }
 .unity-base-dropdown__item { color: rgb(43, 29, 18); background-color: rgba(0, 0, 0, 0); }
 .unity-base-dropdown__item:hover { background-color: rgba(163, 40, 31, 0.14); }

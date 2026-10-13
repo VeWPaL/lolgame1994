@@ -130,10 +130,23 @@ namespace Depths.Unity
             root.Query(className: "italic").ForEach(e => LedgerFonts.Use(e, LedgerFonts.Italic));
             _cap = Tex(LedgerArt.KeyCap(KeyCapW, KeyCapH, false), "keycap");
             _capLit = Tex(LedgerArt.KeyCap(KeyCapW, KeyCapH, true), "keycap-lit");
-            _boxOn = Tex(LedgerArt.TickBox(22, true), "tick-on");
-            _boxOff = Tex(LedgerArt.TickBox(22, false), "tick-off");
+            _boxOn = Tex(LedgerArt.TickBox(26, true), "tick-on");
+            _boxOff = Tex(LedgerArt.TickBox(26, false), "tick-off");
             var knob = Tex(LedgerArt.Knob(16, 26), "knob");
             root.Query(className: "unity-base-slider__dragger").ForEach(d => d.style.backgroundImage = new StyleBackground(knob));
+            // the slider rides in a groove cut in a plank; the dropdown is a framed paper slip with a brass arrow
+            var groove = Tex(LedgerArt.Groove(40, 14), "groove");
+            root.Query(className: "unity-base-slider__tracker").ForEach(t => Sliced(t, groove, 5));
+            var field = Tex(LedgerArt.FieldFrame(48, 30), "field");
+            root.Query(className: "unity-base-popup-field__input").ForEach(f => Sliced(f, field, 6));
+            var arrow = Tex(LedgerArt.BrassArrow(13, 9), "arrow");
+            root.Query(className: "unity-base-popup-field__arrow").ForEach(a => { a.style.backgroundImage = new StyleBackground(arrow); a.style.width = 13; a.style.height = 9; });
+        }
+
+        static void Sliced(VisualElement e, Texture2D t, int edge)
+        {
+            e.style.backgroundImage = new StyleBackground(t);
+            e.style.unitySliceLeft = edge; e.style.unitySliceRight = edge; e.style.unitySliceTop = edge; e.style.unitySliceBottom = edge;
         }
 
         void SetImage(VisualElement e, Img img)
@@ -142,10 +155,22 @@ namespace Depths.Unity
             e.style.width = img.W; e.style.height = img.H;
         }
 
+        Label _curveState;
+
+        // the tick box, and On or Off written beside it so the state never rests on the tick alone
         void Tick()
         {
             var mark = _curve.Q(className: "unity-toggle__checkmark");
             if (mark != null) mark.style.backgroundImage = new StyleBackground(_curve.value ? _boxOn : _boxOff);
+            if (_curveState == null)
+            {
+                _curveState = new Label { name = "curveState" };
+                _curveState.AddToClassList("toggle-state");
+                LedgerFonts.Use(_curveState, LedgerFonts.Italic);
+                (_curve.Q(className: "unity-toggle__input") ?? _curve).Add(_curveState);
+            }
+            _curveState.text = _curve.value ? "On" : "Off";
+            _curveState.EnableInClassList("on", _curve.value);
         }
 
         // Dragging a slider plays the level you are setting, at most a few times a second.

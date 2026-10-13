@@ -78,94 +78,141 @@ namespace Depths.Unity.Hud
             return g;
         }
 
-        // ---- the lecterns ----
+        // ---- the boards ----
 
-        /// <summary>
-        /// One stand: the ledger plate (wood, inset, aged paper) as tall as the room, a ledge it rests on,
-        /// a post down to the floor, a clip at the top and the page ruled for its side. Positions are the
-        /// HudLayout ones, shifted into the image (whose origin is <see cref="HudLayout.Stand"/>).
-        /// </summary>
-        public static Img Stand(bool left)
+        public static readonly Color32 Lift = Hex.Rgba(255, 246, 224, 0.55f);
+
+        /// <summary>A dark well cut into wood or paper: dark top-left, a 1px lit bevel bottom-right, a soft inner shadow.</summary>
+        public static void CutWell(Img g, int x, int y, int w, int h, Color32? fill = null)
         {
-            var at = HudLayout.Stand(left);
-            int W = (int)at.width, H = (int)at.height;
-            int ox = -(int)at.x, oy = -(int)at.y;   // panel to image
-            var g = new Img(W, H);
-            int px = (left ? HudLayout.LeftX : HudLayout.RightX) + ox, py = HudLayout.LecternTop + oy;
-            int pw = HudLayout.LecternW, ph = HudLayout.LecternH, pad = HudLayout.PaperPad;
-
-            // the post first, behind the ledge, darker for being further back
-            int postX = W / 2 - HudLayout.PostW / 2, postY = py + ph + HudLayout.LedgeH - 4;
-            g.Pattern(Materials.WoodTex, postX, postY, HudLayout.PostW, H - postY);
-            g.Fill(postX, postY, HudLayout.PostW, H - postY, Hex.Rgba(10, 5, 2, 0.38f));
-            g.Fill(postX, postY, 2, H - postY, Materials.WoodDark); g.Fill(postX + HudLayout.PostW - 2, postY, 2, H - postY, Materials.WoodDark);
-            g.Fill(postX + 2, postY, 2, H - postY, Hex.Rgba(185, 138, 85, 0.45f));
-            g.Fill(postX, postY, HudLayout.PostW, 6, Hex.Rgba(0, 0, 0, 0.45f));   // in the ledge's shadow
-            for (int i = 0; i < 3; i++) g.Fill(postX + 8, postY + 30 + i * 26, HudLayout.PostW - 16, 2, Hex.Rgba(36, 20, 10, 0.55f));   // turned rings
-
-            // the plate and its page
-            g.Draw(Materials.WoodPlate(pw, ph), px, py);
-            Materials.Inset(g, px + pad - 2, py + pad - 2, pw - (pad - 2) * 2, ph - (pad - 2) * 2, null);
-            g.Draw(AgedPaper(pw - pad * 2, ph - pad * 2, left ? 0x1ED6Eu : 0x3A9u), px + pad, py + pad);
-
-            // the ledge the book rests on, proud of the plate on both sides
-            var ledge = Materials.WoodPlate(W, HudLayout.LedgeH, false);
-            g.Draw(ledge, 0, py + ph - 4);
-            g.Fill(2, py + ph - 4 + HudLayout.LedgeH, W - 4, 3, Hex.Rgba(0, 0, 0, 0.40f));
-
-            if (left) RuleBody(g, ox, oy); else RuleMap(g, ox, oy);
-            Clip(g, px + pw / 2, py - 6);
-            // a bookmark ribbon out of the bottom of the page, over the ledge
-            Ribbon(g, px + pw - 46, py + ph - pad - 6, 9, 46, left ? Hex.C("#8c2a2a") : Hex.C("#2a5a7a"));
-            return g;
+            g.Fill(x, y, w, h, fill ?? Hex.C("#140c06"));
+            g.Fill(x, y, w, 2, Materials.InsetDark); g.Fill(x, y, 2, h, Materials.InsetDark);
+            g.Fill(x + 2, y + 2, w - 4, 2, Hex.Rgba(0, 0, 0, 0.35f));
+            g.Fill(x, y + h - 1, w, 1, Materials.InsetLit); g.Fill(x + w - 1, y, 1, h, Materials.InsetLit);
         }
+
+        /// <summary>A label in the ledger's hand: struck into the paper in soft ink.</summary>
+        public static void Label(Img g, string text, int x, int y, Color32? ink = null)
+        {
+            LedgerType.Stamp(g, text, x + 1, y + 1, HudLayout.TextScale, Lift);
+            LedgerType.Stamp(g, text, x, y, HudLayout.TextScale, ink ?? InkSoft);
+        }
+
+        static void RuleAt(Img g, int x, int y, int w) { g.Fill(x, y, w, 1, InkFaint); g.Fill(x, y + 3, w, 2, InkFaint); }
 
         static void Header(Img g, string text, int cx, int y)
         {
-            Struck(g, text, cx, y + 7, 3, Ink);
-            int w = PixelFont.Width(text, 3) + 40;
-            g.Fill(cx - w / 2, y + 20, w, 1, InkFaint);
-            g.Fill(cx - w / 2, y + 23, w, 2, InkFaint);
+            LedgerType.Struck(g, text, cx, y, HudLayout.TextScale, Ink, Lift);
+            int w = LedgerType.Width(text, HudLayout.TextScale) + 48;
+            RuleAt(g, cx - w / 2, y + 20, w);
         }
 
-        static void RuleBody(Img g, int ox, int oy)
+        /// <summary>
+        /// One board: a plank as tall as the screen allows, its inset and aged page, a clip at the top,
+        /// and the page's fixed parts (headers, labels, rules, wells, the seal, the slots and their name
+        /// plates). Everything that changes is drawn over it by the ink layer. Origin: HudLayout.Board.
+        /// </summary>
+        public static Img Board(bool left)
         {
-            int x0 = HudLayout.LeftX + HudLayout.PaperPad + ox, x1 = HudLayout.LeftX + HudLayout.LecternW - HudLayout.PaperPad + ox;
-            Header(g, "THE BODY", (x0 + x1) / 2, HudLayout.HeaderY + oy);
-            int top = HudLayout.BloodY - 6 + oy, bottom = HudLayout.LecternTop + HudLayout.LecternH - HudLayout.PaperPad - 4 + oy;
-            g.Fill(HudLayout.MarginX + ox, top, 1, bottom - top, Margin);   // the red double margin
-            g.Fill(HudLayout.MarginX + 3 + ox, top, 1, bottom - top, Margin);
-            for (int i = 0; i < HudLayout.LeftRows.Length; i++)
-            {
-                g.Fill(x0 + 4, HudLayout.RowBottom(i) + oy, x1 - x0 - 8, 1, Rule);
-                if (i == 0) g.Fill(HudLayout.ValueX + ox, HudLayout.BloodY + HudLayout.BloodLineStep - 1 + oy, x1 - HudLayout.ValueX - ox - 4, 1, Hex.Rgba(64, 96, 140, 0.14f));
-            }
-            // the depth seal: a block of the plank laid on the page, the floor struck into it each frame
+            var at = HudLayout.Board(left);
+            int W = (int)at.width, H = (int)at.height, ox = -(int)at.x, oy = -(int)at.y, pad = HudLayout.PaperPad;
+            var g = Materials.WoodPlate(W, H);
+            Materials.Inset(g, pad - 2, pad - 2, W - (pad - 2) * 2, H - (pad - 2) * 2, null);
+            g.Draw(AgedPaper(W - pad * 2, H - pad * 2, left ? 0x1ED6Eu : 0x3A9u), pad, pad);
+            int x0 = HudLayout.Ink0(left) + ox, cx = W / 2;
+            if (left) Body(g, ox, oy, x0, cx); else MapAndKit(g, ox, oy, x0, cx);
+            Clip(g, cx, 1);
+            return g;
+        }
+
+        static void Body(Img g, int ox, int oy, int x0, int cx)
+        {
+            int w = HudLayout.InkW;
+            Header(g, "THE BODY", cx, HudLayout.HeaderY + oy);
+            RuleAt(g, x0, HudLayout.Rule1 + oy, w);
+            Label(g, "KEYS", x0, HudLayout.KeysLabelY + oy);
+            for (int i = 0; i < 2; i++) { var k = HudLayout.KeyWell(i); CutWell(g, (int)k.x + ox, (int)k.y + oy, (int)k.width, (int)k.height); }
+            Label(g, "BLINK", x0, HudLayout.BlinkLabelY + oy);
+            for (int i = 0; i < 2; i++) { var b = HudLayout.BlinkWell(i); CutWell(g, (int)b.x + ox, (int)b.y + oy, (int)b.width, (int)b.height); }
+            Label(g, "MOMENTUM", x0, HudLayout.MomentumLabelY + oy);
+            var m = HudLayout.MomentumWell; CutWell(g, (int)m.x + ox, (int)m.y + oy, (int)m.width, (int)m.height);
+            RuleAt(g, x0, HudLayout.Rule2 + oy, w);
+            Label(g, "DEPTH", x0, HudLayout.DepthLabelY + oy);
             var s = HudLayout.DepthSeal;
             g.Fill((int)s.x + ox + 2, (int)s.yMax + oy, (int)s.width - 2, 3, Hex.Rgba(40, 24, 10, 0.35f));
-            g.Draw(WellPlate((int)s.width, (int)s.height, 6, true), (int)s.x + ox, (int)s.y + oy);
+            g.Draw(WellPlate((int)s.width, (int)s.height, 7, true), (int)s.x + ox, (int)s.y + oy);
+            RuleAt(g, x0, HudLayout.Rule3 + oy, w);
+            Label(g, "SLAIN", x0, HudLayout.SlainLabelY + oy);
+            RuleAt(g, x0, HudLayout.Rule4 + oy, w);
+            Label(g, "SEED", x0, HudLayout.SeedLabelY + oy);
         }
 
-        static void RuleMap(Img g, int ox, int oy)
+        static void MapAndKit(Img g, int ox, int oy, int x0, int cx)
         {
-            int x0 = HudLayout.RightX + HudLayout.PaperPad + ox, x1 = HudLayout.RightX + HudLayout.LecternW - HudLayout.PaperPad + ox;
-            Header(g, "THE MAP", (x0 + x1) / 2, HudLayout.HeaderY + oy);
-            // the chart's grid: faint pencil crosses where the cells meet
+            Header(g, "THE MAP", cx, HudLayout.HeaderY + oy);
+            // the chart's grid: a faint pencil cross where cells meet, there to be drawn over
             var m = HudLayout.Map;
             for (int i = 0; i <= 7; i++)
                 for (int j = 0; j <= 7; j++)
                 {
-                    int cx = (int)m.x + ox + i * HudLayout.MapCell - 2, cy = (int)m.y + oy + j * HudLayout.MapCell - 2;
-                    g.Fill(cx - 2, cy, 5, 1, Hex.Rgba(64, 96, 140, 0.30f)); g.Fill(cx, cy - 2, 1, 5, Hex.Rgba(64, 96, 140, 0.30f));
+                    int px = (int)m.x + ox + i * HudLayout.MapCell - 3, py = (int)m.y + oy + j * HudLayout.MapCell - 3;
+                    g.Fill(px - 1, py, 3, 1, Hex.Rgba(64, 96, 140, 0.12f)); g.Fill(px, py - 1, 1, 3, Hex.Rgba(64, 96, 140, 0.12f));
                 }
-            Header(g, "THE KIT", (x0 + x1) / 2, HudLayout.KitHeaderY + oy);
+            Header(g, "THE KIT", cx, HudLayout.KitHeaderY + oy);
             for (int i = 0; i < 3; i++)
             {
                 var s = HudLayout.Slot(i);
-                g.Fill((int)s.x + ox + 3, (int)s.yMax + oy, (int)s.width - 3, 3, Hex.Rgba(40, 24, 10, 0.35f));   // resting on the page
+                g.Fill((int)s.x + ox + 3, (int)s.yMax + oy, (int)s.width - 3, 3, Hex.Rgba(40, 24, 10, 0.35f));
                 g.Draw(WellPlate((int)s.width, (int)s.height), (int)s.x + ox, (int)s.y + oy);
+                var p = HudLayout.Plate(i);
+                g.Fill((int)p.x + ox + 3, (int)p.yMax + oy, (int)p.width - 3, 3, Hex.Rgba(40, 24, 10, 0.30f));
+                g.Draw(NamePlate((int)p.width, (int)p.height), (int)p.x + ox, (int)p.y + oy);
             }
-            g.Fill(x0 + 4, HudLayout.CarryY - 8 + oy, x1 - x0 - 8, 1, Rule);
+            Label(g, "CARRYING", x0, HudLayout.CarryLabelY + oy);
+        }
+
+        /// <summary>A name plate: a strip of the plank with a paper slip let into it, where a name is written.</summary>
+        public static Img NamePlate(int w, int h)
+        {
+            var g = Materials.WoodPlate(w, h, false);
+            Materials.Inset(g, 4, 4, w - 8, h - 8, null);
+            g.Draw(AgedPaper(w - 12, h - 12, 0x9E7u, 0.06f), 6, 6);
+            return g;
+        }
+
+        /// <summary>A small wooden key cap with its letter struck in cream: the Q beside the held item.</summary>
+        public static Img Cap(string letter, int s)
+        {
+            var g = KeyCap(s, s, false);
+            LedgerType.Struck(g, letter, s / 2, (s - 4) / 2 - 7, 2, Hex.C("#f0e2c4"), Hex.Rgba(0, 0, 0, 0.6f));
+            return g;
+        }
+
+        /// <summary>A paper tag pinned in the empty hand: "NOTHING HELD" in ink, a brass pin, a shadow.</summary>
+        public static Img NothingTag(int w, int h)
+        {
+            var g = new Img(w + 3, h + 4);
+            g.Fill(3, 4, w, h, Hex.Rgba(0, 0, 0, 0.40f));
+            g.Draw(AgedPaper(w, h, 0x7A6u, 0.04f), 0, 0);
+            LedgerType.Stamp(g, "NOTHING", w / 2 - LedgerType.Width(7, 1) / 2, h / 2 - 9, 1, Ink);
+            LedgerType.Stamp(g, "HELD", w / 2 - LedgerType.Width(4, 1) / 2, h / 2 + 2, 1, Ink);
+            g.Disc(w / 2f, 4, 3, BrassDark); g.Disc(w / 2f - 0.5f, 3.5f, 2, Materials.Brass);
+            return g;
+        }
+
+        /// <summary>A heart at the HUD's size, filled by exact halves: the split runs down the middle of
+        /// the centre column, so half a heart is half the pixels (1 HP is half a heart).</summary>
+        public static Img Heart(Sprites.HeartScheme scheme, int fill, int px)
+        {
+            var pal = Sprites.HeartPal(scheme);
+            var lit = Sprites.Bake(Sprites.HeartRowsFor(1), pal, px);
+            if (fill == 2) return lit;
+            var dark = Sprites.Bake(Sprites.HeartRowsFor(0), pal, px);
+            if (fill == 0) return dark;
+            int split = 2 + (7 * px) / 2;   // pad + half the heart's width
+            for (int y = 0; y < lit.H; y++)
+                for (int x = split; x < lit.W; x++) lit.Px[y * lit.W + x] = dark.Px[y * lit.W + x];
+            return lit;
         }
 
         // ---- the overlays ----
@@ -290,15 +337,51 @@ namespace Depths.Unity.Hud
         public static Img TickBox(int s, bool ticked)
         {
             var g = new Img(s, s);
-            g.Fill(0, 0, s, s, Hex.Rgba(255, 250, 235, 0.35f));
-            g.Fill(0, 0, s, 2, Ink); g.Fill(0, s - 2, s, 2, Ink); g.Fill(0, 0, 2, s, Ink); g.Fill(s - 2, 0, 2, s, Ink);
+            // a little wooden frame with a paper square let into it; the tick is inked in red across it
+            g.Draw(Materials.WoodPlate(s, s, false), 0, 0);
+            Materials.Inset(g, 4, 4, s - 8, s - 8, null);
+            g.Draw(AgedPaper(s - 12, s - 12, 0x71Cu, 0.04f), 6, 6);
             if (ticked)
-                for (int i = 0; i < s; i++)
+                for (int i = 0; i <= 16; i++)
                 {
-                    // a quick pen tick: down-right for a third, then up-right past the box
-                    int x = 3 + i * (s - 3) / s, y = i < s / 3 ? s / 2 + i : s / 2 + s / 3 - (i - s / 3) * 3 / 2;
-                    g.Fill(x, y - 1, 3, 3, RedInk);
+                    // a pen tick: down-right for a third, then a long stroke up-right past the frame
+                    float t = i / 16f;
+                    float x = 6 + t * (s - 8), y = t < 0.33f ? s * 0.5f + t * s * 0.6f : s * 0.70f - (t - 0.33f) * s * 0.95f;
+                    g.Fill(Mathf.RoundToInt(x) - 1, Mathf.RoundToInt(y) - 1, 3, 3, RedInk);
                 }
+            return g;
+        }
+
+        /// <summary>A field cut for writing in: a wooden frame around a paper slip (9-sliced at 6 by the menu).</summary>
+        public static Img FieldFrame(int w, int h)
+        {
+            var g = Materials.WoodPlate(w, h, false);
+            Materials.Inset(g, 3, 3, w - 6, h - 6, null);
+            g.Draw(AgedPaper(w - 10, h - 10, 0xF1Eu, 0.02f), 5, 5);
+            return g;
+        }
+
+        /// <summary>A brass arrowhead pointing down, lit along its top: the dropdown's opener.</summary>
+        public static Img BrassArrow(int w, int h)
+        {
+            var g = new Img(w, h);
+            for (int y = 0; y < h; y++)
+            {
+                int half = (w / 2) * (h - y) / h;
+                for (int x = w / 2 - half; x <= w / 2 + half && x < w; x++)
+                {
+                    bool edge = x == w / 2 - half || x == w / 2 + half || y == 0;
+                    g.Blend(x, y, edge ? BrassDark : y < 2 ? Hex.C("#fff1c4") : Materials.Brass);
+                }
+            }
+            return g;
+        }
+
+        /// <summary>A groove cut in a plank for a slider to ride in: wood rims, a dark channel (9-sliced at 5).</summary>
+        public static Img Groove(int w, int h)
+        {
+            var g = Materials.WoodPlate(w, h, false);
+            CutWell(g, 3, 3, w - 6, h - 6, Hex.C("#1a1008"));
             return g;
         }
 

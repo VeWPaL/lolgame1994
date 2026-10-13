@@ -30,6 +30,8 @@ namespace Depths.Unity
         LedgerHud _hud;
         bool _devOn;
         long _devKey = long.MinValue;
+        bool _recorded;   // the records take a run once, on the frame it ends
+        RunRecords.Result _rec;
         readonly TickClock _clock = new TickClock();
         int _respawnT;
         bool _demo;
@@ -77,6 +79,7 @@ namespace Depths.Unity
         void NewRun()
         {
             new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
+            _recorded = false;
             uint seed = (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
             {
@@ -208,10 +211,23 @@ namespace Depths.Unity
             _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : Time.unscaledDeltaTime);
             _hud.Refresh(_run, Time.unscaledDeltaTime);
             _hud.Overlays.SetPause(_paused && _run.state == "playing", _run);
-            _hud.Overlays.SetSummary(_run.state != "playing", _run);
+            if (_run.state != "playing" && !_recorded) { _recorded = true; _rec = RecordRun(); }
+            _hud.Overlays.SetSummary(_run.state != "playing", _run, _rec);
             _hud.Overlays.SetBanner(_run.floor, BannerAlpha(_bannerS));
             _hud.Overlays.SetWarning(HudOverlays.WarningAlpha(_run));
             UpdateDev();
+        }
+
+        // A real run's end goes into the records; the sandbox and the arena only read them.
+        RunRecords.Result RecordRun()
+        {
+            // the screenshot mode plays fixtures: it must never write into the player's real records
+            bool shot = Array.IndexOf(Environment.GetCommandLineArgs(), "-depthsShot") >= 0;
+            var records = new RunRecords(shot ? (ISettingsStore)new MemorySettingsStore() : new PlayerPrefsStore());
+            if (!RealRun) return new RunRecords.Result(records.DeepestFloor, records.BestRooms, false, false);
+            int visited = 0;
+            for (int i = 0; i < _run.dungeon.AllRooms.Count; i++) if (_run.dungeon.AllRooms[i].Visited) visited++;
+            return records.Record(_run.floor, visited);
         }
 
         const float BannerS = 3;
