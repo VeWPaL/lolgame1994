@@ -21,6 +21,10 @@ namespace Depths
         public double x, y, vx, vy, kvx, kvy;
         public double hp, maxHp;
         public double armor;   // fractional: armour absorbs a 1.8 shell from 2 and keeps 0.2, as in the game
+        /// <summary>The regenerating heart (C# only): drained after armour, before red; refills in a live fight once
+        /// regenHeartT (fight ticks since the last hit) reaches RegenDelay, and fully on a won fight.</summary>
+        public double regenHeart, regenHeartMax;
+        public int regenHeartT;
         /// <summary>
         /// Weapon cooldowns in ticks, and iframes in ticks.
         /// <para>
@@ -67,7 +71,7 @@ namespace Depths
         /// the running game: 1.122. The tick's terminal speed is this times (1 + MoveSpeedBonus),
         /// which is 1.4025 in an empty room and 1.6045 against a pack with the meter full.
         /// </summary>
-        public double speed = 1.122;
+        public double speed = 0.935 * Balance.PlayerMove;   // px per tick, fixed when the body is made
 
         /// <summary>
         /// The firing slow-motion multiplier, eased toward 1 every tick. Starts at 1 - full speed -
@@ -151,6 +155,7 @@ namespace Depths
         // --- the committed shot: fireCommittedShot reads and writes these (src/60-tick.js:28-35)
         public double castAim;
         public double cdMin, cdVar, shootCd;
+        public double cdCarry;   // off the JS rate: the cooldown's overrun when the cast began, less CastLag, owed to the next cooldown
         public double pspd, pr, dmg;
 
         // --- boss move cadence: StepBoss's bag pick and cooldown (src/60-tick.js:159-180)
@@ -198,6 +203,8 @@ namespace Depths
         /// </para>
         /// </summary>
         public List<Enemy>? shieldGuardFor;
+        /// <summary>The list <see cref="shieldGuardFor"/> borrows when set: the guard lists are rebuilt every tick, so this keeps that allocation-free.</summary>
+        internal List<Enemy>? guardBuf;
 
         // The fields the projectile phase reads and writes (src/60-tick.js tickProjectiles).
         public double r, armour = 1, mass = 1;
@@ -228,6 +235,10 @@ namespace Depths
         // the hook's resistance: which field last charged this body, how many hooks it has taken, how
         // long since it was last in one, and the power the current field acts with
         public int hookMark, hookStacks, hookCalm;
+        /// <summary>Hunter's Mark (placeholder, C# only): ticks left marked; a marked body takes MarkVuln x damage.</summary>
+        public int markT;
+        /// <summary>What a player hit is multiplied by: armour, and the mark while it lasts.</summary>
+        public double Vuln => markT > 0 ? armour * Balance.MarkVuln : armour;
         public double hookPower;
         public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
 
@@ -239,7 +250,7 @@ namespace Depths
             return new Enemy { sense = row.Sense ?? 0, close = row.Close ?? 0, far = row.Far ?? 0,
                                speed = (row.Base ?? 0) * Balance.TempoRate, cdMin = (row.CdMin ?? 0) / Balance.TempoRate,
                                cdVar = (row.CdVar ?? 0) / Balance.TempoRate, pspd = row.PShotSpeed ?? 0, pr = row.PShotRadius ?? 0,
-                               dmg = row.Dmg ?? 0, kind = kind, x = x, y = y, r = row.Radius, armour = row.Armour, mass = row.Mass,
+                               dmg = (row.Dmg ?? 0) * (Balance.JsReference ? Balance.JsShotDmg / Bodies.ShotDmg : 1), kind = kind, x = x, y = y, r = row.Radius, armour = row.Armour, mass = row.Mass,
                                hp = row.Hp, maxHp = row.Hp, walkSpeed = row.Walk ?? 0, runSpeed = row.Run ?? 0, curSpeed = row.Walk ?? 0, aggroTimer = kind == BodyKind.Boss ? 9999 : 0 };   // measured: every body has one; the boss starts committed
         }
 }
@@ -365,7 +376,6 @@ namespace Depths
         public string id = "";
         /// <summary>Charges for an <c>item</c> pickup.</summary>
         public int? charges;   // an item's charges as it lies here; null: the definition's own
-        public bool shown;     // revealed by Hunter's Mark
         /// <summary>Suppress re-collection until the player steps off. See the note above.</summary>
         public bool hold;
 

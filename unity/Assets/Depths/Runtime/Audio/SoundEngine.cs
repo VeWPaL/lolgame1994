@@ -37,14 +37,21 @@ namespace Depths.Unity.Audio
 
     /// <summary>
     /// The one call the game makes: <c>SoundEngine.Play("hit", pan)</c>. Voices are rendered once at
-    /// start by <see cref="Synth"/> and played through a fixed pool of AudioSources on the mixer's Sfx
-    /// group. Pitch jitter is per play, from a local stream, so sound never touches the game's RNG.
+    /// start by <see cref="Synth"/> (or loaded from <c>Resources/Sounds/&lt;name&gt;</c> when a sample
+    /// exists) and played through a fixed pool of AudioSources on the mixer's Sfx group. Pitch jitter is
+    /// per play, from a local stream, so sound never touches the game's RNG. It also owns the game's one
+    /// AudioListener (with the master compressor) and the music, and lives across scenes.
     /// </summary>
     public sealed class SoundEngine : MonoBehaviour
     {
         public const int MaxVoices = 12;   // the JS cap is 48 nodes, about 8-16 sounds
-        public AudioMixerGroup sfx;
+        public const string SampleFolder = "Sounds/";   // under any Resources folder
+        public AudioMixerGroup sfx, music;
         public static SoundEngine Instance { get; private set; }
+
+        /// <summary>A sample asset if there is one, else the synthesised voice: drop hit.wav in Resources/Sounds to replace "hit".</summary>
+        public static AudioClip Pick(string name, System.Func<string, AudioClip> loadSample, System.Func<AudioClip> synth) =>
+            loadSample(SampleFolder + name) ?? synth();
 
         readonly Dictionary<string, AudioClip> _clips = new Dictionary<string, AudioClip>();
         AudioSource[] _src;
@@ -56,12 +63,22 @@ namespace Depths.Unity.Audio
             if (Instance != null && Instance != this) { Destroy(gameObject); return; }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            // the scenes' cameras carry no listener: this is the one, so it survives scene loads (without
+            // it Unity plays nothing; the game was silent until 2026-10-07)
+            if (GetComponent<AudioListener>() == null) gameObject.AddComponent<AudioListener>();
+            gameObject.AddComponent<MasterBus>();
+            var mus = gameObject.AddComponent<MusicEngine>();
+            mus.music = music;
             foreach (var v in Voices.All.Values)
             {
-                var data = Synth.Render(v, v.Len + 0.02);
-                var clip = AudioClip.Create(v.Name, data.Length, 1, Synth.Rate, false);
-                clip.SetData(data, 0);
-                _clips[v.Name] = clip;
+                var voice = v;
+                _clips[v.Name] = Pick(v.Name, p => Resources.Load<AudioClip>(p), () =>
+                {
+                    var data = Synth.Render(voice, voice.Len + 0.02);
+                    var clip = AudioClip.Create(voice.Name, data.Length, 1, Synth.Rate, false);
+                    clip.SetData(data, 0);
+                    return clip;
+                });
             }
             _src = new AudioSource[MaxVoices];
             for (int i = 0; i < MaxVoices; i++)

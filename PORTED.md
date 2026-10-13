@@ -19,9 +19,9 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | C# | Mirrors | Rule |
 |---|---|---|
 | `Rng.cs` | `05-rng.js` — Mulberry32, the three streams, `floorSeed`, the base36 codec | A seed must reproduce the run it names, in both languages |
-| `Balance.cs` | `00-balance.js` tuning block + the depth ladder | Every constant. This is the file that drifts |
+| `Balance.cs` | `00-balance.js` tuning block + the depth ladder | Every constant, in seconds or per-second units (converted for `TickHz`; equal to the JS value at 210 Hz). This is the file that drifts |
 | `Hit.cs` | the player hit test in `60-tick.js` | Radius, offset, damage |
-| `Intercept.cs` | lunge and gun solutions in `40-combat.js` | Swerve deadzone/full are **functions of a room**, not constants |
+| `Aim.cs` | the gunner's spread in `60-tick.js` (`0.02 + SWERVE_AIM*player.swerve*reach`) | Swerve deadzone/full are **functions of a room**, not constants. Replaces `Intercept.cs` (2026-10-07), an older lunge/gun solver nothing called |
 | `Bodies.cs` / `Body.cs` | `30-enemies.js` body table, traits, per-area mix dials | Body stats and build-dependent traits |
 | `Frame.cs` | the camera and world frame in `70-view.js` | `RoomBounds` clamp; the oversized-room branch must be exercised |
 | `World.cs` | `20-world.js` — `Dir`, `RoomKind`, `Room`, `Map`, `Dungeon` | Signature must match byte for byte |
@@ -41,6 +41,21 @@ The HUD, the boss bar, the character sheet, Scatter recoil, the hook rework, the
 the view/presentation layer generally. They are cheapest to iterate in JavaScript and the port has no
 presentation layer to keep in sync. This is a decision, not an oversight — do not "fix" it by porting
 the view.
+
+## Two rates: the game at 60 Hz, the parity rows at 210 Hz
+
+The JavaScript ticks at 210 Hz and every row below was recorded there. Since 2026-10-06 the C# game
+ticks at 60 Hz (`Balance.TickHz`, default `GameHz`), with every time-based dial written once in
+seconds or per-second units and converted for the rate (`Sec`, `SecF`, `PerSec`, `Decay`, `Ease`,
+`Chance`, `KnockScale`). Parity is kept by running the rows at the JS rate, not by editing them:
+`csharp/Depths.Tests/TickRate.cs` sets `TickHz = JsHz` around every test in the assembly, and at 210
+each converted dial is bit-identical to the literal the rows were recorded with (`RateTests` pins the
+list). The bot's default matrix played with `--hz 210` matches the pre-switch build byte for byte.
+What changes at 60 Hz is only discrete-time error (a wait rounded to whole ticks, one step of travel),
+measured by `RateTests` and by the bot (STATUS has the wide-matrix comparison). These errors are
+corrected off the JS rate only, so 210 stays exact: held fire and the enemy and Warden cooldowns carry
+their overrun, and shells and body contact are cut into `Substeps` (4 at 60 Hz) so nothing steps over
+a hitbox.
 
 ## The parity tables are hand-transcribed, and that is the weak point
 

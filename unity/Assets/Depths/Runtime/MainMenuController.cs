@@ -9,7 +9,7 @@ using Depths.Unity.Audio;
 
 namespace Depths.Unity
 {
-    /// <summary>Start Game / Options / Quit, and the Options pages: key binds and volume.</summary>
+    /// <summary>Start Game / Options / Quit, and the Options pages: key binds, volume, gameplay.</summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class MainMenuController : MonoBehaviour
     {
@@ -23,13 +23,14 @@ namespace Depths.Unity
             ("Blink", "Blink"), ("Active", "Use active item"), ("Pause", "Pause"), ("Sheet", "Character sheet"), ("Controls", "Controls help"),
         };
 
-        VisualElement _main, _options, _controlsPage, _audioPage;
-        Button _tabControls, _tabAudio;
+        VisualElement _main, _options, _controlsPage, _audioPage, _gameplayPage;
+        Button _tabControls, _tabAudio, _tabGameplay;
         ScrollView _bindList;
         DropdownField _preset;
         Label _presetHint;
         Bindings _bindings;
         VolumeSettings _volume;
+        GameplaySettings _gameplay;
         InputActionRebindingExtensions.RebindingOperation _rebind;
 
         void OnEnable()
@@ -37,6 +38,7 @@ namespace Depths.Unity
             var store = new PlayerPrefsStore();
             _bindings = new Bindings(controls, store);
             _volume = new VolumeSettings(store);
+            _gameplay = new GameplaySettings(store);
             _volume.Changed += (c, v) => ApplyVolume();
             ApplyVolume();
 
@@ -45,8 +47,10 @@ namespace Depths.Unity
             _options = root.Q("optionsPanel");
             _controlsPage = root.Q("controlsPage");
             _audioPage = root.Q("audioPage");
+            _gameplayPage = root.Q("gameplayPage");
             _tabControls = root.Q<Button>("tabControls");
             _tabAudio = root.Q<Button>("tabAudio");
+            _tabGameplay = root.Q<Button>("tabGameplay");
             _bindList = root.Q<ScrollView>("bindList");
             _preset = root.Q<DropdownField>("preset");
             _presetHint = root.Q<Label>("presetHint");
@@ -57,6 +61,10 @@ namespace Depths.Unity
             root.Q<Button>("back").clicked += () => { SoundEngine.Play("pickup", 0, 0.7f); ShowView("menu"); };
             _tabControls.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("controls"); };
             _tabAudio.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("audio"); };
+            _tabGameplay.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("gameplay"); };
+            var curve = root.Q<Toggle>("curve");
+            curve.SetValueWithoutNotify(_gameplay.Curve);
+            curve.RegisterValueChangedCallback(e => { _gameplay.Curve = e.newValue; SoundEngine.Play("blink", 0, 0.6f); });
             root.Q<Button>("resetBinds").clicked += () => { _bindings.ApplyPreset(_bindings.Preset); RefreshBinds(); };
 
             var presets = Enum.GetValues(typeof(KeyPreset)).Cast<KeyPreset>().ToList();
@@ -97,7 +105,7 @@ namespace Depths.Unity
             else AudioListener.volume = _volume.Get(Channel.Master);
         }
 
-        /// <summary>"menu", "controls" or "audio". Public so the screenshot mode can open a page.</summary>
+        /// <summary>"menu", "controls", "audio" or "gameplay". Public so the screenshot mode can open a page.</summary>
         public void ShowView(string view)
         {
             bool menu = view == "menu";
@@ -105,8 +113,10 @@ namespace Depths.Unity
             _options.EnableInClassList("hidden", menu);
             _controlsPage.EnableInClassList("hidden", view != "controls");
             _audioPage.EnableInClassList("hidden", view != "audio");
+            _gameplayPage.EnableInClassList("hidden", view != "gameplay");
             _tabControls.EnableInClassList("selected", view == "controls");
             _tabAudio.EnableInClassList("selected", view == "audio");
+            _tabGameplay.EnableInClassList("selected", view == "gameplay");
             (menu ? _main.Q<Button>("start") : _options.Q<Button>("back")).Focus();
         }
 

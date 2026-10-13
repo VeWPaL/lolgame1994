@@ -30,3 +30,6 @@ playtest/
 bin~/
 obj~/
 unity/Build/
+
+# agent worktrees (Claude Code sub-agents); never committed
+.claude/worktrees/

@@ -8,7 +8,7 @@ using UnityEngine.UIElements;
 namespace Depths.Unity
 {
     /// <summary>
-    /// The game, on Depths.Core at the game's 210 Hz tick: a seeded run of rooms, doors, keys, waves,
+    /// The game, on Depths.Core at its tick rate (Balance.TickHz, 60 Hz): a seeded run of rooms, doors, keys, waves,
     /// the Warden and the way down (TickOrder.Update), all ported with parity. F1 swaps to the sandbox
     /// (one room of every enemy), B to a Warden arena. This class only reads input and draws.
     /// Esc: menu. 1-4: guns. R: a new run (or room).
@@ -18,20 +18,26 @@ namespace Depths.Unity
     {
         public InputActionAsset controls;
 
-        const double StepMs = 1000.0 / 210;
         static readonly Vector2 Offset = new Vector2(640 - 400, 360 - 355);   // room centre to screen centre
         static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
         RunState _run;
         InputAction _move, _cast, _blast, _blink, _active, _pause;
         int _lastShots, _lastHits, _lastKills;
-        double _lastHp;
+        double _lastHp, _lastDmg;
         RoomPainter _painter;
         Label _hud;
-        double _acc;
+        readonly TickClock _clock = new TickClock();
         int _respawnT;
         bool _demo;
-        int _demoT;
+        float _demoS;   // seconds of demo input so far: the demo is timed, not counted in frames
+        bool _demoBlast;   // held until a tick takes it: at 150 fps most frames step no tick
+
+        /// <summary>For the screenshot checks: the run, the clock's ticks, and a freeze that stops ticking without an
+        /// overlay (input between ticks - blink, Q, keys - still reaches the run).</summary>
+        public RunState Run => _run;
+        public long Ticks => _clock.Ticks;
+        public bool Frozen { get; set; }
 
         void Start()
         {
@@ -53,19 +59,24 @@ namespace Depths.Unity
             NewRun();
         }
 
-        void OnDestroy() { controls?.FindActionMap("Gameplay")?.Disable(); }
+        void OnDestroy()
+        {
+            controls?.FindActionMap("Gameplay")?.Disable();
+            Depths.Unity.Audio.MusicEngine.SetFight(false);   // back to the menu: the calm layer only
+        }
 
         bool _bossRoom, _sandbox;
         bool RealRun => !_sandbox && !_bossRoom;
 
         void NewRun()
         {
+            new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
             uint seed = (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
             {
                 _run = new RunState(new Rng(seed));
                 _run.Start(seed);
-                _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
+                _lastShots = _lastHits = _lastKills = 0; _lastHp = _run.player.hp; _lastDmg = 0;
                 return;
             }
             _run = new RunState(new Rng(seed)) { dungeon = Dungeon.FromSeed(new Rng(seed)) };
@@ -73,14 +84,17 @@ namespace Depths.Unity
             _run.readyT = 0; _run.fadeT = 0;
             var p = _run.player;
             p.x = p.lagX = Balance.MidX; p.y = p.lagY = Balance.MidY + 120;
-            p.hp = p.maxHp = 8;
-            _lastShots = _lastHits = _lastKills = 0; _lastHp = 8;
+            p.regenHeart = p.regenHeartMax = Balance.RegenHp;   // the same body a real run starts with
+            p.hp = p.maxHp = 8 - Balance.RegenHp;
+            _lastShots = _lastHits = _lastKills = 0; _lastHp = _run.player.hp; _lastDmg = 0;
             _run.enemies.Clear();
+            var arena = _run.CurrentRoom;
+            if (arena != null) arena.Fought = true;   // hand-placed waves are fights, so winning one refills the regen heart
             if (_bossRoom)
             {
                 // the Warden, spawned the way the game spawns it (its own draws, its kit)
                 var w = Spawn.Body(_run, BodyKind.Boss, Balance.MidX, Balance.RoomTop + 120);
-                w.noticeTimer = 90;
+                w.noticeTimer = Balance.Sec(0.43);
                 _run.enemies.Add(w);
                 return;
             }
@@ -94,7 +108,7 @@ namespace Depths.Unity
             for (int i = 0; i < 4; i++)
             {
                 var e = Enemy.Of(BodyKind.Brunch, Balance.RoomLeft + 300 + (i % 2) * 18, Balance.RoomTop + 200 + (i / 2) * 18);
-                e.packId = 1; e.packSlot = i; e.noticeTimer = 90;
+                e.packId = 1; e.packSlot = i; e.noticeTimer = Balance.Sec(0.43);
                 _run.enemies.Add(e);
             }
         }
@@ -104,13 +118,14 @@ namespace Depths.Unity
             double x = Balance.RoomLeft + 110 + k * 160, y = Balance.RoomTop + 90 + (k % 2) * 60;
             var e = Enemy.Of(DummyKinds[k % DummyKinds.Length], x, y);
             e.flank = k * 2.399963229728653;   // the game's golden-angle flank cursor
-            e.noticeTimer = 60 + k * 25;        // a beat before they move, as a spawn has
+            e.noticeTimer = Balance.Sec((60 + 25.0 * k) / Balance.JsHz);   // a beat before they move: 60 + 25k ticks at the JS rate
             e.shootCd = e.cdMin;                 // and before a ranged body's first cast
             _run.enemies.Add(e);
         }
 
         bool _paused;
-        int _bannerT, _lastFloor = 1;
+        float _bannerS;   // seconds the floor banner has left
+        int _lastFloor = 1;
 
         void Update()
         {
@@ -155,7 +170,7 @@ namespace Depths.Unity
             }
             Vector2 mv = _move.ReadValue<Vector2>();
             bool fire = _cast.IsPressed(), alt = _blast.IsPressed();
-            if (_demo) { DemoInput(ref mv, ref fire, ref aim); alt = _demoT == 20; }
+            if (_demo) DemoInput(ref mv, ref fire, ref alt, ref aim);
 
             // the blink is a key press, so it lands between ticks, as in the game
             if (_blink.WasPressedThisFrame() && TickOrder.TryBlink(_run, new Input(Math.Sign(mv.x), -Math.Sign(mv.y), aimX: aim.x, aimY: aim.y)))
@@ -165,11 +180,11 @@ namespace Depths.Unity
             if (_active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
                 Depths.Unity.Audio.SoundEngine.Play("pickup");
 
-            _acc += _paused ? 0 : Math.Min(Time.unscaledDeltaTime * 1000.0, 250.0);
-            while (_acc >= StepMs)
+            for (int n = _clock.Advance(Time.unscaledDeltaTime, _paused || Frozen); n > 0; n--)
             {
                 // keys are -1/0/1 per axis in the game, and screen y points down
                 var input = new Input(Math.Sign(mv.x), -Math.Sign(mv.y), fire: fire, alt: alt, aimX: aim.x, aimY: aim.y);
+                _demoBlast = false;
                 if (RealRun) TickOrder.Update(_run, input);   // gates, transitions, then player, shells, bodies, room
                 else if (_run.state == "playing")
                 {
@@ -178,22 +193,24 @@ namespace Depths.Unity
                     TickOrder.TickProjectiles(_run);
                     TickOrder.TickBodies(_run);
                     TickOrder.TickRoom(_run);
-                    if (_run.enemies.Count == 0 && ++_respawnT > 420) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); } }
+                    if (_run.enemies.Count == 0 && ++_respawnT > Balance.Sec(2)) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
                 }
-                _acc -= StepMs;
             }
             PlayEvents();
-            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerT = 180; Depths.Unity.Audio.SoundEngine.Play("door"); }
-            if (_bannerT > 0) _bannerT--;
+            Depths.Unity.Audio.MusicEngine.SetArea(AreaRules.AreaForFloor(_run.floor));
+            Depths.Unity.Audio.MusicEngine.SetFight(_run.state == "playing" && !_paused && _run.enemies.Count > 0);
+            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = 3; Depths.Unity.Audio.SoundEngine.Play("door"); }
+            if (_bannerS > 0) _bannerS -= Time.unscaledDeltaTime;
             _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"
-                : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / 210 / 60) + ":" + (_run.ticks / 210 % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
-                : _bannerT > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
+                : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / Balance.TickHz / 60) + ":" + (_run.ticks / Balance.TickHz % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
+                : _bannerS > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
             var act = Items.ActiveItem(_run);
             string build = (act != null ? "   Q: " + Items.Def(act.Id).Name + (act.Charges == int.MaxValue ? "" : " x" + act.Charges) : "") +
                            (_run.loadout.Count > (act != null ? 1 : 0) ? "   carrying: " + string.Join(", ", _run.loadout.Where(s => s.Slot != Items.ActiveSlot).Select(s => Items.Def(s.Id).Name)) : "");
             string stats = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
+                           (pl.regenHeartMax > 0 ? " + regen " + pl.regenHeart.ToString("0") + "/" + pl.regenHeartMax.ToString("0") : "") +
                            "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   kills " + _run.kills + build;
             if (RealRun)
             {
@@ -201,7 +218,7 @@ namespace Depths.Unity
                 _hud.text = stats + "   " + (pl.hasSilver ? "[silver key] " : "") + (pl.hasGold ? "[gold key] " : "") +
                             (_run.state == "playing" ? "" : "\nYOU DIED on floor " + _run.floor + " - R for a new run") +
                             "\nFloor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room: " + (room != null ? room.Type.ToString() : "?") +
-                            "   seed " + Rng.Encode(_run.rootSeed) + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                            "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
                             "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc pause";
             }
             else
@@ -217,19 +234,21 @@ namespace Depths.Unity
             if (_run.shots > _lastShots) Depths.Unity.Audio.SoundEngine.Play("shot");
             if (_run.hits > _lastHits) Depths.Unity.Audio.SoundEngine.Play("hit");
             if (_run.kills > _lastKills) Depths.Unity.Audio.SoundEngine.Play("kill");
-            if (p.hp + p.armor < _lastHp) Depths.Unity.Audio.SoundEngine.Play("hurt");
+            // dmgTaken grows on every landed hit, so a hit is heard even on the tick the regen heart refills
+            if (_run.dmgTaken > _lastDmg) Depths.Unity.Audio.SoundEngine.Play("hurt");
             if (_run.state != "playing" && _lastHp > 0 && p.hp <= 0) Depths.Unity.Audio.SoundEngine.Play("over");
-            _lastShots = _run.shots; _lastHits = _run.hits; _lastKills = _run.kills; _lastHp = p.hp + p.armor;
+            _lastShots = _run.shots; _lastHits = _run.hits; _lastKills = _run.kills; _lastHp = p.hp; _lastDmg = _run.dmgTaken;
         }
 
         // Screenshot mode: strafe and shoot at the nearest target, so a still frame shows the sim running.
-        void DemoInput(ref Vector2 mv, ref bool fire, ref Vector2 aim)
+        void DemoInput(ref Vector2 mv, ref bool fire, ref bool alt, ref Vector2 aim)
         {
-            _demoT++;
+            float before = _demoS;
+            _demoS += Time.unscaledDeltaTime;
             var p = _run.player;
             var t = _run.enemies.OrderBy(e => (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y)).FirstOrDefault();
             if (t != null) aim = new Vector2((float)t.x, (float)t.y);
-            mv = new Vector2((_demoT / 40) % 2 == 0 ? 1 : -1, 0);
+            mv = new Vector2((int)(_demoS / 0.667f) % 2 == 0 ? 1 : -1, 0);   // turn every 2/3 s
             var room = _run.CurrentRoom;
             if (RealRun && t == null && room != null)
             {
@@ -244,7 +263,9 @@ namespace Depths.Unity
                 }
             }
             fire = t != null;
-            if (_demoT == 30) p.weaponIdx = 1;
+            _demoBlast |= before < 0.333f && _demoS >= 0.333f;   // one blast, a third of a second in
+            alt = _demoBlast;
+            if (before < 0.5f && _demoS >= 0.5f) p.weaponIdx = 1;
         }
     }
 
@@ -366,7 +387,13 @@ namespace Depths.Unity
             DrawMinimap(g, run);
 
             foreach (var pk in run.pickups)
-                Disc(g, W(pk.x, pk.y), (float)pk.r * 0.7f, PickupColor(pk.kind));
+            {
+                // placeholder sprites: hearts red, armour gray, a half pickup is the left half
+                bool half = pk.kind == "halfheart" || pk.kind == "halfarmor";
+                if (pk.kind == "heart" || pk.kind == "halfheart") Heart(g, W(pk.x, pk.y), (float)pk.r, HeartRed, half);
+                else if (pk.kind == "armor" || pk.kind == "halfarmor") Heart(g, W(pk.x, pk.y), (float)pk.r, ArmourGray, half);
+                else Disc(g, W(pk.x, pk.y), (float)pk.r * 0.7f, PickupColor(pk.kind));
+            }
 
             foreach (var e in run.enemies)
             {
@@ -406,8 +433,45 @@ namespace Depths.Unity
 
             var pl = run.player;
             if (run.roomFade > 0.01) Rect(g, a - new Vector2(6, 6), b + new Vector2(6, 6), new Color(0.04f, 0.05f, 0.07f, (float)run.roomFade));
-            bool flicker = pl.iframes > 0 && (pl.iframes / 14) % 2 == 0;
+            bool flicker = pl.iframes > 0 && (pl.iframes / Math.Max(1, Balance.Sec(0.067))) % 2 == 0;   // IFRAME_FLICKER
             Disc(g, W(pl.x, pl.y), (float)pl.r, flicker ? new Color(1, 1, 1, 0.5f) : PlayerC);
+            DrawHearts(g, pl);
+        }
+
+        // pickups share the row's colours (HeartRow)
+        static readonly Color HeartRed = HeartRow.Red, ArmourGray = HeartRow.Armour;
+
+        // a heart of half-width s centred on c: two lobes and a point; half = the left half only
+        static void Heart(Painter2D g, Vector2 c, float s, Color col, bool half = false)
+        {
+            float ly = c.y - s * 0.3f, r = s * 0.5f;
+            Disc(g, new Vector2(c.x - r, ly), r, col);
+            g.fillColor = col;
+            g.BeginPath();
+            g.MoveTo(new Vector2(c.x - s, ly)); g.LineTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x, c.y + s));
+            g.ClosePath(); g.Fill();
+            if (half) return;
+            Disc(g, new Vector2(c.x + r, ly), r, col);
+            g.BeginPath();
+            g.MoveTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x + s, ly)); g.LineTo(new Vector2(c.x, c.y + s));
+            g.ClosePath(); g.Fill();
+        }
+
+        /// <summary>The first heart's centre in panel units, just above the room's top-left corner.</summary>
+        public static Vector2 FirstHeart => W(Balance.RoomLeft, Balance.RoomTop) + new Vector2(HeartRow.Size, -34);
+
+        readonly System.Collections.Generic.List<HeartSlot> _row = new System.Collections.Generic.List<HeartSlot>();   // reused: no per-frame allocation
+
+        // the health row above the room; the regenerating heart is rose-violet, the red's family a
+        // step toward purple, so it reads as a different kind of heart without shouting
+        void DrawHearts(Painter2D g, Player pl)
+        {
+            foreach (var h in HeartRow.Layout(pl, FirstHeart, _row))
+            {
+                var unlit = HeartRow.Unlit(h.Kind);
+                if (unlit.HasValue) Heart(g, h.Centre, HeartRow.Size, unlit.Value);
+                if (h.Fill != HeartFill.Empty) Heart(g, h.Centre, HeartRow.Size, HeartRow.Lit(h.Kind), h.Fill == HeartFill.Half);
+            }
         }
     }
 }

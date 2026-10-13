@@ -108,14 +108,16 @@ namespace Depths
             dungeon = Dungeon.FromSeed(rng);
             planner = new WavePlanner(rng);
             curX = Map.Start; curY = Map.Start;
-            player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY, hp = 8, maxHp = 8 };
+            int regen = Balance.JsReference ? 0 : Balance.RegenHp;   // the last heart regenerates; the JS has none
+            player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY,
+                                  hp = 8 - regen, maxHp = 8 - regen, regenHeart = regen, regenHeartMax = regen };
             enemies.Clear(); pickups.Clear(); projectiles.Clear(); hookFields.Clear();
             loadout.Clear(); stats.Reset();   // Items.reset: a new run starts from nothing
             floor = 1; floorTicks = 0; ticks = 0; kills = 0; hits = 0; shots = 0; dmgTaken = 0; secret = false;
             blinkCharges = 2; blinkGrace = 0; graceSpent = false; blinkRestoreT = 0;
             flankCursor = 0; bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;
             trans = null; readyT = 0; bossWarnT = 0; bossWarned = false;
-            roomFade = 1; fadeTicks = Balance.Sec(0.4); fadeT = fadeTicks;
+            roomFade = 1; fadeTicks = Balance.FadeStart; fadeT = fadeTicks;
             state = "playing";
         }
 
@@ -181,7 +183,7 @@ namespace Depths
             transients = new List<Pickup>();
             floor = 1;
             state = "start";
-            fadeTicks = Balance.Sec(0.4);   // JS fadeTicks=sec(0.4), src/50-run.js:109
+            fadeTicks = Balance.FadeStart;
         }
     
         /// <summary>
@@ -236,8 +238,8 @@ namespace Depths
         /// <summary>Rooms entered on this floor. Reset by <see cref="Descend"/>.</summary>
         public int roomsThisFloor;
 
-        /// <summary>Ticks for the descent fade. Read out of the running game: 189.</summary>
-        public const int FadeDescend = 189;
+        /// <summary>Ticks for the descent fade: 0.9s (189 at the JS rate).</summary>
+        public static int FadeDescend => Balance.Sec(0.9);
 
         /// <summary>
         /// Goes down a floor. Ported from the original's <c>descend()</c>, with every value below
@@ -258,7 +260,7 @@ namespace Depths
         /// <item>the player, to the room centre (400, 355) with the lagged hitbox moved WITH it -
         /// leaving lag behind would make the gunners aim at where the player was a floor ago</item>
         /// <item>all velocity and knockback, to zero</item>
-        /// <item>the blink: charges back to 2, regen to 0, grace to 0</item>
+        /// <item>the blink: charges back to 2, blinkRegen to 0, grace to 0</item>
         /// <item>every per-floor flag: boss and item unlocked, secret found, boss warned, the
         /// transition, the armed door and its timer</item>
         /// <item>the shells in flight - a projectile from the old floor must not arrive in the new
@@ -303,27 +305,8 @@ namespace Depths
             projectiles.Clear();
             transients.Clear();
 
-            /* PICKUPS AND BODIES BELONG TO THE ROOM, SO A DESCENT DOES NOT CLEAR THEM.
-
-               This is the second time this line has been written in this port, and the first version
-               was wrong - which is worth recording because both versions were reasonable.
-
-               In the JavaScript a pickup lives on the ROOM (`r.pickups`), so descending builds a new
-               dungeon and the old room keeps its contents while the player's cursor lands in a new
-               room that has none. Measured: an exit portal and a heart on floor 1, then a descent -
-               the old room still holds 2 pickups, and the new start room holds 0.
-
-               The first version of this port read that as "descend must clear the list" and added
-               `pickups.Clear()`, on the reasoning that this port keeps the current room's pickups on
-               the RUN rather than on the ROOM and so something has to do the job `rooms[key()]` does
-               for free. A test caught it immediately. The reasoning was sound and the conclusion was
-               wrong: clearing is not what makes a new room empty, REPLACING THE ROOM is, and a
-               descent that clears the run's list is clearing the OLD room's contents as a side effect
-               of arriving somewhere new.
-
-               So nothing is cleared here. `enterRoom` - which is where the original actually empties a
-               room - is the port's remaining gap on this path, and it is named rather than papered
-               over, because the moment it lands it has to do the clearing instead. */
+            // The old room keeps its pickups and bodies (stashed above, as the JS keeps r.pickups); the
+            // run's lists were then cleared because they now stand for the new start room, which is empty.
 
             trans = null;
             readyT = 0;

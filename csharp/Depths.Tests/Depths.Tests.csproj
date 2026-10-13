@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Depths.Core\Depths.Core.csproj" />
+    <ProjectReference Include="..\Depths.Playtest\Depths.Playtest.csproj" />
   </ItemGroup>
 
 </Project>

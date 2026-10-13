@@ -117,28 +117,28 @@ namespace Depths.Tests
             Assert.That(big.W, Is.EqualTo(1680));
 
             // 700px in the standard room: past the top (175 + 385 = 560), so fully open.
-            Assert.That(InterceptSolver.SwerveReach(700, std), Is.EqualTo(1.0).Within(1e-9),
+            Assert.That(Aim.SwerveReach(700, std), Is.EqualTo(1.0).Within(1e-9),
                 "700px is past the top of a 700-wide room's ramp, which ends at 560");
 
             // the SAME 700px in a big room: 280 of the way up a 924px ramp, so 280/924.
-            Assert.That(InterceptSolver.SwerveReach(700, big), Is.EqualTo(280.0 / 924.0).Within(1e-12),
+            Assert.That(Aim.SwerveReach(700, big), Is.EqualTo(280.0 / 924.0).Within(1e-12),
                 "read from the rule: (700 - 420) / (1344 - 420)");
 
             // and the deadzone is still real: 400px is inside a big room's 420px deadzone, so nothing.
-            Assert.That(InterceptSolver.SwerveReach(400, big), Is.EqualTo(0.0).Within(1e-12),
+            Assert.That(Aim.SwerveReach(400, big), Is.EqualTo(0.0).Within(1e-12),
                 "400px is inside a 1680-wide room's deadzone, so the allowance must be nothing");
             // ...while the same 400px is 58% of the way up the standard room's ramp, which is the
             // asymmetry the whole room-scaling rule exists to produce.
-            Assert.That(InterceptSolver.SwerveReach(400, std), Is.EqualTo(225.0 / 385.0).Within(1e-12),
+            Assert.That(Aim.SwerveReach(400, std), Is.EqualTo(225.0 / 385.0).Within(1e-12),
                 "(400 - 175) / (560 - 175)");
 
             // THE PROPERTY: the ramp can never saturate inside the room it is scaled to. Under the
             // old fixed 130px ramp, every room more than 430px wide had a stretch beyond which
             // 'further is worse' stopped being expressible - which is the bug this whole area is
             // about. Both rooms must still be opening at four fifths of their own width.
-            Assert.That(InterceptSolver.SwerveReach(std.W * 0.5, std), Is.LessThan(1.0),
+            Assert.That(Aim.SwerveReach(std.W * 0.5, std), Is.LessThan(1.0),
                 "the standard room's ramp saturates before its own halfway mark");
-            Assert.That(InterceptSolver.SwerveReach(big.W * 0.5, big), Is.LessThan(1.0),
+            Assert.That(Aim.SwerveReach(big.W * 0.5, big), Is.LessThan(1.0),
                 "the big room's ramp saturates before its own halfway mark, so distance stops mattering");
         }
 
@@ -202,113 +202,6 @@ namespace Depths.Tests
             Assert.That(Balance.PlayerHitR + 7, Is.EqualTo(17));
         }
 
-        // ------------------------------------------------------------- the intercept
-
-        [Test]
-        public void ASettledPlayerIsBelievedInFull()
-        {
-            // A stationary player, read with no swerve: the solution is the plain bearing.
-            var r = InterceptSolver.Lunge(0, -140, 0, 0, 0, 0, 0);
-            Assert.That(r.Confidence, Is.EqualTo(1.0));
-            Assert.That(r.Dx, Is.EqualTo(0.0).Within(1e-12));
-            Assert.That(r.Dy, Is.EqualTo(-1.0).Within(1e-12));
-            Assert.That(r.Dist, Is.EqualTo(140.0).Within(1e-9));
-        }
-
-        [Test]
-        public void AThrashingPlayerIsBelievedNotAtAll()
-        {
-            // Max swerve drops the lunge's confidence to the floor, LUNGE_CONF_MIN.
-            var settled = InterceptSolver.Lunge(0, -140, 1.122, 0, 0.0, 0, 0);
-            var thrashing = InterceptSolver.Lunge(0, -140, 1.122, 0, 1.0, 0, 0);
-
-            Assert.That(thrashing.Confidence, Is.EqualTo(Balance.LungeConfMin).Within(1e-12));
-            Assert.That(thrashing.Dist, Is.LessThan(settled.Dist),
-                "a player who will not hold still should get a shorter solution, not the same one");
-
-            // The consequence, stated as the mechanic: baiting is a DOWNGRADE, not an escape. The
-            // attacker still commits - it just commits to less.
-            Assert.That(thrashing.Dist, Is.GreaterThan(0),
-                "a thrashing player made the lunge evaporate entirely, which makes baiting free");
-        }
-
-        [Test]
-        public void TheGunnerLeadsAndTheLungeLeadsTheSameWay()
-        {
-            // One signal, two consumers. The gunner applies no confidence floor, so at full swerve it
-            // stops leading entirely - and that is the point: a player reversing every half second
-            // has travelled very nearly nowhere by the time a close shell arrives, so aiming at where
-            // they ARE and aiming at where they are GOING are nearly the same shot.
-            var g0 = InterceptSolver.Gun(400, 355, 1.122, 0, 0.0, 400, 155, 2.2);
-            var g1 = InterceptSolver.Gun(400, 355, 1.122, 0, 1.0, 400, 155, 2.2);
-
-            Assert.That(g0.Confidence, Is.EqualTo(1.0));
-            Assert.That(g1.Confidence, Is.EqualTo(0.0));
-            Assert.That(g1.Dist, Is.LessThan(g0.Dist),
-                "a fully thrashing player should collapse the gunner's lead to nothing");
-        }
-
-        [Test]
-        public void TheGunnerAimsAtTheHitboxAndNotAtTheSprite()
-        {
-            // Same shot, two targets ten pixels apart. The gunner must use the hitbox, because that is
-            // the circle the collision test uses - a shot aimed at the drawn origin passes over the
-            // player's head with a hitbox's width to spare, every single time.
-            double lagX = 400, lagY = 355, sx = 400, sy = 155;
-            var g = InterceptSolver.Gun(lagX, lagY, 0, 0, 0, sx, sy, 2.2);
-
-            // With no horizontal lead the solution is straight down, and the arrival point must be
-            // 200 + PlayerHitDy below the shooter.
-            Assert.That(g.Dx, Is.EqualTo(0.0).Within(1e-12));
-            Assert.That(g.Dy, Is.EqualTo(1.0).Within(1e-12));
-            Assert.That(g.Dist, Is.EqualTo(200 + Balance.PlayerHitDy).Within(1e-9),
-                "the gunner's solution must land on the hitbox centre, not the sprite origin");
-        }
-
-        [Test]
-        public void TheGunnerCountsItsOwnCast()
-        {
-            // The cast is a quarter of a second of visible muzzle light during which the player keeps
-            // moving. If the solve does not count it, the prediction is made against a target that has
-            // already left - which is precisely the bug that made counterstrafing free in front of a
-            // gunner. The check: the arrival time must be at least the cast.
-            var g = InterceptSolver.Gun(400, 355, 1.122, 0, 0, 400, 155, 2.2);
-            Assert.That(g.Ticks, Is.GreaterThanOrEqualTo(Balance.CastTime),
-                "the gunner's solution is shorter than its own cast, so it is aimed at the past");
-        }
-
-        [Test]
-        public void FourteenIterationsIsWhatMakesTheGunnersSolutionConverge()
-        {
-            // The reason GunIter is 14 and not 3. Convergence is set by how much slower the target is
-            // than the shell: each pass cuts the remaining error by roughly (player speed / shell
-            // speed), which here is about 0.55. Three passes therefore leave about 1/16 of the error.
-            //
-            // Measured, not asserted from a comment: solve at both iteration counts and look at how
-            // far apart they are.
-            double lagX = 400, lagY = 355, tvx = 1.122, sx = 400, sy = 155, pspd = 2.2;
-
-            var converged = InterceptSolver.Gun(lagX, lagY, tvx, 0, 0, sx, sy, pspd);
-
-            // A deliberately under-converged solve, three passes, same constants.
-            double conf = 1.0, ax = lagX - sx, ay = lagY + Balance.PlayerHitDy - sy, need = 0;
-            for (int k = 0; k < 3; k++)
-            {
-                need = Balance.CastTime + Math.Sqrt(ax * ax + ay * ay) / pspd;
-                ax = lagX + tvx * conf * need - sx;
-                ay = lagY + Balance.PlayerHitDy - sy;
-            }
-            double three = Math.Sqrt(ax * ax + ay * ay);
-
-            double missThree = Math.Abs(three - converged.Dist);
-            double missAtArrival = tvx * Math.Abs(need - converged.Ticks);
-
-            Assert.That(missAtArrival, Is.GreaterThan(10.0),
-                "three passes and fourteen passes agree to within " + missAtArrival.ToString("F2") +
-                "px of player travel, so the iteration count is not load-bearing and the comment " +
-                "claiming thirty pixels is wrong");
-        }
-
         [Test]
         public void TheSpreadIsAFloorPlusADistanceRamp()
         {
@@ -329,31 +222,31 @@ namespace Depths.Tests
 
             // 200px is inside the deadzone, so a reversing player gets the floor and nothing more.
             Assert.That(dz, Is.EqualTo(175));
-            Assert.That(InterceptSolver.GunSpread(1.0, 200), Is.EqualTo(0.03948051948051948).Within(1e-15),
+            Assert.That(Aim.GunSpread(1.0, 200), Is.EqualTo(0.03948051948051948).Within(1e-15),
                 "read from the browser: 25/385 of the ramp is open at 200px, so 0.02 + 0.30*0.0649");
 
             // and the ramp, sampled across its whole width rather than at one lucky distance
-            Assert.That(InterceptSolver.GunSpread(1.0, 300), Is.EqualTo(0.1174025974025974).Within(1e-15),
+            Assert.That(Aim.GunSpread(1.0, 300), Is.EqualTo(0.1174025974025974).Within(1e-15),
                 "read from the browser at 300px");
-            Assert.That(InterceptSolver.GunSpread(1.0, 350), Is.EqualTo(0.15636363636363634).Within(1e-15),
+            Assert.That(Aim.GunSpread(1.0, 350), Is.EqualTo(0.15636363636363634).Within(1e-15),
                 "read from the browser at 350px");
-            Assert.That(InterceptSolver.GunSpread(1.0, 450), Is.EqualTo(0.23428571428571426).Within(1e-15),
+            Assert.That(Aim.GunSpread(1.0, 450), Is.EqualTo(0.23428571428571426).Within(1e-15),
                 "read from the browser at 450px");
-            Assert.That(InterceptSolver.GunSpread(1.0, 500), Is.EqualTo(0.27324675324675324).Within(1e-15),
+            Assert.That(Aim.GunSpread(1.0, 500), Is.EqualTo(0.27324675324675324).Within(1e-15),
                 "read from the browser at 500px");
 
             // and the top of the ramp, which in the drifted port was 430 and is now 560
             Assert.That(full, Is.EqualTo(560));
-            Assert.That(InterceptSolver.GunSpread(1.0, 560), Is.EqualTo(0.32).Within(1e-12),
+            Assert.That(Aim.GunSpread(1.0, 560), Is.EqualTo(0.32).Within(1e-12),
                 "read from the browser: 0.02 + 0.30, the ramp fully open at 560px");
             // Past the full-spread distance it is the whole allowance.
-            Assert.That(InterceptSolver.GunSpread(1.0, 700), Is.EqualTo(0.32).Within(1e-9));
+            Assert.That(Aim.GunSpread(1.0, 700), Is.EqualTo(0.32).Within(1e-9));
 
             // And the ramp is monotonic, which is the whole claim about distance.
             double prev = -1;
             for (int d = 0; d <= 800; d += 20)
             {
-                double s = InterceptSolver.GunSpread(1.0, d);
+                double s = Aim.GunSpread(1.0, d);
                 Assert.That(s, Is.GreaterThanOrEqualTo(prev), "the spread fell at " + d + "px");
                 prev = s;
             }

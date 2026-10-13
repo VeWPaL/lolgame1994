@@ -437,7 +437,8 @@ function tickProjectiles(){
 }
 
 /* WHERE A GUARDING PACK FORMS ITS WALL, by playtest variant (VARIANT.brunch). null = not guarding:
-   the pack chases. A is the reference: the wall stays on its target wherever the player is. */
+   the pack chases. A+ is the game; A (the wall stays on its target wherever the player is) and B
+   are kept for comparison playtests. */
 function brunchGuardAnchor(tgt){
   const v=VARIANT.brunch;
   if(v==='A') return tgt;
