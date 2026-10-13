@@ -59,12 +59,21 @@ namespace Depths.Unity.Art
         }
 
         /// <summary>A solid rectangle, from the atlas's white texel so it stays in the same batch.</summary>
-        public void Rect(float x, float y, float w, float h, Color32 c)
+        public void Rect(float x, float y, float w, float h, Color32 c) => Sprite(SpriteSet.Atlas.Texture, SpriteSet.WhiteTexel, x, y, w, h, c);
+
+        /// <summary>A stroked circle as a polygon of thin quads, so rings stay in the atlas batch
+        /// (a Painter2D stroke between sprites would split it into another mesh each time).</summary>
+        public void Ring(float cx, float cy, float r, float width, Color32 c)
         {
-            var atlas = SpriteSet.Atlas;
-            var r = atlas[SpriteSet.White];
-            float u = (r.U0 + r.U1) / 2, v = (r.V0 + r.V1) / 2;
-            Sprite(atlas.Texture, new Region(1, 1, u, v, u, v), x, y, w, h, c);
+            if (c.a == 0 || r <= 0) return;
+            int n = Mathf.Clamp(Mathf.CeilToInt(r * 0.8f), 10, 72);
+            float step = 2 * Mathf.PI / n, chord = 2 * r * Mathf.Sin(step / 2) + 0.6f;   // a hair long, so segments meet
+            var tex = SpriteSet.Atlas.Texture; var white = SpriteSet.WhiteTexel;
+            for (int i = 0; i < n; i++)
+            {
+                float a = i * step, px = cx + Mathf.Cos(a) * r, py = cy + Mathf.Sin(a) * r;
+                Rotated(tex, white, new Vector2(px, py), -chord / 2, -width / 2, chord, width, a + Mathf.PI / 2 + step / 2, c);
+            }
         }
 
         static Vertex V(float x, float y, float u, float v, Color32 c) =>

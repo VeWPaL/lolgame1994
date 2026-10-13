@@ -276,7 +276,14 @@ namespace Depths.Unity
             float before = _demoS;
             _demoS += _frameS;
             var p = _run.player;
-            var t = _run.enemies.Where(e => !e.buried).OrderBy(e => (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y)).FirstOrDefault();
+            Enemy t = null;   // the nearest body that can be shot; a plain loop, so the measured demo allocates nothing
+            double best = double.PositiveInfinity;
+            foreach (var e in _run.enemies)
+            {
+                if (e.buried) continue;
+                double d = (e.x - p.x) * (e.x - p.x) + (e.y - p.y) * (e.y - p.y);
+                if (d < best) { best = d; t = e; }
+            }
             if (t != null) aim = new Vector2((float)t.x, (float)t.y);
             mv = new Vector2((int)(_demoS / 0.667f) % 2 == 0 ? 1 : -1, 0);   // turn every 2/3 s
             var room = _run.CurrentRoom;
@@ -312,9 +319,6 @@ namespace Depths.Unity
                 _overlay.style.display = string.IsNullOrEmpty(value) ? DisplayStyle.None : DisplayStyle.Flex;
             }
         }
-        static readonly Color Floor = new Color32(20, 23, 32, 255), Wall = new Color32(122, 86, 50, 255),
-            PlayerC = new Color32(199, 155, 255, 255), Hostile = new Color32(255, 77, 77, 255);
-
         public RoomPainter(Func<RunState> run)
         {
             _run = run;
@@ -330,34 +334,7 @@ namespace Depths.Unity
             Add(_overlay);
         }
 
-        static Vector2 W(double x, double y) => new Vector2((float)x + 240, (float)y + 5);
-
-        static Color BodyColor(BodyKind k)
-        {
-            switch (k)
-            {
-                case BodyKind.Lunger: return new Color32(214, 120, 80, 255);
-                case BodyKind.Brunch: return new Color32(230, 200, 90, 255);
-                case BodyKind.Shooter: return new Color32(220, 80, 90, 255);
-                case BodyKind.Gunner: return new Color32(240, 160, 60, 255);
-                default: return new Color32(180, 60, 60, 255);
-            }
-        }
-
-        static Color PickupColor(string kind)
-        {
-            switch (kind)
-            {
-                case "heart": return new Color32(230, 70, 90, 255);
-                case "armor": return new Color32(120, 170, 230, 255);
-                case "key": return new Color32(205, 210, 220, 255);
-                case "goldkey": return new Color32(235, 195, 70, 255);
-                case "exit": return new Color32(160, 110, 255, 255);
-                case "weapon": return new Color32(90, 200, 255, 255);
-                case "item": return new Color32(240, 200, 120, 255);
-                default: return new Color32(80, 220, 190, 255);
-            }
-        }
+        static Vector2 W(double x, double y) => WorldView.ToPanel(x, y);
 
         // the floor so far: rooms walked, the current one bright, top-right of the screen
         static void DrawMinimap(Painter2D g, RunState run)

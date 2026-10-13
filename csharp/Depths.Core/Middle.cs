@@ -10,7 +10,8 @@ namespace Depths
     /// </summary>
     public static class Middle
     {
-        public static bool Is(BodyKind k) => k >= BodyKind.Splitter;
+        // named, not "k >= Splitter": a kind appended later must not land in Release by enum order
+        public static bool Is(BodyKind k) => k == BodyKind.Splitter || k == BodyKind.Mortar || k == BodyKind.Burrower || k == BodyKind.Sprayer || k == BodyKind.Egg;
 
         /// <summary>Never moved by the hook's yank or its field: the egg is a fixture the room is built around.</summary>
         public static bool Anchored(BodyKind k) => k == BodyKind.Egg;

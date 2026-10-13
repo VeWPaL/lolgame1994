@@ -195,6 +195,41 @@ namespace Depths.Unity.Tests
             Assert.That(tex.filterMode, Is.EqualTo(FilterMode.Point), "pixel art is never smoothed");
         }
 
+        static bool SameRegion(Region a, Region b) => a.W == b.W && a.H == b.H && a.U0 == b.U0 && a.V0 == b.V0 && a.U1 == b.U1 && a.V1 == b.V1;
+
+        [Test]
+        public void TheResolvedRegionsAreTheNamedSprites()
+        {
+            var a = SpriteSet.Atlas;
+            foreach (BodyKind k in System.Enum.GetValues(typeof(BodyKind)))
+                for (int f = 0; f < 4; f++)
+                    Assert.That(SameRegion(SpriteSet.BodyR(k, f, true), a[SpriteSet.Body(k, f, true)]), k + " " + f);
+            Assert.That(SameRegion(SpriteSet.HeartR(Sprites.HeartScheme.Regen, 3, 0.5f), a[SpriteSet.Heart(Sprites.HeartScheme.Regen, 3, 0.5f)]));
+            Assert.That(SameRegion(SpriteSet.KeyR(true, 2, true), a[SpriteSet.Key(true, 2, true)]));
+            Assert.That(SameRegion(SpriteSet.ItemR("tin_cup", 22), a[SpriteSet.Item("tin_cup", 22)]));
+            Assert.That(SameRegion(SpriteSet.ItemR("not_an_item", 26), a[SpriteSet.Item("not_an_item", 26)]), "an unknown item falls back the same way");
+            Assert.That(SameRegion(SpriteSet.GunR(2), a[SpriteSet.Icon("2")]));
+            Assert.That(SameRegion(SpriteSet.AltR(true), a[SpriteSet.Icon("hook")]));
+        }
+
+        [Test]
+        public void ADrawsWorthOfSpriteLookupsAllocatesNothing()
+        {
+            SpriteSet.BodyR(BodyKind.Lunger, 0, false);   // warm: builds the atlas once
+            long before = System.GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++)
+            {
+                SpriteSet.BodyR((BodyKind)(i % 10), i % 4, (i & 1) == 0);
+                SpriteSet.PlayerR(i % 4, false);
+                SpriteSet.HeartR(Sprites.HeartScheme.Red, 2, (i % 17) / 16f);
+                SpriteSet.KeyR(i % 2 == 0, 3, false);
+                SpriteSet.ItemR("lucky_coin", 26);
+                SpriteSet.GunR(i % 4);
+                _ = SpriteSet.WhiteTexel;
+            }
+            Assert.That(System.GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        }
+
         [Test]
         public void SpritesAreDrawnAtTheJsPixelSizes()
         {

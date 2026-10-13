@@ -12,6 +12,65 @@ namespace Depths.Unity.Art
         static Atlas _atlas;
         public static Atlas Atlas => _atlas ??= Atlas.Build(All());
 
+        // ---- regions resolved once, so a frame looks sprites up by index and builds no names ----
+        static Region[] _bodies, _players, _hearts, _keys, _guns;
+        static Dictionary<string, Region>[] _items;
+        static Region _blast, _hook, _white;
+        static readonly int Kinds = System.Enum.GetValues(typeof(BodyKind)).Length, Schemes = System.Enum.GetValues(typeof(Sprites.HeartScheme)).Length;
+
+        static void Resolve()
+        {
+            if (_bodies != null) return;
+            var a = Atlas;
+            _bodies = new Region[Kinds * 8];
+            foreach (BodyKind k in System.Enum.GetValues(typeof(BodyKind)))
+                for (int f = 0; f < 4; f++) { _bodies[((int)k * 4 + f) * 2] = a[Body(k, f, false)]; _bodies[((int)k * 4 + f) * 2 + 1] = a[Body(k, f, true)]; }
+            _players = new Region[8];
+            for (int f = 0; f < 4; f++) { _players[f * 2] = a[Player(f, false)]; _players[f * 2 + 1] = a[Player(f, true)]; }
+            _hearts = new Region[Schemes * HeartPx.Length * (Sprites.HeartSteps + 1)];
+            for (int s = 0; s < Schemes; s++)
+                for (int p = 0; p < HeartPx.Length; p++)
+                    for (int q = 0; q <= Sprites.HeartSteps; q++)
+                        _hearts[(s * HeartPx.Length + p) * (Sprites.HeartSteps + 1) + q] = a["heart:" + (Sprites.HeartScheme)s + ":" + HeartPx[p] + ":" + q];
+            _keys = new Region[2 * KeyPx.Length * 2];
+            for (int g = 0; g < 2; g++) for (int p = 0; p < KeyPx.Length; p++) for (int d = 0; d < 2; d++) _keys[(g * KeyPx.Length + p) * 2 + d] = a[Key(g == 1, KeyPx[p], d == 1)];
+            _guns = new Region[Weapons.All.Length];
+            for (int i = 0; i < _guns.Length; i++) _guns[i] = a[Icon(i.ToString())];
+            _blast = a[Icon("blast")]; _hook = a[Icon("hook")];
+            _items = new Dictionary<string, Region>[ItemPx.Length];
+            for (int p = 0; p < ItemPx.Length; p++)
+            {
+                _items[p] = new Dictionary<string, Region>();
+                foreach (var id in ItemArt.Ids) _items[p][id] = a[Item(id, ItemPx[p])];
+                _items[p]["?"] = a["item:?:" + ItemPx[p]];
+            }
+            var w = a[White];
+            float u = (w.U0 + w.U1) / 2, v = (w.V0 + w.V1) / 2;
+            _white = new Region(1, 1, u, v, u, v);
+        }
+
+        public static Region BodyR(BodyKind k, int frame, bool flash) { Resolve(); return _bodies[((int)k * 4 + frame) * 2 + (flash ? 1 : 0)]; }
+        public static Region PlayerR(int frame, bool flash) { Resolve(); return _players[frame * 2 + (flash ? 1 : 0)]; }
+        public static Region HeartR(Sprites.HeartScheme s, int px, float fill)
+        {
+            Resolve();
+            int p = System.Array.IndexOf(HeartPx, px);
+            if (p < 0) throw new System.ArgumentException("no hearts baked at px " + px);
+            return _hearts[((int)s * HeartPx.Length + p) * (Sprites.HeartSteps + 1) + Sprites.HeartStep(fill)];
+        }
+        public static Region KeyR(bool gold, int px, bool dim) { Resolve(); return _keys[((gold ? 1 : 0) * KeyPx.Length + System.Array.IndexOf(KeyPx, px)) * 2 + (dim ? 1 : 0)]; }
+        public static Region GunR(int i) { Resolve(); return _guns[i]; }
+        public static Region AltR(bool hook) { Resolve(); return hook ? _hook : _blast; }
+        public static Region ItemR(string id, int px)
+        {
+            Resolve();
+            var t = _items[System.Array.IndexOf(ItemPx, px)];
+            return id != null && t.TryGetValue(id, out var r) ? r : t["?"];
+        }
+
+        /// <summary>The middle of the white sprite's texel: a solid-colour quad that stays in the atlas batch.</summary>
+        public static Region WhiteTexel { get { Resolve(); return _white; } }
+
         public static readonly Color32 Flash = new Color32(255, 255, 255, 255);
         public static readonly int[] HeartPx = { 2, 3, 4 }, KeyPx = { 1, 2, 3 }, ItemPx = { 18, 22, 26 };
 

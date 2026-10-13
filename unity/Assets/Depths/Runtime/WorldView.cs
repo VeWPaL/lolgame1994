@@ -8,8 +8,8 @@ namespace Depths.Unity
     /// <summary>
     /// The room and everything in it, drawn the way src/70-view.js drawRoom draws it: the baked floor
     /// and masonry, doors and their locks, the bodies' pixel sprites and walk cycles, shells, rings and
-    /// the player with the wand. Sprites go through one atlas in batched quads; only rings and dashes
-    /// use Painter2D. Reads the run, never writes it.
+    /// the player with the wand. Everything, rings included, is quads from one atlas, batched: a frame is
+    /// a mesh or two and builds no strings. Reads the run, never writes it.
     /// </summary>
     public sealed class WorldView : VisualElement
     {
@@ -42,14 +42,31 @@ namespace Depths.Unity
         {
             Fc += dt * 60;
             var run = _run();
-            if (run != null) Fx.Update(run, dt);
+            if (run != null)
+            {
+                if (!ReferenceEquals(run, _warmRun) || run.floor != _warmFloor) Warm(run);
+                Fx.Update(run, dt);
+            }
             MarkDirtyRepaint();
+        }
+
+        RunState _warmRun;
+        int _warmFloor;
+
+        /// <summary>Bakes the atlas and this floor's room textures now: on a new run or a descent, which happen
+        /// behind a fade, rather than inside the first paint of a room type.</summary>
+        public void Warm(RunState run)
+        {
+            _ = SpriteSet.WhiteTexel;   // builds the atlas and resolves every region
+            _art.Sync(run.rootSeed, run.floor);
+            _art.Warm();
+            _warmRun = run; _warmFloor = run.floor;
         }
 
         // ---- drawing helpers, world coordinates ----
         Atlas A => SpriteSet.Atlas;
-        void Spr(string name, double cx, double cy, float alpha = 1) =>
-            _q.Centred(A.Texture, A[name], (float)cx + Origin.x, (float)cy + Origin.y, QuadBatch.Alpha(alpha));
+        void Spr(in Region r, double cx, double cy, float alpha = 1) =>
+            _q.Centred(A.Texture, r, (float)cx + Origin.x, (float)cy + Origin.y, QuadBatch.Alpha(alpha));
         void Rect(double x, double y, double w, double h, Color32 c) => _q.Rect((float)x + Origin.x, (float)y + Origin.y, (float)w, (float)h, c);
         void Glow(double cx, double cy, float r, Color32 c, float alpha)
         {
@@ -61,13 +78,7 @@ namespace Depths.Unity
             var reg = A[SpriteSet.Disc];
             _q.Sprite(A.Texture, reg, (float)cx - rx + Origin.x, (float)cy - ry + Origin.y, rx * 2, ry * 2, c);
         }
-        void Ring(Painter2D g, double cx, double cy, float r, float width, Color32 c)
-        {
-            if (c.a == 0 || r <= 0) return;
-            _q.Flush();
-            g.strokeColor = c; g.lineWidth = width;
-            g.BeginPath(); g.Arc(ToPanel(cx, cy), r, 0, 360); g.Stroke();
-        }
+        void Ring(double cx, double cy, float r, float width, Color32 c) => _q.Ring((float)cx + Origin.x, (float)cy + Origin.y, r, width, c);
 
         static readonly Color32 Gold = Hex.C("#ffd23d"), Silver = Hex.C("#d8dee9"), Green = Hex.C("#5ee27a"), Shut = Hex.C("#c93b3b"),
             BarBack = new Color32(0, 0, 0, 255), Shadow = Hex.Rgba(0, 0, 0, 0.3f), Ink = Hex.C("#14151a"), Exit = Hex.C("#f4e6c8");
@@ -76,18 +87,16 @@ namespace Depths.Unity
         {
             var run = _run();
             if (run == null || run.dungeon == null) return;
-            var g = ctx.painter2D;
             _q.Begin(ctx);
             var room = run.CurrentRoom;
-            var area = AreaRules.AreaForFloor(run.floor);
-            _art.Sync(run.rootSeed, area);
+            _art.Sync(run.rootSeed, run.floor);   // a no-op once Step has warmed this floor
             var pal = _art.Palette;
             var type = room?.Type ?? RoomKind.Normal;
 
             // floor, the hook's ground spell, the walls
             var fl = _art.Floor(type);
             _q.Sprite(fl, new Region(fl.width, fl.height, 0, 0, 1, 1), Balance.RoomLeft + Origin.x, Balance.RoomTop + Origin.y, fl.width, fl.height, QuadBatch.Alpha(1));
-            DrawHookFields(g, run);
+            DrawHookFields(run);
             var wl = _art.Walls;
             int wt = Materials.WallThick;
             _q.Sprite(wl, new Region(wl.width, wl.height, 0, 0, 1, 1), Balance.RoomLeft - wt + Origin.x, Balance.RoomTop - wt + Origin.y, wl.width, wl.height, QuadBatch.Alpha(1));
@@ -108,18 +117,18 @@ namespace Depths.Unity
                 Glow(f.X, f.Y, 14, c, 0.35f * f.Life / f.Max);
             }
 
-            DrawLungeLines(g, run);
-            DrawPickups(g, run);
-            DrawBodies(g, run);
-            DrawShells(g, run);
+            DrawLungeLines(run);
+            DrawPickups(run);
+            DrawBodies(run);
+            DrawShells(run);
             for (int i = 0; i < Fx.Count; i++)
             {
                 ref var f = ref Fx[i];
                 if (!f.Ring) continue;
                 float t = 1 - f.Life / f.Max, rad = f.R * (f.Dir < 0 ? 1 - t : t);
-                Ring(g, f.X, f.Y, Mathf.Max(1, rad), 3, QuadBatch.Tint(f.Color, 0.7f * (1 - t * 0.55f)));
+                Ring(f.X, f.Y, Mathf.Max(1, rad), 3, QuadBatch.Tint(f.Color, 0.7f * (1 - t * 0.55f)));
             }
-            DrawPlayer(g, run);
+            DrawPlayer(run);
             if (run.roomFade > 0.01)
                 Rect(Balance.RoomLeft - wt, Balance.RoomTop - wt, Balance.RoomRight - Balance.RoomLeft + wt * 2, Balance.RoomBottom - Balance.RoomTop + wt * 2,
                      Hex.Rgba(0, 0, 0, Mathf.Clamp01((float)run.roomFade)));
@@ -217,15 +226,15 @@ namespace Depths.Unity
 
         static bool Unlocking(RunState run, Room r, Dir d) => run.unlockRoom == r && run.unlockDir == d;
 
-        void DrawHookFields(Painter2D g, RunState run)
+        void DrawHookFields(RunState run)
         {
             var col = Hex.Of(Sprites.HookColor);
             foreach (var f in run.hookFields)
             {
                 float left = f.life / (float)Math.Max(1, f.max), fade = left < 0.34f ? left / 0.34f : 1;
                 Dot(f.x, f.y, (float)f.r, (float)f.r, QuadBatch.Tint(col, 0.13f * fade));
-                Ring(g, f.x, f.y, (float)f.r * (0.55f + 0.45f * (1 - left)), 2, QuadBatch.Tint(col, 0.5f * fade));
-                Ring(g, f.x, f.y, (float)f.r * 0.55f, 1, QuadBatch.Tint(col, 0.3f * fade));
+                Ring(f.x, f.y, (float)f.r * (0.55f + 0.45f * (1 - left)), 2, QuadBatch.Tint(col, 0.5f * fade));
+                Ring(f.x, f.y, (float)f.r * 0.55f, 1, QuadBatch.Tint(col, 0.3f * fade));
                 float t = Fc * 0.05f;
                 for (int i = 0; i < 7; i++)   // the inward spiral: each mote on its own radius and phase
                 {
@@ -240,7 +249,7 @@ namespace Depths.Unity
         static float Frac(float v) => v - Mathf.Floor(v);
 
         // ---- the committed line: a lunger's windup and its lunge ----
-        void DrawLungeLines(Painter2D g, RunState run)
+        void DrawLungeLines(RunState run)
         {
             var col = Hex.Of("#ff9a6b");
             foreach (var e in run.enemies)
@@ -256,7 +265,7 @@ namespace Depths.Unity
                     ex = fx; ey = fy; tx = e.x; ty = e.y;
                 }
                 Dashes(ex, ey, tx, ty, 1 + 2 * grow, QuadBatch.Tint(col, 0.20f + 0.55f * grow));
-                Ring(g, tx, ty, 5 + 3 * grow, 1 + 2 * grow, QuadBatch.Tint(col, 0.30f + 0.50f * grow));
+                Ring(tx, ty, 5 + 3 * grow, 1 + 2 * grow, QuadBatch.Tint(col, 0.30f + 0.50f * grow));
             }
         }
 
@@ -265,42 +274,41 @@ namespace Depths.Unity
             float dx = (float)(x1 - x0), dy = (float)(y1 - y0), len = Mathf.Sqrt(dx * dx + dy * dy);
             if (len < 1) return;
             float ang = Mathf.Atan2(dy, dx);
-            var r = A[SpriteSet.White];
-            var white = new Region(1, 1, (r.U0 + r.U1) / 2, (r.V0 + r.V1) / 2, (r.U0 + r.U1) / 2, (r.V0 + r.V1) / 2);
+            var white = SpriteSet.WhiteTexel;
             for (float s = 0; s < len; s += 10)   // setLineDash([5, 5])
                 _q.Rotated(A.Texture, white, ToPanel(x0, y0), s, -width / 2, Mathf.Min(5, len - s), width, ang, c);
         }
 
         // ---- loot ----
-        void DrawPickups(Painter2D g, RunState run)
+        void DrawPickups(RunState run)
         {
             foreach (var pk in run.pickups)
             {
                 float bob = Mathf.Sin(Fc * 0.08f + (float)pk.x) * 2;
                 switch (pk.kind)
                 {
-                    case "exit": DrawExit(g, pk.x, pk.y); break;
-                    case "weapon": Spr(SpriteSet.Icon(pk.w.ToString()), pk.x, pk.y + bob); break;
-                    case "hook": case "blast": Spr(SpriteSet.Icon(pk.kind), pk.x, pk.y + bob); break;
-                    case "item": Spr(SpriteSet.Item(pk.id, 26), pk.x, pk.y + Mathf.Sin(Fc * 0.09f + (float)pk.x) * 2); break;
-                    case "key": case "goldkey": Spr(SpriteSet.Key(pk.kind == "goldkey", 3, false), pk.x, pk.y + Mathf.Sin(Fc * 0.1f) * 2); break;
-                    case "heart": Spr(SpriteSet.Heart(Sprites.HeartScheme.Red, 2, 1), pk.x, pk.y); break;
-                    case "halfheart": Spr(SpriteSet.Heart(Sprites.HeartScheme.Red, 2, 0.5f), pk.x, pk.y); break;
-                    case "armor": Spr(SpriteSet.Heart(Sprites.HeartScheme.Gray, 2, 1), pk.x, pk.y); break;
-                    case "halfarmor": Spr(SpriteSet.Heart(Sprites.HeartScheme.Gray, 2, 0.5f), pk.x, pk.y); break;
+                    case "exit": DrawExit(pk.x, pk.y); break;
+                    case "weapon": Spr(SpriteSet.GunR(pk.w), pk.x, pk.y + bob); break;
+                    case "hook": case "blast": Spr(SpriteSet.AltR(pk.kind == "hook"), pk.x, pk.y + bob); break;
+                    case "item": Spr(SpriteSet.ItemR(pk.id, 26), pk.x, pk.y + Mathf.Sin(Fc * 0.09f + (float)pk.x) * 2); break;
+                    case "key": case "goldkey": Spr(SpriteSet.KeyR(pk.kind == "goldkey", 3, false), pk.x, pk.y + Mathf.Sin(Fc * 0.1f) * 2); break;
+                    case "heart": Spr(SpriteSet.HeartR(Sprites.HeartScheme.Red, 2, 1), pk.x, pk.y); break;
+                    case "halfheart": Spr(SpriteSet.HeartR(Sprites.HeartScheme.Red, 2, 0.5f), pk.x, pk.y); break;
+                    case "armor": Spr(SpriteSet.HeartR(Sprites.HeartScheme.Gray, 2, 1), pk.x, pk.y); break;
+                    case "halfarmor": Spr(SpriteSet.HeartR(Sprites.HeartScheme.Gray, 2, 0.5f), pk.x, pk.y); break;
                     default: Dot(pk.x, pk.y, 6, 6, Hex.Of("#50dcbe")); break;
                 }
             }
         }
 
         /// <summary>drawExitPortal: three rings breathing outward, a soft disc, a floor shadow, an up-arrow.</summary>
-        void DrawExit(Painter2D g, double cx, double cy)
+        void DrawExit(double cx, double cy)
         {
             float t = Fc * 0.05f;
             for (int i = 0; i < 3; i++)
             {
                 float p = Frac(t * 0.5f + i / 3f);
-                Ring(g, cx, cy, 8 + 30 * p, 2, QuadBatch.Tint(Exit, 0.5f * (1 - p)));
+                Ring(cx, cy, 8 + 30 * p, 2, QuadBatch.Tint(Exit, 0.5f * (1 - p)));
             }
             Dot(cx, cy, 15, 15, QuadBatch.Tint(Exit, 0.20f + 0.10f * Mathf.Sin(t * 2)));
             Dot(cx, cy + 16, 14, 5, Hex.Rgba(0, 0, 0, 0.28f));
@@ -324,25 +332,14 @@ namespace Depths.Unity
 
         /// <summary>The Burrower when it is not a body you can hit: sinking, a mound running under the
         /// floor, then the crack at its mark that is the whole warning.</summary>
-        bool DrawBurrow(Painter2D g, Enemy e, int frame)
+        bool DrawBurrow(Enemy e, int frame)
         {
-            if (e.move == "dig")
-            {
-                float sink = Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig);
-                Spr(SpriteSet.Body(e.kind, frame, false), e.x, e.y - 2 + (1 - sink) * 8, 0.25f + 0.75f * sink);
-                for (int i = 0; i < 5; i++)   // dust thrown up as it digs
-                {
-                    float a = Fc * 0.2f + i * 1.26f, r = (float)e.r + 2 + 4 * (1 - sink);
-                    Rect(e.x + Mathf.Cos(a) * r - 1, e.y + 8 + Mathf.Sin(a) * r * 0.4f - 1, 3, 3, QuadBatch.Tint(DirtLit, 0.8f));
-                }
-                return true;
-            }
-            if (!e.buried) return false;
+            if (!e.buried) return false;   // walking or digging it is a body you can hit: drawn as one (DrawBodies)
             if (e.move == "rise")
             {
                 float p = 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowRise), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * 0.5f);
                 Dot(e.x, e.y, (float)Middle.BurrowHitR, (float)Middle.BurrowHitR * 0.5f, QuadBatch.Tint(Dirt, 0.35f + 0.4f * p));
-                Ring(g, e.x, e.y, (float)Middle.BurrowHitR, 2, QuadBatch.Tint(Crack, 0.35f + 0.5f * p * pulse + 0.15f));
+                Ring(e.x, e.y, (float)Middle.BurrowHitR, 2, QuadBatch.Tint(Crack, 0.35f + 0.5f * p * pulse + 0.15f));
                 for (int i = 0; i < 6; i++)   // cracks reach out further as it comes
                 {
                     float a = i * 1.047f + 0.3f, len = 6 + 18 * p;
@@ -357,7 +354,7 @@ namespace Depths.Unity
             return true;
         }
 
-        void DrawBodies(Painter2D g, RunState run)
+        void DrawBodies(RunState run)
         {
             float readyProg = run.readyT > 0 ? 1 - run.readyT / (float)Balance.Ready : 1;
             foreach (var e in run.enemies)
@@ -366,15 +363,23 @@ namespace Depths.Unity
                 bool boss = e.kind == BodyKind.Boss;
                 float bob = fr == 1 || fr == 3 ? -2 : 0;
                 float hop = run.readyT > 0 ? -Mathf.Abs(Mathf.Sin(readyProg * Mathf.PI * 2)) * 6 : 0;
-                if (e.kind == BodyKind.Burrower && DrawBurrow(g, e, frame)) continue;
+                if (e.kind == BodyKind.Burrower && DrawBurrow(e, frame)) continue;
+                // a digging Burrower sinks and fades into the floor, still hittable, so still flashing
+                float sink = e.kind == BodyKind.Burrower && e.move == "dig" ? 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig) : 0;
                 Dot(e.x, e.y + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
-                double ey = e.y - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop;
-                Spr(SpriteSet.Body(e.kind, frame, false), e.x, ey);
+                double ey = e.y - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop + sink * 8;
+                Spr(SpriteSet.BodyR(e.kind, frame, false), e.x, ey, 1 - 0.75f * sink);
                 if (e.hitFlash > 0)   // a translucent silhouette over the body, so sustained fire still shows a creature
                 {
                     float k = 0.38f + (0.62f - 0.38f) * Mathf.Min(1, (float)e.hitFlash / Balance.HitFlash);
-                    Spr(SpriteSet.Body(e.kind, frame, true), e.x, ey, k);
+                    Spr(SpriteSet.BodyR(e.kind, frame, true), e.x, ey, k);
                 }
+                if (sink > 0)
+                    for (int i = 0; i < 5; i++)   // dust thrown up as it digs
+                    {
+                        float a = Fc * 0.2f + i * 1.26f, r = (float)e.r + 2 + 4 * sink;
+                        Rect(e.x + Mathf.Cos(a) * r - 1, e.y + 8 + Mathf.Sin(a) * r * 0.4f - 1, 3, 3, QuadBatch.Tint(DirtLit, 0.8f));
+                    }
                 if (!boss)
                 {
                     float barY = (float)(e.y - BarHeight(e.kind)), frac = (float)Math.Max(0, Math.Min(1, e.hp / Math.Max(1e-9, e.maxHp)));
@@ -382,7 +387,7 @@ namespace Depths.Unity
                     Rect(e.x - e.r, barY, e.r * 2 * frac, 4, Green);
                 }
                 if (e.stun > 0) DrawStunStars(e.x, ey - e.r - 6, (float)e.stun);
-                if (e.castT > 0) DrawCastFlash(g, e.x, e.y, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
+                if (e.castT > 0) DrawCastFlash(e.x, e.y, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
             }
         }
 
@@ -401,10 +406,10 @@ namespace Depths.Unity
         }
 
         /// <summary>drawCastFlash: a ring that tightens and brightens, and a glow, as the shot comes.</summary>
-        void DrawCastFlash(Painter2D g, double x, double y, int t, int total, Color32 col)
+        void DrawCastFlash(double x, double y, int t, int total, Color32 col)
         {
             float k = 1 - t / (float)Math.Max(1, total);
-            Ring(g, x, y, 5 + 7 * k, 1 + 1.5f * k, QuadBatch.Tint(col, 0.35f + 0.6f * k));
+            Ring(x, y, 5 + 7 * k, 1 + 1.5f * k, QuadBatch.Tint(col, 0.35f + 0.6f * k));
             Glow(x, y, 8 + 5 * k, col, 0.5f * k);
         }
 
@@ -412,7 +417,7 @@ namespace Depths.Unity
         static readonly Color32 HostileDefault = Hex.C("#ff4d4d");
         const float BoltDrawR = 6, BoltSizeMax = 1.05f, BoltSizeMin = 0.65f, BoltFadeMin = 0.55f;
 
-        void DrawShells(Painter2D g, RunState run)
+        void DrawShells(RunState run)
         {
             string bolt = Weapons.All[0].Color;
             foreach (var p in run.projectiles)
@@ -423,7 +428,7 @@ namespace Depths.Unity
                 {
                     float t = p.flight / (float)Math.Max(1, p.flightMax);
                     Dot(p.tx, p.ty, (float)p.blastR, (float)p.blastR * 0.55f, QuadBatch.Tint(col, 0.10f + 0.22f * t));
-                    Ring(g, p.tx, p.ty, (float)p.blastR * (1.25f - 0.25f * t), 2, QuadBatch.Tint(col, 0.45f + 0.5f * t));
+                    Ring(p.tx, p.ty, (float)p.blastR * (1.25f - 0.25f * t), 2, QuadBatch.Tint(col, 0.45f + 0.5f * t));
                     Dot(p.x, p.y, (float)p.r, (float)p.r * 0.45f, Shadow);
                     double arc = p.y - Mathf.Sin(t * Mathf.PI) * 70;
                     Glow(p.x, arc, (float)p.r * 3, col, 0.7f);
@@ -433,7 +438,7 @@ namespace Depths.Unity
                 if (p.alt)
                 {
                     bool hook = p.mode == "hook";
-                    Ring(g, p.tx, p.ty, (float)(hook ? Balance.HookAoe : Balance.AltAoe), 2, QuadBatch.Tint(col, 0x48 / 255f));
+                    Ring(p.tx, p.ty, (float)(hook ? Balance.HookAoe : Balance.AltAoe), 2, QuadBatch.Tint(col, 0x48 / 255f));
                     alpha = 0.6f;
                 }
                 if (p.friendly)
@@ -446,7 +451,7 @@ namespace Depths.Unity
                     float R = Mathf.Max(2, Mathf.Round(dr * 3.2f));
                     Glow(p.x, p.y, R, col, fade);
                     Dot(p.x, p.y, dr, dr, QuadBatch.Tint(col, fade));
-                    if (shrink) Ring(g, p.x, p.y, dr + 2.5f, 1, QuadBatch.Tint(col, 0.5f * fade));
+                    if (shrink) Ring(p.x, p.y, dr + 2.5f, 1, QuadBatch.Tint(col, 0.5f * fade));
                 }
                 else
                 {
@@ -461,7 +466,7 @@ namespace Depths.Unity
         }
 
         // ---- the player ----
-        void DrawPlayer(Painter2D g, RunState run)
+        void DrawPlayer(RunState run)
         {
             var pl = run.player;
             float readyProg = run.readyT > 0 ? 1 - run.readyT / (float)Balance.Ready : 1;
@@ -478,15 +483,15 @@ namespace Depths.Unity
             if (lagD > 3)   // the trailing hitbox after a blink, drawn faintly where it really is
             {
                 float fade = Mathf.Min(1, (float)lagD / Balance.BlinkDist);
-                Ring(g, pl.lagX, pl.lagY + Balance.PlayerHitDy, Balance.PlayerHitR, 1, QuadBatch.Tint(Hex.Of("#66d9ff"), 0.5f * fade));
-                Spr(SpriteSet.Player(frame, false), pl.lagX, pl.lagY + bob + hop - 4, 0.18f * fade);
+                Ring(pl.lagX, pl.lagY + Balance.PlayerHitDy, Balance.PlayerHitR, 1, QuadBatch.Tint(Hex.Of("#66d9ff"), 0.5f * fade));
+                Spr(SpriteSet.PlayerR(frame, false), pl.lagX, pl.lagY + bob + hop - 4, 0.18f * fade);
             }
             Dot(pl.x, pl.y + 13, 11, 4, Shadow);
             float alpha = flick ? 0.35f : 1;
             float glowExtra = run.readyT > 0 ? 0.5f * readyProg : 0;
             Vector2 tip = default;
             if (behind) tip = DrawWand(pl.x, oy, a, wandCol, glowExtra, alpha);
-            Spr(SpriteSet.Player(frame, false), pl.x, oy - 4, alpha);
+            Spr(SpriteSet.PlayerR(frame, false), pl.x, oy - 4, alpha);
             if (!behind) tip = DrawWand(pl.x, oy, a, wandCol, glowExtra, alpha);
             if (pl.muzzleTimer > 0)
             {
@@ -509,8 +514,7 @@ namespace Depths.Unity
             int side = Mathf.Cos(a) >= 0 ? 1 : -1;
             float hx = (float)px + side * 11, hy = (float)py + 5;
             var pivot = ToPanel(hx, hy);
-            var r = A[SpriteSet.White];
-            var white = new Region(1, 1, (r.U0 + r.U1) / 2, (r.V0 + r.V1) / 2, (r.U0 + r.U1) / 2, (r.V0 + r.V1) / 2);
+            var white = SpriteSet.WhiteTexel;
             for (int i = 0; i < WandParts.Length; i++)
             {
                 var (x, y, w, h, _) = WandParts[i];

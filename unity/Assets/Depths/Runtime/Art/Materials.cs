@@ -224,25 +224,34 @@ namespace Depths.Unity.Art
     /// and re-made when the run, the floor or the room type changes - as the JS caches are run-scoped.</summary>
     public sealed class RoomArt
     {
-        uint _seed; Area _area; bool _have;
+        uint _seed; int _floor; bool _have;
         Img _cave, _wallTile;
         readonly Dictionary<RoomKind, Texture2D> _floors = new Dictionary<RoomKind, Texture2D>();
         Texture2D _walls;
         public AreaPalette Palette { get; private set; }
 
-        public void Sync(uint seed, Area area)
+        /// <summary>The floor's stone, re-made per floor as the JS clears its art caches on every descent.</summary>
+        public void Sync(uint seed, int floor)
         {
-            if (_have && seed == _seed && area == _area) return;
+            if (_have && seed == _seed && floor == _floor) return;
             Release();
-            _have = true; _seed = seed; _area = area;
-            Palette = AreaPalette.For(area);
-            var rng = new Rng(seed ^ 0xA27u ^ ((uint)area << 20));   // the view's own art stream, per run and area
+            _have = true; _seed = seed; _floor = floor;
+            Palette = AreaPalette.For(AreaRules.AreaForFloor(floor));
+            var rng = new Rng(seed ^ 0xA27u ^ (uint)floor * 0x9E3779B1u);   // the view's own art stream, per run and floor
             _cave = Materials.CaveTile(Palette, rng);
             _wallTile = Materials.WallTile(Palette, rng);
         }
 
+        /// <summary>Bakes every room type's floor and the walls now (behind a fade), so no room entry bakes mid-frame.</summary>
+        public void Warm()
+        {
+            foreach (RoomKind k in System.Enum.GetValues(typeof(RoomKind))) Floor(k);
+            _ = Walls;
+        }
+
         public Texture2D Floor(RoomKind type)
         {
+            if (type == RoomKind.Secret) type = RoomKind.Normal;   // the same tint (ROOM_BG has no secret entry): one texture
             if (!_floors.TryGetValue(type, out var t))
                 _floors[type] = t = Atlas.ToTexture(Materials.Floor(Balance.RoomRight - Balance.RoomLeft, Balance.RoomBottom - Balance.RoomTop, type, Palette, _cave), "floor");
             return t;

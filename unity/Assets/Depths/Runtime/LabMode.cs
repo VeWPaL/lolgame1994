@@ -32,12 +32,12 @@ namespace Depths.Unity
         readonly List<(Enemy e, double x, double y)> _row = new List<(Enemy, double, double)>();
         readonly Dictionary<Enemy, double> _lastHp = new Dictionary<Enemy, double>();
         readonly List<Enemy> _gone = new List<Enemy>();
-        struct Number { public float X, Y, Vy, T; public double V; }
+        struct Number { public float X, Y, Vy, T; public Label L; }
         readonly List<Number> _numbers = new List<Number>();
         int _pack = 1000000;
         VisualElement _layer, _legend;
         Label _armed;
-        readonly List<Label> _numberLabels = new List<Label>();
+        readonly Stack<Label> _freeLabels = new Stack<Label>();
 
         public void Enter(RunState run)
         {
@@ -47,7 +47,7 @@ namespace Depths.Unity
             if (run.CurrentRoom != null) run.CurrentRoom.Fought = true;
             var p = run.player;
             p.x = p.lagX = Balance.MidX; p.y = p.lagY = Balance.RoomBottom - 70;
-            _row.Clear(); _lastHp.Clear(); _numbers.Clear();
+            _row.Clear(); _lastHp.Clear(); ClearNumbers();
             for (int i = 0; i < Specimens.Length; i++)
             {
                 double x = Balance.RoomLeft + 70 + (i % 5) * 140, y = Balance.RoomTop + (i < 5 ? 70 : 180);
@@ -62,7 +62,7 @@ namespace Depths.Unity
 
         public void Leave()
         {
-            On = false; _row.Clear(); _lastHp.Clear(); _numbers.Clear();
+            On = false; _row.Clear(); _lastHp.Clear(); ClearNumbers();
             if (_layer != null) _layer.style.display = DisplayStyle.None;
         }
 
@@ -147,7 +147,7 @@ namespace Depths.Unity
                 if (!_lastHp.TryGetValue(e, out double was)) { _lastHp[e] = e.hp; continue; }
                 if (Math.Abs(e.hp - was) > 1e-9)
                 {
-                    _numbers.Add(new Number { X = (float)e.x, Y = (float)(e.y - e.r - 6), Vy = -33, V = e.hp - was });
+                    Pop(e.x, e.y - e.r - 6, e.hp - was);
                     _lastHp[e] = e.hp;
                 }
             }
@@ -155,15 +155,49 @@ namespace Depths.Unity
             foreach (var kv in _lastHp) if (!run.enemies.Contains(kv.Key)) _gone.Add(kv.Key);
             foreach (var e in _gone)   // a kill shows what the last hit took
             {
-                if (_lastHp[e] > 0) _numbers.Add(new Number { X = (float)e.x, Y = (float)(e.y - e.r - 6), Vy = -33, V = -_lastHp[e] });
+                if (_lastHp[e] > 0) Pop(e.x, e.y - e.r - 6, -_lastHp[e]);
                 _lastHp.Remove(e);
             }
             for (int i = _numbers.Count - 1; i >= 0; i--)
             {
                 var n = _numbers[i];
                 n.T += dt; n.Y += n.Vy * dt; n.Vy *= Mathf.Pow(0.94f, dt * 60);
-                if (n.T >= 1.1f) _numbers.RemoveAt(i); else _numbers[i] = n;
+                if (n.T >= 1.1f) { Free(n.L); _numbers.RemoveAt(i); } else _numbers[i] = n;
             }
+        }
+
+        // a number takes a label from the pool when it appears; its text and colour are set once, there
+        void Pop(double x, double y, double v)
+        {
+            Label l = null;
+            if (_layer != null)
+            {
+                if (_freeLabels.Count > 0) l = _freeLabels.Pop();
+                else
+                {
+                    l = new Label { pickingMode = PickingMode.Ignore };
+                    l.style.position = Position.Absolute; l.style.fontSize = 13; l.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    l.style.unityTextOutlineColor = (Color)new Color32(0, 0, 0, 255); l.style.unityTextOutlineWidth = 1;
+                    _layer.Add(l);
+                }
+                l.text = (v > 0 ? "+" : "") + (Math.Round(v * 10) / 10).ToString("0.#");
+                l.style.color = v > 0 ? (Color)new Color32(94, 226, 122, 255) : (Color)new Color32(255, 233, 168, 255);
+                l.style.display = DisplayStyle.Flex;
+            }
+            _numbers.Add(new Number { X = (float)x, Y = (float)y, Vy = -33, L = l });
+        }
+
+        void Free(Label l)
+        {
+            if (l == null) return;
+            l.style.display = DisplayStyle.None;
+            _freeLabels.Push(l);
+        }
+
+        void ClearNumbers()
+        {
+            foreach (var n in _numbers) Free(n.L);
+            _numbers.Clear();
         }
 
         // ---- the picture: damage numbers over the room, the legend along the bottom ----
@@ -203,33 +237,20 @@ namespace Depths.Unity
             _layer.Add(_legend);
         }
 
-        string _armedText;
+        int _armedShown = -1;
 
-        /// <summary>Positions the pooled number labels (no allocation once the pool covers the busiest frame).</summary>
+        /// <summary>The armed label when it changes, and the numbers' motion.</summary>
         public void Draw()
         {
             if (!On || _layer == null) return;
-            string armed = Specimens[Armed].name + (Frozen ? " - row frozen" : " - row live");
-            if (armed != _armedText) { _armedText = armed; _armed.text = armed; }
-            while (_numberLabels.Count < _numbers.Count)
+            int shown = Armed * 2 + (Frozen ? 1 : 0);
+            if (shown != _armedShown) { _armedShown = shown; _armed.text = Specimens[Armed].name + (Frozen ? " - row frozen" : " - row live"); }
+            foreach (var n in _numbers)   // only the motion is per frame
             {
-                var l = new Label { pickingMode = PickingMode.Ignore };
-                l.style.position = Position.Absolute; l.style.fontSize = 13; l.style.unityFontStyleAndWeight = FontStyle.Bold;
-                l.style.unityTextOutlineColor = (Color)new Color32(0, 0, 0, 255); l.style.unityTextOutlineWidth = 1;
-                _layer.Add(l);
-                _numberLabels.Add(l);
-            }
-            for (int i = 0; i < _numberLabels.Count; i++)
-            {
-                var l = _numberLabels[i];
-                if (i >= _numbers.Count) { l.style.display = DisplayStyle.None; continue; }
-                var n = _numbers[i];
+                if (n.L == null) continue;
                 var at = WorldView.ToPanel(n.X, n.Y);
-                l.style.display = DisplayStyle.Flex;
-                l.style.left = at.x - 12; l.style.top = at.y;
-                l.style.opacity = Mathf.Clamp01(1.4f - n.T / 1.1f);
-                l.style.color = n.V > 0 ? (Color)new Color32(94, 226, 122, 255) : (Color)new Color32(255, 233, 168, 255);
-                l.text = (n.V > 0 ? "+" : "") + (Math.Round(n.V * 10) / 10).ToString("0.#");
+                n.L.style.left = at.x - 12; n.L.style.top = at.y;
+                n.L.style.opacity = Mathf.Clamp01(1.4f - n.T / 1.1f);
             }
         }
     }
