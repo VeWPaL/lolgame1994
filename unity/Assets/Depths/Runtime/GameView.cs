@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
+using Depths.Unity.Hud;
 
 namespace Depths.Unity
 {
@@ -25,9 +26,10 @@ namespace Depths.Unity
         InputAction _move, _cast, _blast, _blink, _active, _pause;
         int _lastShots, _lastHits, _lastKills;
         double _lastHp, _lastDmg;
-        RoomPainter _painter;
         WorldView _world;
-        Label _hud;
+        LedgerHud _hud;
+        bool _devOn;
+        long _devKey = long.MinValue;
         readonly TickClock _clock = new TickClock();
         int _respawnT;
         bool _demo;
@@ -39,6 +41,9 @@ namespace Depths.Unity
         public RunState Run => _run;
         public long Ticks => _clock.Ticks;
         public bool Frozen { get; set; }
+        /// <summary>Esc's pause, settable so the screenshot mode can show the pause page.</summary>
+        public bool Paused { get => _paused; set => _paused = value; }
+        public LedgerHud Hud => _hud;
 
         void Start()
         {
@@ -53,7 +58,7 @@ namespace Depths.Unity
             map.Enable();
             var args = Environment.GetCommandLineArgs();
             int i = Array.IndexOf(args, "-depthsView");
-            _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss");
+            _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss" || args[i + 1] == "summary" || args[i + 1] == "pause");
             _bossRoom = i >= 0 && i + 1 < args.Length && args[i + 1] == "boss";
             _sandbox = i >= 0 && i + 1 < args.Length && args[i + 1] == "sandbox";
             _demo |= _sandbox;
@@ -131,7 +136,7 @@ namespace Depths.Unity
         void Update()
         {
             var kb = Keyboard.current;
-            if (_painter == null)
+            if (_hud == null)
             {
                 var root = GetComponent<UIDocument>().rootVisualElement?.Q("gameRoot");
                 if (root == null || root.panel == null) return;   // the document attaches late; see the history note
@@ -140,15 +145,7 @@ namespace Depths.Unity
                 _world.style.position = Position.Absolute;
                 _world.style.left = 0; _world.style.top = 0; _world.style.right = 0; _world.style.bottom = 0;
                 root.Add(_world);
-                _painter = new RoomPainter(() => _run);
-                _painter.style.position = Position.Absolute;
-                _painter.style.left = 0; _painter.style.top = 0; _painter.style.right = 0; _painter.style.bottom = 0;
-                root.Add(_painter);
-                _hud = new Label();
-                _hud.AddToClassList("game-text");
-                _hud.style.top = 600;   // below the room, which fills the middle of the screen
-                _hud.style.left = 190;
-                _hud.style.width = 900;
+                _hud = new LedgerHud();
                 root.Add(_hud);
             }
             // Esc pauses, as in the game; M from the pause (or after a death) goes back to the menu
@@ -158,6 +155,7 @@ namespace Depths.Unity
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
                 if (kb.rKey.wasPressedThisFrame) { NewRun(); _paused = false; _lastFloor = 1; }
+                if (kb.f3Key.wasPressedThisFrame) _devOn = !_devOn;
                 if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; NewRun(); }
                 if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; NewRun(); }
                 if (kb.vKey.wasPressedThisFrame)   // cycle the Brunch guard rule under test
@@ -167,10 +165,10 @@ namespace Depths.Unity
             // the aim: the pointer, from screen pixels to panel units to the room
             Vector2 aim = new Vector2((float)_run.player.x + 200, (float)_run.player.y);
             var mouse = Mouse.current;
-            if (mouse != null && _painter.panel != null)
+            if (mouse != null && _world.panel != null)
             {
                 var sp = mouse.position.ReadValue();
-                var pp = RuntimePanelUtils.ScreenToPanel(_painter.panel, new Vector2(sp.x, Screen.height - sp.y));
+                var pp = RuntimePanelUtils.ScreenToPanel(_world.panel, new Vector2(sp.x, Screen.height - sp.y));
                 aim = pp - WorldView.Origin;
             }
             Vector2 mv = _move.ReadValue<Vector2>();
@@ -204,34 +202,38 @@ namespace Depths.Unity
             PlayEvents();
             Depths.Unity.Audio.MusicEngine.SetArea(AreaRules.AreaForFloor(_run.floor));
             Depths.Unity.Audio.MusicEngine.SetFight(_run.state == "playing" && !_paused && _run.enemies.Count > 0);
-            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = 3; Depths.Unity.Audio.SoundEngine.Play("door"); }
+            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = BannerS; Depths.Unity.Audio.SoundEngine.Play("door"); }
             if (_bannerS > 0) _bannerS -= Time.unscaledDeltaTime;
-            _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"
-                : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / Balance.TickHz / 60) + ":" + (_run.ticks / Balance.TickHz % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
-                : _bannerS > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
             _world.Aim = aim;
             _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : Time.unscaledDeltaTime);
-            _painter.MarkDirtyRepaint();
-            var pl = _run.player;
-            var act = Items.ActiveItem(_run);
-            string build = (act != null ? "   Q: " + Items.Def(act.Id).Name + (act.Charges == int.MaxValue ? "" : " x" + act.Charges) : "") +
-                           (_run.loadout.Count > (act != null ? 1 : 0) ? "   carrying: " + string.Join(", ", _run.loadout.Where(s => s.Slot != Items.ActiveSlot).Select(s => Items.Def(s.Id).Name)) : "");
-            string stats = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
-                           (pl.regenHeartMax > 0 ? " + regen " + pl.regenHeart.ToString("0") + "/" + pl.regenHeartMax.ToString("0") : "") +
-                           "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   kills " + _run.kills + build;
-            if (RealRun)
+            _hud.Refresh(_run, Time.unscaledDeltaTime);
+            _hud.Overlays.SetPause(_paused && _run.state == "playing", _run);
+            _hud.Overlays.SetSummary(_run.state != "playing", _run);
+            _hud.Overlays.SetBanner(_run.floor, BannerAlpha(_bannerS));
+            _hud.Overlays.SetWarning(HudOverlays.WarningAlpha(_run));
+            UpdateDev();
+        }
+
+        const float BannerS = 3;
+        /// <summary>The floor heading's envelope: in over a quarter second, held, out over the last 0.6 s.</summary>
+        public static float BannerAlpha(float left) => left <= 0 ? 0 : Mathf.Clamp01(Mathf.Min((BannerS - left) / 0.25f, left / 0.6f));
+
+        // The developer line (F3): its text is rebuilt only when what it says changes.
+        void UpdateDev()
+        {
+            if (!_devOn) { _hud.SetDev(false, null); return; }
+            var room = _run.CurrentRoom;
+            long key = ((long)_run.rootSeed << 24) ^ ((Curve.On ? 1L : 0) << 1) ^ ((long)Balance.BrunchVariant.GetHashCode() << 4) ^ ((_sandbox ? 1L : 0) << 9) ^ ((_bossRoom ? 1L : 0) << 10) ^ ((long)(room != null ? (int)room.Type : 7) << 11) ^ ((long)_run.floor << 14);
+            string text = null;
+            if (key != _devKey)
             {
-                var room = _run.CurrentRoom;
-                _hud.text = stats + "   " + (pl.hasSilver ? "[silver key] " : "") + (pl.hasGold ? "[gold key] " : "") +
-                            (_run.state == "playing" ? "" : "\nYOU DIED on floor " + _run.floor + " - R for a new run") +
-                            "\nFloor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room: " + (room != null ? room.Type.ToString() : "?") +
-                            "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
-                            "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc pause";
+                _devKey = key;
+                string mode = RealRun ? "floor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room " + (room != null ? room.Type.ToString() : "?")
+                                      : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning";
+                text = mode + "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                       "\n1-4 guns   right-click blast   Shift blink   Q item   R new run   F1 sandbox   B Warden arena   Esc pause   F3 this line";
             }
-            else
-                _hud.text = stats + (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                            "\n" + (_bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core.   Brunch rule " + Balance.BrunchVariant + " (V)" +
-                            "\n\n1-4 guns   right-click blast   Shift blink   R new room   F1 real run   B Warden arena   Esc pause";
+            _hud.SetDev(true, text);
         }
 
         // The simulation makes no sound; the view hears what changed since the last frame.
@@ -273,145 +275,6 @@ namespace Depths.Unity
             _demoBlast |= before < 0.333f && _demoS >= 0.333f;   // one blast, a third of a second in
             alt = _demoBlast;
             if (before < 0.5f && _demoS >= 0.5f) p.weaponIdx = 1;
-        }
-    }
-
-    /// <summary>Draws the room, the bodies, the shells, the loot and the player with Painter2D.</summary>
-    sealed class RoomPainter : VisualElement
-    {
-        readonly Func<RunState> _run;
-        readonly Label _overlay = new Label();
-        public string Overlay
-        {
-            set
-            {
-                _overlay.text = value ?? "";
-                _overlay.style.display = string.IsNullOrEmpty(value) ? DisplayStyle.None : DisplayStyle.Flex;
-            }
-        }
-        static readonly Color Floor = new Color32(20, 23, 32, 255), Wall = new Color32(122, 86, 50, 255),
-            PlayerC = new Color32(199, 155, 255, 255), Hostile = new Color32(255, 77, 77, 255);
-
-        public RoomPainter(Func<RunState> run)
-        {
-            _run = run;
-            generateVisualContent += Paint;
-            _overlay.style.position = Position.Absolute;
-            _overlay.style.left = 290; _overlay.style.top = 250; _overlay.style.width = 700;
-            _overlay.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _overlay.style.fontSize = 28;
-            _overlay.style.color = new Color(0.91f, 0.91f, 0.93f);
-            _overlay.style.backgroundColor = new Color(0.04f, 0.05f, 0.07f, 0.82f);
-            _overlay.style.paddingTop = 18; _overlay.style.paddingBottom = 18;
-            _overlay.style.display = DisplayStyle.None;
-            Add(_overlay);
-        }
-
-        static Vector2 W(double x, double y) => new Vector2((float)x + 240, (float)y + 5);
-
-        static Color BodyColor(BodyKind k)
-        {
-            switch (k)
-            {
-                case BodyKind.Lunger: return new Color32(214, 120, 80, 255);
-                case BodyKind.Brunch: return new Color32(230, 200, 90, 255);
-                case BodyKind.Shooter: return new Color32(220, 80, 90, 255);
-                case BodyKind.Gunner: return new Color32(240, 160, 60, 255);
-                default: return new Color32(180, 60, 60, 255);
-            }
-        }
-
-        static Color PickupColor(string kind)
-        {
-            switch (kind)
-            {
-                case "heart": return new Color32(230, 70, 90, 255);
-                case "armor": return new Color32(120, 170, 230, 255);
-                case "key": return new Color32(205, 210, 220, 255);
-                case "goldkey": return new Color32(235, 195, 70, 255);
-                case "exit": return new Color32(160, 110, 255, 255);
-                case "weapon": return new Color32(90, 200, 255, 255);
-                case "item": return new Color32(240, 200, 120, 255);
-                default: return new Color32(80, 220, 190, 255);
-            }
-        }
-
-        // the floor so far: rooms walked, the current one bright, top-right of the screen
-        static void DrawMinimap(Painter2D g, RunState run)
-        {
-            if (run.dungeon == null) return;
-            const float cell = 14, x0 = 1060, y0 = 140;
-            foreach (var r in run.dungeon.AllRooms)
-            {
-                if (!r.Visited) continue;
-                bool here = r.X == run.curX && r.Y == run.curY;
-                Color c = here ? new Color32(232, 232, 236, 255) : r.Type == RoomKind.Boss ? new Color32(179, 65, 47, 255)
-                        : r.Type == RoomKind.Item ? new Color32(192, 138, 82, 255) : new Color32(72, 80, 95, 255);
-                var p = new Vector2(x0 + r.X * cell, y0 + r.Y * cell);
-                Rect(g, p, p + new Vector2(cell - 3, cell - 3), c);
-            }
-        }
-
-        static void Disc(Painter2D g, Vector2 c, float r, Color col)
-        {
-            g.fillColor = col;
-            g.BeginPath();
-            g.Arc(c, r, 0, 360);
-            g.Fill();
-        }
-
-        static void Rect(Painter2D g, Vector2 a, Vector2 b, Color col)
-        {
-            g.fillColor = col;
-            g.BeginPath();
-            g.MoveTo(a); g.LineTo(new Vector2(b.x, a.y)); g.LineTo(b); g.LineTo(new Vector2(a.x, b.y)); g.ClosePath();
-            g.Fill();
-        }
-
-        void Paint(MeshGenerationContext ctx)
-        {
-            var run = _run();
-            if (run == null) return;
-            var g = ctx.painter2D;
-            // interim: the minimap and the heart row, until the HUD replaces them (the room is WorldView)
-            DrawMinimap(g, run);
-            DrawHearts(g, run.player);
-        }
-
-        // pickups share the row's colours (HeartRow)
-        static readonly Color HeartRed = HeartRow.Red, ArmourGray = HeartRow.Armour;
-
-        // a heart of half-width s centred on c: two lobes and a point; half = the left half only
-        static void Heart(Painter2D g, Vector2 c, float s, Color col, bool half = false)
-        {
-            float ly = c.y - s * 0.3f, r = s * 0.5f;
-            Disc(g, new Vector2(c.x - r, ly), r, col);
-            g.fillColor = col;
-            g.BeginPath();
-            g.MoveTo(new Vector2(c.x - s, ly)); g.LineTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x, c.y + s));
-            g.ClosePath(); g.Fill();
-            if (half) return;
-            Disc(g, new Vector2(c.x + r, ly), r, col);
-            g.BeginPath();
-            g.MoveTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x + s, ly)); g.LineTo(new Vector2(c.x, c.y + s));
-            g.ClosePath(); g.Fill();
-        }
-
-        /// <summary>The first heart's centre in panel units, just above the room's top-left corner.</summary>
-        public static Vector2 FirstHeart => W(Balance.RoomLeft, Balance.RoomTop) + new Vector2(HeartRow.Size, -34);
-
-        readonly System.Collections.Generic.List<HeartSlot> _row = new System.Collections.Generic.List<HeartSlot>();   // reused: no per-frame allocation
-
-        // the health row above the room; the regenerating heart is rose-violet, the red's family a
-        // step toward purple, so it reads as a different kind of heart without shouting
-        void DrawHearts(Painter2D g, Player pl)
-        {
-            foreach (var h in HeartRow.Layout(pl, FirstHeart, _row))
-            {
-                var unlit = HeartRow.Unlit(h.Kind);
-                if (unlit.HasValue) Heart(g, h.Centre, HeartRow.Size, unlit.Value);
-                if (h.Fill != HeartFill.Empty) Heart(g, h.Centre, HeartRow.Size, HeartRow.Lit(h.Kind), h.Fill == HeartFill.Half);
-            }
         }
     }
 }

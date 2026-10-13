@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-12 (Unity lane re-run at 981f973 with no code changes: `.\verify.ps1 -Unity` green, see Known issues; before that, 2026-10-07: Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-13 (hud-c: the ledger HUD and the book menus, see the Unity bullet; before that, 2026-10-12: Unity lane re-run at 981f973 with no code changes: `.\verify.ps1 -Unity` green, see Known issues; before that, 2026-10-07: Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from the end of that session: 388 C# tests, before 60 Hz and the curve)._
 
 ## Where things are
@@ -20,10 +20,15 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
-- **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
-  real seeded run with placeholder shapes: pause (Esc), death summary, floor banner. EditMode 35/35
-  (`TickClock`, `HeartRow`, menus, sound); the frame-to-tick step lives in `TickClock`, the heart
-  row's layout and colours in `HeartRow`.
+- **Unity (`unity/`)**: 6000.3.25f1. Plays a real seeded run in the JS pixel art (`WorldView`).
+  **HUD (branch hud-c, "the ledgers")**: two lecterns in the side margins hold ledger pages, the body
+  on the left (blood/mending/mail hearts, keys, blink, momentum, depth seal + tally, slain, seed) and
+  the map + kit on the right; the Warden's bar under the room; floor heading and Warden notice above
+  it; pause and the run's account as paper sheets (`Runtime/Hud/`: `HudLayout` is the one geometry
+  table, `LedgerArt` the bakes, `LedgerHud` retained + zero-alloc, `HudOverlays`). F3 shows the dev
+  line. Menus are an open ledger on a desk (`MainMenu.uxml/uss`, textures baked in the controller,
+  Georgia read from the OS via `LedgerFonts`). EditMode 67/67 (`HudTests`: layout never on the room,
+  every H1 line present, 0 bytes per 100 updates, repaint only on change, summary rows).
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
   20 min in about 2 s; 4.8 s at `--hz 210`) and writes `playtest/<label>.json` (header `tickHz`):
   `DOTNET_ROLL_FORWARD=Major dotnet run --project csharp/Depths.Playtest -c Release -- play --label X
@@ -59,10 +64,12 @@ it from another checkout or the first command spends minutes importing.
   touches `unity/` or `Depths.Core`.
 - `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 35/35.
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger`: the player at 1280x720 with
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
   (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
-  every heart against the colours in `HeartRow`. Each check logs `[Depths] check PASS|FAIL`; any
+  every heart on the ledger page (`HudLayout.HeartTopLeft`) against the atlas heart colours in `HeartRow`.
+  The game check also logs the longest frame (a hitch past 250 ms loses clock time; with other Unity
+  processes busy on the machine it can fail at 55-64 Hz, rerun it alone). Each check logs `[Depths] check PASS|FAIL`; any
   FAIL exits 1.
 
 ## Plan

@@ -1,37 +1,76 @@
 <ui:UXML xmlns:ui="UnityEngine.UIElements">
     <Style src="MainMenu.uss" />
-    <ui:VisualElement name="root" class="root">
-        <ui:VisualElement name="main" class="panel">
-            <ui:Label text="DEPTHS" class="title" />
-            <ui:Label text="the seed decides the dungeon" class="subtitle" />
-            <ui:Button name="start" text="Start Game" class="menu-btn" />
-            <ui:Button name="options" text="Options" class="menu-btn" />
-            <ui:Button name="quit" text="Quit" class="menu-btn" />
-        </ui:VisualElement>
-        <ui:VisualElement name="optionsPanel" class="panel wide hidden">
-            <ui:Label text="OPTIONS" class="heading" />
-            <ui:VisualElement class="tabs">
-                <ui:Button name="tabControls" text="Controls" class="tab" />
-                <ui:Button name="tabAudio" text="Audio" class="tab" />
-                <ui:Button name="tabGameplay" text="Gameplay" class="tab" />
+    <ui:VisualElement name="root" class="root desk">
+        <ui:VisualElement name="book" class="book">
+            <ui:VisualElement name="main" class="spread">
+                <ui:VisualElement class="page left">
+                    <ui:VisualElement name="titleStamp" class="title-stamp" />
+                    <ui:Label text="the seed decides the dungeon" class="subtitle italic" />
+                    <ui:VisualElement name="portrait" class="portrait" />
+                    <ui:Label text="Being a true account of the descent: of the body, the map and the kit, kept page by page." class="caption italic" />
+                </ui:VisualElement>
+                <ui:VisualElement class="page right">
+                    <ui:Label text="Contents" class="page-head italic" />
+                    <ui:Button name="start" class="entry">
+                        <ui:Label text="I" class="entry-num" />
+                        <ui:Label text="Start Game" class="entry-text" />
+                        <ui:Label text="descend" class="entry-note italic" />
+                    </ui:Button>
+                    <ui:Button name="options" class="entry">
+                        <ui:Label text="II" class="entry-num" />
+                        <ui:Label text="Options" class="entry-text" />
+                        <ui:Label text="keys, sound, pacing" class="entry-note italic" />
+                    </ui:Button>
+                    <ui:Button name="quit" class="entry">
+                        <ui:Label text="III" class="entry-num" />
+                        <ui:Label text="Quit" class="entry-text" />
+                        <ui:Label text="close the book" class="entry-note italic" />
+                    </ui:Button>
+                    <ui:Label text="Arrows or Tab move the ribbon. Enter chooses." class="foot italic" />
+                </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement name="controlsPage" class="page">
-                <ui:DropdownField name="preset" label="Keyboard layout" />
-                <ui:Label name="presetHint" class="hint" />
-                <ui:ScrollView name="bindList" class="bind-list" />
-                <ui:Button name="resetBinds" text="Reset to layout" class="small-btn" />
+            <ui:VisualElement name="optionsPanel" class="spread hidden">
+                <ui:VisualElement class="page left">
+                    <ui:Label text="Options" class="page-head italic" />
+                    <ui:VisualElement class="tabs">
+                        <ui:Button name="tabControls" class="entry tab">
+                            <ui:Label text="I" class="entry-num" />
+                            <ui:Label text="Controls" class="entry-text" />
+                        </ui:Button>
+                        <ui:Button name="tabAudio" class="entry tab">
+                            <ui:Label text="II" class="entry-num" />
+                            <ui:Label text="Audio" class="entry-text" />
+                        </ui:Button>
+                        <ui:Button name="tabGameplay" class="entry tab">
+                            <ui:Label text="III" class="entry-num" />
+                            <ui:Label text="Gameplay" class="entry-text" />
+                        </ui:Button>
+                    </ui:VisualElement>
+                    <ui:Button name="back" class="entry back">
+                        <ui:Label text="&lt;" class="entry-num" />
+                        <ui:Label text="Back to the contents" class="entry-text" />
+                    </ui:Button>
+                </ui:VisualElement>
+                <ui:VisualElement class="page right">
+                    <ui:Label name="pageTitle" text="Controls" class="page-head italic" />
+                    <ui:VisualElement name="controlsPage" class="opt-page">
+                        <ui:DropdownField name="preset" label="Keyboard layout" class="ledger-dropdown" />
+                        <ui:Label name="presetHint" class="hint italic" />
+                        <ui:ScrollView name="bindList" class="bind-list" />
+                        <ui:Button name="resetBinds" text="Reset to layout" class="small-btn" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="audioPage" class="opt-page hidden">
+                        <ui:Slider name="vol-Master" label="Master" low-value="0" high-value="1" show-input-field="false" class="ledger-slider" />
+                        <ui:Slider name="vol-Music" label="Music" low-value="0" high-value="1" class="ledger-slider" />
+                        <ui:Slider name="vol-Sfx" label="Sound effects" low-value="0" high-value="1" class="ledger-slider" />
+                        <ui:Label text="More options will live here: display, accessibility." class="hint italic" />
+                    </ui:VisualElement>
+                    <ui:VisualElement name="gameplayPage" class="opt-page hidden">
+                        <ui:Toggle name="curve" label="Difficulty curve" class="ledger-toggle" />
+                        <ui:Label text="On: the new pacing. A hard start with no drops on floors 1-2, an easier middle (3-10), then a climb into a hard end. Off: the original depth ladder. Takes effect on the next run." class="hint italic" />
+                    </ui:VisualElement>
+                </ui:VisualElement>
             </ui:VisualElement>
-            <ui:VisualElement name="audioPage" class="page hidden">
-                <ui:Slider name="vol-Master" label="Master" low-value="0" high-value="1" show-input-field="false" />
-                <ui:Slider name="vol-Music" label="Music" low-value="0" high-value="1" />
-                <ui:Slider name="vol-Sfx" label="Sound effects" low-value="0" high-value="1" />
-                <ui:Label text="More options will live here: display, accessibility." class="hint" />
-            </ui:VisualElement>
-            <ui:VisualElement name="gameplayPage" class="page hidden">
-                <ui:Toggle name="curve" label="Difficulty curve" />
-                <ui:Label text="On: the new pacing. A hard start with no drops on floors 1-2, an easier middle (3-10), then a climb into a hard end. Off: the original depth ladder. Takes effect on the next run." class="hint" />
-            </ui:VisualElement>
-            <ui:Button name="back" text="Back" class="menu-btn" />
         </ui:VisualElement>
     </ui:VisualElement>
 </ui:UXML>

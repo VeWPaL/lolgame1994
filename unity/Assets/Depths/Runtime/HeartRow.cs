@@ -7,38 +7,36 @@ namespace Depths.Unity
     public enum HeartKind { Red, Regen, Armour }
     public enum HeartFill { Empty, Half, Full }
 
-    /// <summary>One heart of the health row: its centre in panel units, what it is and how full.</summary>
+    /// <summary>One heart of the health row: what it is and how full.</summary>
     public readonly struct HeartSlot
     {
-        public readonly Vector2 Centre;
         public readonly HeartKind Kind;
         public readonly HeartFill Fill;
-        public HeartSlot(Vector2 c, HeartKind k, HeartFill f) { Centre = c; Kind = k; Fill = f; }
+        public HeartSlot(HeartKind k, HeartFill f) { Kind = k; Fill = f; }
     }
 
     /// <summary>
-    /// The health row above the room, as data: 1 HP is half a heart. Red hearts (dark when empty),
-    /// then the regenerating heart, then armour (no empty slots). The painter draws it; the screenshot
-    /// check takes kinds and fills from the spec but positions from Size/Step, so it cannot catch a bad spacing.
+    /// The health row as data: 1 HP is half a heart. Red hearts (dark when empty), then the
+    /// regenerating heart, then armour (no empty slots). Where each heart goes is the HUD's business
+    /// (Hud.HudLayout.HeartTopLeft); the colours are the atlas hearts' (Sprites.HeartPal), so the
+    /// screenshot check can tell a lit lobe from an unlit one by the pixels the player sees.
     /// </summary>
     public static class HeartRow
     {
-        public const float Size = 10, Step = 26;   // half-width of a heart, distance between centres
-        public static readonly Color Red = new Color32(230, 57, 90, 255), RedEmpty = new Color32(58, 37, 48, 255),
-            Regen = new Color32(205, 78, 150, 255), RegenEmpty = new Color32(70, 38, 64, 255),
-            Armour = new Color32(170, 176, 186, 255);
+        public static readonly Color Red = new Color32(0xe8, 0x39, 0x5a, 255), RedEmpty = new Color32(0x3a, 0x25, 0x30, 255),
+            Regen = new Color32(0xcd, 0x4e, 0x96, 255), RegenEmpty = new Color32(0x46, 0x26, 0x40, 255),
+            Armour = new Color32(0x9a, 0xa0, 0xab, 255);
 
-        public static List<HeartSlot> Layout(Depths.Player pl, Vector2 first, List<HeartSlot> into = null)
+        public static List<HeartSlot> Layout(Depths.Player pl, List<HeartSlot> into = null)
         {
             var row = into ?? new List<HeartSlot>();
             row.Clear();
-            var at = first;
             int hearts = (int)Math.Ceiling(pl.maxHp / 2), hp = (int)Math.Max(0, Math.Round(pl.hp));
-            for (int i = 0; i < hearts; i++, at.x += Step) row.Add(new HeartSlot(at, HeartKind.Red, FillOf(hp, i)));
+            for (int i = 0; i < hearts; i++) row.Add(new HeartSlot(HeartKind.Red, FillOf(hp, i)));
             int regen = (int)Math.Ceiling(pl.regenHeartMax / 2), rg = (int)Math.Max(0, Math.Round(pl.regenHeart));
-            for (int i = 0; i < regen; i++, at.x += Step) row.Add(new HeartSlot(at, HeartKind.Regen, FillOf(rg, i)));
+            for (int i = 0; i < regen; i++) row.Add(new HeartSlot(HeartKind.Regen, FillOf(rg, i)));
             int ar = (int)Math.Max(0, Math.Round(pl.armor));
-            for (int i = 0; 2 * i < ar; i++, at.x += Step) row.Add(new HeartSlot(at, HeartKind.Armour, FillOf(ar, i)));
+            for (int i = 0; 2 * i < ar; i++) row.Add(new HeartSlot(HeartKind.Armour, FillOf(ar, i)));
             return row;
         }
 
@@ -47,11 +45,7 @@ namespace Depths.Unity
 
         public static Color Lit(HeartKind k) => k == HeartKind.Red ? Red : k == HeartKind.Regen ? Regen : Armour;
 
-        /// <summary>The colour under an unlit half; null for armour, which draws nothing there.</summary>
-        public static Color? Unlit(HeartKind k) => k == HeartKind.Red ? RedEmpty : k == HeartKind.Regen ? RegenEmpty : (Color?)null;
-
-        /// <summary>The centres of a heart's two lobes, the points a pixel check samples.</summary>
-        public static Vector2 LeftLobe(HeartSlot h) => new Vector2(h.Centre.x - Size * 0.5f, h.Centre.y - Size * 0.3f);
-        public static Vector2 RightLobe(HeartSlot h) => new Vector2(h.Centre.x + Size * 0.5f, h.Centre.y - Size * 0.3f);
+        /// <summary>The colour of an unlit half: the red and gray hearts share the dark slot, the regen heart has its own.</summary>
+        public static Color Unlit(HeartKind k) => k == HeartKind.Regen ? RegenEmpty : RedEmpty;
     }
 }

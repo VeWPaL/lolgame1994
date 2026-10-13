@@ -4,11 +4,12 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using Depths.Unity.Hud;
 
 namespace Depths.Unity
 {
     /// <summary>
-    /// A built player started with <c>-depthsShot path.png [-depthsView menu|controls|audio|game|hearts]</c>
+    /// A built player started with <c>-depthsShot path.png [-depthsView menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger]</c>
     /// opens that view, captures one frame and quits. It is how the game is checked by eye from a script.
     /// <c>game</c> also measures the tick rate in real time and <c>hearts</c> samples the health row's
     /// pixels; each logs a "[Depths] check" line, and the player exits 1 if a check fails.
@@ -37,6 +38,9 @@ namespace Depths.Unity
             return i >= 0 && i + 1 < a.Length ? a[i + 1] : null;
         }
 
+        /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger" };
+
         void Check(bool ok, string what)
         {
             if (!ok) _failed = true;
@@ -46,7 +50,7 @@ namespace Depths.Unity
         IEnumerator Start()
         {
             for (int i = 0; i < 10; i++) yield return null;
-            bool inGame = _view == "game" || _view == "boss" || _view == "sandbox" || _view == "hearts";
+            bool inGame = Array.IndexOf(GameViews, _view) >= 0;
             if (inGame) SceneManager.LoadScene("Game");
             else
             {
@@ -58,6 +62,12 @@ namespace Depths.Unity
             else if (_view == "boss") yield return new WaitForSecondsRealtime(4f);
             else if (_view == "sandbox") yield return new WaitForSecondsRealtime(1.5f);
             else if (_view == "hearts") { yield return CheckHearts(); yield break; }
+            else if (_view == "summary") yield return SummaryView();
+            else if (_view == "pause") yield return PauseView();
+            else if (_view == "banner") yield return BannerView();
+            else if (_view == "warning") yield return WarningView();
+            else if (_view == "lowhp") yield return LowView();
+            else if (_view == "ledger") yield return LedgerView();
             else for (int i = 0; i < 20; i++) yield return null;
             ScreenCapture.CaptureScreenshot(_path);
             for (int i = 0; i < 10; i++) yield return null;
@@ -75,11 +85,12 @@ namespace Depths.Unity
             float s0 = Time.realtimeSinceStartup;
             // the final mix, sampled while the demo shoots: a missing listener or a dead bus is silence
             var mix = new float[1024];
-            float loudest = 0;
+            float loudest = 0, longest = 0;   // the longest frame: a hitch past the clock's quarter-second cut loses time
             while (Time.realtimeSinceStartup - s0 < seconds - 1f)
             {
                 AudioListener.GetOutputData(mix, 0);
                 foreach (var x in mix) loudest = Mathf.Max(loudest, Mathf.Abs(x));
+                longest = Mathf.Max(longest, Time.unscaledDeltaTime);
                 yield return null;
             }
             Check(FindAnyObjectByType<AudioListener>() != null, "the scene has an AudioListener");
@@ -97,7 +108,7 @@ namespace Depths.Unity
             Check(sim == clock, "the sim stepped " + sim + " ticks for the clock's " + clock);
             Check(Math.Abs(hz - Balance.TickHz) <= 0.02 * Balance.TickHz,
                   "tick rate " + hz.ToString("0.00") + " Hz over " + s.ToString("0.00") + " s at " +
-                  ((Time.frameCount - f0) / s).ToString("0") + " fps (want " + Balance.TickHz + " +-2%)");
+                  ((Time.frameCount - f0) / s).ToString("0") + " fps, longest frame " + (longest * 1000).ToString("0") + " ms (want " + Balance.TickHz + " +-2%)");
         }
 
         // The specification, not the layout code: 5 of 8 HP, regen 1 of 4, armour 3 draws red full,
@@ -123,34 +134,127 @@ namespace Depths.Unity
 
             float scale = tex.width / 1280f;   // the panel's reference width; the player opens at 16:9
             Check(Math.Abs(tex.height - 720f * scale) < 1.5f, "hearts: screen is 16:9 (" + tex.width + "x" + tex.height + ")");
+            // each kind is its own written line on the body page; the index within the kind places it
+            var seen = new int[3];
             for (int i = 0; i < Expected.Length; i++)
             {
                 var (kind, fill) = Expected[i];
-                var slot = new HeartSlot(RoomPainter.FirstHeart + new Vector2(i * HeartRow.Step, 0), kind, fill);
-                Color lit = HeartRow.Lit(kind);
-                Color left = Sample(tex, HeartRow.LeftLobe(slot), scale), right = Sample(tex, HeartRow.RightLobe(slot), scale);
+                var tl = HudLayout.HeartTopLeft(kind, seen[(int)kind]++);
+                Color left = Sample(tex, HudLayout.LeftLobe(tl), scale), right = Sample(tex, HudLayout.RightLobe(tl), scale);
                 string at = "heart " + (i + 1) + " " + kind + " " + fill;
                 Lobe(at + ": left lobe ", left, fill != HeartFill.Empty, kind);
                 Lobe(at + ": right lobe ", right, fill == HeartFill.Full, kind);
             }
-            // nothing after the last heart: the row is exactly as long as the fixture
-            var past = new HeartSlot(RoomPainter.FirstHeart + new Vector2(Expected.Length * HeartRow.Step, 0), HeartKind.Armour, HeartFill.Full);
-            Color after = Sample(tex, HeartRow.LeftLobe(past), scale);
-            bool anyHeart = Near(after, HeartRow.Red) || Near(after, HeartRow.Regen) || Near(after, HeartRow.Armour) ||
-                            Near(after, HeartRow.RedEmpty) || Near(after, HeartRow.RegenEmpty);
-            Check(!anyHeart, "no heart past the " + Expected.Length + "th: " + Hex(after));
+            // nothing after the last heart of each kind: the lines are exactly as long as the fixture
+            foreach (HeartKind k in new[] { HeartKind.Red, HeartKind.Regen, HeartKind.Armour })
+            {
+                var tl = HudLayout.HeartTopLeft(k, seen[(int)k]);
+                Color after = Sample(tex, HudLayout.LeftLobe(tl), scale);
+                bool anyHeart = Near(after, HeartRow.Red) || Near(after, HeartRow.Regen) || Near(after, HeartRow.Armour) ||
+                                Near(after, HeartRow.RedEmpty) || Near(after, HeartRow.RegenEmpty);
+                Check(!anyHeart, "no " + k + " heart past the " + seen[(int)k] + " the fixture has: " + Hex(after));
+            }
             Destroy(tex);
             for (int i = 0; i < 3; i++) yield return null;
             Application.Quit(_failed ? 1 : 0);
         }
 
-        // a lit lobe is the kind's colour; an unlit one is its dark slot, or for armour anything but gray
+        GameView Game() => FindAnyObjectByType<GameView>();
+
+        // Dies after the demo has fought a while, so the account has real numbers in it.
+        IEnumerator SummaryView()
+        {
+            yield return new WaitForSecondsRealtime(4f);
+            var v = Game();
+            if (v == null || v.Hud == null) { Check(false, "summary: no running GameView"); yield break; }
+            v.Run.player.hp = 0;
+            v.Run.EndRun(false);
+            for (int i = 0; i < 20; i++) yield return null;
+            Check(v.Hud.Overlays.SummaryShown, "summary: the run's account opens on a death");
+            Check(v.Hud.Overlays.SummaryValue(0) == v.Run.floor.ToString(), "summary: floor reached reads " + v.Hud.Overlays.SummaryValue(0));
+            Check(v.Hud.Overlays.SummaryValue(4) == v.Run.kills.ToString(), "summary: enemies defeated reads " + v.Hud.Overlays.SummaryValue(4) + " for " + v.Run.kills);
+        }
+
+        IEnumerator PauseView()
+        {
+            yield return new WaitForSecondsRealtime(2.5f);
+            var v = Game();
+            if (v == null || v.Hud == null) { Check(false, "pause: no running GameView"); yield break; }
+            v.Paused = true;
+            long t0 = v.Ticks;
+            for (int i = 0; i < 20; i++) yield return null;
+            Check(v.Hud.Overlays.PauseShown, "pause: the pause page is open");
+            Check(v.Ticks == t0, "pause: no tick stepped under the pause page (" + (v.Ticks - t0) + ")");
+        }
+
+        // Four real descents, so the heading is the one a player sees on entering the second area.
+        IEnumerator BannerView()
+        {
+            yield return new WaitForSecondsRealtime(1f);
+            var v = Game();
+            if (v == null || v.Hud == null) { Check(false, "banner: no running GameView"); yield break; }
+            for (int i = 0; i < 4; i++) { v.Run.Descend(); yield return null; }
+            yield return new WaitForSecondsRealtime(0.9f);
+            Check(v.Run.floor == 5 && v.Hud.Overlays.BannerShown, "banner: FLOOR 5 is shown after the descent (floor " + v.Run.floor + ")");
+        }
+
+        IEnumerator WarningView()
+        {
+            yield return new WaitForSecondsRealtime(1f);
+            var v = Game();
+            if (v == null || v.Hud == null) { Check(false, "warning: no running GameView"); yield break; }
+            v.Frozen = true;   // the fixture holds: the warning's timer stays at its middle
+            v.Run.bossWarnT = Balance.BossWarnTime / 2;
+            for (int i = 0; i < 10; i++) yield return null;
+            Check(v.Hud.Overlays.WarningShown, "warning: the Warden's notice is up while bossWarnT > 0");
+        }
+
+        IEnumerator LowView()
+        {
+            yield return new WaitForSecondsRealtime(1f);
+            var v = Game();
+            if (v == null || v.Hud == null) { Check(false, "lowhp: no running GameView"); yield break; }
+            v.Frozen = true;   // the fixture holds: one point of red, nothing else
+            var p = v.Run.player;
+            p.hp = 1; p.regenHeart = 0; p.armor = 0;
+            yield return new WaitForSecondsRealtime(0.35f);
+            Check(LedgerHud.IsLow(p), "lowhp: the ledger reads the body as on its last heart");
+        }
+
+        // A full page: a fixture with every line of both ledgers written (keys, mail, a held item and
+        // passives, a part-spent blink, momentum, a charted floor). The harness sets these by hand.
+        IEnumerator LedgerView()
+        {
+            yield return new WaitForSecondsRealtime(2.5f);
+            var v = Game();
+            if (v == null || v.Hud == null) { Check(false, "ledger: no running GameView"); yield break; }
+            v.Frozen = true;
+            var run = v.Run;
+            Items.Give(run, "tin_cup");
+            Items.Give(run, "iron_ribs");
+            Items.Give(run, "lucky_coin");
+            var p = run.player;
+            p.hp = Math.Min(p.maxHp, 7); p.armor = 3; p.hasSilver = true; p.hasGold = true;
+            p.momentum = 0.62; p.weaponIdx = 1; p.cooldown = Weapons.All[1].Cooldown / Balance.TempoRate * 0.4;
+            p.altCooldown = (int)(Balance.AltCooldown / Balance.TempoRate * 0.7);
+            run.blinkCharges = 1; p.blinkRegen = Balance.BlinkRecharge * 0.45;
+            run.kills = 23;
+            int marked = 0;
+            for (int i = 0; i < run.dungeon.AllRooms.Count && marked < 6; i++)
+            {
+                var r = run.dungeon.AllRooms[i];
+                if (r.Type == RoomKind.Boss) continue;
+                r.Visited = true; r.Cleared = true; marked++;
+            }
+            for (int i = 0; i < 10; i++) yield return null;
+            Check(Items.ActiveItem(run) != null, "ledger: the fixture holds an active item");
+        }
+
+        // a lit lobe is the kind's colour; an unlit one is its dark slot
         void Lobe(string at, Color got, bool lit, HeartKind kind)
         {
-            Color on = HeartRow.Lit(kind);
-            if (lit) Check(Near(got, on), at + Hex(got) + " want " + Hex(on));
-            else if (HeartRow.Unlit(kind) is Color off) Check(Near(got, off), at + Hex(got) + " want unlit " + Hex(off));
-            else Check(!Near(got, on), at + Hex(got) + " must not be " + Hex(on));
+            Color want = lit ? HeartRow.Lit(kind) : HeartRow.Unlit(kind);
+            Check(Near(got, want), at + Hex(got) + " want " + (lit ? "" : "unlit ") + Hex(want));
         }
 
         // panel units (y down) to texture pixels (y up)
