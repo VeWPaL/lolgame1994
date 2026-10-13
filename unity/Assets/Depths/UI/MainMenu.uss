@@ -1,45 +1,86 @@
-/* The JS game's palette: near-black slate, cold text, brass wood, key caps. */
+/* The menu is an open ledger on a desk: ink on aged paper, wood around it. Textures (desk, book,
+   key caps, knob, tick box, the title) are baked at runtime by MainMenuController from the HUD's
+   materials; this sheet only places things and inks them. Ink rgb(43,29,18), soft ink rgb(90,70,48),
+   red ink rgb(163,40,31), the ruled blue rgba(64,96,140,0.3). */
 .root { flex-grow: 1; align-items: center; justify-content: center; background-color: rgb(11, 13, 18); }
-.panel { width: 360px; padding: 28px; background-color: rgb(20, 23, 31); border-width: 2px; border-color: rgb(122, 86, 50);
-         border-radius: 6px; align-items: stretch; }
-.wide { width: 640px; }
 .hidden { display: none; }
-.title { font-size: 56px; color: rgb(232, 232, 236); -unity-text-align: middle-center; -unity-font-style: bold; letter-spacing: 8px; }
-.subtitle { font-size: 14px; color: rgb(138, 147, 165); -unity-text-align: middle-center; margin-bottom: 22px; }
-.heading { font-size: 26px; color: rgb(224, 176, 122); -unity-font-style: bold; margin-bottom: 12px; }
-.menu-btn { height: 42px; margin: 5px 0; font-size: 18px; color: rgb(211, 218, 230); background-color: rgb(23, 28, 37);
-            border-width: 1px; border-bottom-width: 3px; border-color: rgb(72, 80, 95); border-radius: 4px; }
-.menu-btn:hover, .menu-btn:focus { border-color: rgb(192, 138, 82); color: rgb(255, 255, 255); }
-.small-btn { height: 30px; margin-top: 8px; color: rgb(211, 218, 230); background-color: rgb(23, 28, 37); border-color: rgb(72, 80, 95); }
-.tabs { flex-direction: row; margin-bottom: 10px; }
-.tab { flex-grow: 1; height: 32px; color: rgb(138, 147, 165); background-color: rgb(16, 19, 26); border-color: rgb(43, 50, 64); }
-.tab.selected { color: rgb(232, 232, 236); border-color: rgb(192, 138, 82); background-color: rgb(30, 35, 46); }
-.page { min-height: 280px; }
-.hint { font-size: 12px; color: rgb(138, 147, 165); white-space: normal; margin: 4px 0 8px 0; }
-.bind-list { max-height: 330px; }
-.bind-row { flex-direction: row; align-items: center; justify-content: space-between; padding: 1px 0; border-bottom-width: 1px; border-color: rgb(36, 41, 52); }
-.bind-name { color: rgb(211, 218, 230); font-size: 15px; }
-.bind-key { min-width: 120px; height: 26px; color: rgb(232, 232, 236); background-color: rgb(23, 28, 37);
-            border-width: 1px; border-bottom-width: 3px; border-color: rgb(72, 80, 95); border-radius: 3px; }
-.bind-key.listening { border-color: rgb(224, 176, 122); color: rgb(224, 176, 122); }
-Label, .unity-base-field__label { color: rgb(211, 218, 230); }
-.game-room { position: absolute; border-width: 1px; border-color: rgb(72, 80, 95); background-color: rgb(30, 35, 46); }
-.game-room.start { background-color: rgb(47, 125, 79); }
-.game-room.item { background-color: rgb(192, 138, 82); }
-.game-room.boss { background-color: rgb(179, 65, 47); }
-.game-room.secret { background-color: rgb(90, 70, 130); }
-.game-door { position: absolute; background-color: rgb(138, 147, 165); }
-.game-text { position: absolute; left: 24px; top: 20px; font-size: 16px; color: rgb(232, 232, 236); white-space: normal; width: 560px; }
 
-/* The default runtime theme is light; these bring its controls into the palette. */
-.unity-base-popup-field__input, .unity-base-dropdown__input { background-color: rgb(23, 28, 37); color: rgb(232, 232, 236);
-    border-color: rgb(72, 80, 95); border-radius: 3px; }
-.unity-base-popup-field__arrow { -unity-background-image-tint-color: rgb(192, 138, 82); }
-.unity-base-dropdown__container-outer { background-color: rgb(20, 23, 31); border-color: rgb(122, 86, 50); }
-.unity-base-dropdown__item { color: rgb(211, 218, 230); }
-.unity-base-dropdown__item:hover { background-color: rgb(43, 50, 64); }
-.unity-base-slider__tracker { background-color: rgb(43, 50, 64); border-color: rgb(43, 50, 64); }
-.unity-base-slider__dragger { background-color: rgb(192, 138, 82); border-color: rgb(224, 176, 122); }
-.unity-scroller { background-color: rgb(16, 19, 26); border-width: 0; }
-.unity-scroller .unity-base-slider__dragger { background-color: rgb(72, 80, 95); border-width: 0; }
-.unity-scroller .unity-repeat-button { background-color: rgb(23, 28, 37); border-width: 0; }
+.book { position: absolute; width: 1100px; height: 646px; left: 90px; top: 34px; }
+.spread { position: absolute; left: 0; top: 0; right: 0; bottom: 0; }
+.page { position: absolute; top: 22px; width: 528px; height: 576px; padding-left: 72px; padding-right: 40px; }
+.page.left { left: 22px; }
+.page.right { left: 550px; }
+.page-head { height: 96px; margin: 0; padding: 0 0 10px 0; font-size: 32px; color: rgb(43, 29, 18); -unity-text-align: lower-left; }
+
+/* the left page of the contents */
+.title-stamp { align-self: center; margin-top: 30px; margin-left: -72px; margin-right: -40px; }
+.subtitle { margin: 20px 0 0 -32px; font-size: 18px; color: rgb(90, 70, 48); -unity-text-align: middle-center; }
+.portrait { align-self: center; margin-top: 34px; margin-left: -32px; }
+.caption { margin: 26px 10px 0 -22px; font-size: 15px; color: rgb(90, 70, 48); white-space: normal; -unity-text-align: middle-center; }
+
+/* an entry: a written line with its number in the margin; the ribbon marks the one you are on */
+.entry { flex-direction: row; align-items: center; height: 54px; margin: 0; padding: 0 10px 0 10px;
+         background-color: rgba(0, 0, 0, 0); border-width: 0; border-radius: 0; border-bottom-width: 1px;
+         border-color: rgba(64, 96, 140, 0.3); -unity-text-align: middle-left; }
+.entry:hover, .entry:focus, .entry:active { background-color: rgba(163, 40, 31, 0.07); }
+.entry:focus { border-left-width: 7px; border-left-color: rgb(140, 42, 42); border-bottom-color: rgb(163, 40, 31); }
+.entry-num { position: absolute; left: -66px; width: 48px; font-size: 18px; color: rgb(90, 70, 48); -unity-text-align: middle-right; margin: 0; padding: 0; }
+.entry-text { font-size: 25px; color: rgb(43, 29, 18); margin: 0; padding: 0; }
+.entry-note { flex-grow: 1; font-size: 14px; color: rgb(120, 98, 72); -unity-text-align: middle-right; margin: 0; padding: 0; }
+.entry:hover .entry-text, .entry:focus .entry-text { color: rgb(163, 40, 31); }
+.entry:hover .entry-num, .entry:focus .entry-num { color: rgb(163, 40, 31); }
+/* the open section is marked differently from keyboard focus: an underline and a bookmark tab on the
+   right; focus is the ribbon on the left. A focused open section shows both. */
+.tab.selected { border-bottom-width: 3px; border-bottom-color: rgb(140, 42, 42); border-right-width: 10px; border-right-color: rgb(140, 42, 42); }
+.tab.selected .entry-text { color: rgb(140, 42, 42); }
+.tab.selected .entry-num { color: rgb(140, 42, 42); }
+.back { position: absolute; left: 72px; right: 40px; bottom: 26px; border-top-width: 1px; }
+.back .entry-text { font-size: 20px; }
+.foot { position: absolute; left: 72px; right: 40px; bottom: 24px; font-size: 13px; color: rgb(120, 98, 72); -unity-text-align: middle-center; }
+
+/* the options pages */
+.opt-page { flex-grow: 1; padding-top: 14px; }
+.hint { font-size: 13px; color: rgb(90, 70, 48); white-space: normal; margin: 6px 0 10px 0; }
+Label, .unity-base-field__label { color: rgb(43, 29, 18); }
+.unity-base-field__label { font-size: 17px; min-width: 150px; }
+
+.ledger-dropdown { margin: 0; height: 34px; align-items: center; }
+/* the field: a wooden frame around a paper slip, baked and 9-sliced by the controller; a brass arrow */
+.ledger-dropdown .unity-base-popup-field__input, .ledger-dropdown .unity-base-field__input {
+    background-color: rgba(0, 0, 0, 0); border-width: 0; border-radius: 0; color: rgb(43, 29, 18); padding: 0 10px 0 12px; height: 32px; }
+.ledger-dropdown:hover .unity-base-field__input, .ledger-dropdown:focus .unity-base-field__input { -unity-background-image-tint-color: rgb(255, 226, 200); }
+.unity-base-popup-field__text { color: rgb(43, 29, 18); font-size: 15px; -unity-text-align: middle-left; padding: 0; margin: 0; }
+.unity-base-popup-field__arrow { -unity-background-image-tint-color: rgb(255, 255, 255); }
+
+.bind-list { max-height: 330px; margin-top: 2px; }
+.bind-row { flex-direction: row; align-items: center; justify-content: space-between; height: 34px;
+            border-bottom-width: 1px; border-color: rgba(64, 96, 140, 0.3); }
+.bind-name { color: rgb(43, 29, 18); font-size: 16px; }
+.bind-key { width: 132px; height: 30px; margin: 0; padding: 0 0 4px 0; background-color: rgba(0, 0, 0, 0); border-width: 0; border-radius: 0;
+            color: rgb(240, 226, 196); font-size: 14px; -unity-font-style: bold; -unity-text-align: middle-center; }
+.bind-key:hover, .bind-key:focus { background-color: rgba(0, 0, 0, 0); color: rgb(255, 238, 190); border-width: 2px; border-color: rgb(224, 192, 122); }
+.bind-key.listening { color: rgb(255, 214, 120); border-width: 2px; border-color: rgb(255, 214, 120); }
+
+.small-btn { align-self: flex-end; height: 28px; margin-top: 8px; padding: 0 6px; background-color: rgba(0, 0, 0, 0); border-width: 0;
+             border-radius: 0; color: rgb(163, 40, 31); font-size: 15px; -unity-text-align: middle-right; }
+.small-btn:hover, .small-btn:focus { background-color: rgba(163, 40, 31, 0.08); border-bottom-width: 2px; border-color: rgb(163, 40, 31); }
+
+.ledger-slider { margin: 16px 0 10px 0; height: 34px; }
+.ledger-slider .unity-base-slider__input { margin-right: 6px; }
+.ledger-slider .unity-base-slider__tracker { height: 14px; margin-top: -7px; background-color: rgba(0, 0, 0, 0); border-width: 0; border-radius: 0; }
+.ledger-slider .unity-base-slider__dragger { width: 16px; height: 26px; margin-top: -12px; background-color: rgba(0, 0, 0, 0); border-width: 0; }
+.ledger-slider .unity-base-slider__dragger-border { display: none; }
+.ledger-slider:focus .unity-base-slider__tracker, .ledger-slider:hover .unity-base-slider__tracker { -unity-background-image-tint-color: rgb(255, 222, 196); }
+.ledger-slider:focus .unity-base-field__label, .ledger-slider:hover .unity-base-field__label { color: rgb(163, 40, 31); }
+
+.ledger-toggle { margin: 18px 0 6px 0; height: 30px; align-items: center; }
+.ledger-toggle .unity-toggle__input { align-items: center; }
+.ledger-toggle .unity-toggle__checkmark { width: 26px; height: 26px; background-color: rgba(0, 0, 0, 0); border-width: 0; -unity-background-image-tint-color: rgb(255, 255, 255); }
+.ledger-toggle:hover .unity-toggle__checkmark, .ledger-toggle:focus .unity-toggle__checkmark { -unity-background-image-tint-color: rgb(255, 214, 200); }
+
+.unity-scroller { background-color: rgba(43, 29, 18, 0.08); border-width: 0; }
+.unity-scroller .unity-base-slider__dragger { background-color: rgba(43, 29, 18, 0.5); border-width: 0; }
+.unity-scroller .unity-repeat-button { background-color: rgba(0, 0, 0, 0); border-width: 0; }
+.toggle-state { margin-left: 10px; font-size: 17px; color: rgb(90, 70, 48); }
+.toggle-state.on { color: rgb(163, 40, 31); }
+.ledger-toggle:focus .unity-base-field__label, .ledger-toggle:hover .unity-base-field__label { color: rgb(163, 40, 31); }

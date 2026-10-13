@@ -1,15 +1,22 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Audio;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
+using Depths.Unity.Art;
 using Depths.Unity.Audio;
+using Depths.Unity.Hud;
 
 namespace Depths.Unity
 {
-    /// <summary>Start Game / Options / Quit, and the Options pages: key binds, volume, gameplay.</summary>
+    /// <summary>
+    /// Start Game / Options / Quit, and the Options pages: key binds, volume, gameplay. The menu is an
+    /// open ledger on a desk (the HUD's wood and paper): the contents on the right page, the options'
+    /// sections on the left and the chosen section on the right. Its textures are baked here at start.
+    /// </summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class MainMenuController : MonoBehaviour
     {
@@ -23,15 +30,29 @@ namespace Depths.Unity
             ("Blink", "Blink"), ("Active", "Use active item"), ("Pause", "Pause"), ("Sheet", "Character sheet"), ("Controls", "Controls help"),
         };
 
+        public const int KeyCapW = 132, KeyCapH = 30;
+
         VisualElement _main, _options, _controlsPage, _audioPage, _gameplayPage;
         Button _tabControls, _tabAudio, _tabGameplay;
+        Label _pageTitle;
         ScrollView _bindList;
         DropdownField _preset;
         Label _presetHint;
+        Toggle _curve;
         Bindings _bindings;
         VolumeSettings _volume;
         GameplaySettings _gameplay;
         InputActionRebindingExtensions.RebindingOperation _rebind;
+        readonly List<Texture2D> _owned = new List<Texture2D>();
+        Texture2D _cap, _capLit, _boxOn, _boxOff;
+
+        // A few frames after the menu shows, bake what the game's first frame would otherwise stall on (the
+        // sprite atlas and the HUD's boards and sheets, about a second): the player is reading the menu meanwhile.
+        System.Collections.IEnumerator Start()
+        {
+            for (int i = 0; i < 3; i++) yield return null;
+            Depths.Unity.Hud.LedgerHud.Prebake();
+        }
 
         void OnEnable()
         {
@@ -51,9 +72,11 @@ namespace Depths.Unity
             _tabControls = root.Q<Button>("tabControls");
             _tabAudio = root.Q<Button>("tabAudio");
             _tabGameplay = root.Q<Button>("tabGameplay");
+            _pageTitle = root.Q<Label>("pageTitle");
             _bindList = root.Q<ScrollView>("bindList");
             _preset = root.Q<DropdownField>("preset");
             _presetHint = root.Q<Label>("presetHint");
+            Skin(root);
 
             root.Q<Button>("start").clicked += () => { SoundEngine.Play("door"); SceneManager.LoadScene(gameScene); };
             root.Q<Button>("options").clicked += () => { SoundEngine.Play("pickup"); ShowView("controls"); };
@@ -62,9 +85,12 @@ namespace Depths.Unity
             _tabControls.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("controls"); };
             _tabAudio.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("audio"); };
             _tabGameplay.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("gameplay"); };
-            var curve = root.Q<Toggle>("curve");
-            curve.SetValueWithoutNotify(_gameplay.Curve);
-            curve.RegisterValueChangedCallback(e => { _gameplay.Curve = e.newValue; SoundEngine.Play("blink", 0, 0.6f); });
+            // Esc (the UI's cancel) closes the options, as the back entry does
+            root.RegisterCallback<NavigationCancelEvent>(_ => { if (_rebind == null && _main.ClassListContains("hidden")) ShowView("menu"); });
+            _curve = root.Q<Toggle>("curve");
+            _curve.SetValueWithoutNotify(_gameplay.Curve);
+            _curve.RegisterValueChangedCallback(e => { _gameplay.Curve = e.newValue; Tick(); SoundEngine.Play("blink", 0, 0.6f); });
+            Tick();
             root.Q<Button>("resetBinds").clicked += () => { _bindings.ApplyPreset(_bindings.Preset); RefreshBinds(); };
 
             var presets = Enum.GetValues(typeof(KeyPreset)).Cast<KeyPreset>().ToList();
@@ -87,7 +113,73 @@ namespace Depths.Unity
             ShowView("menu");
         }
 
-        void OnDisable() { _rebind?.Cancel(); }
+        void OnDisable()
+        {
+            _rebind?.Cancel();
+            foreach (var t in _owned) Atlas.Free(t);
+            _owned.Clear();
+        }
+
+        Texture2D Tex(Img img, string name)
+        {
+            var t = Atlas.ToTexture(img, name);
+            _owned.Add(t);
+            return t;
+        }
+
+        // The desk, the book, the struck title and the portrait; the ledger's hand on every label.
+        void Skin(VisualElement root)
+        {
+            root.Q("root").style.backgroundImage = new StyleBackground(Tex(LedgerArt.Desk(1280, 720), "desk"));
+            root.Q("book").style.backgroundImage = new StyleBackground(Tex(LedgerArt.Book(1100, 620), "book"));
+            SetImage(root.Q("titleStamp"), LedgerArt.Stamp("DEPTHS", 9, LedgerArt.Ink));
+            SetImage(root.Q("portrait"), LedgerArt.Portrait(7));
+            LedgerFonts.Use(root, LedgerFonts.Regular);
+            root.Query(className: "italic").ForEach(e => LedgerFonts.Use(e, LedgerFonts.Italic));
+            _cap = Tex(LedgerArt.KeyCap(KeyCapW, KeyCapH, false), "keycap");
+            _capLit = Tex(LedgerArt.KeyCap(KeyCapW, KeyCapH, true), "keycap-lit");
+            _boxOn = Tex(LedgerArt.TickBox(26, true), "tick-on");
+            _boxOff = Tex(LedgerArt.TickBox(26, false), "tick-off");
+            var knob = Tex(LedgerArt.Knob(16, 26), "knob");
+            root.Query(className: "unity-base-slider__dragger").ForEach(d => d.style.backgroundImage = new StyleBackground(knob));
+            // the slider rides in a groove cut in a plank; the dropdown is a framed paper slip with a brass arrow
+            var groove = Tex(LedgerArt.Groove(40, 14), "groove");
+            root.Query(className: "unity-base-slider__tracker").ForEach(t => Sliced(t, groove, 5));
+            var field = Tex(LedgerArt.FieldFrame(48, 30), "field");
+            root.Query(className: "unity-base-popup-field__input").ForEach(f => Sliced(f, field, 6));
+            var arrow = Tex(LedgerArt.BrassArrow(13, 9), "arrow");
+            root.Query(className: "unity-base-popup-field__arrow").ForEach(a => { a.style.backgroundImage = new StyleBackground(arrow); a.style.width = 13; a.style.height = 9; });
+        }
+
+        static void Sliced(VisualElement e, Texture2D t, int edge)
+        {
+            e.style.backgroundImage = new StyleBackground(t);
+            e.style.unitySliceLeft = edge; e.style.unitySliceRight = edge; e.style.unitySliceTop = edge; e.style.unitySliceBottom = edge;
+        }
+
+        void SetImage(VisualElement e, Img img)
+        {
+            e.style.backgroundImage = new StyleBackground(Tex(img, e.name));
+            e.style.width = img.W; e.style.height = img.H;
+        }
+
+        Label _curveState;
+
+        // the tick box, and On or Off written beside it so the state never rests on the tick alone
+        void Tick()
+        {
+            var mark = _curve.Q(className: "unity-toggle__checkmark");
+            if (mark != null) mark.style.backgroundImage = new StyleBackground(_curve.value ? _boxOn : _boxOff);
+            if (_curveState == null)
+            {
+                _curveState = new Label { name = "curveState" };
+                _curveState.AddToClassList("toggle-state");
+                LedgerFonts.Use(_curveState, LedgerFonts.Italic);
+                (_curve.Q(className: "unity-toggle__input") ?? _curve).Add(_curveState);
+            }
+            _curveState.text = _curve.value ? "On" : "Off";
+            _curveState.EnableInClassList("on", _curve.value);
+        }
 
         // Dragging a slider plays the level you are setting, at most a few times a second.
         float _lastPreview;
@@ -117,7 +209,50 @@ namespace Depths.Unity
             _tabControls.EnableInClassList("selected", view == "controls");
             _tabAudio.EnableInClassList("selected", view == "audio");
             _tabGameplay.EnableInClassList("selected", view == "gameplay");
-            (menu ? _main.Q<Button>("start") : _options.Q<Button>("back")).Focus();
+            _pageTitle.text = view == "audio" ? "Audio" : view == "gameplay" ? "Gameplay" : "Controls";
+            if (menu) _main.Q<Button>("start").Focus();
+            else (view == "audio" ? _tabAudio : view == "gameplay" ? _tabGameplay : _tabControls).Focus();
+        }
+
+        /// <summary>The menu views the screenshot mode can show besides the pages: keyboard focus on a key cap or a
+        /// slider, the dropdown's list open, the mouse over an entry, the curve ticked. None of them saves a setting.</summary>
+        public static readonly string[] EvidenceViews = { "focuskey", "focusslider", "dropdown", "hover", "gameplayon" };
+
+        public void Evidence(string view)
+        {
+            var root = GetComponent<UIDocument>().rootVisualElement;
+            switch (view)
+            {
+                case "focuskey": ShowView("controls"); root.Q(className: "bind-key")?.Focus(); break;
+                case "focusslider": ShowView("audio"); root.Q<Slider>("vol-Music")?.Focus(); break;
+                case "gameplayon": ShowView("gameplay"); _curve.SetValueWithoutNotify(true); Tick(); break;
+                case "dropdown":
+                    // after the page has been laid out, or the list opens at the origin with no size
+                    ShowView("controls");
+                    _preset.Focus();
+                    _preset.schedule.Execute(() =>
+                    {
+                        var show = _preset.GetType().GetMethod("ShowMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                        if (show != null) show.Invoke(_preset, null);
+                        else using (var e = NavigationSubmitEvent.GetPooled()) { e.target = _preset; _preset.SendEvent(e); }
+                    }).StartingIn(250);
+                    break;
+                case "hover":
+                    ShowView("menu");
+                    root.schedule.Execute(() =>
+                    {
+                        var b = root.Q<Button>("options").worldBound;
+                        float k = Screen.width / root.panel.visualTree.worldBound.width;
+                        var at = new Vector2(b.center.x * k, Screen.height - b.center.y * k);
+                        // the OS cursor, and the Input System's own mouse state (a batch window may not own the cursor)
+                        Mouse.current?.WarpCursorPosition(at);
+                        if (Mouse.current != null) UnityEngine.InputSystem.InputSystem.QueueStateEvent(Mouse.current, new UnityEngine.InputSystem.LowLevel.MouseState { position = at });
+                        // and a pointer move into the panel itself, which is what sets :hover
+                        var ev = new Event { type = EventType.MouseMove, mousePosition = b.center };
+                        using (var pm = PointerMoveEvent.GetPooled(ev)) root.panel.visualTree.SendEvent(pm);
+                    }).StartingIn(250).Every(100).Until(() => Time.unscaledTime > 30);
+                    break;
+            }
         }
 
         void RefreshBinds()
@@ -134,11 +269,18 @@ namespace Depths.Unity
                 name.AddToClassList("bind-name");
                 var key = new Button { text = _bindings.Display(slot) };
                 key.AddToClassList("bind-key");
+                key.style.backgroundImage = new StyleBackground(_cap);
+                // a focused or hovered cap lights up, the way a listening one does
+                key.RegisterCallback<FocusInEvent>(_ => key.style.backgroundImage = new StyleBackground(_capLit));
+                key.RegisterCallback<FocusOutEvent>(_ => { if (!key.ClassListContains("listening")) key.style.backgroundImage = new StyleBackground(_cap); });
+                key.RegisterCallback<PointerEnterEvent>(_ => key.style.backgroundImage = new StyleBackground(_capLit));
+                key.RegisterCallback<PointerLeaveEvent>(_ => { if (key.focusController?.focusedElement != key && !key.ClassListContains("listening")) key.style.backgroundImage = new StyleBackground(_cap); });
                 key.clicked += () =>
                 {
                     if (_rebind != null) return;
                     key.text = "press a key...";
                     key.AddToClassList("listening");
+                    key.style.backgroundImage = new StyleBackground(_capLit);
                     _rebind = _bindings.StartRebind(slot, () => { _rebind = null; SoundEngine.Play("blink"); RefreshBinds(); });
                 };
                 row.Add(name);

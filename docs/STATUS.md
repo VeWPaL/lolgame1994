@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-12 (Unity lane re-run at 981f973 with no code changes: `.\verify.ps1 -Unity` green, see Known issues; before that, 2026-10-07: Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-13 (hud-c: the ledger HUD and the book menus, see the Unity bullet; before that, 2026-10-12: Unity lane re-run at 981f973 with no code changes: `.\verify.ps1 -Unity` green, see Known issues; before that, 2026-10-07: Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from the end of that session: 388 C# tests, before 60 Hz and the curve)._
 
 ## Where things are
@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  613/613, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  614/614, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -20,10 +20,22 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   `js-final`, C# differs from the JS on purpose: whole-number HP, the regenerating heart and the
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
-- **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
-  real seeded run drawn with the JS pixel art (`Runtime/Art/`, `WorldView`): pause (Esc), death summary, floor banner. F2 is the lab (`LabMode`). EditMode 58/58
-  (`TickClock`, `HeartRow`, menus, sound); the frame-to-tick step lives in `TickClock`, the heart
-  row's layout and colours in `HeartRow`.
+- **Unity (`unity/`)**: 6000.3.25f1. Plays a real seeded run in the JS pixel art (`Runtime/Art/`,
+  `WorldView`: one atlas, batched quads, no per-frame strings). F2 is the lab (`LabMode`), F10 the dev line.
+  **HUD ("the ledgers", winner of a 3-way blind tournament, 3 critic rounds)**: two ledger boards stand the screen's height beside
+  the room, all in one 5x7 pixel hand (`LedgerType`). Left, read as icons with no form labels: one row
+  of eight 2x hearts (red, regen, armour, exact halves), momentum under them, the keys and blink pips
+  in dark wells, the depth seal, the descent ladder (floors struck off per area), slain and the seed tag.
+  Items have pixel pictures (`Art/ItemIcons.cs`, in the atlas, also on the floor).
+  Right: the map inked on the chart (door marks on every walked room, shells, padlocks, the Warden's
+  ring, pickups) and the kit (slots with name plates, Q cap, an EMPTY plate, carried items). The band
+  above the room holds the floor heading and the Warden notice; below it the Warden's bar. The last
+  heart pulses red round the room's rim. Pause and the run's account (with RECORDS and NEW, kept by
+  `RunRecords` in PlayerPrefs) are paper sheets. `Runtime/Hud/`: `HudLayout` is the one geometry
+  table, `LedgerArt` the bakes, `LedgerHud` retained + zero-alloc, `HudOverlays`. F10 shows the dev
+  line. Menus are an open ledger on a desk (`MainMenu.uxml/uss`, textures baked in the controller,
+  Georgia read from the OS via `LedgerFonts`). EditMode 83/83 (`HudTests`: layout never on the room,
+  hearts one row at 2x, half hearts exact, 0 bytes per 100 updates, repaint only on change, records).
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
   20 min in about 2 s; 4.8 s at `--hz 210`) and writes `playtest/<label>.json` (header `tickHz`):
   `DOTNET_ROLL_FORWARD=Major dotnet run --project csharp/Depths.Playtest -c Release -- play --label X
@@ -57,12 +69,14 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 58/58. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 83/83. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon`: the player at 1280x720 with
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
   (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
-  every heart against the colours in `HeartRow`. Each check logs `[Depths] check PASS|FAIL`; any
+  every heart on the ledger page (`HudLayout.HeartTopLeft`) against the atlas heart colours in `HeartRow`.
+  The game check also logs the longest frame (a hitch past 250 ms loses clock time; with other Unity
+  processes busy on the machine it can fail at 55-64 Hz, rerun it alone). Each check logs `[Depths] check PASS|FAIL`; any
   FAIL exits 1.
 
 ## Plan
@@ -223,6 +237,24 @@ it from another checkout or the first command spends minutes importing.
   still `unimplemented` (not loot).
 
 ## Known issues
+
+- **Measuring allocations in Unity (2026-10-13).** `GC.GetAllocatedBytesForCurrentThread` returns 0 under
+  Unity's Mono whatever is allocated (a 1 MB array read 0), so every EditMode "allocates nothing" test
+  passed on nothing until then. They now use `AllocMeter` (the Test Framework's `AllocatingGCMemory`,
+  self-tested on a 16-byte allocation); it found the FX tracker allocating every frame (fixed). In C# on
+  .NET the counter works: `AFightTickWithNoNewShellsAllocatesNothing` found `Rooms.TickUnlock` allocating
+  112 bytes every tick of every run since the port (a literal array; fixed). The player still runs ~4
+  collections a second in the demo (incremental GC is on; frames stay under 15 ms): shells and pickups
+  are new objects by design, and a release player has no GC counter, so attributing the rest needs a
+  development build (`ProfilerRecorder` "GC Allocated In Frame").
+- **The 60 Hz check (2026-10-13).** It once read 79 Hz: a ~1 s stall in the first game frame (the HUD's
+  and the room's bakes) landed after the window opened on the wall clock but was fed to the clock inside
+  it. The check now measures over the clock's own fed seconds, logs dropped time, a section breakdown of
+  any Update over 200 ms, and keeps a failing log (`unity/Logs/fail-*.log`). The stall itself is gone:
+  the main menu pre-bakes the atlas and the HUD's sheets (`LedgerHud.Prebake`), and a floor's five room
+  textures cost one vignette pass plus a multiply-add each (`Materials.FloorBase`); the first game frame
+  went from 1028 ms to under 200. One 336 ms frame was seen once in `PlayEvents`/music and did not recur
+  in 4 runs; the section log will name it if it does.
 
 - Verified in Unity 6000.3.25f1 on 2026-10-07 (was listed as unverified): **60 Hz**, measured in
   the built player as run ticks against the wall clock, 59.95 Hz at 279 fps, the sim stepping every

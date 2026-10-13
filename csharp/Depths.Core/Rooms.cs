@@ -54,6 +54,9 @@ namespace Depths
             r.Doors.Contains(d) && run.enemies.Count == 0 && !DoorSealed(run, r, d) && !Unlocking(run, r, d);
 
         /// <summary>tickUnlock: standing at a sealed door with its key works the lock; once started it finishes.</summary>
+        // the game's order, made once: the literal array in the loop allocated 112 bytes every tick of every run
+        static readonly Dir[] UnlockOrder = { Dir.N, Dir.S, Dir.E, Dir.W };
+
         public static void TickUnlock(RunState run)
         {
             var r = run.CurrentRoom;
@@ -65,7 +68,7 @@ namespace Depths
             }
             if (!run.unlockDir.HasValue)
             {
-                foreach (var d in new[] { Dir.N, Dir.S, Dir.E, Dir.W })
+                foreach (var d in UnlockOrder)
                 {
                     if (!r.Doors.Contains(d) || !DoorSealed(run, r, d) || !HasKeyFor(run, r, d) || !AtDoor(run, d)) continue;
                     run.unlockDir = d; run.unlockRoom = r; run.unlockT = 0;

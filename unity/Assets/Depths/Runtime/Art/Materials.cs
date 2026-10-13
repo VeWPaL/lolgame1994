@@ -169,6 +169,56 @@ namespace Depths.Unity.Art
             return c;
         }
 
+        /// <summary>
+        /// The floor's type-independent part, for <see cref="Floor(FloorLayers, RoomKind, AreaPalette)"/>. Every layer
+        /// of <see cref="Floor(int, int, RoomKind, AreaPalette, Img)"/> composites over an opaque base, so a floor is
+        /// A(x) + B(x) * C(type): A and B are made once per floor (one vignette pass), and each room type is then one
+        /// multiply-add a pixel instead of four blend passes (the five types cost 0.6 s at a run's start, measured).
+        /// </summary>
+        public sealed class FloorLayers
+        {
+            public readonly int W, H;
+            public readonly float[] A, B;   // A: 3 channels a pixel, 0-255; B: the vignette's pass-through
+            public FloorLayers(int w, int h) { W = w; H = h; A = new float[w * h * 3]; B = new float[w * h]; }
+        }
+
+        const float TypeTint = 0.34f;
+
+        public static FloorLayers FloorBase(int w, int h, AreaPalette p, Img cave)
+        {
+            var L = new FloorLayers(w, h);
+            float keep = (1 - TypeTint) * (1 - p.Wash);
+            float rad = Mathf.Max(160, Mathf.Sqrt(w * w + h * h) * 0.47f), r0 = Mathf.Min(40, rad * 0.1f);
+            Color inner = new Color(1, 1, 1, 0.05f), outer = new Color(0, 0, 0, 0.32f);
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    float d = Mathf.Sqrt((x + 0.5f - w / 2f) * (x + 0.5f - w / 2f) + (y + 0.5f - h / 2f) * (y + 0.5f - h / 2f));
+                    var v = Color.Lerp(inner, outer, Mathf.Clamp01((d - r0) / (rad - r0)));
+                    var b = cave.Px[(y % cave.H) * cave.W + (x % cave.W)];
+                    int i = y * w + x;
+                    L.B[i] = 1 - v.a;
+                    L.A[i * 3] = b.r * keep * L.B[i] + v.r * 255 * v.a;
+                    L.A[i * 3 + 1] = b.g * keep * L.B[i] + v.g * 255 * v.a;
+                    L.A[i * 3 + 2] = b.b * keep * L.B[i] + v.b * 255 * v.a;
+                }
+            return L;
+        }
+
+        /// <summary>The fast floor: equal to the four-pass bake within the passes' byte rounding (tested).</summary>
+        public static Img Floor(FloorLayers L, RoomKind type, AreaPalette p)
+        {
+            Color32 t = Hex.C(AreaPalette.RoomBg(type)), wash = Hex.C(p.FloorTint);
+            float cr = t.r * TypeTint * (1 - p.Wash) + wash.r * p.Wash, cg = t.g * TypeTint * (1 - p.Wash) + wash.g * p.Wash,
+                  cb = t.b * TypeTint * (1 - p.Wash) + wash.b * p.Wash;
+            var img = new Img(L.W, L.H);
+            for (int i = 0; i < L.B.Length; i++)
+                img.Px[i] = new Color32((byte)Mathf.Clamp(Mathf.RoundToInt(L.A[i * 3] + L.B[i] * cr), 0, 255),
+                                        (byte)Mathf.Clamp(Mathf.RoundToInt(L.A[i * 3 + 1] + L.B[i] * cg), 0, 255),
+                                        (byte)Mathf.Clamp(Mathf.RoundToInt(L.A[i * 3 + 2] + L.B[i] * cb), 0, 255), 255);
+            return img;
+        }
+
         /// <summary>drawWall: four bands of the masonry pattern anchored to the room's outer corner;
         /// the image is the room plus the wall on every side, its middle left clear.</summary>
         public static Img Walls(int roomW, int roomH, Img tile)
@@ -226,6 +276,7 @@ namespace Depths.Unity.Art
     {
         uint _seed; int _floor; bool _have;
         Img _cave, _wallTile;
+        Materials.FloorLayers _layers;   // this floor's type-independent part, made on its first floor texture
         readonly Dictionary<RoomKind, Texture2D> _floors = new Dictionary<RoomKind, Texture2D>();
         Texture2D _walls;
         public AreaPalette Palette { get; private set; }
@@ -239,6 +290,7 @@ namespace Depths.Unity.Art
             Palette = AreaPalette.For(AreaRules.AreaForFloor(floor));
             var rng = new Rng(seed ^ 0xA27u ^ (uint)floor * 0x9E3779B1u);   // the view's own art stream, per run and floor
             _cave = Materials.CaveTile(Palette, rng);
+            _layers = null;
             _wallTile = Materials.WallTile(Palette, rng);
         }
 
@@ -253,7 +305,10 @@ namespace Depths.Unity.Art
         {
             if (type == RoomKind.Secret) type = RoomKind.Normal;   // the same tint (ROOM_BG has no secret entry): one texture
             if (!_floors.TryGetValue(type, out var t))
-                _floors[type] = t = Atlas.ToTexture(Materials.Floor(Balance.RoomRight - Balance.RoomLeft, Balance.RoomBottom - Balance.RoomTop, type, Palette, _cave), "floor");
+            {
+                _layers ??= Materials.FloorBase(Balance.RoomRight - Balance.RoomLeft, Balance.RoomBottom - Balance.RoomTop, Palette, _cave);
+                _floors[type] = t = Atlas.ToTexture(Materials.Floor(_layers, type, Palette), "floor");
+            }
             return t;
         }
 

@@ -290,7 +290,8 @@ namespace Depths.Unity
                     case "exit": DrawExit(pk.x, pk.y); break;
                     case "weapon": Spr(SpriteSet.GunR(pk.w), pk.x, pk.y + bob); break;
                     case "hook": case "blast": Spr(SpriteSet.AltR(pk.kind == "hook"), pk.x, pk.y + bob); break;
-                    case "item": Spr(SpriteSet.ItemR(pk.id, 26), pk.x, pk.y + Mathf.Sin(Fc * 0.09f + (float)pk.x) * 2); break;
+                    case "item":   // its picture, as in the kit; the lettered tile for an item without one
+                        Spr(SpriteSet.ItemIconR(pk.id, 2, out var pic) ? pic : SpriteSet.ItemR(pk.id, 26), pk.x, pk.y + Mathf.Sin(Fc * 0.09f + (float)pk.x) * 2); break;
                     case "key": case "goldkey": Spr(SpriteSet.KeyR(pk.kind == "goldkey", 3, false), pk.x, pk.y + Mathf.Sin(Fc * 0.1f) * 2); break;
                     case "heart": Spr(SpriteSet.HeartR(Sprites.HeartScheme.Red, 2, 1), pk.x, pk.y); break;
                     case "halfheart": Spr(SpriteSet.HeartR(Sprites.HeartScheme.Red, 2, 0.5f), pk.x, pk.y); break;

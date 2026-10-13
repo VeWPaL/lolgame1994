@@ -150,6 +150,27 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
+        public void TheFastFloorIsTheFourPassFloor()
+        {
+            // the reference is the JS's four passes (drawFloor); the fast one only skips their per-pass byte rounding
+            foreach (Area area in System.Enum.GetValues(typeof(Area)))
+            {
+                var p = AreaPalette.For(area);
+                var cave = Materials.CaveTile(p, new Rng(11));
+                var layers = Materials.FloorBase(120, 80, p, cave);
+                foreach (RoomKind k in new[] { RoomKind.Normal, RoomKind.Start, RoomKind.Item, RoomKind.Boss })
+                {
+                    var slow = Materials.Floor(120, 80, k, p, cave);
+                    var fast = Materials.Floor(layers, k, p);
+                    int worst = 0;
+                    for (int i = 0; i < slow.Px.Length; i++)
+                        worst = Mathf.Max(worst, Mathf.Max(Mathf.Abs(slow.Px[i].r - fast.Px[i].r), Mathf.Max(Mathf.Abs(slow.Px[i].g - fast.Px[i].g), Mathf.Abs(slow.Px[i].b - fast.Px[i].b))));
+                    Assert.That(worst, Is.LessThanOrEqualTo(2), area + " " + k + ": the two floors differ by " + worst);
+                }
+            }
+        }
+
+        [Test]
         public void TheRoomToneIsTheTypeTintWashedByTheArea()
         {
             // areaFloorTint: mixHex(ROOM_BG[type], floorTint, wash); Area1 has no wash, so it is the bare tint
@@ -216,9 +237,10 @@ namespace Depths.Unity.Tests
         public void ADrawsWorthOfSpriteLookupsAllocatesNothing()
         {
             SpriteSet.BodyR(BodyKind.Lunger, 0, false);   // warm: builds the atlas once
-            long before = System.GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 1000; i++)
+            int i = 0;
+            AllocMeter.AssertNone(() =>
             {
+                i++;
                 SpriteSet.BodyR((BodyKind)(i % 10), i % 4, (i & 1) == 0);
                 SpriteSet.PlayerR(i % 4, false);
                 SpriteSet.HeartR(Sprites.HeartScheme.Red, 2, (i % 17) / 16f);
@@ -226,8 +248,7 @@ namespace Depths.Unity.Tests
                 SpriteSet.ItemR("lucky_coin", 26);
                 SpriteSet.GunR(i % 4);
                 _ = SpriteSet.WhiteTexel;
-            }
-            Assert.That(System.GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+            }, 1000, "1000 frames of sprite lookups");
         }
 
         [Test]
@@ -305,9 +326,7 @@ namespace Depths.Unity.Tests
             run.projectiles.Add(new Projectile { x = 300, y = 300, alt = true, mode = "blast", color = Sprites.BlastColor });
             var fx = new FxTracker();
             for (int i = 0; i < 10; i++) { fx.Update(run, 0.016f); Hex.Of("#ffb03a"); Hex.Of(Sprites.HookColor); }
-            long before = System.GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 200; i++) { fx.Update(run, 0.016f); Hex.Of("#ffb03a"); Hex.Of(Sprites.HookColor); }
-            Assert.That(System.GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0), "bytes allocated over 200 warm frames");
+            AllocMeter.AssertNone(() => { fx.Update(run, 0.016f); Hex.Of("#ffb03a"); Hex.Of(Sprites.HookColor); }, 200, "200 warm frames of FX");
         }
 
         [Test]

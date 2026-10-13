@@ -42,6 +42,31 @@ namespace Depths.Tests
             Assert.That(bytes, Is.EqualTo(0), "400 ticks of pack assembly allocated " + bytes + " bytes");
         }
 
+        [Test, TunedOn(true)]
+        public void AFightTickWithNoNewShellsAllocatesNothing()
+        {
+            // the whole sandbox tick over a melee fight with the playtest tuning on (dodge, rush, wall): only a new
+            // shell, pickup or body is a legitimate allocation, and none happens here
+            var run = new RunState(new Rng(77)) { dungeon = Dungeon.FromSeed(new Rng(77)) };
+            run.state = "playing"; run.readyT = 0; run.fadeT = 0;
+            run.enemies.Clear(); run.pickups.Clear(); run.projectiles.Clear();
+            var p = run.player;
+            p.x = p.lagX = Balance.MidX; p.y = p.lagY = Balance.RoomBottom - 60;
+            p.hp = p.maxHp = 1000;   // the fixture holds: nobody dies, nothing drops
+            for (int i = 0; i < 4; i++) { var l = Spawn.Body(run, BodyKind.Lunger, 150 + i * 150, 220); l.hp = l.maxHp = 1e9; l.noticeTimer = 0; run.enemies.Add(l); }
+            for (int i = 0; i < 6; i++) { var b = Spawn.Body(run, BodyKind.Brunch, 300 + (i % 3) * 18, 300 + (i / 3) * 18); b.hp = b.maxHp = 1e9; b.packId = 5; b.packSlot = i; b.noticeTimer = 0; run.enemies.Add(b); }
+            void Tick() { TickOrder.TickPlayer(run, Input.None); TickOrder.TickProjectiles(run); TickOrder.TickBodies(run); }
+            for (int t = 0; t < 120; t++) Tick();   // warm: the pack assembled, every state seen once
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int t = 0; t < 600; t++) Tick();
+            long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            Assert.That(run.projectiles, Is.Empty, "the fixture fired, so it would measure shells");
+            // no PER-TICK allocation: the smallest object is 24 bytes, so one a tick would be 14400 here. A few event
+            // objects in 10 s of fighting (contact hits, pack re-targets) are not the GC churn this guards against.
+            // It caught TickUnlock's literal array: 67200 bytes, 112 a tick, in every run since the port.
+            Assert.That(bytes, Is.LessThan(24 * 600 / 10), "600 fight ticks allocated " + bytes + " bytes: something allocates every few ticks");
+        }
+
         [Test]
         public void AGuardListIsReusedAndAnUnguardedBodyStillReadsNull()
         {

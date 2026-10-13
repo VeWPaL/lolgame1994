@@ -107,7 +107,7 @@ namespace Depths.Unity.Tests
             new Player { hp = hp, maxHp = max, regenHeart = regen, regenHeartMax = regenMax, armor = armour };
 
         static string Row(Player p) =>
-            string.Join(" ", HeartRow.Layout(p, Vector2.zero).Select(h => h.Kind + ":" + h.Fill));
+            string.Join(" ", HeartRow.Layout(p).Select(h => h.Kind + ":" + h.Fill));
 
         [Test]
         public void OneHpIsHalfAHeartInTheOrderRedRegenArmour()
@@ -141,20 +141,11 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
-        public void HeartsSitOneStepApartFromTheFirst()
-        {
-            var first = new Vector2(250, -29);
-            var row = HeartRow.Layout(Body(5, 6, 1, 2, 3), first);
-            for (int i = 0; i < row.Count; i++)
-                Assert.That(row[i].Centre, Is.EqualTo(first + new Vector2(i * HeartRow.Step, 0)), "heart " + i);
-        }
-
-        [Test]
         public void TheRowReusesItsList()
         {
-            var list = HeartRow.Layout(Body(6, 6, 2, 2, 4), Vector2.zero);
+            var list = HeartRow.Layout(Body(6, 6, 2, 2, 4));
             Assert.That(list.Count, Is.EqualTo(6));
-            Assert.That(HeartRow.Layout(Body(1, 2, 0, 0, 0), Vector2.zero, list), Is.SameAs(list));
+            Assert.That(HeartRow.Layout(Body(1, 2, 0, 0, 0), list), Is.SameAs(list));
             Assert.That(list.Count, Is.EqualTo(1), "a shorter row keeps the old hearts");
         }
     }

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
+using Depths.Unity.Hud;
 
 namespace Depths.Unity
 {
@@ -25,9 +26,12 @@ namespace Depths.Unity
         InputAction _move, _cast, _blast, _blink, _active, _pause;
         int _lastShots, _lastHits, _lastKills;
         double _lastHp, _lastDmg;
-        RoomPainter _painter;
         WorldView _world;
-        Label _hud;
+        LedgerHud _hud;
+        bool _devOn;
+        long _devKey = long.MinValue;
+        bool _recorded;   // the records take a run once, on the frame it ends
+        RunRecords.Result _rec;
         readonly TickClock _clock = new TickClock();
         int _respawnT;
         bool _demo;
@@ -44,6 +48,9 @@ namespace Depths.Unity
         public double LongestFrame { get; private set; }
         public long Frames { get; private set; }
         public bool Frozen { get; set; }
+        /// <summary>Esc's pause, settable so the screenshot mode can show the pause page.</summary>
+        public bool Paused { get => _paused; set => _paused = value; }
+        public LedgerHud Hud => _hud;
 
         void Start()
         {
@@ -58,7 +65,7 @@ namespace Depths.Unity
             map.Enable();
             var args = Environment.GetCommandLineArgs();
             int i = Array.IndexOf(args, "-depthsView");
-            _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss");
+            _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss" || args[i + 1] == "summary" || args[i + 1] == "pause");
             _bossRoom = i >= 0 && i + 1 < args.Length && args[i + 1] == "boss";
             _sandbox = i >= 0 && i + 1 < args.Length && args[i + 1] == "sandbox";
             bool labRow = i >= 0 && i + 1 < args.Length && args[i + 1] == "labrow";   // the row, frozen and unshot: every sprite
@@ -83,6 +90,7 @@ namespace Depths.Unity
         void NewRun()
         {
             new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
+            _recorded = false;
             uint seed = (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
             {
@@ -147,14 +155,38 @@ namespace Depths.Unity
         double _lastFrameAt = -1;
         float _frameS;
 
+        // A frame of Update that runs long names its slow part in the log (a stall over a second was measured
+        // once a run had just started). Costs a stopwatch read per section; logs only past the threshold.
+        static readonly System.Diagnostics.Stopwatch FrameWatch = new System.Diagnostics.Stopwatch();
+        static readonly string[] SectionNames = { "input", "ticks", "lab", "sounds", "music+banner", "world", "hud" };
+        readonly double[] _sectionMs = new double[7];
+        double _sectionAt;
+        const double LongFrameMs = 200;
+
+        void Section(int i)
+        {
+            double now = FrameWatch.Elapsed.TotalMilliseconds;
+            _sectionMs[i] = now - _sectionAt;
+            _sectionAt = now;
+        }
+
+        void ReportLongFrame()
+        {
+            if (_sectionAt < LongFrameMs) return;
+            var sb = new System.Text.StringBuilder("[Depths] note long Update ").Append(_sectionAt.ToString("0")).Append(" ms:");
+            for (int i = 0; i < _sectionMs.Length; i++) sb.Append(' ').Append(SectionNames[i]).Append(' ').Append(_sectionMs[i].ToString("0"));
+            Debug.Log(sb.Append(" (frame ").Append(Time.frameCount).Append(", run tick ").Append(_run.ticks).Append(')').ToString());
+        }
+
         void Update()
         {
             double now = Time.realtimeSinceStartupAsDouble;
             _frameS = _lastFrameAt < 0 ? 0 : (float)(now - _lastFrameAt);
             _lastFrameAt = now;
             if (!_paused && !Frozen) { FedSeconds += _frameS; LongestFrame = Math.Max(LongestFrame, _frameS); Frames++; }
+            FrameWatch.Restart(); _sectionAt = 0;
             var kb = Keyboard.current;
-            if (_painter == null)
+            if (_hud == null)
             {
                 var root = GetComponent<UIDocument>().rootVisualElement?.Q("gameRoot");
                 if (root == null || root.panel == null) return;   // the document attaches late; see the history note
@@ -163,15 +195,7 @@ namespace Depths.Unity
                 _world.style.position = Position.Absolute;
                 _world.style.left = 0; _world.style.top = 0; _world.style.right = 0; _world.style.bottom = 0;
                 root.Add(_world);
-                _painter = new RoomPainter(() => _run);
-                _painter.style.position = Position.Absolute;
-                _painter.style.left = 0; _painter.style.top = 0; _painter.style.right = 0; _painter.style.bottom = 0;
-                root.Add(_painter);
-                _hud = new Label();
-                _hud.AddToClassList("game-text");
-                _hud.style.top = 600;   // below the room, which fills the middle of the screen
-                _hud.style.left = 190;
-                _hud.style.width = 900;
+                _hud = new LedgerHud();
                 root.Add(_hud);
                 _lab.Attach(root);
             }
@@ -182,6 +206,7 @@ namespace Depths.Unity
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
                 if (kb.rKey.wasPressedThisFrame) { NewRun(); _paused = false; _lastFloor = 1; }
+                if (kb.f10Key.wasPressedThisFrame) _devOn = !_devOn;   // not F3: in the lab F3 freezes the row, as in the JS lab
                 if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; LeaveLab(); NewRun(); }
                 if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; LeaveLab(); NewRun(); }
                 if (kb.f2Key.wasPressedThisFrame) { bool enter = !_inLab; _sandbox = _bossRoom = false; LeaveLab(); _inLab = enter; NewRun(); _paused = false; }
@@ -190,10 +215,10 @@ namespace Depths.Unity
             // the aim: the pointer, from screen pixels to panel units to the room
             Vector2 aim = new Vector2((float)_run.player.x + 200, (float)_run.player.y);
             var mouse = Mouse.current;
-            if (mouse != null && _painter.panel != null)
+            if (mouse != null && _world.panel != null)
             {
                 var sp = mouse.position.ReadValue();
-                var pp = RuntimePanelUtils.ScreenToPanel(_painter.panel, new Vector2(sp.x, Screen.height - sp.y));
+                var pp = RuntimePanelUtils.ScreenToPanel(_world.panel, new Vector2(sp.x, Screen.height - sp.y));
                 aim = pp - WorldView.Origin;
             }
             Vector2 mv = _move.ReadValue<Vector2>();
@@ -209,6 +234,7 @@ namespace Depths.Unity
             if (_active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
                 Depths.Unity.Audio.SoundEngine.Play("pickup");
 
+            Section(0);
             for (int n = _clock.Advance(_frameS, _paused || Frozen); n > 0; n--)
             {
                 // keys are -1/0/1 per axis in the game, and screen y points down
@@ -225,39 +251,63 @@ namespace Depths.Unity
                     if (!_inLab && _run.enemies.Count == 0 && ++_respawnT > Balance.Sec(2)) { _respawnT = 0; if (!_bossRoom) { for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k); SpawnPack(); if (_run.CurrentRoom != null) _run.CurrentRoom.Cleared = false; } }   // each wave won pays as a real room does: regen refill + half blink
                 }
             }
+            Section(1);
             _lab.AfterTicks(_run, _paused || Frozen ? 0 : _frameS);
             _lab.Draw();
+            Section(2);
             PlayEvents();
+            Section(3);
             Depths.Unity.Audio.MusicEngine.SetArea(AreaRules.AreaForFloor(_run.floor));
             Depths.Unity.Audio.MusicEngine.SetFight(_run.state == "playing" && !_paused && _run.enemies.Count > 0);
-            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = 3; Depths.Unity.Audio.SoundEngine.Play("door"); }
+            if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = BannerS; Depths.Unity.Audio.SoundEngine.Play("door"); }
             if (_bannerS > 0) _bannerS -= _frameS;
-            _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"
-                : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / Balance.TickHz / 60) + ":" + (_run.ticks / Balance.TickHz % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
-                : _bannerS > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
+            Section(4);
             _world.Aim = aim;
             _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : _frameS);
-            _painter.MarkDirtyRepaint();
-            var pl = _run.player;
-            var act = Items.ActiveItem(_run);
-            string build = (act != null ? "   Q: " + Items.Def(act.Id).Name + (act.Charges == int.MaxValue ? "" : " x" + act.Charges) : "") +
-                           (_run.loadout.Count > (act != null ? 1 : 0) ? "   carrying: " + string.Join(", ", _run.loadout.Where(s => s.Slot != Items.ActiveSlot).Select(s => Items.Def(s.Id).Name)) : "");
-            string stats = Weapons.All[pl.weaponIdx].Name + "   HP " + pl.hp.ToString("0.#") + "/" + pl.maxHp.ToString("0") +
-                           (pl.regenHeartMax > 0 ? " + regen " + pl.regenHeart.ToString("0") + "/" + pl.regenHeartMax.ToString("0") : "") +
-                           "   armour " + pl.armor.ToString("0.#") + "   blinks " + _run.blinkCharges + "   kills " + _run.kills + build;
-            if (RealRun)
+            Section(5);
+            _hud.Refresh(_run, _frameS);
+            _hud.Overlays.SetPause(_paused && _run.state == "playing", _run);
+            if (_run.state != "playing" && !_recorded) { _recorded = true; _rec = RecordRun(); }
+            _hud.Overlays.SetSummary(_run.state != "playing", _run, _rec);
+            _hud.Overlays.SetBanner(_run.floor, BannerAlpha(_bannerS));
+            _hud.Overlays.SetWarning(HudOverlays.WarningAlpha(_run));
+            UpdateDev();
+            Section(6);
+            ReportLongFrame();
+        }
+
+        // A real run's end goes into the records; the sandbox and the arena only read them.
+        RunRecords.Result RecordRun()
+        {
+            // the screenshot mode plays fixtures: it must never write into the player's real records
+            bool shot = Array.IndexOf(Environment.GetCommandLineArgs(), "-depthsShot") >= 0;
+            var records = new RunRecords(shot ? (ISettingsStore)new MemorySettingsStore() : new PlayerPrefsStore());
+            if (!RealRun) return new RunRecords.Result(records.DeepestFloor, records.BestRooms, false, false);
+            int visited = 0;
+            for (int i = 0; i < _run.dungeon.AllRooms.Count; i++) if (_run.dungeon.AllRooms[i].Visited) visited++;
+            return records.Record(_run.floor, visited);
+        }
+
+        const float BannerS = 3;
+        /// <summary>The floor heading's envelope: in over a quarter second, held, out over the last 0.6 s.</summary>
+        public static float BannerAlpha(float left) => left <= 0 ? 0 : Mathf.Clamp01(Mathf.Min((BannerS - left) / 0.25f, left / 0.6f));
+
+        // The developer line (F3): its text is rebuilt only when what it says changes.
+        void UpdateDev()
+        {
+            if (!_devOn) { _hud.SetDev(false, null); return; }
+            var room = _run.CurrentRoom;
+            long key = ((long)_run.rootSeed << 24) ^ ((Curve.On ? 1L : 0) << 1) ^ ((_inLab ? 1L : 0) << 4) ^ ((_sandbox ? 1L : 0) << 9) ^ ((_bossRoom ? 1L : 0) << 10) ^ ((long)(room != null ? (int)room.Type : 7) << 11) ^ ((long)_run.floor << 14);
+            string text = null;
+            if (key != _devKey)
             {
-                var room = _run.CurrentRoom;
-                _hud.text = stats + "   " + (pl.hasSilver ? "[silver key] " : "") + (pl.hasGold ? "[gold key] " : "") +
-                            (_run.state == "playing" ? "" : "\nYOU DIED on floor " + _run.floor + " - R for a new run") +
-                            "\nFloor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room: " + (room != null ? room.Type.ToString() : "?") +
-                            "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + "" +
-                            "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc pause";
+                _devKey = key;
+                string mode = RealRun ? "floor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room " + (room != null ? room.Type.ToString() : "?")
+                                      : _inLab ? "The lab: every body, the five middle ones too (not in runs yet)" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning";
+                text = mode + "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") +
+                       "\n1-4 guns   right-click blast   Shift blink   Q item   R new run   F1 sandbox   F2 lab   B Warden arena   Esc pause   F10 this line";
             }
-            else
-                _hud.text = stats + (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                            "\n" + (_inLab ? "The lab: every body, the five middle ones too (not in runs yet)" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core." +
-                            "\n\n1-4 guns   right-click blast   Shift blink   R new room   F1 real run   B Warden arena   Esc pause";
+            _hud.SetDev(true, text);
         }
 
         // The simulation makes no sound; the view hears what changed since the last frame.
@@ -306,115 +356,6 @@ namespace Depths.Unity
             _demoBlast |= before < 0.333f && _demoS >= 0.333f;   // one blast, a third of a second in
             alt = _demoBlast;
             if (before < 0.5f && _demoS >= 0.5f) p.weaponIdx = 1;
-        }
-    }
-
-    /// <summary>Draws the room, the bodies, the shells, the loot and the player with Painter2D.</summary>
-    sealed class RoomPainter : VisualElement
-    {
-        readonly Func<RunState> _run;
-        readonly Label _overlay = new Label();
-        public string Overlay
-        {
-            set
-            {
-                _overlay.text = value ?? "";
-                _overlay.style.display = string.IsNullOrEmpty(value) ? DisplayStyle.None : DisplayStyle.Flex;
-            }
-        }
-        public RoomPainter(Func<RunState> run)
-        {
-            _run = run;
-            generateVisualContent += Paint;
-            _overlay.style.position = Position.Absolute;
-            _overlay.style.left = 290; _overlay.style.top = 250; _overlay.style.width = 700;
-            _overlay.style.unityTextAlign = TextAnchor.MiddleCenter;
-            _overlay.style.fontSize = 28;
-            _overlay.style.color = new Color(0.91f, 0.91f, 0.93f);
-            _overlay.style.backgroundColor = new Color(0.04f, 0.05f, 0.07f, 0.82f);
-            _overlay.style.paddingTop = 18; _overlay.style.paddingBottom = 18;
-            _overlay.style.display = DisplayStyle.None;
-            Add(_overlay);
-        }
-
-        static Vector2 W(double x, double y) => WorldView.ToPanel(x, y);
-
-        // the floor so far: rooms walked, the current one bright, top-right of the screen
-        static void DrawMinimap(Painter2D g, RunState run)
-        {
-            if (run.dungeon == null) return;
-            const float cell = 14, x0 = 1060, y0 = 140;
-            foreach (var r in run.dungeon.AllRooms)
-            {
-                if (!r.Visited) continue;
-                bool here = r.X == run.curX && r.Y == run.curY;
-                Color c = here ? new Color32(232, 232, 236, 255) : r.Type == RoomKind.Boss ? new Color32(179, 65, 47, 255)
-                        : r.Type == RoomKind.Item ? new Color32(192, 138, 82, 255) : new Color32(72, 80, 95, 255);
-                var p = new Vector2(x0 + r.X * cell, y0 + r.Y * cell);
-                Rect(g, p, p + new Vector2(cell - 3, cell - 3), c);
-            }
-        }
-
-        static void Disc(Painter2D g, Vector2 c, float r, Color col)
-        {
-            g.fillColor = col;
-            g.BeginPath();
-            g.Arc(c, r, 0, 360);
-            g.Fill();
-        }
-
-        static void Rect(Painter2D g, Vector2 a, Vector2 b, Color col)
-        {
-            g.fillColor = col;
-            g.BeginPath();
-            g.MoveTo(a); g.LineTo(new Vector2(b.x, a.y)); g.LineTo(b); g.LineTo(new Vector2(a.x, b.y)); g.ClosePath();
-            g.Fill();
-        }
-
-        void Paint(MeshGenerationContext ctx)
-        {
-            var run = _run();
-            if (run == null) return;
-            var g = ctx.painter2D;
-            // interim: the minimap and the heart row, until the HUD replaces them (the room is WorldView)
-            DrawMinimap(g, run);
-            DrawHearts(g, run.player);
-        }
-
-        // pickups share the row's colours (HeartRow)
-        static readonly Color HeartRed = HeartRow.Red, ArmourGray = HeartRow.Armour;
-
-        // a heart of half-width s centred on c: two lobes and a point; half = the left half only
-        static void Heart(Painter2D g, Vector2 c, float s, Color col, bool half = false)
-        {
-            float ly = c.y - s * 0.3f, r = s * 0.5f;
-            Disc(g, new Vector2(c.x - r, ly), r, col);
-            g.fillColor = col;
-            g.BeginPath();
-            g.MoveTo(new Vector2(c.x - s, ly)); g.LineTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x, c.y + s));
-            g.ClosePath(); g.Fill();
-            if (half) return;
-            Disc(g, new Vector2(c.x + r, ly), r, col);
-            g.BeginPath();
-            g.MoveTo(new Vector2(c.x, ly)); g.LineTo(new Vector2(c.x + s, ly)); g.LineTo(new Vector2(c.x, c.y + s));
-            g.ClosePath(); g.Fill();
-        }
-
-        /// <summary>The first heart's centre in panel units, just above the room's top-left corner.</summary>
-        public static Vector2 FirstHeart => W(Balance.RoomLeft, Balance.RoomTop) + new Vector2(HeartRow.Size, -34);
-
-        readonly System.Collections.Generic.List<HeartSlot> _row = new System.Collections.Generic.List<HeartSlot>();   // reused: no per-frame allocation
-
-        // the health row above the room; the regenerating heart is rose-violet, the red's family a
-        // step toward purple, so it reads as a different kind of heart without shouting
-        void DrawHearts(Painter2D g, Player pl)
-        {
-            foreach (var h in HeartRow.Layout(pl, FirstHeart, _row))
-            {
-                var unlit = HeartRow.Unlit(h.Kind);
-                if (unlit.HasValue) Heart(g, h.Centre, HeartRow.Size, unlit.Value);
-                if (h.Fill != HeartFill.Empty) Heart(g, h.Centre, HeartRow.Size, HeartRow.Lit(h.Kind), h.Fill == HeartFill.Half);
-            }
         }
     }
 }

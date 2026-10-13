@@ -29,9 +29,17 @@ namespace Depths.Unity.Art
         public int Count => _count;
         public ref Fx this[int i] => ref _fx[i];
 
-        sealed class Lunger { public string State = ""; public float FromX, FromY, PuffT; public int Seen; }
-        readonly Dictionary<Enemy, Lunger> _lungers = new Dictionary<Enemy, Lunger>();
-        readonly List<Enemy> _gone = new List<Enemy>();
+        // a room holds a handful of Lungers: a fixed array and a linear search, allocation-free by construction
+        // (the Dictionary version allocated every frame under Unity's Mono, measured with AllocMeter)
+        struct Lunger { public Enemy E; public string State; public float FromX, FromY, PuffT; public int Seen; }
+        readonly Lunger[] _lungers = new Lunger[64];
+        int _lungerCount;
+
+        int FindLunger(Enemy e)
+        {
+            for (int i = 0; i < _lungerCount; i++) if (ReferenceEquals(_lungers[i].E, e)) return i;
+            return -1;
+        }
         struct Shell { public Projectile P; public float X, Y, R; public bool Hook; public Color32 Color; public int Seen; }
         readonly Shell[] _shells = new Shell[64];
         int _shellCount, _frame;
@@ -42,11 +50,12 @@ namespace Depths.Unity.Art
         /// <summary>Where a lunger's committed line starts, once it is lunging (lungeFromX/Y in the JS).</summary>
         public bool LungeFrom(Enemy e, out float x, out float y)
         {
-            if (_lungers.TryGetValue(e, out var l) && l.State == "lunge") { x = l.FromX; y = l.FromY; return true; }
+            int i = FindLunger(e);
+            if (i >= 0 && _lungers[i].State == "lunge") { x = _lungers[i].FromX; y = _lungers[i].FromY; return true; }
             x = y = 0; return false;
         }
 
-        public void Clear() { _count = 0; _lungers.Clear(); _shellCount = 0; }
+        public void Clear() { _count = 0; _lungerCount = 0; _shellCount = 0; }
 
         void Add(Fx f)
         {
@@ -81,7 +90,14 @@ namespace Depths.Unity.Art
             foreach (var e in run.enemies)
             {
                 if (e.kind != BodyKind.Lunger) continue;
-                if (!_lungers.TryGetValue(e, out var l)) _lungers[e] = l = new Lunger { State = e.lungeState };
+                int at = FindLunger(e);
+                if (at < 0)
+                {
+                    if (_lungerCount == _lungers.Length) continue;   // past 64 Lungers the extra ones show no puffs
+                    at = _lungerCount++;
+                    _lungers[at] = new Lunger { E = e, State = e.lungeState };
+                }
+                ref var l = ref _lungers[at];
                 l.Seen = _frame;
                 if (e.lungeState == "lunge" && l.State != "lunge") { l.FromX = (float)e.x; l.FromY = (float)e.y; }
                 l.State = e.lungeState;
@@ -91,9 +107,8 @@ namespace Depths.Unity.Art
                 if (e.lungeState == "wind") { l.PuffT = 0.06f; Add(new Fx { X = (float)e.x, Y = (float)e.y, Life = ChargeTrail, Max = ChargeTrail, Charge = true }); }
                 else if (e.lungeState == "lunge") { l.PuffT = 2f / 60; Add(new Fx { X = (float)e.x, Y = (float)e.y, Life = LungeTrail, Max = LungeTrail }); }
             }
-            _gone.Clear();
-            foreach (var kv in _lungers) if (kv.Value.Seen != _frame) _gone.Add(kv.Key);
-            foreach (var e in _gone) _lungers.Remove(e);
+            for (int i = _lungerCount - 1; i >= 0; i--)   // a Lunger gone from the room is forgotten
+                if (_lungers[i].Seen != _frame) _lungers[i] = _lungers[--_lungerCount];
 
             // an alt shell that has gone off: its ring, in its colour, the way the weapon acts
             for (int i = 0; i < _shellCount; i++) _shells[i].Seen = 0;
