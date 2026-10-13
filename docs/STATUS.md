@@ -21,9 +21,11 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Plays a real seeded run in the JS pixel art (`WorldView`).
-  **HUD (branch hud-c, "the ledgers", round 2)**: two ledger boards stand the screen's height beside
-  the room, all in one 5x7 pixel hand (`LedgerType`). Left: one row of 2x hearts (red, regen, armour,
-  exact halves), keys/blink/momentum in dark wells, the depth seal + tally, slain, the wood seed tag.
+  **HUD (branch hud-c, "the ledgers", round 3)**: two ledger boards stand the screen's height beside
+  the room, all in one 5x7 pixel hand (`LedgerType`). Left, read as icons with no form labels: one row
+  of eight 2x hearts (red, regen, armour, exact halves), momentum under them, the keys and blink pips
+  in dark wells, the depth seal, the descent ladder (floors struck off per area), slain and the seed tag.
+  Items have pixel pictures (`Art/ItemIcons.cs`, in the atlas, also on the floor).
   Right: the map inked on the chart (door marks on every walked room, shells, padlocks, the Warden's
   ring, pickups) and the kit (slots with name plates, Q cap, NOTHING HELD tag, carried items). The band
   above the room holds the floor heading and the Warden notice; below it the Warden's bar. The last
@@ -31,7 +33,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   `RunRecords` in PlayerPrefs) are paper sheets. `Runtime/Hud/`: `HudLayout` is the one geometry
   table, `LedgerArt` the bakes, `LedgerHud` retained + zero-alloc, `HudOverlays`. F3 shows the dev
   line. Menus are an open ledger on a desk (`MainMenu.uxml/uss`, textures baked in the controller,
-  Georgia read from the OS via `LedgerFonts`). EditMode 72/72 (`HudTests`: layout never on the room,
+  Georgia read from the OS via `LedgerFonts`). EditMode 74/74 (`HudTests`: layout never on the room,
   hearts one row at 2x, half hearts exact, 0 bytes per 100 updates, repaint only on change, records).
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
   20 min in about 2 s; 4.8 s at `--hz 210`) and writes `playtest/<label>.json` (header `tickHz`):
@@ -68,7 +70,7 @@ it from another checkout or the first command spends minutes importing.
   touches `unity/` or `Depths.Core`.
 - `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and any failed test. 35/35.
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon`: the player at 1280x720 with
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
   (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
   every heart on the ledger page (`HudLayout.HeartTopLeft`) against the atlas heart colours in `HeartRow`.

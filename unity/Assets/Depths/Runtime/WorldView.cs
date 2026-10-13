@@ -282,7 +282,7 @@ namespace Depths.Unity
                     case "exit": DrawExit(g, pk.x, pk.y); break;
                     case "weapon": Spr(SpriteSet.Icon(pk.w.ToString()), pk.x, pk.y + bob); break;
                     case "hook": case "blast": Spr(SpriteSet.Icon(pk.kind), pk.x, pk.y + bob); break;
-                    case "item": Spr(SpriteSet.Item(pk.id, 26), pk.x, pk.y + Mathf.Sin(Fc * 0.09f + (float)pk.x) * 2); break;
+                    case "item": Spr(SpriteSet.ItemIcon(pk.id, 2) ?? SpriteSet.Item(pk.id, 26), pk.x, pk.y + Mathf.Sin(Fc * 0.09f + (float)pk.x) * 2); break;   // its picture, as in the kit
                     case "key": case "goldkey": Spr(SpriteSet.Key(pk.kind == "goldkey", 3, false), pk.x, pk.y + Mathf.Sin(Fc * 0.1f) * 2); break;
                     case "heart": Spr(SpriteSet.Heart(Sprites.HeartScheme.Red, 2, 1), pk.x, pk.y); break;
                     case "halfheart": Spr(SpriteSet.Heart(Sprites.HeartScheme.Red, 2, 0.5f), pk.x, pk.y); break;

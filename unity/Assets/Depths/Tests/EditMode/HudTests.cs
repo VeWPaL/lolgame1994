@@ -54,7 +54,7 @@ namespace Depths.Unity.Tests
             for (int i = 0; i < HudLayout.HeartCapacity; i++)
             {
                 var tl = HudLayout.HeartTopLeft(i);
-                var r = new Rect(tl.x, tl.y, HudLayout.HeartW, HudLayout.HeartH);
+                var r = new Rect(tl.x + 1, tl.y + 1, HudLayout.HeartW - 2, HudLayout.HeartH - 2);   // the visible heart, not its clear pad
                 Assert.That(paper.Contains(r.min) && paper.Contains(r.max), "heart " + i + " at " + r + " falls off the page " + paper);
             }
             Assert.That(HudLayout.HeartTopLeft(1).x - HudLayout.HeartTopLeft(0).x, Is.EqualTo(HudLayout.HeartStep));
@@ -63,18 +63,23 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
-        public void TheRowsOfThePagesDoNotRunIntoEachOther()
+        public void TheBodyReadsTopToBottomWithoutOverlaps()
         {
-            Assert.That(HudLayout.HeartsBox.yMax, Is.LessThan(HudLayout.Rule1));
-            Assert.That(HudLayout.KeyWell(0).yMax, Is.LessThan(HudLayout.BlinkLabelY));
-            Assert.That(HudLayout.BlinkWell(0).yMax, Is.LessThan(HudLayout.MomentumLabelY));
-            Assert.That(HudLayout.MomentumWell.yMax, Is.LessThan(HudLayout.Rule2));
-            Assert.That(HudLayout.DepthSeal.yMax, Is.LessThan(HudLayout.AreaY));
-            Assert.That(HudLayout.SeedTag.yMax, Is.LessThan(HudLayout.BoardTop + HudLayout.BoardH - HudLayout.PaperPad));
+            Assert.That(HudLayout.HeartTopLeft(7).y, Is.EqualTo(HudLayout.HeartTopLeft(0).y), "eight hearts sit in one row");
+            Assert.That(HudLayout.HeartsBox.yMax, Is.LessThan(HudLayout.MomentumWell.yMin), "momentum sits under the hearts");
+            Assert.That(HudLayout.MomentumWell.yMax, Is.LessThan(HudLayout.KeyWell(0).yMin));
+            Assert.That(HudLayout.KeyWell(0).yMax, Is.LessThan(HudLayout.BlinkWell(0).yMin));
+            Assert.That(HudLayout.BlinkWell(1).xMax, Is.LessThanOrEqualTo(HudLayout.LeftX + HudLayout.BoardW - HudLayout.PaperPad));
+            Assert.That(HudLayout.BlinkWell(0).yMax, Is.LessThan(HudLayout.Rule2));
+            Assert.That(HudLayout.DepthSeal.yMax, Is.LessThan(HudLayout.LadderY));
+            Assert.That(HudLayout.Rung(3, 0).yMax, Is.LessThan(HudLayout.Rule3));
+            Assert.That(HudLayout.Rung(2, 3).xMax, Is.LessThanOrEqualTo(HudLayout.Ink0(true) + HudLayout.InkW));
+            Assert.That(HudLayout.SeedTag.yMax, Is.LessThan(HudLayout.PaperBottom));
+            Assert.That(HudLayout.PaperBottom - HudLayout.SeedTag.yMax, Is.LessThan(48), "no dead paper band under the footer");
             Assert.That(HudLayout.Map.yMax, Is.LessThan(HudLayout.KitHeaderY), "the map and the kit's heading");
             Assert.That(HudLayout.Plate(2).xMax, Is.LessThanOrEqualTo(HudLayout.RightX + HudLayout.BoardW - HudLayout.PaperPad), "plates are on the page");
             Assert.That(HudLayout.Slot(2).yMax, Is.LessThan(HudLayout.CarryLabelY));
-            Assert.That(HudLayout.CarryY + HudLayout.CarryStep * 2, Is.LessThan(HudLayout.BoardTop + HudLayout.BoardH - HudLayout.PaperPad));
+            Assert.That(HudLayout.CarryY + HudLayout.CarryStep * 2, Is.LessThan(HudLayout.PaperBottom));
             Assert.That(HudLayout.Map.width, Is.GreaterThanOrEqualTo(0.8f * HudLayout.InkW), "the map fills its page");
         }
 
@@ -114,10 +119,34 @@ namespace Depths.Unity.Tests
         static bool Same(Color32 a, Color32 b) => a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 
         [Test]
+        public void EveryItemHasAPictureInTheAtlas()
+        {
+            foreach (var d in Items.All)
+            {
+                Assert.That(ItemIcons.Has(d.Id), d.Id + " still shows its lettered tile");
+                var img = ItemIcons.Bake(d.Id, 2);
+                Assert.That(img.W, Is.EqualTo(ItemIcons.Size * 2 + 4)); Assert.That(img.H, Is.EqualTo(ItemIcons.Size * 2 + 4));
+                Assert.That(img.Px.Count(c => c.a > 0), Is.GreaterThan(80), d.Id + "'s picture is nearly empty");
+                Assert.That(SpriteSet.Atlas.Has(SpriteSet.ItemIcon(d.Id, 2)) && SpriteSet.Atlas.Has(SpriteSet.ItemIcon(d.Id, 4)), d.Id + " is not in the atlas");
+            }
+        }
+
+        [Test]
+        public void AnEmptyRegenHeartIsItsOwnRoseNotAnEmptyRedOne()
+        {
+            var regen = LedgerArt.Heart(Sprites.HeartScheme.Regen, 0, 4);
+            var red = LedgerArt.Heart(Sprites.HeartScheme.Red, 0, 4);
+            var r = regen.Get(2 + 4 * 2 + 2, 2 + 4 * 2 + 2); var d = red.Get(2 + 4 * 2 + 2, 2 + 4 * 2 + 2);
+            Assert.That(Same(r, (Color32)HeartRow.RegenEmpty), "an empty regen container is " + r);
+            Assert.That(Math.Abs(r.r - d.r) + Math.Abs(r.g - d.g) + Math.Abs(r.b - d.b), Is.GreaterThan(60), "empty regen and empty red look alike");
+        }
+
+        [Test]
         public void TheHudHandHasEveryLetterItWrites()
         {
             var words = new List<string> { "THE BODY", "THE MAP", "THE KIT", "KEYS", "BLINK", "MOMENTUM", "DEPTH", "SLAIN", "SEED", "CARRYING", "THE WARDEN", "PHASE 3",
-                                           "SOMETHING HEAVY IS DOWN THERE", "Empty", "nothing yet", "x12", "+3", "Blast", "Hook" };
+                                           "SOMETHING HEAVY IS DOWN THERE", "THE GOLD KEY OPENS ITS DOOR", "Empty", "nothing yet", "x12", "+3", "Blast", "Hook", "13 AND DOWN", "FLOOR 14" };
+            words.AddRange(LedgerArt.BandNames);
             words.AddRange(LedgerHud.AreaNames);
             words.AddRange(Weapons.All.Select(w => w.Name));
             words.AddRange(Items.All.Select(i => i.Name));
@@ -152,11 +181,11 @@ namespace Depths.Unity.Tests
                 var rim = img.Get(0, img.H / 2);
                 Assert.That(rim.r + rim.g + rim.b, Is.LessThan(150), "no dark rim on the plank: " + rim);
             }
-            // a label is ink on the page where the layout says: "KEYS" at the keys row
+            // a row is led by its pictogram in the margin: the key is inked where the keys row starts
             var body = LedgerArt.Board(true);
-            int ox = HudLayout.Ink0(true) - HudLayout.LeftX, oy = HudLayout.KeysLabelY - HudLayout.BoardTop, ink = 0;
-            for (int y = oy; y < oy + 14; y++) for (int x = ox; x < ox + 46; x++) { var c = body.Get(x, y); if (c.r + c.g + c.b < 330) ink++; }
-            Assert.That(ink, Is.GreaterThan(40), "the KEYS label is not struck on the page");
+            int ox = HudLayout.IconX - HudLayout.LeftX - 2, oy = HudLayout.KeysY + 11 - HudLayout.BoardTop, ink = 0;
+            for (int y = oy; y < oy + 10; y++) for (int x = ox; x < ox + 18; x++) { var c = body.Get(x, y); if (c.r + c.g + c.b < 330) ink++; }
+            Assert.That(ink, Is.GreaterThan(20), "the key pictogram is not inked at the keys row");
             // the wells are dark with a lit bevel at their foot
             var w = HudLayout.BlinkWell(0);
             int wx = (int)w.x - HudLayout.LeftX, wy = (int)w.y - HudLayout.BoardTop;

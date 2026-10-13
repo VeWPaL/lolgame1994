@@ -29,8 +29,11 @@
 .entry-note { flex-grow: 1; font-size: 14px; color: rgb(120, 98, 72); -unity-text-align: middle-right; margin: 0; padding: 0; }
 .entry:hover .entry-text, .entry:focus .entry-text { color: rgb(163, 40, 31); }
 .entry:hover .entry-num, .entry:focus .entry-num { color: rgb(163, 40, 31); }
-.tab.selected { border-left-width: 7px; border-left-color: rgb(140, 42, 42); background-color: rgba(140, 42, 42, 0.10); }
+/* the open section is marked differently from keyboard focus: an underline and a bookmark tab on the
+   right; focus is the ribbon on the left. A focused open section shows both. */
+.tab.selected { border-bottom-width: 3px; border-bottom-color: rgb(140, 42, 42); border-right-width: 10px; border-right-color: rgb(140, 42, 42); }
 .tab.selected .entry-text { color: rgb(140, 42, 42); }
+.tab.selected .entry-num { color: rgb(140, 42, 42); }
 .back { position: absolute; left: 72px; right: 40px; bottom: 26px; border-top-width: 1px; }
 .back .entry-text { font-size: 20px; }
 .foot { position: absolute; left: 72px; right: 40px; bottom: 24px; font-size: 13px; color: rgb(120, 98, 72); -unity-text-align: middle-center; }

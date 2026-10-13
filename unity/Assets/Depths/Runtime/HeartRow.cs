@@ -24,7 +24,7 @@ namespace Depths.Unity
     public static class HeartRow
     {
         public static readonly Color Red = new Color32(0xe8, 0x39, 0x5a, 255), RedEmpty = new Color32(0x3a, 0x25, 0x30, 255),
-            Regen = new Color32(0xcd, 0x4e, 0x96, 255), RegenEmpty = new Color32(0x46, 0x26, 0x40, 255),
+            Regen = new Color32(0xcd, 0x4e, 0x96, 255), RegenEmpty = new Color32(0x6b, 0x34, 0x59, 255),
             Armour = new Color32(0x9a, 0xa0, 0xab, 255);
 
         public static List<HeartSlot> Layout(Depths.Player pl, List<HeartSlot> into = null)

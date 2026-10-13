@@ -24,6 +24,9 @@ namespace Depths.Unity.Art
         public static string Mouse(bool left, string color) => "mouse:" + (left ? "L:" : "R:") + color;
         public static string Item(string id, int px) => "item:" + (ItemKnown(id) ? id : "?") + ":" + px;
         public static string Glyph(string kind, string color) => "glyph:" + kind + ":" + color;
+        /// <summary>An item's picture (ItemIcons) at px 2 or 4; null for an item that only has its lettered tile.</summary>
+        public static string ItemIcon(string id, int px) => ItemIcons.Has(id) ? "itemicon:" + id + ":" + px : null;
+        public static readonly int[] ItemIconPx = { 2, 4 };
         public const string Glow = "glow", Muzzle = "muzzle", White = "white", Disc = "disc";
 
         static string BodyName(BodyKind k) => k switch
@@ -88,6 +91,8 @@ namespace Depths.Unity.Art
                 foreach (var id in ItemArt.Ids) list.Add((Item(id, px), Sprites.ItemTile(id, px)));
                 list.Add(("item:?:" + px, Sprites.ItemTile("?", px)));
             }
+            foreach (int px in ItemIconPx)
+                foreach (var id in ItemIcons.Ids) list.Add(("itemicon:" + id + ":" + px, ItemIcons.Bake(id, px)));
             foreach (var kv in Sprites.MiniGlyph)
                 foreach (var c in GlyphColors) list.Add((Glyph(kv.Key, c), Sprites.Glyph(kv.Value, Hex.C(c), 2)));
             list.Add((Glow, Sprites.Glow(32, Color.white, new Color(1, 1, 1, 0))));

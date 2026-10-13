@@ -119,7 +119,7 @@ namespace Depths.Unity.Hud
                 _seeded = true; _seedOf = run.rootSeed;
                 Atlas.Free(_seedTex);
                 var st = HudLayout.SeedTag;
-                _seedTex = Atlas.ToTexture(Materials.SeedTag((int)st.width, (int)st.height, Rng.Encode(run.rootSeed)), "seed-tag");
+                _seedTex = Atlas.ToTexture(LedgerArt.SeedTag((int)st.width, (int)st.height, Rng.Encode(run.rootSeed)), "seed-tag");
                 _seedTag.style.backgroundImage = new StyleBackground(_seedTex);
             }
 
@@ -193,10 +193,11 @@ namespace Depths.Unity.Hud
             readonly Region[] _icons = new Region[6];
             readonly Region[] _mouseGun = new Region[4];
             readonly Region _mouseBlast, _mouseHook, _glow, _white, _disc;
-            readonly Dictionary<string, Region> _item26 = new Dictionary<string, Region>(), _item22 = new Dictionary<string, Region>();
+            readonly Dictionary<string, Region> _item26 = new Dictionary<string, Region>(), _icon2 = new Dictionary<string, Region>(), _icon4 = new Dictionary<string, Region>();
+            readonly Region[] _pick = new Region[5];
             readonly Dictionary<string, Color32> _itemInk = new Dictionary<string, Color32>();
             readonly Atlas _hudArt;
-            readonly Region _gItem, _gBoss, _gLockGold, _gLockSilver, _qCap, _nothing;
+            readonly Region _gItem, _gBoss, _gLockGold, _gLockSilver, _qCap;
 
             public InkLayer(LedgerHud hud)
             {
@@ -211,29 +212,40 @@ namespace Depths.Unity.Hud
                 _icons[4] = a[SpriteSet.Icon("blast")]; _icons[5] = a[SpriteSet.Icon("hook")];
                 for (int i = 0; i < 4; i++) _mouseGun[i] = a[SpriteSet.Mouse(true, Weapons.All[i].Color)];
                 _mouseBlast = a[SpriteSet.Mouse(false, Sprites.BlastColor)]; _mouseHook = a[SpriteSet.Mouse(false, Sprites.HookColor)];
-                foreach (var id in ItemArt.Ids) { _item26[id] = a[SpriteSet.Item(id, 26)]; _item22[id] = a[SpriteSet.Item(id, 22)]; _itemInk[id] = Hex.C(ItemArt.Color(id)); }
-                _item26["?"] = a[SpriteSet.Item("?", 26)]; _item22["?"] = a[SpriteSet.Item("?", 22)];
+                foreach (var id in ItemArt.Ids) { _item26[id] = a[SpriteSet.Item(id, 26)]; _itemInk[id] = Hex.C(ItemArt.Color(id)); }
+                foreach (var id in ItemIcons.Ids) { _icon2[id] = a[SpriteSet.ItemIcon(id, 2)]; _icon4[id] = a[SpriteSet.ItemIcon(id, 4)]; }
+                _item26["?"] = a[SpriteSet.Item("?", 26)];
                 _glow = a[SpriteSet.Glow]; _white = a[SpriteSet.White]; _disc = a[SpriteSet.Disc];
 
                 // the HUD's own pieces: hearts by exact halves, the map's marks in ink, the Q cap, the empty-hand tag
                 var list = new List<(string, Img)>
                 {
-                    ("item", Sprites.Glyph(Sprites.MiniGlyph["item"], LedgerArt.GoldInk, 3)),
-                    ("boss", Sprites.Glyph(Sprites.MiniGlyph["boss"], LedgerArt.RedInk, 3)),
-                    ("lockgold", Sprites.Glyph(Sprites.MiniGlyph["lock"], LedgerArt.GoldInk, 3)),
-                    ("locksilver", Sprites.Glyph(Sprites.MiniGlyph["lock"], LedgerArt.SilverInk, 3)),
+                    ("item", Sprites.Glyph(Sprites.MiniGlyph["item"], LedgerArt.GoldInk, 2)),
+                    ("boss", Sprites.Glyph(HornedSkull, LedgerArt.RedInk, 2)),
+                    ("lockgold", Sprites.Bake(Lock, new Dictionary<char, Color32> { ['#'] = Hex.C("#ffd23d") }, 1)),
+                    ("locksilver", Sprites.Bake(Lock, new Dictionary<char, Color32> { ['#'] = Hex.C("#d8dee9") }, 1)),
+                    ("pick1", Sprites.Bake(PickHeart, new Dictionary<char, Color32> { ['#'] = Hex.C("#e8395a") }, 1)),
+                    ("pick2", Sprites.Bake(PickHeart, new Dictionary<char, Color32> { ['#'] = Hex.C("#9aa0ab") }, 1)),
+                    ("pick3", Sprites.Bake(PickKey, new Dictionary<char, Color32> { ['#'] = Hex.C("#d8dee9") }, 1)),
+                    ("pick4", Sprites.Bake(PickKey, new Dictionary<char, Color32> { ['#'] = Hex.C("#ffd23d") }, 1)),
                     ("qcap", LedgerArt.Cap("Q", 24)),
-                    ("nothing", LedgerArt.NothingTag(56, 30)),
-                };
+                                    };
                 var schemes = new[] { Sprites.HeartScheme.Red, Sprites.HeartScheme.Regen, Sprites.HeartScheme.Gray };
                 for (int k = 0; k < 3; k++)
                     for (int f = 0; f < 3; f++) list.Add(("heart" + k + f, LedgerArt.Heart(schemes[k], f, HudLayout.HeartPx)));
                 _hudArt = Atlas.Build(list);
                 _gItem = _hudArt["item"]; _gBoss = _hudArt["boss"]; _gLockGold = _hudArt["lockgold"]; _gLockSilver = _hudArt["locksilver"];
-                _qCap = _hudArt["qcap"]; _nothing = _hudArt["nothing"];
+                _qCap = _hudArt["qcap"];
+                for (int k = 1; k <= 4; k++) _pick[k] = _hudArt["pick" + k];
                 for (int k = 0; k < 3; k++) for (int f = 0; f < 3; f++) _hearts[k, f] = _hudArt["heart" + k + f];
                 RegisterCallback<DetachFromPanelEvent>(_ => Atlas.Free(_hudArt.Texture));
             }
+
+            // the map's own marks: the Warden's horned skull, a padlock and the pickups as 7px pictures
+            static readonly string[] HornedSkull = { "#.....#", "##...##", ".#####.", "#######", "#..#..#", "#######", ".#.#.#." };
+            static readonly string[] Lock = { ".###.", "#...#", "#...#", "#####", "##.##", "#####" };
+            static readonly string[] PickHeart = { ".##.##.", "#######", "#######", ".#####.", "..###..", "...#..." };
+            static readonly string[] PickKey = { ".##....", "#..####", ".##.#.#" };
 
             public static float Pulse(float t, float rate) => 0.5f + 0.5f * Mathf.Sin(t * rate);
 
@@ -364,8 +376,8 @@ namespace Depths.Unity.Hud
             }
 
             static readonly Color32 Soot = Hex.C("#0d0a08"), Cream = Hex.C("#e8dcc0"), Dull = Hex.C("#6b5a44"), Spent = Hex.C("#c85a5a"),
-                RobeLit = Hex.C("#7a55c4"), BossGreen = Hex.C("#4fd06c"), PhaseGray = Hex.C("#d8c4a0"), BlinkFull = Hex.C("#e4ecff"),
-                BlinkPart = Hex.C("#7f93bd"), Shine = Hex.Rgba(255, 255, 255, 0.45f), Under = Hex.Rgba(0, 0, 0, 0.30f), NotchInk = Hex.C("#3a2a18");
+                RobeLit = Hex.C("#7a55c4"), BossGreen = Hex.C("#4fd06c"), PhaseGray = Hex.C("#d8c4a0"), BlinkFull = Hex.C("#7fc4ff"),
+                BlinkPart = Hex.C("#2f5c9e"), Shine = Hex.Rgba(255, 255, 255, 0.45f), Under = Hex.Rgba(0, 0, 0, 0.30f), NotchInk = Hex.C("#3a2a18");
             static readonly Color32[] Accent = AreaInk(false), AccentDim = AreaInk(true);
             static readonly Color32[] PickupInk = { default, Hex.C("#e8395a"), Hex.C("#9aa0ab"), Hex.C("#d8dee9"), Hex.C("#ffd23d") };
             static readonly Color32 DoorCut = Hex.C("#f4ead2");
@@ -419,8 +431,14 @@ namespace Depths.Unity.Hud
                 {
                     var tl = HudLayout.HeartTopLeft(HudLayout.HeartCapacity - 1);
                     int n = Num(_row.Count - HudLayout.HeartCapacity, "+");
-                    Digits(n, tl.x + HudLayout.HeartW + 2, tl.y + 8, 2, LedgerArt.Ink);
+                    Digits(n, tl.x - 20, tl.y + 34, 2, LedgerArt.Ink);
                 }
+
+                // momentum, straight under the hearts: one slim well filled green as it rises, ruled in quarters
+                var mw = HudLayout.MomentumWell;
+                float m = Mathf.Clamp01((float)p.momentum);
+                Bar(mw, FillPx(m, mw.width), new Color32((byte)(50 + 40 * m), (byte)(150 + 80 * m), (byte)(70 + 40 * m), 255));
+                for (int i = 1; i < 4; i++) Rect(mw.x + Mathf.Round(mw.width * i / 4f), mw.y + 2, 1, mw.height - 3, NotchInk);
 
                 // keys: held ones in their metal, missing ones a quarter-strength ghost in the dark well
                 for (int i = 0; i < 2; i++)
@@ -431,22 +449,18 @@ namespace Depths.Unity.Hud
                     Spr(k, Mathf.Round(w.center.x - k.W / 2f), Mathf.Round(w.center.y - k.H / 2f), QuadBatch.Alpha(held ? 1 : 0.25f));
                 }
 
-                // blink: two wells; a charge fills one, the next recharges from the left
+                // blink: two pips; a held charge is a lit pale blue with a glow, the recharging one fills in a deeper blue
                 float fill = BlinkFill(run);
                 for (int i = 0; i < 2; i++)
                 {
                     var w = HudLayout.BlinkWell(i);
-                    float f = i < run.blinkCharges ? 1 : i == run.blinkCharges ? fill : 0;
-                    Bar(w, FillPx(f, w.width), f >= 1 ? BlinkFull : BlinkPart);
+                    bool whole = i < run.blinkCharges;
+                    float f = whole ? 1 : i == run.blinkCharges ? fill : 0;
+                    if (whole) _q.Sprite(T, _glow, w.x - 6, w.y - 10, w.width + 12, w.height + 20, Hex.Rgba(120, 180, 255, 0.35f));
+                    Bar(w, FillPx(f, w.width), whole ? BlinkFull : BlinkPart);
                 }
 
-                // momentum: one well in quarters, filled green as it rises (the blink trail's ramp)
-                var mw = HudLayout.MomentumWell;
-                float m = Mathf.Clamp01((float)p.momentum);
-                Bar(mw, FillPx(m, mw.width), new Color32((byte)(50 + 40 * m), (byte)(140 + 80 * m), (byte)(70 + 40 * m), 255));
-                for (int i = 1; i < 4; i++) Rect(mw.x + Mathf.Round(mw.width * i / 4f), mw.y + 2, 1, mw.height - 3, NotchInk);
-
-                // depth: the floor struck into the seal in the area's accent; a tally once there are floors to count
+                // depth: the floor struck into the seal in the area's accent, the area named beside it
                 var seal = HudLayout.DepthSeal;
                 int nd = Num(run.floor);
                 int sc = nd >= 3 ? 3 : 4;
@@ -454,95 +468,105 @@ namespace Depths.Unity.Hud
                 float dx = Mathf.Round(seal.center.x - tw / 2), dy = Mathf.Round(seal.center.y - LedgerType.H * sc / 2f);
                 Digits(nd, dx + 1, dy + 1, sc, Soot);
                 Digits(nd, dx, dy, sc, run.floor > 1 ? Accent[area] : AccentDim[area]);
-                if (run.floor >= 2) Tally(run.floor);
-                Wrapped(AreaNames[Mathf.Clamp(area, 0, AreaNames.Length - 1)], HudLayout.Ink0(true), HudLayout.AreaY, HudLayout.InkW, 2, LedgerArt.Ink, 2);
+                Wrapped(AreaNames[Mathf.Clamp(area, 0, AreaNames.Length - 1)], HudLayout.AreaX, HudLayout.AreaY, HudLayout.InkW - 88, 2, LedgerArt.Ink, 3);
+                Ladder(run.floor);
 
+                // the footer: the slain, by the skull in the margin (the seed tag is its own element)
                 int nk = Num(run.kills);
-                Digits(nk, HudLayout.Ink0(true) + 1, HudLayout.SlainY + 1, 3, LedgerArt.Lift);
-                Digits(nk, HudLayout.Ink0(true), HudLayout.SlainY, 3, LedgerArt.Ink);
+                Digits(nk, HudLayout.RowX + 1, HudLayout.SlainY + 1, 3, LedgerArt.Lift);
+                Digits(nk, HudLayout.RowX, HudLayout.SlainY, 3, LedgerArt.Ink);
             }
 
-            // floors as tally marks: four strokes and a fifth struck through them in red, two lines of ten
-            void Tally(int floors)
+            // the descent: floors passed are struck through in red, this floor is inked in its accent
+            void Ladder(int floor)
             {
-                var seal = HudLayout.DepthSeal;
-                int shown = Mathf.Min(floors, 20);
-                for (int i = 0; i < shown; i++)
+                for (int band = 0; band < 4; band++)
                 {
-                    int line = i / 10, inGroup = i % 5, group = (i % 10) / 5;
-                    float x = HudLayout.TallyX + group * 32 + inGroup * 6, y = seal.y + 4 + line * 28;
-                    if (inGroup < 4) { Rect(x, y, 2, HudLayout.TallyH, LedgerArt.Ink); continue; }
-                    float x0 = HudLayout.TallyX + group * 32 - 3;
-                    for (int k = 0; k <= 26; k++) Rect(x0 + k, y + HudLayout.TallyH - 3 - k * (HudLayout.TallyH - 4) / 26f, 2, 2, LedgerArt.RedInk);
-                }
-                if (floors > 20)
-                {
-                    int n = Num(floors - 20, "+");
-                    Digits(n, HudLayout.TallyX + 70, seal.y + 34, 2, LedgerArt.InkSoft);
+                    int rungs = band == 3 ? 1 : 4;
+                    for (int i = 0; i < rungs; i++)
+                    {
+                        var r = HudLayout.Rung(band, i);
+                        int f = band * 4 + i + 1;
+                        bool here = band == 3 ? floor >= 13 : floor == f, passed = band < 3 && floor > f;
+                        if (here)
+                        {
+                            Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2, Accent[band]);
+                            Frame(r.x, r.y, r.width, r.height, 2, LedgerArt.Ink);
+                            int n = Num(floor, band == 3 ? "FLOOR " : null);
+                            Digits(n, Mathf.Round(r.center.x - LedgerType.Width(n, 2) / 2f), r.y + 5, 2, LedgerArt.Ink);
+                        }
+                        else if (passed)
+                            for (int k = 0; k <= 24; k++)   // a pen stroke through the box, corner to corner
+                                Rect(r.x + 3 + k * (r.width - 8) / 24f, r.yMax - 5 - k * (r.height - 8) / 24f, 2, 2, LedgerArt.RedInk);
+                    }
                 }
             }
 
-            // ---- the right page: the map, inked on the chart ----
+            // ---- the right page: the map, inked on the chart, fitted to the rooms it knows ----
             void DrawMap(RunState run, int area)
             {
                 if (run.dungeon == null) return;
                 var m = HudLayout.Map;
-                int cell = HudLayout.MapCell, box = HudLayout.MapBox, off = (cell - box) / 2;
                 var rooms = run.dungeon.AllRooms;
+                // the known rooms' bounds: a small floor is drawn larger and centred, never adrift in the paper
+                int x0 = 99, y0 = 99, x1 = -1, y1 = -1;
+                for (int i = 0; i < rooms.Count; i++)
+                {
+                    var r = rooms[i];
+                    if (!r.Visited && !Known(run, r)) continue;
+                    x0 = Mathf.Min(x0, r.X); y0 = Mathf.Min(y0, r.Y); x1 = Mathf.Max(x1, r.X); y1 = Mathf.Max(y1, r.Y);
+                }
+                if (x1 < 0) return;
+                int span = Mathf.Max(x1 - x0 + 1, y1 - y0 + 1, 3);
+                int cell = Mathf.Clamp((int)m.width / span, HudLayout.MapCell, HudLayout.MapMaxCell);
+                cell = Mathf.Min(cell, (int)m.width / Mathf.Max(x1 - x0 + 1, y1 - y0 + 1));
+                int box = cell * 27 / 32, off = (cell - box) / 2;
+                float ox = Mathf.Round(m.center.x - (x1 - x0 + 1) * cell / 2f) - x0 * cell, oy = Mathf.Round(m.center.y - (y1 - y0 + 1) * cell / 2f) - y0 * cell;
                 float bossPulse = Pulse(_hud.Time, 5.4f);
                 var ink = LedgerArt.Ink;
                 for (int i = 0; i < rooms.Count; i++)
                 {
                     var r = rooms[i];
                     if (r.Visited || !Known(run, r)) continue;
-                    // a known room not yet walked: a dashed pencil outline, and a padlock if a key opens it
-                    float x = m.x + r.X * cell + off, y = m.y + r.Y * cell + off;
+                    // a known room not yet walked: a dashed pencil shell, a padlock if a key opens it
+                    float x = ox + r.X * cell + off, y = oy + r.Y * cell + off;
                     Rect(x, y, box, box, Shell);
                     for (int k = 0; k < box; k += 4)
                     {
                         Rect(x + k, y, 2, 1, LedgerArt.InkFaint); Rect(x + k, y + box - 1, 2, 1, LedgerArt.InkFaint);
                         Rect(x, y + k, 1, 2, LedgerArt.InkFaint); Rect(x + box - 1, y + k, 1, 2, LedgerArt.InkFaint);
                     }
-                    bool locked = r.Type == RoomKind.Boss ? !run.bossUnlocked && !run.player.hasGold : r.Type == RoomKind.Item && !run.itemUnlocked && !run.player.hasSilver;
-                    if (locked) Centre(r.Type == RoomKind.Boss ? _gLockGold : _gLockSilver, x + box / 2f, y + box / 2f);
-                    else if (r.Type == RoomKind.Boss) Centre(_gBoss, x + box / 2f, y + box / 2f, 0.6f);
+                    RoomMark(run, r, x, y, box, false);
                 }
                 for (int i = 0; i < rooms.Count; i++)
                 {
                     var r = rooms[i];
                     if (!r.Visited) continue;
-                    float x = m.x + r.X * cell + off, y = m.y + r.Y * cell + off;
+                    float x = ox + r.X * cell + off, y = oy + r.Y * cell + off;
                     bool here = r.X == run.curX && r.Y == run.curY;
-                    // the doors bridge the gap to the neighbour in ink (the walls between rooms read as the chart's lines)
                     bool dn = r.Doors.Contains(Dir.N), ds = r.Doors.Contains(Dir.S), dw = r.Doors.Contains(Dir.W), de = r.Doors.Contains(Dir.E);
-                    if (dn) Rect(x + box / 2f - 4, y - off - 1, 8, off + 1, ink);
-                    if (ds) Rect(x + box / 2f - 4, y + box, 8, off + 1, ink);
-                    if (dw) Rect(x - off - 1, y + box / 2f - 4, off + 1, 8, ink);
-                    if (de) Rect(x + box, y + box / 2f - 4, off + 1, 8, ink);
+                    // doors: a thin ink thread across the gap
+                    if (dn) Rect(x + box / 2f - 1, y - off - 1, 2, off + 1, LedgerArt.InkSoft);
+                    if (ds) Rect(x + box / 2f - 1, y + box, 2, off + 1, LedgerArt.InkSoft);
+                    if (dw) Rect(x - off - 1, y + box / 2f - 1, off + 1, 2, LedgerArt.InkSoft);
+                    if (de) Rect(x + box, y + box / 2f - 1, off + 1, 2, LedgerArt.InkSoft);
                     var fill = here ? Accent[area] : r.Type == RoomKind.Start ? StartFill : Visited;
                     Rect(x, y, box, box, fill);
                     Rect(x + 1, y + 1, box - 2, 1, Hex.Rgba(255, 250, 235, 0.45f));
                     if (r.Type == RoomKind.Boss) Rect(x, y, box, box, Hex.Rgba(163, 40, 31, 0.22f));
                     Frame(x, y, box, box, here ? 2 : 1, ink);
-                    // and every door is marked on the room's own edge (the JS's door ticks): a cut in the
-                    // outline with an ink tick inside it, so a room's exits read even with no neighbour drawn
+                    // and each door is a 2px notch cut in the room's own edge (the JS's door ticks)
                     int t = here ? 2 : 1;
-                    if (dn) { Rect(x + box / 2f - 5, y, 10, t, DoorCut); Rect(x + box / 2f - 5, y + t, 10, 3, ink); }
-                    if (ds) { Rect(x + box / 2f - 5, y + box - t, 10, t, DoorCut); Rect(x + box / 2f - 5, y + box - t - 3, 10, 3, ink); }
-                    if (dw) { Rect(x, y + box / 2f - 5, t, 10, DoorCut); Rect(x + t, y + box / 2f - 5, 3, 10, ink); }
-                    if (de) { Rect(x + box - t, y + box / 2f - 5, t, 10, DoorCut); Rect(x + box - t - 3, y + box / 2f - 5, 3, 10, ink); }
-                    if (r.Type == RoomKind.Item || r.Type == RoomKind.Boss)
-                    {
-                        bool sealedRoom = r.Type == RoomKind.Boss ? !run.bossUnlocked : !run.itemUnlocked;
-                        var g = sealedRoom ? (r.Type == RoomKind.Boss ? _gLockGold : _gLockSilver) : r.Type == RoomKind.Boss ? _gBoss : _gItem;
-                        Centre(g, x + box / 2f, y + box / 2f);
-                    }
+                    if (dn) Rect(x + box / 2f - 3, y, 6, t, DoorCut);
+                    if (ds) Rect(x + box / 2f - 3, y + box - t, 6, t, DoorCut);
+                    if (dw) Rect(x, y + box / 2f - 3, t, 6, DoorCut);
+                    if (de) Rect(x + box - t, y + box / 2f - 3, t, 6, DoorCut);
+                    RoomMark(run, r, x, y, box, true);
                     if (r.Type == RoomKind.Boss && !r.Cleared)
                     {
-                        // a Warden walked in on and not finished: a red ring that breathes, ticks at the corners
+                        // a Warden walked in on and not finished: a red ring that breathes
                         var red = Hex.Rgba(200, 40, 30, 0.50f + 0.45f * bossPulse);
                         Frame(x - 3, y - 3, box + 6, box + 6, 2, red);
-                        for (int k = 0; k < 4; k++) Rect(x - 5 + (k % 2) * (box + 6), y - 5 + (k / 2) * (box + 6), 4, 4, red);
                     }
                     if (here)
                     {
@@ -550,8 +574,22 @@ namespace Depths.Unity.Hud
                         _q.Sprite(T, _disc, cx - 6, cy - 6, 12, 12, LedgerArt.Ink); _q.Sprite(T, _disc, cx - 4, cy - 4, 8, 8, RobeLit);
                     }
                     int pk = MapPickup(run, r);
-                    if (pk > 0) { Rect(x + box - 11, y + box - 11, 8, 8, ink); Rect(x + box - 10, y + box - 10, 6, 6, PickupInk[pk]); }
+                    if (pk > 0) { var pr = _pick[pk]; Art(pr, x + box - pr.W - 1, y + box - pr.H - 1); }
                 }
+            }
+
+            // what a room is, on the chart: the Warden's horned skull, an item's cross, and the padlock of the key
+            // that opens it (silver for an item room, gold for the Warden's) beside the mark until the door is open
+            void RoomMark(RunState run, Room r, float x, float y, int box, bool walked)
+            {
+                if (r.Type != RoomKind.Boss && r.Type != RoomKind.Item) return;
+                bool boss = r.Type == RoomKind.Boss;
+                bool sealedRoom = boss ? !run.bossUnlocked : !run.itemUnlocked;
+                var mark = boss ? _gBoss : _gItem;
+                var lockR = boss ? _gLockGold : _gLockSilver;
+                if (!sealedRoom) { Centre(mark, x + box / 2f, y + box / 2f, walked ? 1 : 0.7f); return; }
+                Centre(mark, x + box / 2f - 5, y + box / 2f, walked ? 1 : 0.7f);
+                Art(lockR, x + box - lockR.W - 1, y + 1);
             }
 
             void Centre(in Region g, float cx, float cy, float alpha = 1) =>
@@ -584,15 +622,16 @@ namespace Depths.Unity.Hud
                 float capX = pl.xMax - 8 - _qCap.W, capY = Mathf.Round(pl.center.y - _qCap.H / 2f);
                 if (held == null)
                 {
-                    // the empty hand: a paper tag pinned in the well, the Q cap waiting beside it
-                    Art(_nothing, Mathf.Round(s.center.x - _nothing.W / 2f), Mathf.Round(s.center.y - _nothing.H / 2f));
-                    Text("Empty", pl.x + 9, pl.center.y - 7, 2, LedgerArt.InkFaint);
+                    // the empty hand: a dark well with the ghost of its key, EMPTY on the plate, the cap waiting
+                    Text("Q", Mathf.Round(s.center.x - LedgerType.Width(1, 5) / 2f), Mathf.Round(s.center.y - LedgerType.H * 5 / 2f), 5, Hex.Rgba(232, 220, 192, 0.10f));
+                    Text("Empty", pl.x + 10, pl.center.y - 7, 2, LedgerArt.InkSoft);
                     Art(_qCap, capX, capY, 1, 0.45f);
                 }
                 else
                 {
-                    var tile = _item26.TryGetValue(held.Id, out var tr) ? tr : _item26["?"];
-                    _q.Sprite(T, tile, s.x + 7, s.y + 7, s.width - 14, s.height - 14, QuadBatch.Alpha(1));   // the 26px tile at 2x
+                    var pic = _icon4.TryGetValue(held.Id, out var ir) ? ir : _item26.TryGetValue(held.Id, out var tr) ? tr : _item26["?"];
+                    if (_icon4.ContainsKey(held.Id)) Spr(pic, Mathf.Round(s.center.x - pic.W / 2f), Mathf.Round(s.center.y - pic.H / 2f), QuadBatch.Alpha(1));
+                    else _q.Sprite(T, pic, s.x + 7, s.y + 7, s.width - 14, s.height - 14, QuadBatch.Alpha(1));   // a lettered tile at 2x
                     int charges = held.Charges ?? 0;
                     if (held.Charges != int.MaxValue)
                     {
@@ -605,20 +644,19 @@ namespace Depths.Unity.Hud
                     Art(_qCap, capX, capY, 1, charges > 0 ? 1 : 0.45f);
                 }
 
-                // the passive items, as tiles in a row
+                // the passive items, as their pictures in a row
                 int shown = 0;
                 for (int i = 0; i < run.loadout.Count; i++)
                 {
                     var it = run.loadout[i];
                     if (it.Slot == Items.ActiveSlot) continue;
                     if (shown >= HudLayout.CarryPerLine * 2) break;
-                    var tile = _item22.TryGetValue(it.Id, out var tr) ? tr : _item22["?"];
                     float x = HudLayout.Ink0(false) + (shown % HudLayout.CarryPerLine) * HudLayout.CarryStep, y = HudLayout.CarryY + (shown / HudLayout.CarryPerLine) * HudLayout.CarryStep;
-                    Rect(x + 2, y + 2, tile.W, tile.H, Hex.Rgba(40, 24, 10, 0.35f));
-                    Spr(tile, x, y, QuadBatch.Alpha(1));
+                    if (_icon2.TryGetValue(it.Id, out var ir)) Spr(ir, x, y, QuadBatch.Alpha(1));
+                    else { var tile = _item26.TryGetValue(it.Id, out var tr) ? tr : _item26["?"]; Spr(tile, x + 1, y + 1, QuadBatch.Alpha(1)); }
                     shown++;
                 }
-                if (shown == 0) Text("nothing yet", HudLayout.Ink0(false), HudLayout.CarryY + 6, 2, LedgerArt.InkFaint);
+                if (shown == 0) Text("nothing yet", HudLayout.Ink0(false), HudLayout.CarryY + 6, 2, LedgerArt.InkSoft);
             }
 
             void Arm(int row, in Region icon, float ready, string name, in Region mouse)

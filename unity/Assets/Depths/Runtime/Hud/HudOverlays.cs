@@ -49,9 +49,12 @@ namespace Depths.Unity.Hud
 
             // the pause: a short note on the same paper, its title struck
             var pause = LedgerArt.Sheet(PauseW, PauseH);
-            LedgerType.Struck(pause, "PAUSED", PauseW / 2, 24, 4, LedgerArt.Ink, LedgerArt.Lift);
             pause.Fill(PauseW / 2 - 120, 70, 240, 1, LedgerArt.InkFaint); pause.Fill(PauseW / 2 - 120, 73, 240, 2, LedgerArt.InkFaint);
             _pause = Sheet(pause, 640 - PauseW / 2, 360 - PauseH / 2 - 10);
+            // a document is written in the book's hand, the same face as the summary and the menu
+            var paused = LedgerFonts.Ink("Paused", 34, (Color)LedgerArt.Ink, LedgerFonts.Italic, TextAnchor.MiddleCenter);
+            Put(paused, 20, 16, PauseW - 40, 48);
+            _pause.Add(paused);
             Line(_pause, "Esc", "put the ledger down and play on", 92);
             Line(_pause, "R", "begin a new run", 120);
             Line(_pause, "M", "back to the menu", 148);
@@ -67,8 +70,7 @@ namespace Depths.Unity.Hud
             var sheet = LedgerArt.Sheet(SheetW, SheetH);
             for (int i = 0; i < SummaryRows.Length; i++) sheet.Fill(36, RowY + i * RowStep + 26, SheetW - 72, 1, LedgerArt.Rule);
             // the JS's RECORDS block: a ruled heading, then the bests across runs
-            LedgerArt.Label(sheet, "RECORDS", 40, RecordsY, LedgerArt.InkSoft);
-            sheet.Fill(40 + LedgerType.Width(7, 2) + 10, RecordsY + 6, SheetW - 76 - LedgerType.Width(7, 2) - 14, 2, LedgerArt.InkFaint);
+            sheet.Fill(40 + 92, RecordsY + 9, SheetW - 76 - 96, 2, LedgerArt.InkFaint);
             for (int i = 0; i < 2; i++) sheet.Fill(36, RecordsY + 22 + i * RowStep + 26, SheetW - 72, 1, LedgerArt.Rule);
             sheet.Fill(30, 18, 1, SheetH - 36, LedgerArt.Margin); sheet.Fill(33, 18, 1, SheetH - 36, LedgerArt.Margin);
             _summary = Sheet(sheet, 640 - SheetW / 2, 360 - SheetH / 2 - 6);
@@ -89,6 +91,9 @@ namespace Depths.Unity.Hud
                 _summary.Add(v);
                 _values[i] = v;
             }
+            var recHead = LedgerFonts.Ink("Records", 17, (Color)LedgerArt.InkSoft, LedgerFonts.Italic);
+            Put(recHead, 40, RecordsY - 2, 90, 22);
+            _summary.Add(recHead);
             string[] recs = { "Deepest floor", "Best rooms explored" };
             for (int i = 0; i < 2; i++)
             {
@@ -112,7 +117,7 @@ namespace Depths.Unity.Hud
             var notice = LedgerArt.Notice((int)HudLayout.Warning.width, (int)HudLayout.Warning.height);
             // the notice sits in the HUD's band, so it is written in the HUD's hand
             LedgerType.Struck(notice, "SOMETHING HEAVY IS DOWN THERE", notice.W / 2 - 2, 20, 2, LedgerArt.RedInk, LedgerArt.Lift);
-            LedgerType.Struck(notice, "THE GOLD KEY OPENS ITS DOOR", notice.W / 2 - 2, 46, 1, LedgerArt.InkSoft, LedgerArt.Lift);
+            LedgerType.Struck(notice, "THE GOLD KEY OPENS ITS DOOR", notice.W / 2 - 2, 46, 2, LedgerArt.InkSoft, LedgerArt.Lift);
             _warning = Sheet(notice, (int)HudLayout.Warning.x, (int)HudLayout.Warning.y);
 
             Hide(_dim); Hide(_pause); Hide(_summary); Hide(_banner); Hide(_warning);
@@ -170,7 +175,7 @@ namespace Depths.Unity.Hud
                 {
                     _pauseSeeded = true; _pauseSeedOf = run.rootSeed;
                     Atlas.Free(_pauseSeedTex);
-                    _pauseSeedTex = Atlas.ToTexture(Materials.SeedTag(208, 56, Rng.Encode(run.rootSeed)), "pause-seed");
+                    _pauseSeedTex = Atlas.ToTexture(LedgerArt.SeedTag(208, 56, Rng.Encode(run.rootSeed)), "pause-seed");
                     _pauseSeed.style.backgroundImage = new StyleBackground(_pauseSeedTex);
                 }
                 Show(_pause);

@@ -88,7 +88,8 @@ namespace Depths.Unity.Hud
             g.Fill(x, y, w, h, fill ?? Hex.C("#140c06"));
             g.Fill(x, y, w, 2, Materials.InsetDark); g.Fill(x, y, 2, h, Materials.InsetDark);
             g.Fill(x + 2, y + 2, w - 4, 2, Hex.Rgba(0, 0, 0, 0.35f));
-            g.Fill(x, y + h - 1, w, 1, Materials.InsetLit); g.Fill(x + w - 1, y, 1, h, Materials.InsetLit);
+            g.Fill(x, y + h - 1, w, 1, Hex.C("#c8965a")); g.Fill(x + w - 1, y, 1, h, Hex.C("#c8965a"));   // the lit bevel
+            g.Fill(x, y + h, w + 1, 1, Hex.Rgba(255, 246, 224, 0.5f));
         }
 
         /// <summary>A label in the ledger's hand: struck into the paper in soft ink.</summary>
@@ -125,39 +126,62 @@ namespace Depths.Unity.Hud
             return g;
         }
 
+        public static readonly string[] BandNames = { "SHALLOWS", "KILN WORKS", "FLOODED GALLERIES", "WARDEN'S DEEP" };
+        static readonly string[] Blink = { "#...#...", ".#...#..", "..#...#.", ".#...#..", "#...#..." };
+
+        /// <summary>A pictogram in ink: the row's mark in the margin, in place of a written label.</summary>
+        static void Picto(Img g, string[] rows, int x, int y, int px, Color32 c)
+        {
+            // any lit cell of a palette sprite (the key's 'g') is ink in a pictogram
+            var ink = new string[rows.Length];
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var ch = rows[i].ToCharArray();
+                for (int j = 0; j < ch.Length; j++) if (ch[j] != '.') ch[j] = '#';
+                ink[i] = new string(ch);
+            }
+            rows = ink;
+            g.Draw(Sprites.Glyph(rows, Lift, px), x + 1, y + 1);
+            g.Draw(Sprites.Glyph(rows, c, px), x, y);
+        }
+
         static void Body(Img g, int ox, int oy, int x0, int cx)
         {
             int w = HudLayout.InkW;
             Header(g, "THE BODY", cx, HudLayout.HeaderY + oy);
-            RuleAt(g, x0, HudLayout.Rule1 + oy, w);
-            Label(g, "KEYS", x0, HudLayout.KeysLabelY + oy);
-            for (int i = 0; i < 2; i++) { var k = HudLayout.KeyWell(i); CutWell(g, (int)k.x + ox, (int)k.y + oy, (int)k.width, (int)k.height); }
-            Label(g, "BLINK", x0, HudLayout.BlinkLabelY + oy);
-            for (int i = 0; i < 2; i++) { var b = HudLayout.BlinkWell(i); CutWell(g, (int)b.x + ox, (int)b.y + oy, (int)b.width, (int)b.height); }
-            Label(g, "MOMENTUM", x0, HudLayout.MomentumLabelY + oy);
             var m = HudLayout.MomentumWell; CutWell(g, (int)m.x + ox, (int)m.y + oy, (int)m.width, (int)m.height);
+            // keys: a key in the margin, then the two wells; blink: a dash mark, then its two pips
+            Picto(g, Sprites.KeyRows, HudLayout.IconX + ox - 2, HudLayout.KeysY + 11 + oy, 2, InkSoft);
+            for (int i = 0; i < 2; i++) { var k = HudLayout.KeyWell(i); CutWell(g, (int)k.x + ox, (int)k.y + oy, (int)k.width, (int)k.height); }
+            Picto(g, Blink, HudLayout.IconX + ox, HudLayout.BlinkY + 9 + oy, 2, InkSoft);
+            for (int i = 0; i < 2; i++) { var b = HudLayout.BlinkWell(i); CutWell(g, (int)b.x + ox, (int)b.y + oy, (int)b.width, (int)b.height); }
             RuleAt(g, x0, HudLayout.Rule2 + oy, w);
-            Label(g, "DEPTH", x0, HudLayout.DepthLabelY + oy);
             var s = HudLayout.DepthSeal;
             g.Fill((int)s.x + ox + 2, (int)s.yMax + oy, (int)s.width - 2, 3, Hex.Rgba(40, 24, 10, 0.35f));
             g.Draw(WellPlate((int)s.width, (int)s.height, 7, true), (int)s.x + ox, (int)s.y + oy);
+            // the descent: four bands of the climb, each a row of floors to strike off
+            for (int band = 0; band < 4; band++)
+            {
+                Label(g, BandNames[band], x0, HudLayout.BandLabelY(band) + oy, InkSoft);
+                int rungs = band == 3 ? 1 : 4;
+                for (int i = 0; i < rungs; i++)
+                {
+                    var r = HudLayout.Rung(band, i);
+                    int rx = (int)r.x + ox, ry = (int)r.y + oy, rw = (int)r.width, rh = (int)r.height;
+                    g.Fill(rx + 1, ry + rh, rw - 1, 2, Hex.Rgba(40, 24, 10, 0.25f));
+                    g.Fill(rx, ry, rw, rh, Hex.Rgba(255, 250, 235, 0.35f));
+                    g.Fill(rx, ry, rw, 1, InkSoft); g.Fill(rx, ry + rh - 1, rw, 1, InkSoft); g.Fill(rx, ry, 1, rh, InkSoft); g.Fill(rx + rw - 1, ry, 1, rh, InkSoft);
+                    string n = band == 3 ? "13 AND DOWN" : (band * 4 + i + 1).ToString();
+                    LedgerType.Stamp(g, n, rx + rw / 2 - LedgerType.Width(n, 2) / 2, ry + 5, 2, InkFaint);
+                }
+            }
             RuleAt(g, x0, HudLayout.Rule3 + oy, w);
-            Label(g, "SLAIN", x0, HudLayout.SlainLabelY + oy);
-            RuleAt(g, x0, HudLayout.Rule4 + oy, w);
-            Label(g, "SEED", x0, HudLayout.SeedLabelY + oy);
+            Picto(g, Sprites.MiniGlyph["boss"], HudLayout.IconX + ox, HudLayout.SlainY + 2 + oy, 3, InkSoft);
         }
 
         static void MapAndKit(Img g, int ox, int oy, int x0, int cx)
         {
             Header(g, "THE MAP", cx, HudLayout.HeaderY + oy);
-            // the chart's grid: a faint pencil cross where cells meet, there to be drawn over
-            var m = HudLayout.Map;
-            for (int i = 0; i <= 7; i++)
-                for (int j = 0; j <= 7; j++)
-                {
-                    int px = (int)m.x + ox + i * HudLayout.MapCell - 3, py = (int)m.y + oy + j * HudLayout.MapCell - 3;
-                    g.Fill(px - 1, py, 3, 1, Hex.Rgba(64, 96, 140, 0.12f)); g.Fill(px, py - 1, 1, 3, Hex.Rgba(64, 96, 140, 0.12f));
-                }
             Header(g, "THE KIT", cx, HudLayout.KitHeaderY + oy);
             for (int i = 0; i < 3; i++)
             {
@@ -169,6 +193,36 @@ namespace Depths.Unity.Hud
                 g.Draw(NamePlate((int)p.width, (int)p.height), (int)p.x + ox, (int)p.y + oy);
             }
             Label(g, "CARRYING", x0, HudLayout.CarryLabelY + oy);
+        }
+
+        /// <summary>
+        /// The seed tag (Materials.SeedTag's luggage tag: the clipped corner, the punched hole), with the seed
+        /// inlaid in pale wood in the HUD's hand so it reads at a glance; the tag is the label, so no word on it.
+        /// </summary>
+        public static Img SeedTag(int w, int h, string text)
+        {
+            const int CH = 18;
+            var c = new Img(w, h);
+            bool Inside(int x, int y) => x >= 1 && x < w - 1 && y >= 1 && y < h - 1 && x + y >= CH + 1;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    if (!Inside(x, y)) continue;
+                    c.Blend(x, y, Materials.WoodTex.Get(x % 96, y % 96));
+                    bool rim = !Inside(x - 1, y) || !Inside(x + 1, y) || !Inside(x, y - 1) || !Inside(x, y + 1);
+                    bool rim2 = !Inside(x - 2, y) || !Inside(x, y - 2);
+                    if (rim) c.Blend(x, y, Hex.Rgba(26, 14, 6, 0.85f));
+                    else if (rim2) c.Blend(x, y, Hex.Rgba(255, 228, 186, 0.26f));
+                }
+            for (int i = 0; i < CH - 1; i++) c.Blend(1 + i, CH - i, Hex.Rgba(255, 214, 160, 0.32f));
+            float hx = CH * 0.72f, hy = h / 2f;
+            c.Disc(hx, hy, 5.5f, Hex.C("#150c05"));
+            // the inlay: a dark channel cut first, the pale seed set into it
+            string s = text ?? "";
+            int scale = 3, tw = LedgerType.Width(s, scale), tx = (w + CH) / 2 - tw / 2, ty = h / 2 - LedgerType.H * scale / 2;
+            LedgerType.Stamp(c, s, tx + 1, ty + 1, scale, Hex.Rgba(20, 10, 4, 0.9f));
+            LedgerType.Stamp(c, s, tx, ty, scale, Hex.C("#f3dfb2"));
+            return c;
         }
 
         /// <summary>A name plate: a strip of the plank with a paper slip let into it, where a name is written.</summary>
@@ -205,6 +259,8 @@ namespace Depths.Unity.Hud
         public static Img Heart(Sprites.HeartScheme scheme, int fill, int px)
         {
             var pal = Sprites.HeartPal(scheme);
+            // an empty regen container keeps its own dark rose, so it never reads as an empty red one
+            if (scheme == Sprites.HeartScheme.Regen) { pal['E'] = Hex.C("#6b3459"); pal['G'] = Hex.C("#86476f"); }
             var lit = Sprites.Bake(Sprites.HeartRowsFor(1), pal, px);
             if (fill == 2) return lit;
             var dark = Sprites.Bake(Sprites.HeartRowsFor(0), pal, px);

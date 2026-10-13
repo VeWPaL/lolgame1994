@@ -206,6 +206,47 @@ namespace Depths.Unity
             else (view == "audio" ? _tabAudio : view == "gameplay" ? _tabGameplay : _tabControls).Focus();
         }
 
+        /// <summary>The menu views the screenshot mode can show besides the pages: keyboard focus on a key cap or a
+        /// slider, the dropdown's list open, the mouse over an entry, the curve ticked. None of them saves a setting.</summary>
+        public static readonly string[] EvidenceViews = { "focuskey", "focusslider", "dropdown", "hover", "gameplayon" };
+
+        public void Evidence(string view)
+        {
+            var root = GetComponent<UIDocument>().rootVisualElement;
+            switch (view)
+            {
+                case "focuskey": ShowView("controls"); root.Q(className: "bind-key")?.Focus(); break;
+                case "focusslider": ShowView("audio"); root.Q<Slider>("vol-Music")?.Focus(); break;
+                case "gameplayon": ShowView("gameplay"); _curve.SetValueWithoutNotify(true); Tick(); break;
+                case "dropdown":
+                    // after the page has been laid out, or the list opens at the origin with no size
+                    ShowView("controls");
+                    _preset.Focus();
+                    _preset.schedule.Execute(() =>
+                    {
+                        var show = _preset.GetType().GetMethod("ShowMenu", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+                        if (show != null) show.Invoke(_preset, null);
+                        else using (var e = NavigationSubmitEvent.GetPooled()) { e.target = _preset; _preset.SendEvent(e); }
+                    }).StartingIn(250);
+                    break;
+                case "hover":
+                    ShowView("menu");
+                    root.schedule.Execute(() =>
+                    {
+                        var b = root.Q<Button>("options").worldBound;
+                        float k = Screen.width / root.panel.visualTree.worldBound.width;
+                        var at = new Vector2(b.center.x * k, Screen.height - b.center.y * k);
+                        // the OS cursor, and the Input System's own mouse state (a batch window may not own the cursor)
+                        Mouse.current?.WarpCursorPosition(at);
+                        if (Mouse.current != null) UnityEngine.InputSystem.InputSystem.QueueStateEvent(Mouse.current, new UnityEngine.InputSystem.LowLevel.MouseState { position = at });
+                        // and a pointer move into the panel itself, which is what sets :hover
+                        var ev = new Event { type = EventType.MouseMove, mousePosition = b.center };
+                        using (var pm = PointerMoveEvent.GetPooled(ev)) root.panel.visualTree.SendEvent(pm);
+                    }).StartingIn(250).Every(100).Until(() => Time.unscaledTime > 30);
+                    break;
+            }
+        }
+
         void RefreshBinds()
         {
             _presetHint.text = _bindings.Preset == KeyPreset.Auto || _bindings.Preset == KeyPreset.Dvorak
@@ -221,6 +262,11 @@ namespace Depths.Unity
                 var key = new Button { text = _bindings.Display(slot) };
                 key.AddToClassList("bind-key");
                 key.style.backgroundImage = new StyleBackground(_cap);
+                // a focused or hovered cap lights up, the way a listening one does
+                key.RegisterCallback<FocusInEvent>(_ => key.style.backgroundImage = new StyleBackground(_capLit));
+                key.RegisterCallback<FocusOutEvent>(_ => { if (!key.ClassListContains("listening")) key.style.backgroundImage = new StyleBackground(_cap); });
+                key.RegisterCallback<PointerEnterEvent>(_ => key.style.backgroundImage = new StyleBackground(_capLit));
+                key.RegisterCallback<PointerLeaveEvent>(_ => { if (key.focusController?.focusedElement != key && !key.ClassListContains("listening")) key.style.backgroundImage = new StyleBackground(_cap); });
                 key.clicked += () =>
                 {
                     if (_rebind != null) return;

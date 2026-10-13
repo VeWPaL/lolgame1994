@@ -55,7 +55,8 @@ namespace Depths.Unity
             else
             {
                 var m = FindAnyObjectByType<MainMenuController>();
-                if (m != null) m.ShowView(_view);
+                if (m != null && Array.IndexOf(MainMenuController.EvidenceViews, _view) >= 0) m.Evidence(_view);
+                else if (m != null) m.ShowView(_view);
             }
             // the game views play for a while in real time (frame counts depend on the frame rate)
             if (_view == "game") yield return MeasureTickRate(5f);
@@ -68,6 +69,7 @@ namespace Depths.Unity
             else if (_view == "warning") yield return WarningView();
             else if (_view == "lowhp") yield return LowView();
             else if (_view == "ledger") yield return LedgerView();
+            else if (Array.IndexOf(MainMenuController.EvidenceViews, _view) >= 0) yield return new WaitForSecondsRealtime(1f);   // the list opens, the pointer arrives
             else for (int i = 0; i < 20; i++) yield return null;
             ScreenCapture.CaptureScreenshot(_path);
             for (int i = 0; i < 10; i++) yield return null;
