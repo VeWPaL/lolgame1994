@@ -50,7 +50,10 @@ case "${1:-}" in
     rc=$?
     grep -E '\[Depths\] (check|note)' "unity/Logs/shot-$view.log"
     [ -f "$out" ] && echo "wrote $out" || { echo "no screenshot; see unity/Logs/shot-$view.log"; exit 1; }
-    grep -qF "[Depths] check FAIL" "unity/Logs/shot-$view.log" && exit 1
+    # a failure keeps its log: a rare one is only diagnosable from the run that showed it
+    if grep -qF "[Depths] check FAIL" "unity/Logs/shot-$view.log"; then
+      keep="unity/Logs/fail-$view-$(date +%Y%m%d-%H%M%S).log"; cp "unity/Logs/shot-$view.log" "$keep"; echo "kept $keep"; exit 1
+    fi
     exit $rc ;;
   *) echo "usage: tools/unity.sh bootstrap | test | build | shot <view> [out.png]"; exit 2 ;;
 esac

@@ -214,6 +214,8 @@ namespace Depths
                 b.hp = b.maxHp = Balance.BossWallHp * 2;
                 b.packId = Balance.BossWallId; b.packSlot = i;
                 b.noticeTimer = 1000000000; b.aggroTimer = 0; b.pursuit = 0;
+                // tuned: the statues read as a broken pack standing still, so they wake on a normal beat and guard the Warden
+                if (Balance.Tuned && Balance.TuneWarden) { b.noticeTimer = Balance.Sec(0.43); b.aggroTimer = Balance.AggroTime; }
                 run.enemies.Add(b);
                 made.Add(b);
             }
@@ -403,12 +405,21 @@ namespace Depths
             {
                 var slot = BrunchArcSlot(anchor.Value.X, anchor.Value.Y, p.x, p.y, pc!.Count, e.packSlot, tgt!.r);
                 if (slot.HasValue) { mdx = slot.Value.X - e.x; mdy = slot.Value.Y - e.y; }
+                // tuned: a player inside the Scatter's reach and nearer than its slot is rushed, not walked past to a
+                // wall across the room. A formed wall stays a wall: its slot is nearer than the player approaching it
+                double toPlayer = Dist(edx, edy), enter = System.Math.Min(Balance.CloseRange, Dist(mdx, mdy));
+                e.rushing = Balance.Tuned && Balance.TuneRush && toPlayer < enter + (e.rushing ? Balance.BrunchRushRelease : 0);
+                if (e.rushing) { anchor = null; mdx = edx; mdy = edy; }
             }
+            else e.rushing = false;
             bool reachable = Dist(mdx, mdy) <= Balance.BrunchDeadzone + e.r;
             double tx = reachable ? edx : mdx, ty = reachable ? edy : mdy, td = Dist(tx, ty);
             if (td == 0) td = 1;
             double desired = anchor.HasValue ? Balance.BrunchShieldSpeed : e.curSpeed;
+            if (anchor.HasValue && Balance.Tuned && Balance.TuneWall && !reachable)   // tuned: the wall forms as the player walks in - fast, easing into the slot
+                desired = System.Math.Max(Balance.BrunchShieldSpeed, System.Math.Min(Balance.BrunchGuardSpeed, td / Balance.BrunchGuardArrive));
             double share = desired > e.curSpeed ? Balance.BrunchAccel : Balance.BrunchDecel;
+            if (anchor.HasValue && Balance.Tuned && Balance.TuneWall) share = Balance.BrunchDecel;   // and turns onto it as quickly as it stops
             e.vx += (tx / td * desired - e.vx) * share;
             e.vy += (ty / td * desired - e.vy) * share;
             if (System.Math.Abs(e.vx) < Balance.BrunchStill) e.vx = 0;
@@ -482,6 +493,7 @@ namespace Depths
             foreach (var e in Snapshot)
             {
                 if (e.hp <= 0) continue;   // killed earlier this tick
+                e.lifeT++;
                 bool ranged = e.kind == BodyKind.Shooter || e.kind == BodyKind.Gunner || Middle.Ranged(e.kind) || e.kind == BodyKind.Egg;
                 if (e.hitFlash > 0) e.hitFlash--;
                 if (e.kvx != 0 || e.kvy != 0)
@@ -498,7 +510,7 @@ namespace Depths
                 double sm = e.slowT > 0 ? Balance.HitSlowMult : 1;
                 if (e.stun > 0)
                 {
-                    if (e.lungeState == "wind" || e.lungeState == "lunge")
+                    if (e.lungeState == "wind" || e.lungeState == "lunge" || e.lungeState == "dodge")
                     {
                         e.lungeState = "approach"; e.lungeT = 0; e.lungeLen = 0; e.lungeCd = Balance.LungeCd;
                     }
@@ -507,6 +519,18 @@ namespace Depths
                     e.anim = 0;
                     Movement.Clamp(e);
                     continue;
+                }
+                if (Balance.Tuned && Balance.TuneDodge && e.kind == BodyKind.Lunger)   // the dodge comes before noticing, so a startled body can take it
+                {
+                    if (e.dodgeCd > 0) e.dodgeCd--;
+                    if (e.lungeState == "dodge" || Movement.TryLungerDodge(run, e))
+                    {
+                        double bx = e.x, by = e.y;
+                        Movement.StepDodge(e, sm);
+                        Movement.Clamp(e);
+                        e.anim += System.Math.Sqrt((e.x - bx) * (e.x - bx) + (e.y - by) * (e.y - by)) / Balance.Stride;
+                        continue;   // no contact while dashing off a shot: it is leaving, not striking
+                    }
                 }
                 if (e.noticeTimer > 0) { e.noticeTimer--; e.anim = 0; continue; }
                 double ox = e.x, oy = e.y;
@@ -544,7 +568,7 @@ namespace Depths
                 {
                     // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
                     bool brunch = e.kind == BodyKind.Brunch;
-                    bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0;
+                    bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0 && !e.rushing;   // a rushing Brunch spends itself, as a chasing one does
                     bool boss = e.kind == BodyKind.Boss;
                     if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, boss) && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
@@ -676,7 +700,8 @@ namespace Depths
                 if (best < 0) return false;
                 if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); return true; }   // the blast goes off on the first body
                 var t = en[best];
-                t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale;
+                double taken = Balance.Tuned && Balance.TuneBeam && t.kind == BodyKind.Brunch && p.gun == Weapons.BeamIndex ? Balance.BrunchBeamTaken : 1;   // tuned: a wall the Beam cannot erase
+                t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale * taken;
                 t.hitFlash = Balance.HitFlash;
                 run.hits++;
                 Combat.AlertEnemy(t);

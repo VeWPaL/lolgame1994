@@ -74,7 +74,8 @@ namespace Depths.Unity
             if (view == null) { Check(false, "tick rate: no GameView in the Game scene"); yield break; }
             long t0 = view.Ticks, sim0 = view.Run.ticks;
             int f0 = Time.frameCount;
-            double s0 = Time.realtimeSinceStartupAsDouble, dropped0 = view.DroppedSeconds;
+            double s0 = Time.realtimeSinceStartupAsDouble, dropped0 = view.DroppedSeconds, fed0 = view.FedSeconds;
+            long frames0 = view.Frames;
             // the final mix, sampled while the demo shoots: a missing listener or a dead bus is silence
             var mix = new float[1024];
             float loudest = 0;
@@ -99,6 +100,9 @@ namespace Depths.Unity
             // A frame over TickClock.MaxFrameSeconds is cut on purpose (no fast-forward after a hitch), so the rate
             // is measured over the seconds the game played; how much a loaded machine made it drop is reported.
             Debug.Log("[Depths] note " + dropped.ToString("0.000") + " s of " + s.ToString("0.000") + " s dropped by the hitch cap");
+            // the clock's own input over the window: fed seconds should equal the window, ticks 60 x (fed - dropped)
+            Debug.Log("[Depths] note the clock was fed " + (view.FedSeconds - fed0).ToString("0.000") + " s in " + (view.Frames - frames0) +
+                      " frames (longest " + view.LongestFrame.ToString("0.000") + " s since start) and stepped " + (view.Ticks - t0) + " ticks");
             Check(played >= 0.5 * s, "the game played at least half the window (" + played.ToString("0.00") + " of " + s.ToString("0.00") + " s)");
             double hz = sim / Math.Max(1e-9, played);
             Check(Balance.TickHz == Balance.GameHz, "Balance.TickHz is " + Balance.TickHz + " in the player (want " + Balance.GameHz + ")");

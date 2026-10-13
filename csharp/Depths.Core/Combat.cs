@@ -221,6 +221,15 @@ namespace Depths
                 for (int i = en.Count - 1; i >= 0; i--)
                     if (en[i].packId == Balance.BossWallId) en.RemoveAt(i);
             run.kills++;
+            if (Balance.Tuned && Balance.TuneLoot && !Balance.JsReference)
+            {
+                // tuned: still one draw a kill, but only the room's last kill can drop, and only one thing -
+                // a Brunch pack no longer rolls the room's whole loot pool
+                double roll = run.rng.Run();
+                var last = en.Count == 0 ? Loot.RoomDrop(roll, e.x, e.y, Curve.At(run.floor).Drops) : null;
+                if (last != null) run.pickups.Add(last);
+                return;
+            }
             var d = Loot.Drop(run.rng, e.x, e.y, Curve.At(run.floor).Drops);
             if (d != null) run.pickups.Add(d);
         }
@@ -243,6 +252,16 @@ namespace Depths
             if (roll < 0.22) return Pickup.Of("halfarmor", x, y, 10);
             if (roll < 0.26) return Pickup.Of("armor", x, y, 10);
             return null;
+        }
+
+        /// <summary>The tuned drop (Balance.Tuned): a cleared room's last kill drops RoomDropChance of the
+        /// time (times the curve's Drops), split as Drop splits it (9:9:4:4); one roll decides both.</summary>
+        public static Pickup? RoomDrop(double roll, double x, double y, double scale = 1)
+        {
+            double chance = System.Math.Min(1, Balance.RoomDropChance * scale);
+            if (roll >= chance) return null;
+            double u = roll / chance * 26;
+            return Pickup.Of(u < 9 ? "halfheart" : u < 18 ? "heart" : u < 22 ? "halfarmor" : "armor", x, y, 10);
         }
     }
 }

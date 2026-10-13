@@ -117,6 +117,22 @@ namespace Depths.Unity.Tests
             Assert.That(auto["Move/up"], Is.EqualTo("<Keyboard>/w"), "Auto must bind the key POSITION");
             Assert.That(KeyPresets.Label(KeyPreset.Auto), Does.Contain("position"));
         }
+
+        [Test]
+        public void EveryPresetButAutoChangesTheBinds()
+        {
+            // the playtest bug: Dvorak was the positional preset, so choosing it did nothing
+            var auto = KeyPresets.PathsFor(KeyPreset.Auto);
+            foreach (KeyPreset p in System.Enum.GetValues(typeof(KeyPreset)))
+            {
+                if (p == KeyPreset.Auto) continue;
+                var m = KeyPresets.PathsFor(p);
+                Assert.That(KeyPresets.Slots.Any(s => m[s] != auto[s]), p + " binds exactly what Auto binds");
+            }
+            var dv = KeyPresets.PathsFor(KeyPreset.Dvorak);
+            Assert.That(new[] { dv["Move/up"], dv["Move/left"], dv["Move/down"], dv["Move/right"] },
+                        Is.EqualTo(new[] { "<Keyboard>/#(,)", "<Keyboard>/#(A)", "<Keyboard>/#(O)", "<Keyboard>/#(E)" }));
+        }
     }
 
     public class BindingsTests

@@ -186,6 +186,12 @@ namespace Depths.Tests
             ["Balance.NoticeWindow"] = U.SecF, ["Bodies.ArchNoticeWindow"] = U.SecF, ["Bodies.ArchIdleWindow"] = U.SecF,
             ["Weapons.MuzzleTicks"] = U.Sec, ["Bodies.BrunchWalk"] = U.PerSec, ["Bodies.BrunchRun"] = U.PerSec,
             ["RunState.FadeDescend"] = U.Sec,
+            // C# only: the playtest tuning (Balance.Tuned) and the middle enemies (Middle.cs)
+            ["Balance.BrunchGuardSpeed"] = U.PerSec, ["Balance.BrunchGuardArrive"] = U.Sec, ["Balance.LungerDodgeCd"] = U.Sec,
+            ["Balance.LungerDodgeReact"] = U.Sec, ["Balance.LungerDodgeHorizon"] = U.Sec, ["Balance.LungerStartle"] = U.Sec,
+            ["Middle.SplitShardSpeed"] = U.PerSec, ["Middle.LobFlight"] = U.Sec, ["Middle.SprayWind"] = U.Sec, ["Middle.EggWind"] = U.Sec,
+            ["Middle.BurrowWalk"] = U.PerSec, ["Middle.BurrowRun"] = U.PerSec, ["Middle.BurrowSurface"] = U.Sec, ["Middle.BurrowDig"] = U.Sec,
+            ["Middle.BurrowUnder"] = U.Sec, ["Middle.BurrowRise"] = U.Sec,
         };
 
         // the dials that live in tables and on fresh bodies rather than as static properties
@@ -235,7 +241,7 @@ namespace Depths.Tests
         {
             var off = new List<string>();
             var seen = new HashSet<string>();
-            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState) })
+            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState), typeof(Middle) })
                 foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
                 {
                     if (prop.Name == nameof(Balance.TickHz) || (prop.PropertyType != typeof(int) && prop.PropertyType != typeof(double))) continue;

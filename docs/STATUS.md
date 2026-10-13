@@ -11,7 +11,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  594/594, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  613/613, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -21,7 +21,7 @@ session's write-up is `docs/report-2026-10-06.html` (its numbers are from the en
   placeholder items (below).
   `Balance.JsReference` restores the JS damage rules for parity tests that record player HP.
 - **Unity (`unity/`)**: 6000.3.25f1. Main menu + Options (layout presets, rebinding, volume). Plays a
-  real seeded run drawn with the JS pixel art (`Runtime/Art/`, `WorldView`): pause (Esc), death summary, floor banner. F2 is the lab (`LabMode`). EditMode 53/53
+  real seeded run drawn with the JS pixel art (`Runtime/Art/`, `WorldView`): pause (Esc), death summary, floor banner. F2 is the lab (`LabMode`). EditMode 58/58
   (`TickClock`, `HeartRow`, menus, sound); the frame-to-tick step lives in `TickClock`, the heart
   row's layout and colours in `HeartRow`.
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
@@ -57,7 +57,7 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 53/53. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 58/58. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
 - `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts`: the player at 1280x720 with
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -174,6 +174,33 @@ it from another checkout or the first command spends minutes importing.
   skilled 2.60 < 8.37 / 2.55 < 8.50 (measured before the 2026-10-07 regen nerf).
   The alternatives, `Original` and `Recovery`, stay selectable (`curve <label> --mid-rule`); `Recovery`
   cannot fail on HP alone (the critic), so it only measures armour.
+- **Playtest notes of 2026-10-13 (C# only, `Balance.Tuned`, on in the game and the bot; the test assembly
+  plays with it off so the parity rows hold, `TunedTests` turns it on).** Each part has its own switch
+  (`Balance.TuneWall/Rush/Dodge/Loot/Beam/Warden`; the bot: `play --tuned off`, `--untune loot,rush`):
+  - Wall: a guarding Brunch walks to its slot at up to 320 px/s (was 151), easing in over 0.25 s.
+  - Rush: a Brunch with the player inside the Scatter's full-damage reach (`CloseRange` = its FNear,
+    180 px) AND nearer than its slot rushes the player (24 px of hysteresis); a formed wall holds as the
+    player walks up; a rushing Brunch spends itself on contact like a chasing one.
+    (The first rule, any Brunch within reach, made walls body-slam: +5 HP of damage a floor. Fixed.)
+  - Dodge: a Lunger dashes (lunge speed) sideways off a bolt, or clear of a blast's burst (its mark, or
+    the first body its path meets, neighbours included), when the shot arrives in 0.12-0.6 s; 1.4 s
+    cooldown; never inside `CloseRange`, never out of its wind-up, lunge or recovery (the punish window).
+    Near a wall it takes the other side of a bolt, or slides along the wall from a burst, never back
+    through it. Startle, once a life: a Lunger new to the room (1.5 s of play, or not yet noticing)
+    ignores range and reaction for its first dodge, so one spawned beside you is no free kill; after
+    that, close range kills. A cold critic pass found the recovery skip, the flip through a burst and
+    a too-short startle window; fixed, each with a test that fails on the old code.
+  - Warden: the wall's Brunch wake on the normal beat (0.43 s) and guard the Warden (JS: inert until hit).
+  - Loot: one draw a kill as before, but only a room's last kill can drop, 75% of rooms (x the curve's
+    Drops), one pickup, the 9:9:4:4 split. Beam: a Brunch takes 0.45 x a Beam bolt (2 bolts point blank,
+    3 at range; was 1). Unity: the Dvorak preset binds by letter (, A O E); the V key (Brunch rule) is gone.
+  Bot A/B (after the critic fixes), seeds 101-200 x 3 profiles, 60 min, tuning off -> on: deaths 30 -> 155
+  (novice 27 -> 93, average 1 -> 37, skilled 2 -> 25), damage a floor 14.8 -> 17.4 HP. Everything but the
+  loot rule: 30 -> 37 (novice 30, average 4, skilled 3), damage 17.3 HP a floor.
+  So the enemy changes together cost about 7 deaths and **the loot rule about 118**: pickups were 70% of all
+  healing and are 42% now (the regen heart's clear refill carries the rest). Owner to decide: keep it,
+  or keep "one pickup per room, last kill" and raise the chance (85-90%) or weight the split toward
+  whole hearts, which keeps the anti-pile-up rule without a third less healing.
 - **Middle enemies (owner's idea 2026-10-12; all five built 2026-10-12, LAB ONLY).** Keep the gunner
   for floors 11+ and give floors 3-10 enemies a skilled player can read and dodge (the gunner's 4 HP
   shell kills average and skilled players about equally there). `csharp/Depths.Core/Middle.cs`, C#

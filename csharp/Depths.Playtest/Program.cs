@@ -59,7 +59,7 @@ namespace Depths.Playtest
                                  double minutes, Action<RunResult>? each = null)
         {
             var b = new Batch { label = label, commit = BuildInfo.Commit, brunch = Balance.BrunchVariant,
-                                tickHz = Balance.TickHz, curve = Depths.Curve.On, dials = CurveDials.Applied.Count > 0 ? CurveDials.Applied.ToList() : null, minutes = minutes, seeds = seeds.ToList(),
+                                tickHz = Balance.TickHz, curve = Depths.Curve.On, tuned = Balance.Tuned, untune = Untune.Off().Count > 0 ? Untune.Off() : null, dials = CurveDials.Applied.Count > 0 ? CurveDials.Applied.ToList() : null, minutes = minutes, seeds = seeds.ToList(),
                                 profiles = profiles.ToList() };
             foreach (var p in profiles)
                 foreach (var s in seeds)
@@ -78,6 +78,38 @@ namespace Depths.Playtest
     {
         public static string? Commit => typeof(BuildInfo).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
             .FirstOrDefault(a => a.Key == "GitCommit")?.Value;
+    }
+
+    /// <summary>`--untune part,part`: parts of Balance.Tuned turned off for one play, to measure each part on its own.</summary>
+    public static class Untune
+    {
+        public static readonly string[] Parts = { "wall", "rush", "dodge", "loot", "beam", "warden" };
+
+        public static void Set(string part, bool on)
+        {
+            switch (part)
+            {
+                case "wall": Balance.TuneWall = on; break;
+                case "rush": Balance.TuneRush = on; break;
+                case "dodge": Balance.TuneDodge = on; break;
+                case "loot": Balance.TuneLoot = on; break;
+                case "beam": Balance.TuneBeam = on; break;
+                case "warden": Balance.TuneWarden = on; break;
+                default: throw new UsageException("--untune: no part '" + part + "' (" + string.Join(", ", Parts) + ")");
+            }
+        }
+
+        public static List<string> Off()
+        {
+            var off = new List<string>();
+            if (!Balance.TuneWall) off.Add("wall");
+            if (!Balance.TuneRush) off.Add("rush");
+            if (!Balance.TuneDodge) off.Add("dodge");
+            if (!Balance.TuneLoot) off.Add("loot");
+            if (!Balance.TuneBeam) off.Add("beam");
+            if (!Balance.TuneWarden) off.Add("warden");
+            return off;
+        }
     }
 
     /// <summary>`--dial stage.Field=value`: one Curve.Stages field changed for one play, recorded in the header, undone after.</summary>
@@ -133,15 +165,16 @@ namespace Depths.Playtest
         public double Minutes = 20;
         public string? Brunch, Out;
         public bool Curve = false;   // the difficulty curve, off by default until signed off; on to play it
+        public bool Tuned = true;    // the playtest tuning (Balance.Tuned), on as in the game; off plays the JS rules
         public List<string> Dials = new List<string>();
         public Depths.Curve.MiddleRule? MidRule;   // curve --mid-rule: which rubric-5 MIDDLE reading to check   // --dial stage.Field=value, a retune without a rebuild
         public int? Hz;   // the sim's tick rate; the game's own when not given
         public List<string> Labels = new List<string>();
 
-        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial" };
+        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial", "tuned", "untune" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]";
 
         static string Name(string s, string what)
         {
@@ -213,6 +246,13 @@ namespace Depths.Playtest
                         if (v != "on" && v != "off") throw new UsageException("--curve is on or off");
                         c.Curve = v == "on";
                         break;
+                    case "tuned":
+                        if (v != "on" && v != "off") throw new UsageException("--tuned is on or off");
+                        c.Tuned = v == "on";
+                        break;
+                    case "untune":
+                        foreach (var part in v.Split(',')) Untune.Set(part.Trim(), false);
+                        break;
                 }
             }
             if (c.Command == "play" && c.Seeds.Count == 0) throw new UsageException("--seeds is empty");
@@ -265,6 +305,7 @@ namespace Depths.Playtest
             if (c.Brunch != null) Balance.BrunchVariant = c.Brunch;
             if (c.Hz != null) Balance.TickHz = c.Hz.Value;   // recorded in the header too
             Depths.Curve.On = c.Curve;   // and this
+            Balance.Tuned = c.Tuned;     // and this
             string dir = OutDir(c);
             Directory.CreateDirectory(dir);
             var sw = Stopwatch.StartNew();

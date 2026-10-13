@@ -317,6 +317,26 @@ namespace Depths
     public static bool JsReference = false;
     public const double JsShotDmg = 1.8, JsBossShellDmg = 1.44, JsBossSweepMult = 1.4;
 
+    // ---- Playtest tuning (C# only, owner's notes of 2026-10-13). On in the game and the bot; the test
+    // assembly turns it off ([TunedOn(false)]) so the parity rows keep playing the JS, as with Curve.On.
+    public static bool Tuned = true;
+    /// <summary>Each part of the tuning on its own, for measuring them apart (the bot's --untune). All on in the game.</summary>
+    public static bool TuneWall = true, TuneRush = true, TuneDodge = true, TuneLoot = true, TuneBeam = true, TuneWarden = true;
+    /// <summary>"Close": the Scatter's full-damage reach. Inside it a Lunger does not dodge and a Brunch
+    /// rushes you instead of walking to its wall slot. Read from the gun, so the two cannot drift apart.</summary>
+    public static double CloseRange => Weapons.All[1].FNear ?? 180;
+    public static double BrunchGuardSpeed => PerSec(320);     // onto a wall slot: was BrunchShieldSpeed (151 px/s)
+    public static int BrunchGuardArrive => Sec(0.25);         // eases into the slot: speed = distance / this, capped
+    public const double LungerDodgeDist = 72;                 // px, sideways off a bolt's line
+    public const double LungerDodgeBlastMax = 130;            // px, the furthest it will go to clear a blast
+    public static int LungerDodgeCd => Sec(1.4);
+    public static int LungerDodgeReact => Sec(0.12);          // a shot arriving sooner than this is not dodged
+    public static int LungerDodgeHorizon => Sec(0.6);         // a shot arriving later than this is not a threat yet
+    public static int LungerStartle => Sec(1.5);              // new to the room this long: its first dodge ignores range and reaction
+    public const double BrunchRushRelease = 24;               // px of hysteresis, so a Brunch on the line does not flip every tick
+    public const double RoomDropChance = 0.75;                // the last kill of a fought room; nothing before it
+    public const double BrunchBeamTaken = 0.45;               // Brunch take this x an Arcane Beam bolt: 2-3 bolts, not 1
+
     // Placeholder item effects (C# only, 2026-10-06; the item overhaul replaces them).
     public static int MarkTicks => Sec(5);           // Hunter's Mark: how long a body stays marked
     public const double MarkVuln = 1.5;              // and the damage it takes meanwhile

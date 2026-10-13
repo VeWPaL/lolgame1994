@@ -10,8 +10,9 @@ namespace Depths.Unity
     /// The Input System binds <c>&lt;Keyboard&gt;/w</c> to a key's POSITION, so the default (Auto)
     /// already puts movement under the left hand on every layout: ZQSD on AZERTY, ,AOE on Dvorak.
     /// The letter presets bind by the character a key types instead (<c>&lt;Keyboard&gt;/#(Z)</c>),
-    /// for players who would rather press the letters they read. Dvorak has no natural letter set,
-    /// so its preset is the positional one, named for what the keys say.
+    /// for players who would rather press the letters they read. Dvorak binds the characters Dvorak
+    /// prints at those positions (, A O E): on a Dvorak system that is the same keys as Auto, and it
+    /// was once the positional preset itself, which made choosing it change nothing (playtest 2026-10-13).
     /// </summary>
     public static class KeyPresets
     {
@@ -41,6 +42,10 @@ namespace Depths.Unity
                     m["Move/up"] = Chr('Z'); m["Move/left"] = Chr('Q'); m["Move/down"] = Chr('S'); m["Move/right"] = Chr('D');
                     m["Active"] = Chr('A'); m["Controls"] = Chr('H');
                     break;
+                case KeyPreset.Dvorak:   // the characters Dvorak prints where QWERTY has W A S D, Q and H
+                    m["Move/up"] = Chr(','); m["Move/left"] = Chr('A'); m["Move/down"] = Chr('O'); m["Move/right"] = Chr('E');
+                    m["Active"] = Chr('\''); m["Controls"] = Chr('D');
+                    break;
             }
             return m;
         }
@@ -48,7 +53,7 @@ namespace Depths.Unity
         public static string Label(KeyPreset p) => p switch
         {
             KeyPreset.Auto => "Auto (by key position)",
-            KeyPreset.Dvorak => "Dvorak (by position: , A O E)",
+            KeyPreset.Dvorak => "DVORAK (by letter: , A O E)",
             _ => p.ToString().ToUpperInvariant() + " (by letter)",
         };
     }

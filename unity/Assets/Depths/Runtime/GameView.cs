@@ -39,6 +39,10 @@ namespace Depths.Unity
         public RunState Run => _run;
         public long Ticks => _clock.Ticks;
         public double DroppedSeconds => _clock.DroppedSeconds;
+        /// <summary>The clock's own input, for the rate check's diagnosis: seconds fed, the longest frame, frames.</summary>
+        public double FedSeconds { get; private set; }
+        public double LongestFrame { get; private set; }
+        public long Frames { get; private set; }
         public bool Frozen { get; set; }
 
         void Start()
@@ -148,6 +152,7 @@ namespace Depths.Unity
             double now = Time.realtimeSinceStartupAsDouble;
             _frameS = _lastFrameAt < 0 ? 0 : (float)(now - _lastFrameAt);
             _lastFrameAt = now;
+            if (!_paused && !Frozen) { FedSeconds += _frameS; LongestFrame = Math.Max(LongestFrame, _frameS); Frames++; }
             var kb = Keyboard.current;
             if (_painter == null)
             {
@@ -180,8 +185,6 @@ namespace Depths.Unity
                 if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; LeaveLab(); NewRun(); }
                 if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; LeaveLab(); NewRun(); }
                 if (kb.f2Key.wasPressedThisFrame) { bool enter = !_inLab; _sandbox = _bossRoom = false; LeaveLab(); _inLab = enter; NewRun(); _paused = false; }
-                if (kb.vKey.wasPressedThisFrame)   // cycle the Brunch guard rule under test
-                    Balance.BrunchVariant = Balance.BrunchVariant == "A" ? "B" : Balance.BrunchVariant == "B" ? "A+" : "A";
             }
 
             // the aim: the pointer, from screen pixels to panel units to the room
@@ -248,12 +251,12 @@ namespace Depths.Unity
                 _hud.text = stats + "   " + (pl.hasSilver ? "[silver key] " : "") + (pl.hasGold ? "[gold key] " : "") +
                             (_run.state == "playing" ? "" : "\nYOU DIED on floor " + _run.floor + " - R for a new run") +
                             "\nFloor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room: " + (room != null ? room.Type.ToString() : "?") +
-                            "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + "   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                            "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + "" +
                             "\n\n1-4 guns   right-click blast   Shift blink   R new run   F1 sandbox   B Warden arena   Esc pause";
             }
             else
                 _hud.text = stats + (_run.state == "playing" ? "" : "\nYOU DIED - R for a new room") +
-                            "\n" + (_inLab ? "The lab: every body, the five middle ones too (not in runs yet)" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core.   Brunch rule " + Balance.BrunchVariant + " (V)" +
+                            "\n" + (_inLab ? "The lab: every body, the five middle ones too (not in runs yet)" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning") + " on the ported core." +
                             "\n\n1-4 guns   right-click blast   Shift blink   R new room   F1 real run   B Warden arena   Esc pause";
         }
 

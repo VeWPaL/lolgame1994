@@ -38,6 +38,7 @@ namespace Depths
         public const double PrecisionSpreadFloor = 0.04, PrecisionStep = 0.2;
         public const double ShootSlowMax = 0.7, ShootSlowMain = 0.35;
         public static int MuzzleTicks => Balance.Sec(0.1);
+        public const int BeamIndex = 2;   // All[2], the Arcane Beam
 
         /// <summary>
         /// Fires the held weapon at a world point. Strength is added once per SHOT and split across the
@@ -70,7 +71,7 @@ namespace Depths
                 {
                     x = sx, y = sy, vx = c * spd, vy = s * spd, r = w.R, dmg = dmg, friendly = true, color = w.Color,
                     ox = sx, oy = sy, fNear = w.FNear, fFar = w.FFar, fMin = w.FMin,
-                    pierce = w.Pierce, scale = 1, dx = c, dy = s,
+                    pierce = w.Pierce, scale = 1, dx = c, dy = s, gun = p.weaponIdx,
                 });
             }
             run.shots += w.Count;

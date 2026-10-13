@@ -47,6 +47,8 @@ namespace Depths.Playtest
         public string? commit;
         public string brunch = "";
         public bool? curve;   // Curve.On when played; null in files from before the curve
+        public bool? tuned;   // Balance.Tuned when played; null in files from before the 2026-10-13 tuning (they played the JS rules)
+        public List<string>? untune;   // parts of the tuning turned off (--untune); null when none
         public List<string>? dials;   // --dial overrides of the curve when played; null when none
         public int tickHz;
         public double minutes;

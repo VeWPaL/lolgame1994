@@ -241,6 +241,9 @@ namespace Depths
         public double Vuln => markT > 0 ? armour * Balance.MarkVuln : armour;
         public double hookPower;
         public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
+        public int lifeT;              // ticks this body has been stepped (the room's ready freeze does not count)
+        public bool startleSpent;      // a Lunger's once-a-life startled dodge is used (Balance.Tuned)
+        public bool rushing;           // a guarding Brunch rushing the player instead of holding its slot (Balance.Tuned)
         public bool buried;            // a Burrower underground: no shell, blast, field, contact or shove reaches it
         public double markX, markY;    // where it will surface
 
@@ -348,6 +351,9 @@ namespace Depths
         public bool lob;
         public int flight, flightMax;
         public double blastR, splitAt;
+
+        /// <summary>The gun a player shell came from (Weapons.All index), or -1: a body can resist one gun (Balance.BrunchBeamTaken).</summary>
+        public int gun = -1;
     }
 
     /// <summary>

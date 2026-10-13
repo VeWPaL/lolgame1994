@@ -198,6 +198,100 @@ namespace Depths
         static readonly double[] SweepOffsets = { 0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.42, -0.42 };
 
         /// <summary>
+        /// The Lunger's dodge (C# only, Balance.Tuned; owner 2026-10-13): a short dash off a shot it can
+        /// see coming - sideways off a bolt's line, straight away from where a blast will burst - on the
+        /// lunge's own speed. Not from inside the Scatter's reach (close enough still kills), not out of
+        /// its own wind-up or lunge, and not sooner than it could react; a body still in its notice delay
+        /// is never exempt, so a Lunger spawned beside you is startled rather than a free kill.
+        /// </summary>
+        public static bool TryLungerDodge(RunState run, Enemy e)
+        {
+            // never out of its wind-up, its lunge or its recovery: the recovery is the player's punish window
+            if (e.dodgeCd > 0 || e.lungeState == "wind" || e.lungeState == "lunge" || e.lungeState == "recover" || e.stun > 0) return false;
+            // startled: new to the room (or not yet noticing), once a life. Jumpy: no reaction floor and no
+            // close-range exemption, so a Lunger spawned beside you is not a free kill; after that, close kills
+            bool startled = !e.startleSpent && (e.noticeTimer > 0 || e.lifeT < Balance.LungerStartle);
+            double px = TickOrder.HitboxX - e.x, py = TickOrder.HitboxY - e.y;
+            if (!startled && Hyp(px, py) < Balance.CloseRange) return false;
+            int react = startled ? 0 : Balance.LungerDodgeReact;
+            double best = double.PositiveInfinity, dx = 0, dy = 0, need = 0;
+            bool burst = false;   // away from a burst point (no flipping), or off a line (either side)
+            double bx = 0, by = 0;
+            foreach (var p in run.projectiles)
+            {
+                if (!p.friendly || p.lob) continue;
+                double vv = p.vx * p.vx + p.vy * p.vy;
+                if (p.alt)
+                {
+                    double aoe = p.mode == "hook" ? Balance.HookAoe : Balance.AltAoe;
+                    // where it bursts: its mark, or (a blast) the first body its path meets - this one or a neighbour
+                    double t = Hyp(p.tx - p.x, p.ty - p.y) / System.Math.Max(1e-6, p.speed), qx = p.tx, qy = p.ty;
+                    if (!p.phase && vv > 1e-9)
+                        foreach (var o in run.enemies)
+                        {
+                            if (o.buried || o.hp <= 0) continue;
+                            double rx = o.x - p.x, ry = o.y - p.y, tc = (rx * p.vx + ry * p.vy) / vv;
+                            if (tc < 0 || tc >= t) continue;
+                            if (Hyp(rx - p.vx * tc, ry - p.vy * tc) < o.r + p.r) { t = tc; qx = p.x + p.vx * tc; qy = p.y + p.vy * tc; }
+                        }
+                    double ox = e.x - qx, oy = e.y - qy, od = Hyp(ox, oy);
+                    if (od < aoe + e.r && t >= react && t <= Balance.LungerDodgeHorizon && t < best)
+                    {
+                        if (od < 1e-6) { ox = System.Math.Cos(e.flank); oy = System.Math.Sin(e.flank); od = 1; }
+                        best = t; dx = ox / od; dy = oy / od; burst = true; bx = qx; by = qy;
+                        need = System.Math.Min(Balance.LungerDodgeBlastMax, System.Math.Max(Balance.LungerDodgeDist, aoe + e.r - od + 8));
+                    }
+                    continue;
+                }
+                if (vv < 1e-9) continue;
+                double sx = e.x - p.x, sy = e.y - p.y, tca = (sx * p.vx + sy * p.vy) / vv;   // ticks to the closest approach
+                if (tca < react || tca > Balance.LungerDodgeHorizon || tca >= best) continue;
+                double mx = sx - p.vx * tca, my = sy - p.vy * tca, miss = Hyp(mx, my);
+                if (miss >= e.r + p.r + 3) continue;
+                if (miss < 1e-6) { mx = -p.vy; my = p.vx; miss = System.Math.Sqrt(vv); if (System.Math.Sin(e.flank) < 0) { mx = -mx; my = -my; } }
+                best = tca; dx = mx / miss; dy = my / miss; burst = false;
+                need = Balance.LungerDodgeDist;
+            }
+            if (double.IsPositiveInfinity(best)) return false;
+            if (!Clear(e, dx, dy, need, burst, bx, by))
+            {
+                // the dash runs into a wall. Off a line: the other side. From a burst: along the wall, whichever
+                // way ends further from the burst; never back through it
+                if (!burst) { dx = -dx; dy = -dy; if (!Clear(e, dx, dy, need, false, 0, 0)) return false; }
+                else
+                {
+                    double ax = -dy, ay = dx;
+                    bool a = Clear(e, ax, ay, need, true, bx, by), b = Clear(e, -ax, -ay, need, true, bx, by);
+                    if (!a && !b) return false;
+                    if (a && b) { if (Hyp(e.x - ax * need - bx, e.y - ay * need - by) > Hyp(e.x + ax * need - bx, e.y + ay * need - by)) { ax = -ax; ay = -ay; } }
+                    else if (b) { ax = -ax; ay = -ay; }
+                    dx = ax; dy = ay;
+                }
+            }
+            e.lungeState = "dodge"; e.lungeDx = dx; e.lungeDy = dy;
+            e.lungeT = System.Math.Max(1, (int)System.Math.Ceiling(need / Balance.LungeSpeed));
+            e.dodgeCd = Balance.LungerDodgeCd;
+            if (startled) { e.startleSpent = true; e.noticeTimer = 0; e.alerted = true; e.aggroTimer = Balance.AggroTime; }
+            return true;
+        }
+
+        // the dash's end is inside the room, and (from a burst) leaves the burst further away than it was
+        static bool Clear(Enemy e, double dx, double dy, double need, bool burst, double bx, double by)
+        {
+            double ex = e.x + dx * need, ey = e.y + dy * need, m = e.r + 4;
+            if (ex < Balance.RoomLeft + m || ex > Balance.RoomRight - m || ey < Balance.RoomTop + m || ey > Balance.RoomBottom - m) return false;
+            return !burst || Hyp(ex - bx, ey - by) > Hyp(e.x - bx, e.y - by);
+        }
+
+        /// <summary>One tick of a dodge, at lunge speed; it comes out of it still approaching.</summary>
+        public static void StepDodge(Enemy e, double sm)
+        {
+            e.x += e.lungeDx * Balance.LungeSpeed * sm;
+            e.y += e.lungeDy * Balance.LungeSpeed * sm;
+            if (--e.lungeT <= 0) { e.lungeState = "approach"; e.lungeT = 0; }
+        }
+
+        /// <summary>
         /// clearShot: the first angle, sweeping out from the wanted one, whose line to the player passes
         /// no body of ours (its own guards excepted) - or null, and the shooter waits.
         /// </summary>
