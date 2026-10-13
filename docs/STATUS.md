@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-07 (Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-12 (Unity lane re-run at 981f973 with no code changes: `.\verify.ps1 -Unity` green, see Known issues; before that, 2026-10-07: Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from the end of that session: 388 C# tests, before 60 Hz and the curve)._
 
 ## Where things are
@@ -186,6 +186,10 @@ it from another checkout or the first command spends minutes importing.
   **heart HUD**, by pixels in the player, 18/18 checks over full, half and empty red and regen
   hearts and full/half armour (a mutant that drew half hearts full failed every half heart). The
   demo input is now timed in seconds, not frames.
+  Re-verified 2026-10-12 at 981f973 (sound commit included): bootstrap clean (scene fileID churn
+  only, reverted), EditMode 35/35, build 0 errors, 59.92 Hz over 4.01 s at 279 fps with 240/240
+  ticks stepped, hearts 18/18 checks, audio 4/4; full `.\verify.ps1 -Unity` green (C# 579/579, JS
+  246/246 at 3 viewports, 148 parity rows).
   Not covered: a display at 59.94 Hz double-steps one frame every ~17 s (any fixed-step accumulator
   does); `HeartRow` rounds with .NET's half-to-even, so armour 2.5 shows one heart (cannot happen
   today: HP, regen and armour are whole outside `JsReference`); the hearts check samples positions
