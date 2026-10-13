@@ -28,6 +28,21 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
+        public void AHitchPlaysOnlyTheCapAndCountsWhatItDropped()
+        {
+            // played + dropped is the real time that passed, exactly: the rate check divides by the played part
+            var c = new TickClock();
+            int n = 0;
+            n += c.Advance(1 / 60.0, false);
+            n += c.Advance(0.4, false);   // a 400 ms hitch
+            n += c.Advance(1 / 60.0, false);
+            Assert.That(c.DroppedSeconds, Is.EqualTo(0.4 - TickClock.MaxFrameSeconds).Within(1e-12));
+            Assert.That(n, Is.EqualTo((int)Math.Round((2 / 60.0 + TickClock.MaxFrameSeconds) * 60)), "the cap is played, the rest is not");
+            c.Advance(0.1, true);
+            Assert.That(c.DroppedSeconds, Is.EqualTo(0.4 - TickClock.MaxFrameSeconds).Within(1e-12), "a paused frame is not dropped time");
+        }
+
+        [Test]
         public void SixtyTicksASecondAtAnyFrameRate()
         {
             foreach (double fps in new[] { 30, 50, 59.94, 75, 120, 144, 165, 240, 360 })

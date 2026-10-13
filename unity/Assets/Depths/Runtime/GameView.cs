@@ -38,6 +38,7 @@ namespace Depths.Unity
         /// overlay (input between ticks - blink, Q, keys - still reaches the run).</summary>
         public RunState Run => _run;
         public long Ticks => _clock.Ticks;
+        public double DroppedSeconds => _clock.DroppedSeconds;
         public bool Frozen { get; set; }
 
         void Start()

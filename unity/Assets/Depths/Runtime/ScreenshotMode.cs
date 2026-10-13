@@ -74,12 +74,12 @@ namespace Depths.Unity
             if (view == null) { Check(false, "tick rate: no GameView in the Game scene"); yield break; }
             long t0 = view.Ticks, sim0 = view.Run.ticks;
             int f0 = Time.frameCount;
-            float s0 = Time.realtimeSinceStartup;
+            double s0 = Time.realtimeSinceStartupAsDouble, dropped0 = view.DroppedSeconds;
             // the final mix, sampled while the demo shoots: a missing listener or a dead bus is silence
             var mix = new float[1024];
             float loudest = 0;
             double unityDt = 0;   // Unity's own frame deltas over the window, logged against the wall clock
-            while (Time.realtimeSinceStartup - s0 < seconds - 1f)
+            while (Time.realtimeSinceStartupAsDouble - s0 < seconds - 1f)
             {
                 unityDt += Time.unscaledDeltaTime;
                 AudioListener.GetOutputData(mix, 0);
@@ -93,15 +93,19 @@ namespace Depths.Unity
                   "the music plays the floor's area (" + (music != null ? music.Playing?.ToString() ?? "nothing" : "no engine") + ")");
             Check(music != null && (view.Run.enemies.Count == 0 || music.FightLevel > 0.5f),
                   "the fight layer is up while bodies live: " + (music != null ? music.FightLevel.ToString("0.00") : "-") + " with " + view.Run.enemies.Count + " bodies");
-            double s = Time.realtimeSinceStartup - s0;
+            double s = Time.realtimeSinceStartupAsDouble - s0, dropped = view.DroppedSeconds - dropped0, played = s - dropped;
             Debug.Log("[Depths] note Time.unscaledDeltaTime summed " + unityDt.ToString("0.000") + " s over " + s.ToString("0.000") + " s of wall clock");
             long clock = view.Ticks - t0, sim = view.Run.ticks - sim0;   // the run's own count: the loop must really step it
-            double hz = sim / s;
+            // A frame over TickClock.MaxFrameSeconds is cut on purpose (no fast-forward after a hitch), so the rate
+            // is measured over the seconds the game played; how much a loaded machine made it drop is reported.
+            Debug.Log("[Depths] note " + dropped.ToString("0.000") + " s of " + s.ToString("0.000") + " s dropped by the hitch cap");
+            Check(played >= 0.5 * s, "the game played at least half the window (" + played.ToString("0.00") + " of " + s.ToString("0.00") + " s)");
+            double hz = sim / Math.Max(1e-9, played);
             Check(Balance.TickHz == Balance.GameHz, "Balance.TickHz is " + Balance.TickHz + " in the player (want " + Balance.GameHz + ")");
             Check(view.Run.state == "playing", "the demo run is still playing (state " + view.Run.state + "), so every clock tick reached the sim");
             Check(sim == clock, "the sim stepped " + sim + " ticks for the clock's " + clock);
             Check(Math.Abs(hz - Balance.TickHz) <= 0.02 * Balance.TickHz,
-                  "tick rate " + hz.ToString("0.00") + " Hz over " + s.ToString("0.00") + " s at " +
+                  "tick rate " + hz.ToString("0.00") + " Hz over " + played.ToString("0.00") + " s played at " +
                   ((Time.frameCount - f0) / s).ToString("0") + " fps (want " + Balance.TickHz + " +-2%)");
         }
 
