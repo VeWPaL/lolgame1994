@@ -26,6 +26,7 @@ namespace Depths.Unity
         int _lastShots, _lastHits, _lastKills;
         double _lastHp, _lastDmg;
         RoomPainter _painter;
+        WorldView _world;
         Label _hud;
         readonly TickClock _clock = new TickClock();
         int _respawnT;
@@ -135,6 +136,10 @@ namespace Depths.Unity
                 var root = GetComponent<UIDocument>().rootVisualElement?.Q("gameRoot");
                 if (root == null || root.panel == null) return;   // the document attaches late; see the history note
                 root.Clear();
+                _world = new WorldView(() => _run);
+                _world.style.position = Position.Absolute;
+                _world.style.left = 0; _world.style.top = 0; _world.style.right = 0; _world.style.bottom = 0;
+                root.Add(_world);
                 _painter = new RoomPainter(() => _run);
                 _painter.style.position = Position.Absolute;
                 _painter.style.left = 0; _painter.style.top = 0; _painter.style.right = 0; _painter.style.bottom = 0;
@@ -166,7 +171,7 @@ namespace Depths.Unity
             {
                 var sp = mouse.position.ReadValue();
                 var pp = RuntimePanelUtils.ScreenToPanel(_painter.panel, new Vector2(sp.x, Screen.height - sp.y));
-                aim = pp - Offset;
+                aim = pp - WorldView.Origin;
             }
             Vector2 mv = _move.ReadValue<Vector2>();
             bool fire = _cast.IsPressed(), alt = _blast.IsPressed();
@@ -204,6 +209,8 @@ namespace Depths.Unity
             _painter.Overlay = _paused ? "PAUSED\n\nEsc resume     M menu"
                 : _run.state != "playing" ? "THE DEPTHS TAKE YOU\n\nfloor " + _run.floor + "   kills " + _run.kills + "   " + (_run.ticks / Balance.TickHz / 60) + ":" + (_run.ticks / Balance.TickHz % 60).ToString("00") + "\nseed " + Rng.Encode(_run.rootSeed) + "\n\nR new run     M menu"
                 : _bannerS > 0 ? "FLOOR " + _run.floor + "\n" + AreaRules.AreaForFloor(_run.floor) : null;
+            _world.Aim = aim;
+            _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : Time.unscaledDeltaTime);
             _painter.MarkDirtyRepaint();
             var pl = _run.player;
             var act = Items.ActiveItem(_run);
@@ -366,76 +373,9 @@ namespace Depths.Unity
             var run = _run();
             if (run == null) return;
             var g = ctx.painter2D;
-            var a = W(Balance.RoomLeft, Balance.RoomTop);
-            var b = W(Balance.RoomRight, Balance.RoomBottom);
-            Rect(g, a - new Vector2(6, 6), b + new Vector2(6, 6), Wall);
-            Rect(g, a, b, Floor);
-            var room = run.CurrentRoom;
-            if (room != null)
-                foreach (var d in room.Doors)
-                {
-                    // open: floor; sealed: the colour of what is behind it; shut by a fight: bars
-                    Color c = Rooms.DoorPassable(run, room, d) ? Floor
-                        : Rooms.DoorSealed(run, room, d) ? (run.dungeon.Neighbour(room, d)?.Type == RoomKind.Boss ? new Color32(179, 65, 47, 255) : new Color32(192, 138, 82, 255))
-                        : new Color32(72, 80, 95, 255);
-                    float h = Balance.DoorWidth / 2f;
-                    var (dx, dy) = Rooms.DoorPoint(d);
-                    var cp = W(dx, dy);
-                    bool vertical = d == Dir.E || d == Dir.W;
-                    Rect(g, cp - (vertical ? new Vector2(7, h) : new Vector2(h, 7)), cp + (vertical ? new Vector2(7, h) : new Vector2(h, 7)), c);
-                }
+            // interim: the minimap and the heart row, until the HUD replaces them (the room is WorldView)
             DrawMinimap(g, run);
-
-            foreach (var pk in run.pickups)
-            {
-                // placeholder sprites: hearts red, armour gray, a half pickup is the left half
-                bool half = pk.kind == "halfheart" || pk.kind == "halfarmor";
-                if (pk.kind == "heart" || pk.kind == "halfheart") Heart(g, W(pk.x, pk.y), (float)pk.r, HeartRed, half);
-                else if (pk.kind == "armor" || pk.kind == "halfarmor") Heart(g, W(pk.x, pk.y), (float)pk.r, ArmourGray, half);
-                else Disc(g, W(pk.x, pk.y), (float)pk.r * 0.7f, PickupColor(pk.kind));
-            }
-
-            foreach (var e in run.enemies)
-            {
-                var c = W(e.x, e.y);
-                Disc(g, c, (float)e.r, e.hitFlash > 0 ? Color.white : BodyColor(e.kind));
-                if (e.castT > 0)
-                {
-                    // the tell: a ring that closes on the body as the shot comes
-                    float k = (float)e.castT / Balance.CastTime;
-                    g.strokeColor = new Color(1f, 0.6f, 0.3f, 0.9f);
-                    g.lineWidth = 2;
-                    g.BeginPath();
-                    g.Arc(c, (float)e.r + 4 + 18 * k, 0, 360);
-                    g.Stroke();
-                }
-                float frac = (float)Math.Max(0, e.hp / Math.Max(1e-9, e.maxHp)), w = (float)e.r * 2, top = (float)e.r + 9;
-                Rect(g, c + new Vector2(-w / 2, -top), c + new Vector2(w / 2, -top + 4), new Color(0, 0, 0, 0.6f));
-                Rect(g, c + new Vector2(-w / 2, -top), c + new Vector2(-w / 2 + w * frac, -top + 4), new Color32(94, 226, 122, 255));
-            }
-
-            foreach (var hf in run.hookFields)
-            {
-                // the hook's ground spell, fading as it runs out
-                g.strokeColor = new Color(0.16f, 0.44f, 0.77f, 0.25f + 0.6f * hf.life / hf.max);
-                g.lineWidth = 2;
-                g.BeginPath();
-                g.Arc(W(hf.x, hf.y), (float)hf.r, 0, 360);
-                g.Stroke();
-            }
-
-            foreach (var p in run.projectiles)
-            {
-                Color col = Hostile;
-                if (p.friendly && !ColorUtility.TryParseHtmlString(p.color, out col)) col = Color.white;
-                Disc(g, W(p.x, p.y), (float)p.r, col);
-            }
-
-            var pl = run.player;
-            if (run.roomFade > 0.01) Rect(g, a - new Vector2(6, 6), b + new Vector2(6, 6), new Color(0.04f, 0.05f, 0.07f, (float)run.roomFade));
-            bool flicker = pl.iframes > 0 && (pl.iframes / Math.Max(1, Balance.Sec(0.067))) % 2 == 0;   // IFRAME_FLICKER
-            Disc(g, W(pl.x, pl.y), (float)pl.r, flicker ? new Color(1, 1, 1, 0.5f) : PlayerC);
-            DrawHearts(g, pl);
+            DrawHearts(g, run.player);
         }
 
         // pickups share the row's colours (HeartRow)

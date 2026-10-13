@@ -27,7 +27,11 @@ case "${1:-}" in
     rc=$?
     [ -f unity/Logs/editmode.xml ] || { echo "no results file; see unity/Logs/editmode.log"; exit 1; }
     head -c 600 unity/Logs/editmode.xml | grep -o '<test-run[^>]*>' | grep -oE '(total|passed|failed|skipped)="[0-9]+"' | tr '\n' ' '; echo
-    grep -oE '<test-case [^>]*result="Failed"[^>]*' unity/Logs/editmode.xml | grep -oE 'fullname="[^"]*"'
+    # each failed case with the first lines of its message (the CDATA after the case's <message>)
+    awk '/<test-case /{name=$0; sub(/.*fullname="/,"",name); sub(/".*/,"",name); failed=($0 ~ /result="Failed"/); n=0}
+         failed && /<message>/{grab=1}
+         grab && n<4 {line=$0; gsub(/.*<!\[CDATA\[|\]\]>.*|^[ \t]+/,"",line); if(line!="") {print (n==0?"FAILED " name ": ":"    ") line; n++}}
+         /<\/message>/{grab=0}' unity/Logs/editmode.xml
     exit $rc ;;
   build)
     "$UNITY" -batchmode -nographics -projectPath unity \
