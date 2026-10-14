@@ -195,10 +195,7 @@ namespace Depths.Playtest
             new BotAction(new Input(Axis(tx - pl.x, stop), Axis(ty - pl.y, stop),
                                     aimX: _aimX ?? pl.x + 200, aimY: _aimY ?? pl.y));
 
-        /// <summary>
-        /// BFS over the floor through doors that exist and are open or that the bot holds the key for.
-        /// Goals in a careful first-timer's order: unvisited rooms, the item room with a key, the boss.
-        /// </summary>
+        /// <summary>BFS over the floor through doors that exist and are open or that the bot holds the key for. [h:Policy-1]</summary>
         internal Dir? Route(RunState run)
         {
             var start = run.CurrentRoom!;

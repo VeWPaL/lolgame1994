@@ -2,14 +2,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// Shooters and gunners against the running game. Every row was recorded by tools/ranged-parity.js
-    /// on 2026-10-06 from the game's own tickBodies(): seed 4242, the player held still with a fixed
-    /// velocity and swerve, Rnd reseeded before the first tick, every 10th tick compared to 1e-6
-    /// (position, castT, castReady, shootCd, castAim, dodgeCd, knock velocity; then the shells fired
-    /// and the player's hp), jitter draws exact. Covers the standoff walk, the cast, the intercept lead
-    /// against a moving, swerving player, the aim sweep around a lunger in the line, and the gunner dodge.
-    /// </summary>
+    /// <summary>Shooters and gunners against the running game. [h:RangedParityTests-1]</summary>
     [TestFixture]
     public sealed class RangedParityTests
     {

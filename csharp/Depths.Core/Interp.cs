@@ -1,15 +1,6 @@
 namespace Depths
 {
-    /// <summary>
-    /// Drawing between ticks (C# only). The simulation steps at a fixed <c>Balance.TickHz</c>, the screen at
-    /// whatever the monitor or the frame cap gives, so a frame lands between two ticks. Drawn at the latest
-    /// tick, motion judders (a 144 Hz screen shows each tick for 2 or 3 frames); drawn at the blend of the last
-    /// two, it is smooth at any frame rate for one tick of display delay.
-    ///
-    /// <para>The presenter calls <see cref="Snap"/> before every tick, then draws at <c>Lerp(prev, now, alpha)</c>
-    /// with alpha the clock's leftover fraction of a tick. Nothing in the simulation reads these fields, so
-    /// the game plays the same with or without them (the bot never calls Snap).</para>
-    /// </summary>
+    /// <summary>Drawing between ticks (C# only). [h:Interp-1]</summary>
     public static class Interp
     {
         /// <summary>A step longer than this in one tick is a jump (a door, a blink, a room loaded): drawn

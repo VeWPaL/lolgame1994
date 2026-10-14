@@ -2,14 +2,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// A fresh run walking into its first normal room, against the running game: recorded by
-    /// tools/room-entry-parity.js on 2026-10-06. startGame (the floor generated from the run stream),
-    /// passDoor through the first start-room door that leads to a normal room, update() until the
-    /// transition has entered it. Compared: both streams' totals since the reseed, where the player
-    /// stands, the ready freeze, and every body the wave spawned - kind, position, health, idle and
-    /// notice timers, pack id and slot, flank and first cooldown.
-    /// </summary>
+    /// <summary>A fresh run walking into its first normal room, against the running game: recorded by... [h:RoomEntryParityTests-1]</summary>
     [TestFixture]
     public sealed class RoomEntryParityTests
     {

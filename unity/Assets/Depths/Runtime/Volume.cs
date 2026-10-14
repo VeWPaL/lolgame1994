@@ -6,10 +6,7 @@ namespace Depths.Unity
 {
     public enum Channel { Master, Music, Sfx }
 
-    /// <summary>
-    /// The three volume sliders. A slider is linear 0..1 because that is what a player expects to
-    /// drag; the mixer works in decibels, so the conversion lives here and is the only one.
-    /// </summary>
+    /// <summary>The three volume sliders. [h:Volume-1]</summary>
     public sealed class VolumeSettings
     {
         public const float Default = 0.8f;

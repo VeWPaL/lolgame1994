@@ -4,17 +4,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The run-scoped holder, and the one-seed-one-run property it exists to protect.
-    ///
-    /// <para>
-    /// Finding #8, in the holder's own terms: the JavaScript kept <c>PACK_CURSOR</c> and the RNG
-    /// cursors outside any function, so module state outlived <c>startGame</c> and a second run
-    /// from the same seed began with cursors the first run had moved. These tests pin the C# shape
-    /// of the fix - every run's cursors live on its own object - by constructing two runs from the
-    /// same seed and proving they are independent copies rather than two handles on one cursor.
-    /// </para>
-    /// </summary>
+    /// <summary>The run-scoped holder, and the one-seed-one-run property it exists to protect. [h:RunStateTests-1]</summary>
     [TestFixture]
     public sealed class RunStateTests
     {
@@ -45,9 +35,7 @@ namespace Depths.Tests
         [Test]
         public void ThePlannerCursorBelongsToTheRunNotToTheStatic()
         {
-            // seed 12345 floor 1 plans exactly one Brunch pack (the parity table pins this), so
-            // PacksIssued moves - and a cursor kept statically would move with it and leak into
-            // the next run, which is finding #8's exact symptom.
+            // seed 12345 floor 1 plans exactly one Brunch pack (the parity table pins this), so PacksIssued moves - and a... [h:RunStateTests-2]
             var first = new RunState(new Rng(12345u));
             first.dungeon.Generate();
             first.planner.PlanWave(1, Dir.N);
@@ -62,10 +50,7 @@ namespace Depths.Tests
         [Test]
         public void AFreshRunStartsEveryCursorAtItsOrigin()
         {
-            // The planner's cursor is per-run rather than per-floor: pack ids are unique across
-            // floors, so a fresh RunState must start from 1 no matter what the previous run left
-            // behind. This is the structural version of the JS resetRunCursors() call that used
-            // to be missing entirely.
+            // The planner's cursor is per-run rather than per-floor: pack ids are unique across floors, so a fresh RunState... [h:RunStateTests-3]
             var first = new RunState(new Rng(7u));
             first.dungeon.Generate();
             Assert.That(first.planner.PacksIssued, Is.EqualTo(0));

@@ -1,9 +1,6 @@
 namespace Depths.Unity
 {
-    /// <summary>
-    /// The player's records across runs (the JS's RECORDS block): the deepest floor reached and the most
-    /// rooms explored on a floor. Saved like the settings, written once when a run ends.
-    /// </summary>
+    /// <summary>The player's records across runs (the JS's RECORDS block): the deepest floor reached and the most rooms... [h:RunRecords-1]</summary>
     public sealed class RunRecords
     {
         public const string FloorKey = "depths.records.floor", RoomsKey = "depths.records.rooms";

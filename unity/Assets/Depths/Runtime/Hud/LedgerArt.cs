@@ -4,12 +4,7 @@ using Depths.Unity.Art;
 
 namespace Depths.Unity.Hud
 {
-    /// <summary>
-    /// The ledger's bakes, built from the JS materials (woodPlate, drawInset, paperTex): the two
-    /// lecterns with their pages ruled and headed, the overlay sheets, the menu's desk and open book,
-    /// key caps and knobs. Everything is an <see cref="Img"/>, baked once and turned into a texture by
-    /// the caller; nothing here runs per frame.
-    /// </summary>
+    /// <summary>The ledger's bakes, built from the JS materials (woodPlate, drawInset, paperTex): the two lecterns with their... [h:LedgerArt-1]</summary>
     public static class LedgerArt
     {
         public static readonly Color32 Ink = Hex.C("#2b1d12"), InkSoft = Hex.C("#5a4630"), InkFaint = Hex.Rgba(70, 50, 30, 0.42f),
@@ -111,11 +106,7 @@ namespace Depths.Unity.Hud
 
         static void RuleAt(Img g, int x, int y, int w) { g.Fill(x, y, w, 1, InkFaint); g.Fill(x, y + 3, w, 2, InkFaint); }
 
-        /// <summary>
-        /// One board: a plank as tall as the screen allows, its inset and aged page, a clip at the top,
-        /// and the page's fixed parts (labels, rules, wells, the seal, the slots and their name
-        /// plates). Everything that changes is drawn over it by the ink layer. Origin: HudLayout.Board.
-        /// </summary>
+        /// <summary>One board: a plank as tall as the screen allows, its inset and aged page, a clip at the top, and the page's... [h:LedgerArt-2]</summary>
         public static Img Board(bool left)
         {
             var at = HudLayout.Board(left);
@@ -195,10 +186,7 @@ namespace Depths.Unity.Hud
             Label(g, "CARRYING", x0, HudLayout.CarryLabelY + oy);
         }
 
-        /// <summary>
-        /// The seed tag (Materials.SeedTag's luggage tag: the clipped corner, the punched hole), with the seed
-        /// inlaid in pale wood in the HUD's hand so it reads at a glance; the tag is the label, so no word on it.
-        /// </summary>
+        /// <summary>The seed tag (Materials.SeedTag's luggage tag: the clipped corner, the punched hole), with the seed inlaid in... [h:LedgerArt-3]</summary>
         public static Img SeedTag(int w, int h, string text)
         {
             const int CH = 18;
@@ -321,10 +309,7 @@ namespace Depths.Unity.Hud
             return g;
         }
 
-        /// <summary>
-        /// An open ledger seen from above: wooden boards with brass corners, two pages with their stacked
-        /// edges, the gutter's shadow and a red margin on each page. The left page is <paramref name="w"/>/2.
-        /// </summary>
+        /// <summary>An open ledger seen from above: wooden boards with brass corners, two pages with their stacked edges, the... [h:LedgerArt-4]</summary>
         public static Img Book(int w, int h)
         {
             var g = new Img(w, h + 26);

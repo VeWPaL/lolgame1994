@@ -5,12 +5,7 @@ using Depths.Unity.Art;
 
 namespace Depths.Unity
 {
-    /// <summary>
-    /// The room and everything in it, drawn the way src/70-view.js drawRoom draws it: the baked floor
-    /// and masonry, doors and their locks, the bodies' pixel sprites and walk cycles, shells, rings and
-    /// the player with the wand. Everything, rings included, is quads from one atlas, batched: a frame is
-    /// a mesh or two and builds no strings. Reads the run, never writes it.
-    /// </summary>
+    /// <summary>The room and everything in it, drawn the way src/70-view.js drawRoom draws it: the baked floor and masonry... [h:WorldView-1]</summary>
     public sealed class WorldView : VisualElement
     {
         /// <summary>World to panel: the room's centre at the panel's centre (1280x720 reference).</summary>

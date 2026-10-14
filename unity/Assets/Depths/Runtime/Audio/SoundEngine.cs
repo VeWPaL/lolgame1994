@@ -4,11 +4,7 @@ using UnityEngine.Audio;
 
 namespace Depths.Unity.Audio
 {
-    /// <summary>
-    /// Which source a new sound gets: a free one, else the one that will finish soonest (the JS pool
-    /// trims oldest-first for the same reason - a cap that refuses new sounds drops the important ones).
-    /// Pure, so the bound is tested without an audio device.
-    /// </summary>
+    /// <summary>Which source a new sound gets: a free one, else the one that will finish soonest (the JS pool trims... [h:SoundEngine-1]</summary>
     public sealed class VoicePool
     {
         readonly double[] _endsAt;
@@ -35,13 +31,7 @@ namespace Depths.Unity.Audio
         }
     }
 
-    /// <summary>
-    /// The one call the game makes: <c>SoundEngine.Play("hit", pan)</c>. Voices are rendered once at
-    /// start by <see cref="Synth"/> (or loaded from <c>Resources/Sounds/&lt;name&gt;</c> when a sample
-    /// exists) and played through a fixed pool of AudioSources on the mixer's Sfx group. Pitch jitter is
-    /// per play, from a local stream, so sound never touches the game's RNG. It also owns the game's one
-    /// AudioListener (with the master compressor) and the music, and lives across scenes.
-    /// </summary>
+    /// <summary>The one call the game makes: SoundEngine.Play("hit", pan). [h:SoundEngine-2]</summary>
     public sealed class SoundEngine : MonoBehaviour
     {
         public const int MaxVoices = 12;   // the JS cap is 48 nodes, about 8-16 sounds

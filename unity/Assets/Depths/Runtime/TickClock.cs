@@ -2,10 +2,7 @@ using System;
 
 namespace Depths.Unity
 {
-    /// <summary>
-    /// Turns frame time into simulation ticks at <c>Balance.TickHz</c>: a fixed-step accumulator, so the
-    /// game runs at the same speed at any frame rate. Kept out of GameView so it can be tested.
-    /// </summary>
+    /// <summary>Turns frame time into simulation ticks at Balance.TickHz: a fixed-step accumulator, so the game runs at the... [h:TickClock-1]</summary>
     public sealed class TickClock
     {
         /// <summary>A longer frame (a hitch, a breakpoint) is cut to this, so the game never fast-forwards.</summary>

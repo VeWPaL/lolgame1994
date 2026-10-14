@@ -72,7 +72,9 @@ not be forgotten. The reasoning and the measurements behind each rule live in `d
 - **Test the states code deliberately runs in** (title screen, transitions), not only mid-run.
 - **No placeholder-looking UI.** Anything the player sees gets real prototype art the first time.
 - **Comments: one or two lines, the why not the what.** Long reasoning goes in `docs/history/`; in
-  `src/` a moved comment leaves a gist tagged `[h:<file>-N]` — search `docs/history/src/<file>.md`.
+  `src/` a moved comment leaves a gist tagged `[h:<file>-N]` — search `docs/history/src/<file>.md`. In C#
+  `python tools/move-comments.py` does the move (`docs/history/csharp/<File>.md`); `verify.ps1` fails on a
+  C# comment block of three or more lines.
 - **Correct the record in the same commit.** One system per commit, green at every commit.
 - **A ported behaviour changes in both languages in the same commit** until the JS is retired.
 
@@ -115,9 +117,9 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **648 checks**, parity-verified against the JavaScript except the 269 in
+- C# `Depths.Tests` has **656 checks**, parity-verified against the JavaScript except the 277 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests`,
-  `PlaytestToolTests`, `RateTests`, `CurveTests`, `MiddleTests`, `TunedTests`, `PoolTests`, `InterpTests` and `AllocationTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
+  `PlaytestToolTests`, `RateTests`, `CurveTests`, `MiddleTests`, `TunedTests`, `PoolTests`, `InterpTests`, `AimTests` and `AllocationTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
   `verify.ps1` skips when it counts parity rows). Parity tests whose recordings take player damage run
   with `Balance.JsReference = true` (the JS damage rules); the whole suite runs at 210 Hz and with the difficulty curve off (assembly `[CurveOn(false)]`; `CurveTests` turns it on) and with the playtest tuning off (assembly `[TunedOn(false)]`; `TunedTests` turns it on).
 - `verify.ps1` asserts both numbers above; keep them current.

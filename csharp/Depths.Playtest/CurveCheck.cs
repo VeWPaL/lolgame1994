@@ -65,10 +65,7 @@ namespace Depths.Playtest
         }
     }
 
-    /// <summary>
-    /// The `curve` command: band hazards, HP and orderings from a playtest file, checked against
-    /// <see cref="Curve.Targets"/> (the same file the game's shape lives in). Any miss: exit 2.
-    /// </summary>
+    /// <summary>The `curve` command: band hazards, HP and orderings from a playtest file, checked against Targets (the same... [h:CurveCheck-1]</summary>
     public static class CurveCheck
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -142,10 +139,7 @@ namespace Depths.Playtest
                 .Select(kv => kv.Key + " " + (kv.Value / entries).ToString("0.00", Inv)));
         }
 
-        /// <summary>
-        /// Measures every target profile and checks every target: the text is Markdown with one "ok" or
-        /// "MISS" line per target, led by its rubric number; misses are the failed lines.
-        /// </summary>
+        /// <summary>Measures every target profile and checks every target: the text is Markdown with one "ok" or "MISS" line per... [h:CurveCheck-2]</summary>
         public static (string text, List<string> misses) Check(Batch b, Curve.MiddleRule? rule = null)
         {
             var midRule = rule ?? Curve.MidRule;

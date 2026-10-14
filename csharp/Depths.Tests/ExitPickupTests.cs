@@ -2,10 +2,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// Regression (found by the C# playtest bot, 2026-10-06): touching the exit while other pickups
-    /// still lay in the room threw in TickRoom, because Descend empties run.pickups mid-loop.
-    /// </summary>
+    /// <summary>Regression (found by the C# playtest bot, 2026-10-06): touching the exit while other pickups still lay in the... [h:ExitPickupTests-1]</summary>
     [TestFixture, Category("csharp-only")]
     public sealed class ExitPickupTests
     {

@@ -6,14 +6,7 @@ using Depths.Unity.Art;
 
 namespace Depths.Unity.Hud
 {
-    /// <summary>
-    /// The in-game HUD: two ledger boards standing beside the room. The left page is the body (one row
-    /// of hearts, keys, blink, momentum, depth, slain, the seed tag), the right the map and the kit; the
-    /// Warden's bar sits under the room. Everything on the pages is in one 5x7 pixel hand
-    /// (<see cref="LedgerType"/>), the room's own scale. Retained: the boards are baked once, the seed tag
-    /// when the seed changes, and the ink layer repaints only when a drawn value moves (one 64-bit
-    /// signature per frame, compared). <see cref="Refresh"/> allocates nothing once warm.
-    /// </summary>
+    /// <summary>The in-game HUD: two ledger boards standing beside the room. [h:LedgerHud-1]</summary>
     public sealed class LedgerHud : VisualElement
     {
         public static readonly string[] AreaNames = { "The Shallows", "The Kiln Works", "The Flooded Galleries", "The Warden's Deep" };
@@ -147,10 +140,7 @@ namespace Depths.Unity.Hud
             }
         }
 
-        /// <summary>
-        /// Low health: the last heart's worth of everything that stands between the player and death.
-        /// The regen heart and armour drain first, so they count; at 2 points or fewer the page bleeds.
-        /// </summary>
+        /// <summary>Low health: the last heart's worth of everything that stands between the player and death. [h:LedgerHud-2]</summary>
         public static bool IsLow(Player p) => p.hp > 0 && Math.Round(p.hp) + Math.Max(0, Math.Round(p.regenHeart)) + Math.Max(0, Math.Round(p.armor)) <= 2;
 
         // ---- the repaint signature: every value the ink layer draws, quantised to what a pixel can show ----

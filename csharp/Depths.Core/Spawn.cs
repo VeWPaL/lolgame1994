@@ -1,11 +1,6 @@
 namespace Depths
 {
-    /// <summary>
-    /// spawnEnemy for a body placed at a known point (src/30-enemies.js), draw for draw: the idle
-    /// timer then the notice timer from the jitter stream; a walker takes the run's golden-angle flank;
-    /// a ranged body rolls its first cooldown (jitter) and its band trait (run, by the held gun); the
-    /// Warden gets its kit. Depth scaling uses the run's floor.
-    /// </summary>
+    /// <summary>spawnEnemy for a body placed at a known point (src/30-enemies.js), draw for draw: the idle timer then the... [h:Spawn-1]</summary>
     public static class Spawn
     {
         const double FlankStep = 2.399963229728653, Tau = 6.283185307179586;

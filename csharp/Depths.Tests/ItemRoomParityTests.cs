@@ -2,12 +2,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// An item room against the running game: recorded by tools/item-room-parity.js on 2026-10-06.
-    /// startGame, optionally give items (luck, and what is excluded from the offer), enter the floor's
-    /// item room from the west. Compared: both streams' totals, the stats read, and every pedestal -
-    /// the two weapons from the shuffle and the two items from the luck-weighted pool.
-    /// </summary>
+    /// <summary>An item room against the running game: recorded by tools/item-room-parity.js on 2026-10-06. [h:ItemRoomParityTests-1]</summary>
     [TestFixture]
     public sealed class ItemRoomParityTests
     {

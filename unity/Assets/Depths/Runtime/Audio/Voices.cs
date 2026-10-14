@@ -3,11 +3,7 @@ using static Depths.Unity.Audio.Synth;
 
 namespace Depths.Unity.Audio
 {
-    /// <summary>
-    /// The JavaScript game's twelve voices (src/45-sound.js VOICES), as data. Same frequencies,
-    /// sweeps, filters and envelopes; the tests compare each render with the JS offline render.
-    /// WebAudio's lowpass Q is in dB (default 1 dB = 1.122 linear); its bandpass Q is linear.
-    /// </summary>
+    /// <summary>The JavaScript game's twelve voices (src/45-sound.js VOICES), as data. [h:Voices-1]</summary>
     public static class Voices
     {
         const double LowpassQ = 1.122;

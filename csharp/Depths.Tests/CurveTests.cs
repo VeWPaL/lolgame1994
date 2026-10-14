@@ -7,10 +7,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The difficulty curve (C# only): the shape of Curve.Stages, that the game and the bot call each hook,
-    /// the switch the parity rows rely on, and the bot's `curve` check on hand-built files.
-    /// </summary>
+    /// <summary>The difficulty curve (C# only): the shape of Curve.Stages, that the game and the bot call each hook, the... [h:CurveTests-1]</summary>
     [TestFixture, Category("csharp-only"), CurveOn(true)]
     public sealed class CurveTests
     {

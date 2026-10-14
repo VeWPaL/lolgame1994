@@ -1,10 +1,6 @@
 namespace Depths
 {
-    /// <summary>
-    /// The gunner's counterstrafing allowance: how far a reversing player must be before swerving buys
-    /// anything, and the spread that buys. Read by <c>TickOrder.StepRanged</c>; the values are pinned
-    /// against the running JS in <c>PortedBehaviourTests</c>. (Replaces the unused Intercept.cs solver.)
-    /// </summary>
+    /// <summary>The gunner's counterstrafing allowance: how far a reversing player must be before swerving buys anything, and... [h:Aim-1]</summary>
     public static class Aim
     {
         /// <summary>0 inside the room's deadzone, rising to 1 at <see cref="Balance.SwerveFull()"/>.</summary>
@@ -25,12 +21,7 @@ namespace Depths
         public static double Flight(double d, double speed, double splitAt = 0, double shardSpeed = 0) =>
             splitAt > 0 && d > splitAt ? splitAt / speed + (d - splitAt) / shardSpeed : d / speed;
 
-        /// <summary>
-        /// The angle from (mx, my) that meets a target at (px, py) moving (vx, vy) a tick, for a shell leaving after
-        /// <paramref name="delay"/> ticks: the first time the shell's flight covers the gap, found by stepping then
-        /// bisecting; a target faster than the shell is aimed where the shell comes closest to it within
-        /// <see cref="Balance.AimHorizon"/>. The JS's fixed-point loop diverges there: a Splitter shot 2.4 rad wide.
-        /// </summary>
+        /// <summary>The angle from (mx, my) that meets a target at (px, py) moving (vx, vy) a tick, for a shell leaving after... [h:Aim-2]</summary>
         public static double Intercept(double mx, double my, double px, double py, double vx, double vy, double delay,
                                        double speed, double splitAt = 0, double shardSpeed = 0)
         {

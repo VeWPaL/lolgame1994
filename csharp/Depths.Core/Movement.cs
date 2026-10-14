@@ -2,12 +2,7 @@ using System.Collections.Generic;
 
 namespace Depths
 {
-    /// <summary>
-    /// How bodies move: the lunger's four-state attack (src/30-enemies.js stepLunge, solveIntercept),
-    /// the idle wander, the knock, the wall clamp and the separation pass (src/40-combat.js). Every
-    /// random choice here is on the JITTER stream, as in the game. LungerParityTests pins it against
-    /// trajectories recorded from the running game by tools/lunger-parity.js.
-    /// </summary>
+    /// <summary>How bodies move: the lunger's four-state attack (src/30-enemies.js stepLunge, solveIntercept), the idle... [h:Movement-1]</summary>
     public static class Movement
     {
         static double Hyp(double x, double y) => System.Math.Sqrt(x * x + y * y);
@@ -16,10 +11,7 @@ namespace Depths
         public static double ApproachSpeed(double d) =>
             Balance.LungerNear + (Balance.LungerFar - Balance.LungerNear) * System.Math.Min(1, d / Balance.LungeRange);
 
-        /// <summary>
-        /// Where to lunge: the player's displacement belief (falling back to the trend when the belief
-        /// is zero), scaled by how settled they look (1 - swerve), solved over LUNGE_ITER passes.
-        /// </summary>
+        /// <summary>Where to lunge: the player's displacement belief (falling back to the trend when the belief is zero), scaled... [h:Movement-2]</summary>
         public static (double dx, double dy, double dist) LungeIntercept(Player p, double gx, double gy)
         {
             double conf = 1 - p.swerve;
@@ -164,13 +156,7 @@ namespace Depths
             else if (e.y > maxY) { e.y = maxY; if (e.kvy > 0) e.kvy = -e.kvy * Balance.KnockBounce; }
         }
 
-        /// <summary>
-        /// Overlapping bodies are pushed apart, pairs in index order. The game uses a 96px grid from 8
-        /// bodies up and sorts candidates back into index order, so it tests the same overlapping pairs
-        /// in the same order - except a pair that only comes into contact DURING the pass and sits in
-        /// non-neighbouring cells, which the grid skips and this loop does not. Port the grid (without
-        /// its string keys and per-tick allocations) before claiming parity for large rooms.
-        /// </summary>
+        /// <summary>Overlapping bodies are pushed apart, pairs in index order. [h:Movement-3]</summary>
         public static void Separate(RunState run, List<Enemy> list)
         {
             int n = list.Count;
@@ -203,13 +189,7 @@ namespace Depths
 
         static readonly double[] SweepOffsets = { 0, 0.1, -0.1, 0.2, -0.2, 0.3, -0.3, 0.42, -0.42 };
 
-        /// <summary>
-        /// The Lunger's dodge (C# only, Balance.Tuned; owner 2026-10-13): a short dash off a shot it can
-        /// see coming - sideways off a bolt's line, straight away from where a blast will burst - on the
-        /// lunge's own speed. Not from inside the Scatter's reach (close enough still kills), not out of
-        /// its own wind-up or lunge, and not sooner than it could react; a body still in its notice delay
-        /// is never exempt, so a Lunger spawned beside you is startled rather than a free kill.
-        /// </summary>
+        /// <summary>The Lunger's dodge (C# only, Balance.Tuned; owner 2026-10-13): a short dash off a shot it can see coming ... [h:Movement-4]</summary>
         public static bool TryLungerDodge(RunState run, Enemy e)
         {
             // never out of its wind-up, its lunge or its recovery: the recovery is the player's punish window
@@ -304,11 +284,7 @@ namespace Depths
             if (--e.lungeT <= 0) { e.lungeState = "approach"; e.lungeT = 0; e.dashN = 0; }
         }
 
-        /// <summary>
-        /// The share of a dash covered by time u (0..1): speed rises over the first <paramref name="rampIn"/> of it
-        /// and falls over the last <paramref name="rampOut"/> along smoothstep curves, flat between. 0 at 0, 1 at 1,
-        /// never decreasing, so a dash of N ticks lands exactly where the flat one did.
-        /// </summary>
+        /// <summary>The share of a dash covered by time u (0..1): speed rises over the first rampIn of it and falls over the last... [h:Movement-5]</summary>
         public static double DashShare(double u, double rampIn, double rampOut)
         {
             u = System.Math.Max(0, System.Math.Min(1, u));
@@ -331,10 +307,7 @@ namespace Depths
             return e.dashLen * (DashShare((done + 1) / (double)e.dashN, rampIn, rampOut) - DashShare(done / (double)e.dashN, rampIn, rampOut));
         }
 
-        /// <summary>
-        /// clearShot: the first angle, sweeping out from the wanted one, whose line to the player passes
-        /// no body of ours (its own guards excepted) - or null, and the shooter waits.
-        /// </summary>
+        /// <summary>clearShot: the first angle, sweeping out from the wanted one, whose line to the player passes no body of ours... [h:Movement-6]</summary>
         public static double? ClearShot(RunState run, Enemy e, double want)
         {
             double tx = run.player.x, ty = run.player.y, reach = Hyp(tx - e.x, ty - e.y);
@@ -355,11 +328,7 @@ namespace Depths
             return null;
         }
 
-        /// <summary>
-        /// A line from <paramref name="e"/> at angle <paramref name="a"/> that passes no body of ours within
-        /// <paramref name="reach"/> px (a shell of radius <paramref name="r"/> would graze it). C# only: the volleys
-        /// that are not one aimed shell - the Sprayer's cone, the egg's ring - keep their shells off their own side.
-        /// </summary>
+        /// <summary>A line from e at angle a that passes no body of ours within reach px (a shell of radius r would graze it). [h:Movement-7]</summary>
         public static bool LineClear(RunState run, Enemy e, double a, double reach, double r)
         {
             double dx = System.Math.Cos(a), dy = System.Math.Sin(a);

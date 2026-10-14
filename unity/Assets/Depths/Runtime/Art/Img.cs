@@ -3,11 +3,7 @@ using UnityEngine;
 
 namespace Depths.Unity.Art
 {
-    /// <summary>
-    /// A CPU image with the few canvas operations the JS art uses (fillRect, arc fill, drawImage,
-    /// pattern fill, radial gradient), composited source-over. Pure C#, so every bake is testable
-    /// without a GPU; textures are made from it once (<see cref="Atlas"/>). y points down, as in canvas.
-    /// </summary>
+    /// <summary>A CPU image with the few canvas operations the JS art uses (fillRect, arc fill, drawImage, pattern fill... [h:Img-1]</summary>
     public sealed class Img
     {
         public readonly int W, H;

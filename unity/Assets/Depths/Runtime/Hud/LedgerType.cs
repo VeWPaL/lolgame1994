@@ -4,11 +4,7 @@ using Depths.Unity.Art;
 
 namespace Depths.Unity.Hud
 {
-    /// <summary>
-    /// The HUD's one hand: a 5x7 pixel face, so every word on the lecterns is drawn in the same pixels
-    /// as the room beside it (the 3x5 PixelFont stays for item marks). Lower case is drawn as upper case.
-    /// Text is laid out without building strings: a word wrap walks the source string in place.
-    /// </summary>
+    /// <summary>The HUD's one hand: a 5x7 pixel face, so every word on the lecterns is drawn in the same pixels as the room... [h:LedgerType-1]</summary>
     public static class LedgerType
     {
         public const int W = 5, H = 7, Advance = 6, LineGap = 3;
@@ -101,10 +97,7 @@ namespace Depths.Unity.Hud
             Stamp(g, s, x, y, scale, ink);
         }
 
-        /// <summary>
-        /// Greedy word wrap of s[from..] into maxW pixels: the end (exclusive) of the first line and the
-        /// start of the next. No strings are made, so the ink layer can wrap every frame for free.
-        /// </summary>
+        /// <summary>Greedy word wrap of s[from..] into maxW pixels: the end (exclusive) of the first line and the start of the... [h:LedgerType-2]</summary>
         public static (int end, int next) Wrap(string s, int from, int maxW, int scale)
         {
             int maxChars = Mathf.Max(1, (maxW / scale + 1) / Advance);

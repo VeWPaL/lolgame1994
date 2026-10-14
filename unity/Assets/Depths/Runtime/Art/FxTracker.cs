@@ -13,12 +13,7 @@ namespace Depths.Unity.Art
         public float Mom;          // the momentum a blink was spent at, for its tint
     }
 
-    /// <summary>
-    /// The JS keeps its blink trail, lunge puffs and burst rings as lists the simulation pushes to.
-    /// Depths.Core has no view lists (it is the simulation only), so the view derives the same marks
-    /// from what changed between frames: a spent blink charge, a lunger's state, an alt shell that is
-    /// gone. Fixed pools: a frame allocates nothing once warm.
-    /// </summary>
+    /// <summary>The JS keeps its blink trail, lunge puffs and burst rings as lists the simulation pushes to. [h:FxTracker-1]</summary>
     public sealed class FxTracker
     {
         public const float DashTrail = 0.23f, LungeTrail = 0.16f, ChargeTrail = 0.34f, BurstLife = 0.2f, SecretBurst = 0.2f;

@@ -86,6 +86,10 @@ foreach ($f in $files) {
   if ($t.Contains([string][char]0xFFFD)) { Bad "$($f.Name) contains U+FFFD (corrupted text)"; $repl++ }
 }
 if ($bom -eq 0 -and $crlf -eq 0 -and $moji -eq 0 -and $repl -eq 0) { Note "   clean: no BOM, no CR, no U+00C2, no U+FFFD" }
+# C# comments stay one or two lines; tools/move-comments.py moves a longer one to docs/history/csharp/
+$long = & python "$root/tools/move-comments.py" --check 2>&1
+if ($LASTEXITCODE -ne 0) { Bad ("C# comment blocks of 3+ lines: run python tools/move-comments.py (" + ($long | Select-Object -Last 1) + ")") }
+else { Note "   C# comments: no block of 3+ lines" }
 
 # ---------------------------------------------------------------- 2. the middle-dot canary
 # The project's own canary: a middle dot that survives is proof the byte-level encoding is intact.

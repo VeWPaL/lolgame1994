@@ -3,12 +3,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The regenerating heart (C# only, 2026-10-06): the last of the starting 8 HP is its own layer,
-    /// between the red hearts and the armour. It takes damage before the red, and refills in a fight
-    /// after RegenDelay without a hit, 1 HP then 1 HP per RegenStep, and fully when a fought room is
-    /// cleared. Pickups heal red only, Vigor adds red only, and Balance.JsReference turns it off.
-    /// </summary>
+    /// <summary>The regenerating heart (C# only, 2026-10-06): the last of the starting 8 HP is its own layer, between the red... [h:RegenHeartTests-1]</summary>
     [TestFixture, Category("csharp-only")]
     public sealed class RegenHeartTests
     {

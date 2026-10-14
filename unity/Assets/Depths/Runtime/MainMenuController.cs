@@ -12,11 +12,7 @@ using Depths.Unity.Hud;
 
 namespace Depths.Unity
 {
-    /// <summary>
-    /// Start Game / Options / Quit, and the Options pages: key binds, volume, gameplay. The menu is an
-    /// open ledger on a desk (the HUD's wood and paper): the contents on the right page, the options'
-    /// sections on the left and the chosen section on the right. Its textures are baked here at start.
-    /// </summary>
+    /// <summary>Start Game / Options / Quit, and the Options pages: key binds, volume, gameplay. [h:MainMenuController-1]</summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class MainMenuController : MonoBehaviour
     {

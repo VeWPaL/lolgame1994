@@ -4,12 +4,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The themed-area split of the climb. The mapping is pinned at every boundary, the Area1 mix
-    /// is pinned to the pre-area measured numbers, and the planner's default area is pinned to be
-    /// indistinguishable from passing Area1 explicitly - that is what keeps the 127 parity rows
-    /// honest now that the planner takes an area argument.
-    /// </summary>
+    /// <summary>The themed-area split of the climb. [h:AreaTests-1]</summary>
     [TestFixture]
     public sealed class AreaTests
     {
@@ -74,9 +69,7 @@ namespace Depths.Tests
         [Test]
         public void ADifferentAreaPlansADifferentRoomSomeOfTheTime()
         {
-            // Across a deterministic set of seeds, asking for a non-Area1 area must change what
-            // gets planned at least once - otherwise the area dial is decorative in C# even
-            // though the JavaScript honours it.
+            // Across a deterministic set of seeds, asking for a non-Area1 area must change what gets planned at least once... [h:AreaTests-2]
             var changed = 0;
             for (uint seed = 1; seed <= 40; seed++)
             {
@@ -99,10 +92,7 @@ namespace Depths.Tests
         [Test]
         public void ThePlannerActuallyReadsTheMix()
         {
-            // The dials are decorative unless the planner consumes them. Across a fixed set of
-            // seeds, planning with Final (heavier, more pack-hungry) must produce a measurably
-            // different makeup than Area1: more gunners in particular. If the planner went back
-            // to a hardcoded 0.55, these two lists would come out identical.
+            // The dials are decorative unless the planner consumes them. [h:AreaTests-3]
             int CountKind(Area area, BodyKind want)
             {
                 var total = 0;
@@ -119,9 +109,7 @@ namespace Depths.Tests
                         Is.Not.EqualTo(CountKind(Area.Area1, BodyKind.Gunner)),
                 "60 seeds, identical gunner counts in Area1 and Final - the heavy dial is not wired");
 
-            // Lunger SHARE among the two melee-or-shell slot kinds. A raw count cannot isolate the
-            // type roll: packs and gunners eat slots, so an area with more Brunch has fewer
-            // lunger-bearing slots even with the same roll - count delusion dressed as signal.
+            // Lunger SHARE among the two melee-or-shell slot kinds. [h:AreaTests-4]
             double LungerShare(Area area)
             {
                 var l = 0; var s = 0;

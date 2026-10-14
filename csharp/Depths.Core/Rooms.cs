@@ -2,15 +2,7 @@ using System.Collections.Generic;
 
 namespace Depths
 {
-    /// <summary>
-    /// Moving through the floor: doors (open only on a cleared room, sealed boss/item doors that a key
-    /// unlocks by standing at them), the door-aware wall, the transition, and entering a room - which
-    /// spawns its wave the first time and hands the fight its opening state. src/20-world.js,
-    /// 40-combat.js clampPlayer/checkDoorTransition, 30-enemies.js enterRoom.
-    ///
-    /// A room keeps its own bodies and pickups (Room.Enemies/Pickups); the run's lists are the current
-    /// room's, swapped on entry, so every phase reads run.enemies exactly as before.
-    /// </summary>
+    /// <summary>Moving through the floor: doors (open only on a cleared room, sealed boss/item doors that a key unlocks by... [h:Rooms-1]</summary>
     public static class Rooms
     {
         public static (double X, double Y) DoorPoint(Dir d) => d switch
@@ -134,12 +126,7 @@ namespace Depths
             run.pickups.AddRange(r.Pickups); r.Pickups.Clear();
         }
 
-        /// <summary>
-        /// enterRoom: the room becomes current and visited; its wave spawns the first time (a normal
-        /// room's plan, the Warden at a random point, the secret's hook, the item room's weapons); the
-        /// player is placed inside the door they came through; a live room hands back the gun and alt
-        /// cooldowns and tops up the blink; the fade and the ready freeze start.
-        /// </summary>
+        /// <summary>enterRoom: the room becomes current and visited; its wave spawns the first time (a normal room's plan, the... [h:Rooms-2]</summary>
         public static void EnterRoom(RunState run, int nx, int ny, Dir from)
         {
             var old = run.CurrentRoom;

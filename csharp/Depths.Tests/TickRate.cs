@@ -9,10 +9,7 @@ using NUnit.Framework.Interfaces;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// Runs a test (or every test under it) at a tick rate, and restores the rate after, so a rate
-    /// set by one test never leaks into the next. Inner attributes run after outer ones, so they win.
-    /// </summary>
+    /// <summary>Runs a test (or every test under it) at a tick rate, and restores the rate after, so a rate set by one test... [h:TickRate-1]</summary>
     [AttributeUsage(AttributeTargets.Assembly | AttributeTargets.Class | AttributeTargets.Method, AllowMultiple = false)]
     public sealed class TickRateAttribute : Attribute, ITestAction
     {

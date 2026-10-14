@@ -3,10 +3,7 @@ using UnityEngine;
 
 namespace Depths.Unity.Art
 {
-    /// <summary>
-    /// Every fixed sprite in the game, baked once into one atlas and found by name. The names are
-    /// built by the static helpers below, so a caller cannot spell one that was never baked.
-    /// </summary>
+    /// <summary>Every fixed sprite in the game, baked once into one atlas and found by name. [h:SpriteSet-1]</summary>
     public static class SpriteSet
     {
         static Atlas _atlas;

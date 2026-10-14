@@ -15,12 +15,7 @@ namespace Depths.Unity
         public HeartSlot(HeartKind k, HeartFill f) { Kind = k; Fill = f; }
     }
 
-    /// <summary>
-    /// The health row as data: 1 HP is half a heart. Red hearts (dark when empty), then the
-    /// regenerating heart, then armour (no empty slots). Where each heart goes is the HUD's business
-    /// (Hud.HudLayout.HeartTopLeft); the colours are the atlas hearts' (Sprites.HeartPal), so the
-    /// screenshot check can tell a lit lobe from an unlit one by the pixels the player sees.
-    /// </summary>
+    /// <summary>The health row as data: 1 HP is half a heart. [h:HeartRow-1]</summary>
     public static class HeartRow
     {
         public static readonly Color Red = new Color32(0xe8, 0x39, 0x5a, 255), RedEmpty = new Color32(0x3a, 0x25, 0x30, 255),

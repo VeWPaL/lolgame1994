@@ -33,10 +33,7 @@ namespace Depths.Unity
         public void Save() { }
     }
 
-    /// <summary>
-    /// Gameplay options, saved like the volume. The difficulty curve (Depths.Core <c>Curve.On</c>) is read
-    /// per floor, so it is applied when a run starts, never mid-run.
-    /// </summary>
+    /// <summary>Gameplay options, saved like the volume. [h:Settings-1]</summary>
     public sealed class GameplaySettings
     {
         public const string CurveKey = "depths.gameplay.curve";
@@ -55,11 +52,7 @@ namespace Depths.Unity
         public void Apply() => Depths.Curve.On = Curve;
     }
 
-    /// <summary>
-    /// The frame rate, apart from the game's speed: the simulation always steps at <c>Balance.TickHz</c> and the
-    /// screen draws between ticks (Depths.Core <c>Interp</c>), so any cap plays the same game, only smoother or
-    /// cheaper. VSync follows the monitor; a number caps it without VSync; Uncapped draws as fast as it can.
-    /// </summary>
+    /// <summary>The frame rate, apart from the game's speed: the simulation always steps at Balance.TickHz and the screen... [h:Settings-2]</summary>
     public sealed class DisplaySettings
     {
         public const string FrameKey = "depths.display.frames";

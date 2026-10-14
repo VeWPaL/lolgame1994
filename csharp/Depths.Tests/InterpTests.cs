@@ -68,9 +68,7 @@ namespace Depths.Tests
         [Test]
         public void NothingAtTickSpeedOutrunsTheJumpCutoff()
         {
-            // the cutoff must sit above every real per-tick step at the game's 60 Hz (this suite ticks faster), with
-            // room for a doubled shot speed from items, or fast things stop blending and judder again
-            // the eased dashes peak above lunge speed, and a deep floor speeds every body up
+            // the cutoff must sit above every real per-tick step at the game's 60 Hz (this suite ticks faster), with room... [h:InterpTests-1]
             double lunge = Balance.LungeSpeed * Math.Max(1 / Movement.DashArea(Balance.LungeRampIn, Balance.LungeRampOut), Balance.DodgePeak);
             double deep = Balance.DepthRate(40);
             double perSecond = lunge * deep * Balance.TickHz;

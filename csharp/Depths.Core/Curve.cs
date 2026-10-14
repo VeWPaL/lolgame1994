@@ -1,19 +1,13 @@
 namespace Depths
 {
-    /// <summary>
-    /// The difficulty curve (C# only, 2026-10-07): a per-floor shape laid over the depth ladder, plus
-    /// the targets the playtest bot's `curve` command checks it against. The JS ladder is untouched.
-    /// </summary>
+    /// <summary>The difficulty curve (C# only, 2026-10-07): a per-floor shape laid over the depth ladder, plus the targets... [h:Curve-1]</summary>
     public static class Curve
     {
         /// <summary>Whether the shape applies. The game: always. Tests default it off (assembly [CurveOn]) so the
         /// parity rows keep the JS ladder.</summary>
         public static bool On = false;   // off until the owner signs the tune off (STATUS); --curve on to play it
 
-        /// <summary>
-        /// One stage of the shape, from floor First until the next stage's First. Tough, Rate and Drops
-        /// multiply; Bodies, Pack and Heavy add. Fields, not constants, so the bot's --dial can try a value.
-        /// </summary>
+        /// <summary>One stage of the shape, from floor First until the next stage's First. [h:Curve-2]</summary>
         public sealed class Stage
         {
             public readonly string Name;
@@ -25,19 +19,8 @@ namespace Depths
                 $"pack {Pack:+0.##;-0.##;0} heavy {Heavy:+0.##;-0.##;0} drops x{Drops}";
         }
 
-        /// <summary>
-        /// The shape. START (1-2) is a bump while the player has no kit, MIDDLE (3-10) a dip, 11-12 a
-        /// ramp into the last area, then the climb. Each stage holds until the next one's floor.
-        /// </summary>
-        // Why each column (measured with the bot's curve command, seeds 101-300 and 301-500):
-        //   Tough   health: longer fights cost more HP; the dip's main dial.
-        //   Rate    cadence and ranged approach (under DepthRateCap): more shells to dodge widens the skill gap.
-        //   Bodies  added to the room roll; only whole bodies count, so it places the step where
-        //           the ladder adds a body (fewer bodies is also fewer kills, so fewer drops).
-        //   Pack    added to the Brunch pack chance; packs are the middle's main attrition.
-        //   Heavy   added to the area's gunner chance; its 4 HP shell kills, and skill barely dodges it.
-        //   Drops   the kill drop chance x this; 0 in START so the first floors cost hearts.
-        // From floor 11 on, a floor is never easier than the one before (body health and bodies).
+        /// <summary>The shape. START (1-2) is a bump while the player has no kit, MIDDLE (3-10) a dip, 11-12 a ramp into the last... [h:Curve-3]</summary>
+        // Why each column (measured with the bot's curve command, seeds 101-300 and 301-500): Tough health: longer... [h:Curve-4]
         public static readonly Stage[] Stages =
         {
             // fast shooters, fewer gunners, no pickups; then a little tougher
@@ -117,18 +100,13 @@ namespace Depths
         /// matters.</summary>
         public const double HeartShareMin = 0.03;
 
-        /// <summary>
-        /// Rubric 5 for MIDDLE as written ("healing below damage") is the owner's open decision; the
-        /// two restatements are kept here so choosing one is this one line (the bot's --mid-rule tries one).
-        /// </summary>
+        /// <summary>Rubric 5 for MIDDLE as written ("healing below damage") is the owner's open decision; the two restatements... [h:Curve-5]</summary>
         public enum MiddleRule
         {
             /// <summary>Healing a MIDDLE floor below damage a MIDDLE floor (all healing, the regenerating heart
             /// included).</summary>
             Original,
-            /// <summary>Over the runs that leave floor 10: mean (HP + armour leaving 10) - (HP + armour entering 3)
-            /// is at most mean (max HP entering 11) - (HP entering 3): what START took plus the max HP
-            /// gained.</summary>
+            /// <summary>Over the runs that leave floor 10: mean (HP + armour leaving 10) - (HP + armour entering 3) is at most mean... [h:Curve-6]</summary>
             Recovery,
             /// <summary>Pickup healing a MIDDLE floor (healing less the regenerating heart's clock and refill) below
             /// damage a floor.</summary>

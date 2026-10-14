@@ -6,12 +6,7 @@ using Depths.Unity.Art;
 
 namespace Depths.Unity.Hud
 {
-    /// <summary>
-    /// The pages laid over the game in the ledger's materials: the pause note, the run's account (the
-    /// JS summary sheet), the floor heading and the Warden's notice. Each is built once and shown or
-    /// hidden; text is written when a page opens, never per frame. The heading and the notice sit in
-    /// the band above the room, so a descent never covers the fight.
-    /// </summary>
+    /// <summary>The pages laid over the game in the ledger's materials: the pause note, the run's account (the JS summary... [h:HudOverlays-1]</summary>
     public sealed class HudOverlays : VisualElement
     {
         public const int SheetW = 500, SheetH = 560, PauseW = 420, PauseH = 300, RowY = 92, RowStep = 30, RecordsY = RowY + RowStep * 9 + 14;

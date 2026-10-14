@@ -5,11 +5,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The run's area groups (Pools, Balance.TunePools; owner 2026-10-13): random per run, each area its own
-    /// fight, the next area's newcomers previewed rarely two floors early; and the eggs' forms and the
-    /// ranged volleys that keep off their own side.
-    /// </summary>
+    /// <summary>The run's area groups (Pools, Balance.TunePools; owner 2026-10-13): random per run, each area its own fight... [h:PoolTests-1]</summary>
     [TestFixture, Category("csharp-only"), TunedOn(true)]
     public sealed class PoolTests
     {

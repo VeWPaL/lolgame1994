@@ -2,12 +2,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The lunger against the running game. Every row was recorded by tools/lunger-parity.js on
-    /// 2026-10-06 from the game's own tickBodies(): seed 4242, the player held still, Rnd reseeded
-    /// before the first tick, every 10th tick compared (position, state, lungeT, curSpeed, knock
-    /// velocity, and the player's hp) to 1e-6, and the jitter draws counted exactly.
-    /// </summary>
+    /// <summary>The lunger against the running game. [h:LungerParityTests-1]</summary>
     [TestFixture]
     public sealed class LungerParityTests
     {

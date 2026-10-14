@@ -2,10 +2,7 @@ using System.Collections.Generic;
 
 namespace Depths
 {
-    /// <summary>
-    /// The stats a build is made of (src/06-stats.js): value = min(cap, base + flat + earned). The base
-    /// is the character (Wyrd); flat comes only from items, by rebuilding, never by subtracting.
-    /// </summary>
+    /// <summary>The stats a build is made of (src/06-stats.js): value = min(cap, base + flat + earned). [h:Items-1]</summary>
     public sealed class Stats
     {
         public static readonly string[] Order = { "strength", "speed", "momentum", "intelligence", "luck", "vigor", "precision" };
@@ -38,12 +35,7 @@ namespace Depths
 
     public sealed class ItemSlot { public string Id = ""; public int? Charges; public int Slot = -1; }
 
-    /// <summary>
-    /// The item system (src/25-items.js): the roster in definition order, the rarity roll (luck
-    /// weights the rare end), the pool (one run draw per pick), give/remove by rebuilding, the one
-    /// active slot and Q. The hooks are the game's: heal, pull the loot, reveal the room; a companion
-    /// that is written down but not built refuses, as it does there.
-    /// </summary>
+    /// <summary>The item system (src/25-items.js): the roster in definition order, the rarity roll (luck weights the rare... [h:Items-2]</summary>
     public static class Items
     {
         public const int ActiveSlot = 0;
@@ -90,10 +82,7 @@ namespace Depths
             CompassOpens(run);   // picking the compass up in the room with the fake wall opens it at once
         }
 
-        /// <summary>
-        /// Brass Compass (placeholder, C# only): carried into the room that hides the floor's fake
-        /// wall, the wall opens by itself. Called on entering a room and on every rebuild.
-        /// </summary>
+        /// <summary>Brass Compass (placeholder, C# only): carried into the room that hides the floor's fake wall, the wall opens... [h:Items-3]</summary>
         public static void CompassOpens(RunState run)
         {
             if (run.dungeon == null) return;   // a bare RunState in a test has no floor yet

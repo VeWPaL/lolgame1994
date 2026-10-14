@@ -4,44 +4,14 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// Parity for <c>TickOrder.TickRoom</c> - the first of the four tick phases ported with real
-    /// behaviour, and the first set of expectations in this project generated rather than written.
-    ///
-    /// <para>
-    /// EVERY number here was measured out of the running game by <c>tools/room-parity.js</c>, which
-    /// drives the browser's <c>tickRoom()</c> through these same fixtures. That is the point: a
-    /// hand-transcribed expectation is only a second opinion about what the code should do, whereas
-    /// two implementations of one function disagreeing is a real finding. Where the two disagreed
-    /// during this port, three of the disagreements were the fixture's fault and are recorded below
-    /// - they are kept because each mistake is repeatable.
-    /// </para>
-    ///
-    /// <list type="bullet">
-    /// <item><b>The exit does not remove itself.</b> The original calls <c>descend()</c> and RETURNS,
-    /// so the portal is still in the list on the tick after it is touched. Asserting on the list
-    /// makes a distance of ZERO read as "not collected" - the exact opposite of what happened, and
-    /// what this file's first version reported. The observable is the floor.</item>
-    /// <item><b>The reward drops land on the player.</b> They spawn at <c>(MIDX, MIDY)</c>, and a
-    /// player standing there collects them on the tick they are created. A fixture parked at the
-    /// centre sees an empty list and concludes the drop is broken.</item>
-    /// <item><b>The touch test is strict.</b> A pickup at exactly its own radius is NOT collected, so
-    /// the exit at exactly 10px does not descend. "At the boundary" is where an off-by-one hides,
-    /// so the boundary is asserted rather than assumed.</item>
-    /// </list>
-    /// </summary>
+    /// <summary>Parity for TickOrder.TickRoom - the first of the four tick phases ported with real behaviour, and the first... [h:RoomPhaseParityTests-1]</summary>
     [TestFixture]
     public sealed class RoomPhaseParityTests
     {
-        /// <summary>
-        /// A cleared, empty standard room with the player at the room centre and a known state, so a
-        /// test only has to state what it is actually testing.
-        /// </summary>
+        /// <summary>A cleared, empty standard room with the player at the room centre and a known state, so a test only has to... [h:RoomPhaseParityTests-2]</summary>
         private static RunState Room(uint seed = 4242)
         {
-            // One Rng for the run and another for the dungeon, because `Dungeon.FromSeed` consumes
-            // its stream: sharing one would generate a floor from a different position than the run
-            // expects, and the mismatch would only show up as a room the tests cannot find.
+            // One Rng for the run and another for the dungeon, because `Dungeon.FromSeed` consumes its stream: sharing one... [h:RoomPhaseParityTests-3]
             var run = new RunState(new Rng(seed)) { dungeon = Dungeon.FromSeed(new Rng(seed)) };
             run.state = "playing";
             run.readyT = 0;
@@ -68,12 +38,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ the blink refund
 
-        /// <summary>
-        /// A room that has just been cleared refunds half a blink charge - and only the first time.
-        /// Measured: <c>BLINK_RECHARGE</c> is 735, so the refund is 367.5. The fraction is kept
-        /// because the original stores it in a float field; rounding it to 368 would make every
-        /// cleared room half a tick more generous.
-        /// </summary>
+        /// <summary>A room that has just been cleared refunds half a blink charge - and only the first time. [h:RoomPhaseParityTests-4]</summary>
         [Test]
         public void AClearedRoomRefundsHalfABlinkOnceAndOnlyOnce()
         {
@@ -101,10 +66,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ pickups
 
-        /// <summary>
-        /// A heart at full health is left lying rather than eaten. Measured: 8/8 leaves it, 5/8 heals
-        /// to 7 and takes it, 7/8 heals to 8 and takes it, 6/8 heals to 8 and takes it.
-        /// </summary>
+        /// <summary>A heart at full health is left lying rather than eaten. [h:RoomPhaseParityTests-5]</summary>
         [TestCase(8, 8, 1)]
         [TestCase(5, 7, 0)]
         [TestCase(7, 8, 0)]
@@ -156,10 +118,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ the weapon swap
 
-        /// <summary>
-        /// The swap parks the OLD weapon where the player is standing, and marks it held. Without the
-        /// hold it would be re-collected on the same tick and the swap would oscillate forever.
-        /// </summary>
+        /// <summary>The swap parks the OLD weapon where the player is standing, and marks it held. [h:RoomPhaseParityTests-6]</summary>
         [Test]
         public void AWeaponSwapParksTheOldOneHeldRatherThanDeletingIt()
         {
@@ -175,10 +134,7 @@ namespace Depths.Tests
             Assert.That(run.pickups[0].hold, Is.True);
         }
 
-        /// <summary>
-        /// The cooldown after a swap is a MINIMUM against the new weapon's, so swapping into a gun
-        /// that is already nearly ready grants no free shot.
-        /// </summary>
+        /// <summary>The cooldown after a swap is a MINIMUM against the new weapon's, so swapping into a gun that is already... [h:RoomPhaseParityTests-7]</summary>
         [Test]
         public void ASwapNeverShortensAnAlreadyShorterCooldown()
         {
@@ -212,16 +168,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ the exit
 
-        /// <summary>
-        /// The exit is collected at the bare <c>PLAYER_HIT_R</c> of 10, while every other pickup is
-        /// collected at <c>pk.r + player.r</c>. Walking into the way down is a deliberate act and
-        /// should not happen by brushing the edge of a 30px circle.
-        /// <para>
-        /// Asserted on the FLOOR, because touching the exit calls <c>descend()</c> and returns: the
-        /// portal is still in the list on the next tick. The test is strict, so exactly 10px does
-        /// NOT descend - measured, not assumed.
-        /// </para>
-        /// </summary>
+        /// <summary>The exit is collected at the bare PLAYER_HIT_R of 10, while every other pickup is collected at pk.r +... [h:RoomPhaseParityTests-8]</summary>
         [TestCase(12.0, 0)]
         [TestCase(10.0, 0)]   // exactly at the radius: `<`, so not collected
         [TestCase(9.0, 1)]
@@ -241,10 +188,7 @@ namespace Depths.Tests
                 "after a descent the current room is the new floor's start room, which holds nothing");
         }
 
-        /// <summary>
-        /// A normal pickup 12px away IS collected - which is what makes the exit's 10px a real
-        /// distinction rather than an accident of the same number appearing twice.
-        /// </summary>
+        /// <summary>A normal pickup 12px away IS collected - which is what makes the exit's 10px a real distinction rather than... [h:RoomPhaseParityTests-9]</summary>
         [Test]
         public void ANormalPickupAtTwelvePixelsIsCollectedWhereTheExitIsNot()
         {
@@ -260,11 +204,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ the rewards
 
-        /// <summary>
-        /// The silver and gold rewards drop once each, at the room centre, with their own radii
-        /// (14 and 16). The player is in a corner here: at the centre the drop is collected on the
-        /// tick it is created and the list looks empty.
-        /// </summary>
+        /// <summary>The silver and gold rewards drop once each, at the room centre, with their own radii (14 and 16). [h:RoomPhaseParityTests-10]</summary>
         [Test]
         public void RewardsDropOnceEachAtTheCentreWithTheirOwnRadii()
         {
@@ -307,10 +247,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ the boss exit
 
-        /// <summary>
-        /// A cleared boss room opens ONE exit, once - not a new portal on every tick the player
-        /// stands in an empty boss room, which is what the one-shot flag is for.
-        /// </summary>
+        /// <summary>A cleared boss room opens ONE exit, once - not a new portal on every tick the player stands in an empty boss... [h:RoomPhaseParityTests-11]</summary>
         [Test]
         public void AClearedBossRoomOpensOneExitOnce()
         {
@@ -343,10 +280,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ death
 
-        /// <summary>
-        /// Death wins ties. A pickup arriving on the frame the player dies ends the run as a death,
-        /// and the boss-exit check beneath it does not run.
-        /// </summary>
+        /// <summary>Death wins ties. A pickup arriving on the frame the player dies ends the run as a death, and the boss-exit... [h:RoomPhaseParityTests-12]</summary>
         [Test]
         public void ADeadPlayerEndsTheRunAndDoesNotOpenAnExit()
         {
@@ -377,10 +311,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ the alt weapons
 
-        /// <summary>
-        /// Picking up a hook leaves a held blast where the hook stood, and cannot be re-collected on
-        /// the same tick.
-        /// </summary>
+        /// <summary>Picking up a hook leaves a held blast where the hook stood, and cannot be re-collected on the same tick. [h:RoomPhaseParityTests-13]</summary>
         [Test]
         public void AHookLeavesABlastBehindItAndIsHeld()
         {
@@ -428,16 +359,11 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ the known gap
 
-        /// <summary>
-        /// The item branch is NOT ported, and it says so by throwing. A silent no-op here would be a
-        /// port that looks finished and plays differently; a crash is a gap you cannot miss.
-        /// </summary>
+        /// <summary>The item branch is NOT ported, and it says so by throwing. [h:RoomPhaseParityTests-14]</summary>
         [Test]
         public void AnItemPickupGivesTheItemAndSwapsTheActive()
         {
-            // the spec (src/60-tick.js tickRoom + 25-items.js give): a passive raises its stat and is
-            // gone from the floor; a second active takes the one slot and the first is left where the
-            // new one lay, holding the charges it had, and cannot be picked straight back up
+            // the spec (src/60-tick.js tickRoom + 25-items.js give): a passive raises its stat and is gone from the floor... [h:RoomPhaseParityTests-15]
             var run = Room();
             run.pickups.Add(new Pickup { x = 400, y = 355, r = 16, kind = "item", id = "weighted_rod" });
             TickOrder.TickRoom(run);
@@ -471,10 +397,7 @@ namespace Depths.Tests
             Assert.That(Items.ActiveItem(run)!.Charges, Is.EqualTo(2));
         }
 
-        /// <summary>
-        /// An unknown pickup kind is left on the floor rather than silently eaten. Being strict about
-        /// a name the port does not know is what stops a typo in a spawn call from deleting a reward.
-        /// </summary>
+        /// <summary>An unknown pickup kind is left on the floor rather than silently eaten. [h:RoomPhaseParityTests-16]</summary>
         [Test]
         public void AnUnknownPickupKindIsLeftWhereItIs()
         {
@@ -488,27 +411,7 @@ namespace Depths.Tests
 
         // ------------------------------------------------------------------ a constant that was wrong
 
-        /// <summary>
-        /// The swerve meter's per-tick decay, pinned because it WAS wrong and nothing noticed.
-        ///
-        /// <para>
-        /// <c>Balance.SwerveDecay</c> held 0.011 against the original's 0.0035 - a little over three
-        /// times the rate, which means the game would have forgotten a reversal roughly three times
-        /// faster than it does, and every gunner in the game would have aimed at where the player is
-        /// instead of where they were going. No test failed. The suite asserted
-        /// <c>SWERVE_DECAY &gt; 0</c> and that a reversal survives a second, and 0.011 satisfies both.
-        /// Nothing in the port read the constant, so a wrong number sat in the file whose entire job
-        /// is to hold the game's numbers.
-        /// </para>
-        ///
-        /// <para>
-        /// Two things catch it now. The bound is arithmetic rather than a restatement: the original's
-        /// own test requires a reversal to still be fully remembered after
-        /// <c>sec(1)</c> = 210 ticks, which caps the per-tick decay at about 0.0033 and rules 0.011
-        /// out on the game's own terms. And the value is pinned exactly, measured from a meter filled
-        /// to 1 and left alone: 0.5765 after one second, which is 0.0035 a tick.
-        /// </para>
-        /// </summary>
+        /// <summary>The swerve meter's per-tick decay, pinned because it WAS wrong and nothing noticed. [h:RoomPhaseParityTests-17]</summary>
         [Test]
         public void TheSwerveDecayIsTheGamesRateAndNotAFasterOne()
         {

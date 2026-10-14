@@ -2,10 +2,7 @@ using UnityEngine;
 
 namespace Depths.Unity.Audio
 {
-    /// <summary>
-    /// The end of the chain: sits next to the game's one AudioListener, so OnAudioFilterRead sees the
-    /// whole mix (after the mixer) and runs the master compressor on it, as the JS master does.
-    /// </summary>
+    /// <summary>The end of the chain: sits next to the game's one AudioListener, so OnAudioFilterRead sees the whole mix... [h:MasterBus-1]</summary>
     [RequireComponent(typeof(AudioListener))]
     public sealed class MasterBus : MonoBehaviour
     {

@@ -7,12 +7,7 @@ using Depths.Unity.Art;
 
 namespace Depths.Unity
 {
-    /// <summary>
-    /// The lab (F2), after src/35-devlab.js: one room, a specimen of every body on two rows (frozen until
-    /// F3), a dropper (F4 arms a kind, F7 drops a dozen, F8 one at the cursor), the keys and a heal, and
-    /// damage numbers over whatever is hit. The only place the middle enemies spawn until they join the
-    /// pool. The run never ends in here: a lab death refills you.
-    /// </summary>
+    /// <summary>The lab (F2), after src/35-devlab.js: one room, a specimen of every body on two rows (frozen until F3), a... [h:LabMode-1]</summary>
     public sealed class LabMode
     {
         public static readonly (BodyKind kind, EggForm form, string name, string blurb)[] Specimens =

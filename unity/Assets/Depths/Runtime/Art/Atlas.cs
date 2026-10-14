@@ -12,10 +12,7 @@ namespace Depths.Unity.Art
         public Region(int w, int h, float u0, float v0, float u1, float v1) { W = w; H = h; U0 = u0; V0 = v0; U1 = u1; V1 = v1; }
     }
 
-    /// <summary>
-    /// Packs baked images into one point-filtered texture (shelf packing, tallest first, 2px gutters),
-    /// so the whole room draws from a single texture and batches. Built once; nothing is added later.
-    /// </summary>
+    /// <summary>Packs baked images into one point-filtered texture (shelf packing, tallest first, 2px gutters), so the whole... [h:Atlas-1]</summary>
     public sealed class Atlas
     {
         public Texture2D Texture { get; }

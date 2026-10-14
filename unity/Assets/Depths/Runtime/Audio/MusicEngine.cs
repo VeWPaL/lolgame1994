@@ -5,11 +5,7 @@ using UnityEngine.Audio;
 
 namespace Depths.Unity.Audio
 {
-    /// <summary>
-    /// Plays the Score: two looping sources started on the same DSP tick so the layers stay locked.
-    /// The game calls <c>MusicEngine.SetArea(area)</c> and <c>MusicEngine.SetFight(live)</c> every frame;
-    /// a new area renders on a worker thread and crossfades in, the fight layer fades with the room.
-    /// </summary>
+    /// <summary>Plays the Score: two looping sources started on the same DSP tick so the layers stay locked. [h:MusicEngine-1]</summary>
     public sealed class MusicEngine : MonoBehaviour
     {
         public const float CalmLevel = 0.8f, FightIn = 1 / 1.2f, FightOut = 1 / 3f, SwapFade = 1 / 0.7f;

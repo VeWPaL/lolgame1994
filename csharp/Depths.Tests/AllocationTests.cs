@@ -4,10 +4,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// CONVENTIONS: no per-tick allocations in C# hot paths (Unity GC hitches). Measured with the
-    /// runtime's per-thread allocation counter, after a warm-up that may size pools and buffers.
-    /// </summary>
+    /// <summary>CONVENTIONS: no per-tick allocations in C# hot paths (Unity GC hitches). [h:AllocationTests-1]</summary>
     [TestFixture, Category("csharp-only")]
     public sealed class AllocationTests
     {
@@ -61,9 +58,7 @@ namespace Depths.Tests
             for (int t = 0; t < 600; t++) Tick();
             long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
             Assert.That(run.projectiles, Is.Empty, "the fixture fired, so it would measure shells");
-            // no PER-TICK allocation: the smallest object is 24 bytes, so one a tick would be 14400 here. A few event
-            // objects in 10 s of fighting (contact hits, pack re-targets) are not the GC churn this guards against.
-            // It caught TickUnlock's literal array: 67200 bytes, 112 a tick, in every run since the port.
+            // no PER-TICK allocation: the smallest object is 24 bytes, so one a tick would be 14400 here. [h:AllocationTests-2]
             Assert.That(bytes, Is.LessThan(24 * 600 / 10), "600 fight ticks allocated " + bytes + " bytes: something allocates every few ticks");
         }
 

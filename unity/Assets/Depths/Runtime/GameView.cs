@@ -8,12 +8,7 @@ using Depths.Unity.Hud;
 
 namespace Depths.Unity
 {
-    /// <summary>
-    /// The game, on Depths.Core at its tick rate (Balance.TickHz, 60 Hz): a seeded run of rooms, doors, keys, waves,
-    /// the Warden and the way down (TickOrder.Update), all ported with parity. F1 swaps to the sandbox
-    /// (one room of every enemy), B to a Warden arena. This class only reads input and draws.
-    /// Esc: menu. 1-4: guns. R: a new run (or room).
-    /// </summary>
+    /// <summary>The game, on Depths.Core at its tick rate (Balance.TickHz, 60 Hz): a seeded run of rooms, doors, keys, waves... [h:GameView-1]</summary>
     [RequireComponent(typeof(UIDocument))]
     public sealed class GameView : MonoBehaviour
     {
@@ -182,10 +177,7 @@ namespace Depths.Unity
         float _bannerS;   // seconds the floor banner has left
         int _lastFloor = 1;
 
-        // This frame's seconds, from the wall clock rather than Time.unscaledDeltaTime, so the deltas sum to
-        // real time by construction. Once, with three other Unity editors running, the player measured
-        // 61.65 Hz; the cause is not identified (CPU load alone matches the wall clock), and the check now
-        // logs Unity's own delta sum next to the wall clock so a repeat says which side drifted.
+        // This frame's seconds, from the wall clock rather than Time.unscaledDeltaTime, so the deltas sum to real time... [h:GameView-2]
         double _lastFrameAt = -1;
         float _frameS;
 

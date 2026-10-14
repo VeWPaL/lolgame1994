@@ -3,11 +3,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The two placeholder item effects (C# only, 2026-10-06, until the item overhaul): Hunter's Mark
-    /// marks the room so it takes more damage, and the Brass Compass opens the floor's fake wall when
-    /// carried into its room. The JS has neither, so these are assertions, not parity rows.
-    /// </summary>
+    /// <summary>The two placeholder item effects (C# only, 2026-10-06, until the item overhaul): Hunter's Mark marks the room... [h:PlaceholderItemTests-1]</summary>
     [TestFixture, Category("csharp-only")]
     public sealed class PlaceholderItemTests
     {

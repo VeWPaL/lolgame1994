@@ -1,11 +1,6 @@
 namespace Depths
 {
-    /// <summary>
-    /// The middle enemies (C# only): Splitter, Mortar and Sprayer walk and aim like a shooter (TickOrder.StepRanged)
-    /// and differ in what leaves when the cast ends (<see cref="Release"/>); the Burrower and the egg (Eggs.cs) have
-    /// their own steps. <see cref="Sharp"/> is the 2026-10-13/14 retune; off, the lab-era bodies. Design notes and
-    /// the numbers' history: docs/enemies.md.
-    /// </summary>
+    /// <summary>The middle enemies (C# only): Splitter, Mortar and Sprayer walk and aim like a shooter (TickOrder.StepRanged)... [h:Middle-1]</summary>
     public static class Middle
     {
         public static bool Is(BodyKind k) => k == BodyKind.Splitter || k == BodyKind.Mortar || k == BodyKind.Burrower || k == BodyKind.Sprayer || k == BodyKind.Egg;
@@ -192,11 +187,7 @@ namespace Depths
             e.castT = EggWind;
         }
 
-        /// <summary>
-        /// The Burrower's cycle on <c>move</c>/<c>moveT</c>: walk (hittable), dig (a rooted tell), under (buried: no
-        /// contact, no hits), rise (a tell where it stopped, still buried), then up, striking that spot. Sharp, it
-        /// steers rather than slides: a weaving walk, a dive that gathers speed and curves onto its mark.
-        /// </summary>
+        /// <summary>The Burrower's cycle on move/moveT: walk (hittable), dig (a rooted tell), under (buried: no contact, no... [h:Middle-2]</summary>
         public static void StepBurrower(RunState run, Enemy e, double edx, double edy, double dist, double sm)
         {
             switch (e.move)

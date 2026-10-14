@@ -2,13 +2,7 @@ using System.Collections.Generic;
 
 namespace Depths
 {
-    /// <summary>
-    /// The turret egg's three forms (C# only, owner 2026-10-13). <see cref="EggForm.Fixed"/> sits where it
-    /// spawned (the lab egg). <see cref="EggForm.Orbit"/> circles another body and lets a smaller, slower ring
-    /// go: a turret that comes to you with its escort. <see cref="EggForm.Rail"/> rides a track laid through
-    /// the room, back and forth or round a loop, firing as it goes; it only appears in the Kiln Works, where
-    /// rails belong. Every ring is turned to keep its shells off the egg's own side (<see cref="Eggs.Ring"/>).
-    /// </summary>
+    /// <summary>The turret egg's three forms (C# only, owner 2026-10-13). [h:Eggs-1]</summary>
     public enum EggForm { Fixed, Orbit, Rail }
 
     public static class Eggs
@@ -117,11 +111,7 @@ namespace Depths
         public const int Patterns = 8;
         public static readonly string[] PatternNames = { "loop", "figure eight", "zigzag", "serpentine", "ring", "spiral", "diamond", "clover" };
 
-        /// <summary>
-        /// A track through the room as points (x0, y0, x1, y1, ...), closed (a loop the egg circles) or open (a line
-        /// it rides back and forth), mirrored as asked so each pattern has four faces. Inside the room by
-        /// <see cref="RailInset"/> on every side. Allocates: called once per egg, at spawn.
-        /// </summary>
+        /// <summary>A track through the room as points (x0, y0, x1, y1, ...), closed (a loop the egg circles) or open (a line it... [h:Eggs-2]</summary>
         public static (double[] pts, bool loop) Track(int pattern, bool flipX, bool flipY)
         {
             double l = Balance.RoomLeft + RailInset, r = Balance.RoomRight - RailInset, t = Balance.RoomTop + RailInset, b = Balance.RoomBottom - RailInset;

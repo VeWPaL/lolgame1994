@@ -4,11 +4,7 @@ using UnityEngine;
 
 namespace Depths.Unity.Art
 {
-    /// <summary>
-    /// The JS pixel art (src/10-art.js at js-final), rows and palettes verbatim, and its bakers. Every
-    /// sprite is generated: there are no art assets, in either game. Bakes return <see cref="Img"/>;
-    /// <see cref="Atlas"/> turns them into one texture.
-    /// </summary>
+    /// <summary>The JS pixel art (src/10-art.js at js-final), rows and palettes verbatim, and its bakers. [h:Sprites-1]</summary>
     public static class Sprites
     {
         static string Mirror(string h) { var a = h.ToCharArray(); Array.Reverse(a); return h + new string(a); }
@@ -190,12 +186,7 @@ namespace Depths.Unity.Art
 
         public const string BlastColor = "#ff8a3d", HookColor = "#2a6fc4";
 
-        // ---- the fake wall's tell: jagged fissures, dark with a lit lip, across a horizontal wall (rotated for
-        // a vertical one). The JS drew three 1px lines at 24%, readable only scaled up in a browser: at 1:1 it
-        // vanished and the secret room read as missing (playtest 2026-10-13) ----
-        // The fake wall's tell: one jagged split down the whole band, with branches and a dark scorch around it,
-        // so it reads at a glance against the brick (the JS hairlines were 3 px at 24% and vanished at 1:1).
-        // '#' the split, '+' its lit lip, ':' the scorch.
+        // ---- the fake wall's tell: jagged fissures, dark with a lit lip, across a horizontal wall (rotated for a... [h:Sprites-2]
         public static readonly string[] CrackRows =
         {
             "..........:::.....#.....:::.............",

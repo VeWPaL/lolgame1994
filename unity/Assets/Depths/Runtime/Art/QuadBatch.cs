@@ -4,11 +4,7 @@ using UnityEngine.UIElements;
 
 namespace Depths.Unity.Art
 {
-    /// <summary>
-    /// Sprite quads for a UI Toolkit element, collected per texture and written as one temp mesh per
-    /// run of the same texture, in draw order. Buffers are reused: drawing a frame allocates nothing
-    /// on the managed heap. Call <see cref="Flush"/> before any Painter2D stroke so the order holds.
-    /// </summary>
+    /// <summary>Sprite quads for a UI Toolkit element, collected per texture and written as one temp mesh per run of the same... [h:QuadBatch-1]</summary>
     public sealed class QuadBatch
     {
         Vertex[] _v = new Vertex[4 * 1024];

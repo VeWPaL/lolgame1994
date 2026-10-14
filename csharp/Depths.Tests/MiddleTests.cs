@@ -4,11 +4,7 @@ using NUnit.Framework;
 
 namespace Depths.Tests
 {
-    /// <summary>
-    /// The middle enemies (C# only, 2026-10-12; Middle.cs). Each is checked against what it is FOR:
-    /// a threat a player can read and beat by moving. Untuned (the JS) none of them reaches a run; with
-    /// the playtest tuning the run's area groups bring them (Pools, PoolTests).
-    /// </summary>
+    /// <summary>The middle enemies (C# only, 2026-10-12; Middle.cs). [h:MiddleTests-1]</summary>
     [TestFixture, Category("csharp-only"), TunedOn(true)]
     public sealed class MiddleTests
     {

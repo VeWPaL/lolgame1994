@@ -16,10 +16,7 @@ namespace Depths
         public double PelletAngle, PelletSpeedVar;
     }
 
-    /// <summary>
-    /// The four guns and the act of firing one, src/40-combat.js fireWeapon. Values read from the
-    /// running game 2026-10-06, held in seconds and px/s; at 210 Hz they convert back to its numbers.
-    /// </summary>
+    /// <summary>The four guns and the act of firing one, src/40-combat.js fireWeapon. [h:Weapons-1]</summary>
     public static class Weapons
     {
         // Cooldowns as the JS wrote them: frames at its old 60 fps (38 x SPEEDUP ticks is 38/60 s), or sec(1.1).
@@ -40,12 +37,7 @@ namespace Depths
         public static int MuzzleTicks => Balance.Sec(0.1);
         public const int BeamIndex = 2;   // All[2], the Arcane Beam
 
-        /// <summary>
-        /// Fires the held weapon at a world point. Strength is added once per SHOT and split across the
-        /// pellets; precision narrows a weapon whose cone is a stat. Both are parameters until the stats
-        /// system is ported (base strength is the character's 3). Spread and buckshot draw from the
-        /// JITTER stream, never the run stream, so firing cannot move the dungeon.
-        /// </summary>
+        /// <summary>Fires the held weapon at a world point. [h:Weapons-2]</summary>
         public static void Fire(RunState run, double aimX, double aimY, double strength = 3, double precision = 0)
         {
             var p = run.player;
@@ -81,10 +73,7 @@ namespace Depths
             p.shootSlow = System.Math.Min(ShootSlowMax, p.shootSlow + ShootSlowMain);
         }
 
-        /// <summary>
-        /// fireAlt for the BLAST: a slow bolt to the cursor (clamped to the room), on its own cooldown.
-        /// The hook (a secret-room pickup) is not ported and throws.
-        /// </summary>
+        /// <summary>fireAlt for the BLAST: a slow bolt to the cursor (clamped to the room), on its own cooldown. [h:Weapons-3]</summary>
         public static void FireAlt(RunState run, double aimX, double aimY)
         {
             var p = run.player;

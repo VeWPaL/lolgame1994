@@ -3,10 +3,7 @@ using UnityEngine.InputSystem;
 
 namespace Depths.Unity
 {
-    /// <summary>
-    /// The player's key binds: a layout preset plus per-slot overrides, saved as the Input System's
-    /// own override JSON so a rebind survives a restart and a new build reads it unchanged.
-    /// </summary>
+    /// <summary>The player's key binds: a layout preset plus per-slot overrides, saved as the Input System's own override... [h:Bindings-1]</summary>
     public sealed class Bindings
     {
         public const string OverridesKey = "depths.bindings";
@@ -25,10 +22,7 @@ namespace Depths.Unity
 
         public InputActionMap Gameplay => _asset.FindActionMap("Gameplay", true);
 
-        /// <summary>
-        /// The binding a slot names: "Move/up" is the "up" part of the FIRST composite (WASD, not the
-        /// arrows, which stay fixed); "Blink" is the first keyboard binding of the action.
-        /// </summary>
+        /// <summary>The binding a slot names: "Move/up" is the "up" part of the FIRST composite (WASD, not the arrows, which stay... [h:Bindings-2]</summary>
         public static int FindIndex(InputAction action, string slot)
         {
             int slash = slot.IndexOf('/');

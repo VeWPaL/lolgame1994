@@ -5,11 +5,7 @@ using UnityEngine.UIElements;
 
 namespace Depths.Unity.Hud
 {
-    /// <summary>
-    /// The ledger's hand: a book face read from the OS at runtime (no font files in the repo). Georgia,
-    /// then the other Windows book faces; if none can be loaded the label keeps Unity's default, so a
-    /// missing font costs the look, never the text.
-    /// </summary>
+    /// <summary>The ledger's hand: a book face read from the OS at runtime (no font files in the repo). [h:LedgerFonts-1]</summary>
     public static class LedgerFonts
     {
         static readonly string[] Families = { "Georgia", "Palatino Linotype", "Book Antiqua", "Constantia", "Cambria", "Times New Roman" };
