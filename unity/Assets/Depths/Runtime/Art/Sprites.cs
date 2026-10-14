@@ -190,6 +190,47 @@ namespace Depths.Unity.Art
 
         public const string BlastColor = "#ff8a3d", HookColor = "#2a6fc4";
 
+        // ---- the fake wall's tell: jagged fissures, dark with a lit lip, across a horizontal wall (rotated for
+        // a vertical one). The JS drew three 1px lines at 24%, readable only scaled up in a browser: at 1:1 it
+        // vanished and the secret room read as missing (playtest 2026-10-13) ----
+        // The fake wall's tell: one jagged split down the whole band, with branches and a dark scorch around it,
+        // so it reads at a glance against the brick (the JS hairlines were 3 px at 24% and vanished at 1:1).
+        // '#' the split, '+' its lit lip, ':' the scorch.
+        public static readonly string[] CrackRows =
+        {
+            "..........:::.....#.....:::.............",
+            "........:::::.....#+...:::::............",
+            ".......::::::....#+...::::::::..........",
+            "......:::::::....#+..:::::#::::.........",
+            ".....::::::::...##+.::::::#+::::........",
+            "....::::##::::..#+..:::::#+::::::.......",
+            "...:::::::##+::#+..:::::#+:::::::::.....",
+            "...::::::::#####+:::::##+::::::::::.....",
+            "...:::::::::::#+#####+:::::::::::::.....",
+            "....::::::::::#+::::::::##:::::::.......",
+            ".....:::::::::#+::::::::::##+::::.......",
+            "......::::::::##+:::::::::::#+::........",
+            ".......::::::::#+::::::::::::#+.........",
+            "........::::::::#+:::::::::.............",
+            ".........:::::::#+:::::.................",
+            "................#.......................",
+        };
+
+        public static Img Crack(bool vertical, Color32 dark, Color32 lit, Color32 scorch)
+        {
+            int w = CrackRows[0].Length, h = CrackRows.Length;
+            var g = vertical ? new Img(h, w) : new Img(w, h);
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    char c = CrackRows[y][x];
+                    if (c == '.') continue;
+                    int px = vertical ? y : x, py = vertical ? x : y;
+                    g.Fill(px, py, 1, 1, c == '#' ? dark : c == '+' ? lit : scorch);
+                }
+            return g;
+        }
+
         // ---- minimap glyphs ----
         public static readonly Dictionary<string, string[]> MiniGlyph = new Dictionary<string, string[]>
         {

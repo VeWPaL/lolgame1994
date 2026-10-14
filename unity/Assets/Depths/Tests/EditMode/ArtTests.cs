@@ -46,6 +46,21 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
+        public void TheSecretCrackSpansTheWallBandAndReadsAgainstIt()
+        {
+            // the owner could not find the fake wall: the tell must fill the band, not hide as a few hairlines
+            var h = Sprites.Crack(false, Hex.C("#000000"), Hex.C("#ffffff"), Hex.C("#000000", 0.3f));
+            var v = Sprites.Crack(true, Hex.C("#000000"), Hex.C("#ffffff"), Hex.C("#000000", 0.3f));
+            Assert.That(h.H, Is.EqualTo(Materials.WallThick), "the horizontal crack is the wall's thickness");
+            Assert.That(v.W, Is.EqualTo(Materials.WallThick), "the vertical crack is the wall's thickness");
+            Assert.That(h.W, Is.GreaterThanOrEqualTo(2 * Materials.WallThick), "wide enough to see across the room");
+            int marked = 0, split = 0;
+            foreach (var c in h.Px) { if (c.a > 0) marked++; if (c.a == 255) split++; }
+            Assert.That(marked, Is.GreaterThan(h.Px.Length / 3), "a third of the patch is marked");
+            Assert.That(split, Is.GreaterThanOrEqualTo(2 * Materials.WallThick), "the split itself runs top to bottom");
+        }
+
+        [Test]
         public void ThePlayerIsMirroredLeftToRight()
         {
             // the rows are written as a left half and mirrored, so the bake is symmetric (legs aside)

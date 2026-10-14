@@ -30,11 +30,16 @@ namespace Depths
                 return e;
             }
             e.cdMin /= rate; e.cdVar /= rate;
+            if (kind == BodyKind.Sprayer && Middle.Sharp) { e.cdMin *= Middle.SprayCadence; e.cdVar *= Middle.SprayCadence; }
             e.shootCd = e.cdMin + run.rng.Jitter() * e.cdVar;
             if (kind == BodyKind.Burrower || kind == BodyKind.Egg) return e;   // no standoff band, so no trait: and no run draw for one
             ApplyTrait(e, trait ?? RollTrait(run.rng, run.player.weaponIdx));
             return e;
         }
+
+        /// <summary>A kind with a standoff band takes a trait (the JS's shooter and gunner; the middle's walking shooters).</summary>
+        public static bool TakesTrait(BodyKind k) =>
+            k == BodyKind.Shooter || k == BodyKind.Gunner || k == BodyKind.Splitter || k == BodyKind.Mortar || k == BodyKind.Sprayer;
 
         /// <summary>spawnEnemy with no position: a random point inside the spawn margin (x then y, run stream).</summary>
         public static Enemy BodyAnywhere(RunState run, BodyKind kind)

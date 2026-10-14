@@ -56,6 +56,10 @@ namespace Depths
 
         public int floor;
         public int ticks;
+        /// <summary>This run's kinds per area (Pools.Roll), or null: the JS's fixed mix.</summary>
+        public BodyKind[][]? pools;
+        /// <summary>The latest <see cref="Interp.Snap"/>'s stamp: drawing only, 0 until the first.</summary>
+        public int snap;
         public int floorTicks;
         public int hits;
 
@@ -107,6 +111,7 @@ namespace Depths
             rootSeed = root;
             dungeon = Dungeon.FromSeed(rng);
             planner = new WavePlanner(rng);
+            pools = Balance.Tuned && Balance.TunePools ? Pools.Roll(root) : null;
             curX = Map.Start; curY = Map.Start;
             int regen = Balance.JsReference ? 0 : Balance.RegenHp;   // the last heart regenerates; the JS has none
             player = new Player { x = Balance.MidX, y = Balance.MidY, lagX = Balance.MidX, lagY = Balance.MidY,

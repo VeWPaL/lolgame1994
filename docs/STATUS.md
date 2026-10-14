@@ -3,7 +3,9 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-13 (hud-c: the ledger HUD and the book menus, see the Unity bullet; before that, 2026-10-12: Unity lane re-run at 981f973 with no code changes: `.\verify.ps1 -Unity` green, see Known issues; before that, 2026-10-07: Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
+_Last updated: 2026-10-13, late (the second notes batch: frame rate apart from the tick, the secret wall's crack, eased
+dashes, -30% player damage, momentum, the middle five retuned and in runs through per-run area pools; see "Notes batch 2"
+under Owner decisions; before that, hud-c: the ledger HUD and the book menus, see the Unity bullet; before that, 2026-10-12: Unity lane re-run at 981f973 with no code changes: `.\verify.ps1 -Unity` green, see Known issues; before that, 2026-10-07: Unity run on the owner's machine: bootstrap, 24 EditMode tests, build, screenshots; 60 Hz and the heart row verified in the player; before that: the difficulty curve, `Curve.cs`, built but off by default pending the owner; before that: C# switched to 60 Hz with per-second units; before that: the won-fight regen refill, the C# playtest bot, Brunch A+, `js-final`). The previous
 session's write-up is `docs/report-2026-10-06.html` (its numbers are from the end of that session: 388 C# tests, before 60 Hz and the curve)._
 
 ## Where things are
@@ -69,9 +71,11 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 83/83. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 88/88. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|lab|labrow|secret|rail`: the player at 1280x720 with
+  (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
+  checks the blast opens it and the hook is behind; `rail` shows egg track n % 8)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
   (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
   every heart on the ledger page (`HudLayout.HeartTopLeft`) against the atlas heart colours in `HeartRow`.
@@ -215,23 +219,70 @@ it from another checkout or the first command spends minutes importing.
   healing and are 42% now (the regen heart's clear refill carries the rest). Owner to decide: keep it,
   or keep "one pickup per room, last kill" and raise the chance (85-90%) or weight the split toward
   whole hearts, which keeps the anti-pile-up rule without a third less healing.
-- **Middle enemies (owner's idea 2026-10-12; all five built 2026-10-12, LAB ONLY).** Keep the gunner
-  for floors 11+ and give floors 3-10 enemies a skilled player can read and dodge (the gunner's 4 HP
-  shell kills average and skilled players about equally there). `csharp/Depths.Core/Middle.cs`, C#
-  only; spawn them in the Unity lab (F2, then F4 to arm, F7/F8 to drop). NOT in the spawn pool
-  (`MiddleTests.NoneOfThemSpawnsInARun` sweeps 20 seeds x 12 floors). Dials are named in `Middle.cs`:
-  - Splitter: slow pink shell (2 HP) that bursts into 3 shards (1 HP each, +-0.42 rad) 170 px out.
-  - Mortar: lobs at where you stand; the mark fills for the whole 1 s flight; 2 HP inside 34 px.
-  - Burrower: walks 1.6 s, digs (0.45 s tell), runs under to the spot you stood on when it dug
-    (untouchable: no shell, blast, field, contact or shove), a 0.6 s crack tell, then up: 2 HP within 30 px.
-  - Sprayer: 1 s wind-up (the shooter's is 0.5), then a cone of 5 weak shots (1 HP each, +-0.35 rad).
-  - Turret egg: never walks and the hook cannot drag it (`Middle.Anchored`); a 0.6 s tell, then a
-    ring of 8 slow shots (1 HP) every ~2-2.5 s.
+- **Middle enemies (owner's idea 2026-10-12; built 2026-10-12; IN RUNS since 2026-10-13 through the pools).**
+  Keep the gunner for floors 11+ and give floors 3-10 enemies a skilled player can read and dodge.
+  `csharp/Depths.Core/Middle.cs` and `Eggs.cs`, C# only; all forms spawn in the Unity lab (F2, F4 to arm,
+  F7/F8 to drop; 12 specimens incl. the orbiting and the rail egg). Untuned they never spawn
+  (`MiddleTests.UntunedNoneOfThemSpawnsInARun`). Retuned 2026-10-13 behind `Balance.TuneMiddle` (`Middle.Sharp`;
+  off gives the lab-era numbers in brackets):
+  - Splitter: slow pink shell (2 HP), half the shooter's aim jitter, bursts 120 px out (170) into 3 shards
+    (1 HP each, +-0.30 rad (0.42)).
+  - Mortar: leads you like the Lunger (your velocity x the flight, trusted by 1 - swerve), the mark fills for the
+    whole 1 s flight; 2 HP inside 56 px (34). Standing still is under the mark; a turn beats it.
+  - Burrower: walks 1.6 s, digs (0.45 s tell), runs under at 430 px/s (300) for up to 1.8 s (1.2), re-aiming each tick
+    at the intercept (where your velocity takes you by the time it is there and has risen), a 0.6 s crack tell, then
+    up: 2 HP within 30 px. A straight runner meets it; a turn on the tell escapes it.
+  - Sprayer: 0.85 s wind-up (1.0), cadence x0.82, aimed again as it fires (half jitter), a cone of 5 weak shots
+    (1 HP each, +-0.26 rad (0.35)).
+  - Turret egg: a 0.6 s tell, then a ring every ~2-2.5 s; the hook cannot drag it. Forms (`Eggs.Dress`, pooled waves):
+    fixed (8 shells); orbiting another body of its wave (45% when one exists; 5 shells at 0.8x speed); riding a rail,
+    Kiln Works only (60% there; 6 shells, 70 px/s, eight tracks: loop, figure eight, zigzag, serpentine, ring, spiral,
+    diamond, clover, each mirrored four ways, 80 px off the walls so the doors stay clear). A riding egg is placed by
+    its ride: bodies do not shove it nor it them.
+  - Their own side: the Sprayer's cone sweeps to a centre whose 5 lines miss every ally (else holds the blocked
+    shells); the egg's ring turns to the rotation crossing the fewest allies and holds what still would. (Hostile
+    shells only ever hurt Lungers, as in the JS.)
   A buried Burrower blocks no other body's shot and is never the bot's or the demo's target; the
   Burrower's walk and dive speed up with depth like every body. A cold critic pass (2026-10-13) found
   the lunge clash still shoving it underground; fixed, with a test that fails on the old code.
   Unplaytested: the HP, cooldowns and damage are first guesses. Next: the owner plays them in the lab;
   then a bot A/B with them in the middle pool (`SpawnPlan` mix) against the gunner, for the hazard table.
+- **Notes batch 2 (owner 2026-10-13, after playing the build): all C# only, each its own switch, on in the game
+  and the bot (`--untune ease,damage,momentum,pools,middle`).**
+  - Frame rate apart from the tick: the sim stays 60 Hz; the screen draws between the last two ticks (`Interp.cs`,
+    `TickClock.Alpha`), so it is smooth at any refresh. Options > Gameplay > Frame rate: VSync (default) / 30 / 60 /
+    120 / 144 / 165 / 240 / Uncapped. Cause of the roughness: the player ran at ~275 fps with VSync on this machine, so
+    each tick was shown for 4 or 5 frames unevenly.
+  - Secret wall: the JS tell (3 hairlines at 24%) vanished at 1:1; now a scorched split filling the wall band
+    (`Sprites.Crack`). Generation, blast and hook room were always working (`secret` shot checks all three).
+  - `TuneEase`: the Lunger's lunge keeps its ticks and reach (so its aim holds) on a smoothstep speed curve
+    (in 20%, out 25%); its dodge covers the same ground in ~0.13 s at up to 1.15x lunge speed (in 25%, out 40%);
+    shooters and the middle walkers glide into and out of their walk (~0.1 s).
+  - `TuneDamage`: every player hit (shots, blast, hook field) x0.7 (`Enemy.Vuln`). A test setting, per the owner.
+    It makes the Beam's Brunch rule 5 bolts, not 2-3 (`TunedTests` measures the rule with it off).
+  - `TuneMomentum`: ~5 s of running under pressure fills the meter (was 0.6 s), ~3 s still drains it (0.8 s); full
+    adds 0.40 to the speed bonus (0.18: walking 1.25x -> 1.65x) and doubles the acceleration bonus; only momentum
+    may pass the stat's 0.44 cap. An amber afterimage trail from 20% of the meter (`WorldView.TrailFor`).
+  - `TunePools` (`Pools.cs`): each run rolls 4 kinds per area from the nine (own stream from the seed; at least one
+    Lunger or Burrower and one Shooter/Splitter/Mortar/Sprayer; at most 2 shared with the area before). The next
+    area's newcomers spawn 2 floors early at weight 0.12, then 0.25 on the last floor (a group kind is 1). A Gunner
+    or a pack only where the floor's groups hold one; at most 2 eggs a room; no shooter on the doorstep while a
+    walker can take its place. Depth scaling is unchanged for every kind.
+  - Cold critic pass: the Mortar's first lead used the Lunger's belief, which keeps its last heading after a stop,
+    so a player who had once moved could stand still forever (marked 252 px off); now the velocity. Also fixed: the
+    retune put behind `TuneMiddle`, orbit eggs against a wall shoving their host, riding eggs frozen through the
+    notice delay, the momentum cap lifting the speed stat's, a Brunch-only "walker" group, Eggs out of the rate
+    guard, the blink ghost not interpolated, the frame setting not applied when Play starts in the Game scene.
+    Each with a test that fails on the old code.
+  - Bot A/B (seeds 101-200 x 3 profiles, 60 min; "prev" = the first batch's tuning, all of this batch off):
+    prev -> now: deaths 155 -> 153 (novice 93 -> 81, average 37 -> 38, skilled 25 -> 34), median floor 17 -> 15,
+    damage a floor 17.4 -> 19.7 HP, kills a minute 28.7 -> 19.8, boss fight 46 -> 64 s. One part off at a time
+    (deaths, all profiles): no damage cut 146 (kills/min 22.7, boss 47 s), no pools 131 (skilled 14), no momentum
+    162, no ease 145, **no middle retune 69** (novice 50, average 11, skilled 8). So the -30% costs ~7 deaths and
+    makes every fight a third longer; the pools with the lab-era five are EASIER than the JS mix; the sharpened
+    five (the Mortar's and Burrower's leads above all, to be confirmed per kind) are what kills, and mostly the
+    better players, which is the direction asked for but likely too far; momentum saves ~9 deaths. The bot's
+    dodging is a rough stand-in for a player: read the per-kind numbers off the owner's play before tuning.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).

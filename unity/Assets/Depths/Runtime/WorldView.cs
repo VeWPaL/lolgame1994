@@ -24,6 +24,9 @@ namespace Depths.Unity
 
         /// <summary>Where the player aims, in world units (the wand points at it).</summary>
         public Vector2 Aim { get; set; }
+        /// <summary>The clock's leftover fraction of a tick: bodies, shells and the player draw that far from the last
+        /// tick's place to this one's (<see cref="Interp"/>). 1 draws the latest tick.</summary>
+        public float Alpha { get; set; } = 1;
         /// <summary>A cosmetic clock at 60 a second that stops with the game (the JS's frameCount / SPEEDUP).</summary>
         public float Fc { get; private set; }
         public int LastDrawCalls => _q.DrawCalls;
@@ -117,6 +120,7 @@ namespace Depths.Unity
                 Glow(f.X, f.Y, 14, c, 0.35f * f.Life / f.Max);
             }
 
+            DrawRides(run);
             DrawLungeLines(run);
             DrawPickups(run);
             DrawBodies(run);
@@ -195,14 +199,11 @@ namespace Depths.Unity
                 }
                 Rect(x, y, w, h, QuadBatch.Tint(Gold, Mathf.Clamp01(0.20f + 0.14f * breathe - prog * 0.3f)));
             }
-            if (room.Secret.HasValue)   // a fake wall: three hairline cracks are the only tell
+            if (room.Secret.HasValue)   // a fake wall: a crack in the stone is the only tell, and the blast opens it
             {
                 var s = room.Secret.Value;
-                var (px, py) = Rooms.DoorPoint(s);
-                var crack = Hex.Rgba(164, 172, 188, 0.24f);
-                for (int i = 0; i < 3; i++)
-                    if (s == Dir.N || s == Dir.S) Rect(px - 8 + i * 6, py - (s == Dir.N ? 8 : -4), 1, 6, crack);
-                    else Rect(px - (s == Dir.W ? 8 : -4), py - 8 + i * 6, 6, 1, crack);
+                var (cx, cy) = LockPoint(s);   // the middle of the wall band on that side
+                Spr(A[s == Dir.N || s == Dir.S ? SpriteSet.CrackH : SpriteSet.CrackV], cx, cy);
             }
             foreach (var d in Sides)   // padlocks, tinted to their key; the shackle lifts as the lock throws
             {
@@ -258,11 +259,12 @@ namespace Depths.Unity
                 bool wind = e.lungeState == "wind";
                 float grow = wind ? 1 - e.lungeT / (float)Balance.LungeWindup : 1;
                 double len = e.lungeLen > 0 ? e.lungeLen : Balance.LungeFloor;
-                double ex = e.x, ey = e.y, tx = e.x + e.lungeDx * len, ty = e.y + e.lungeDy * len;
+                Interp.At(run, e, Alpha, out var bx, out var by);
+                double ex = bx, ey = by, tx = bx + e.lungeDx * len, ty = by + e.lungeDy * len;
                 if (!wind)
                 {
                     if (!Fx.LungeFrom(e, out float fx, out float fy)) continue;
-                    ex = fx; ey = fy; tx = e.x; ty = e.y;
+                    ex = fx; ey = fy; tx = bx; ty = by;
                 }
                 Dashes(ex, ey, tx, ty, 1 + 2 * grow, QuadBatch.Tint(col, 0.20f + 0.55f * grow));
                 Ring(tx, ty, 5 + 3 * grow, 1 + 2 * grow, QuadBatch.Tint(col, 0.30f + 0.50f * grow));
@@ -333,26 +335,66 @@ namespace Depths.Unity
 
         /// <summary>The Burrower when it is not a body you can hit: sinking, a mound running under the
         /// floor, then the crack at its mark that is the whole warning.</summary>
-        bool DrawBurrow(Enemy e, int frame)
+        bool DrawBurrow(Enemy e, int frame, double ex, double ey)
         {
             if (!e.buried) return false;   // walking or digging it is a body you can hit: drawn as one (DrawBodies)
             if (e.move == "rise")
             {
                 float p = 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowRise), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * 0.5f);
-                Dot(e.x, e.y, (float)Middle.BurrowHitR, (float)Middle.BurrowHitR * 0.5f, QuadBatch.Tint(Dirt, 0.35f + 0.4f * p));
-                Ring(e.x, e.y, (float)Middle.BurrowHitR, 2, QuadBatch.Tint(Crack, 0.35f + 0.5f * p * pulse + 0.15f));
+                Dot(ex, ey, (float)Middle.BurrowHitR, (float)Middle.BurrowHitR * 0.5f, QuadBatch.Tint(Dirt, 0.35f + 0.4f * p));
+                Ring(ex, ey, (float)Middle.BurrowHitR, 2, QuadBatch.Tint(Crack, 0.35f + 0.5f * p * pulse + 0.15f));
                 for (int i = 0; i < 6; i++)   // cracks reach out further as it comes
                 {
                     float a = i * 1.047f + 0.3f, len = 6 + 18 * p;
-                    for (float s = 4; s < len; s += 2) Rect(e.x + Mathf.Cos(a) * s - 1, e.y + Mathf.Sin(a) * s * 0.55f - 1, 2, 2, QuadBatch.Tint(Crack, 0.5f + 0.4f * p));
+                    for (float s = 4; s < len; s += 2) Rect(ex + Mathf.Cos(a) * s - 1, ey + Mathf.Sin(a) * s * 0.55f - 1, 2, 2, QuadBatch.Tint(Crack, 0.5f + 0.4f * p));
                 }
                 return true;
             }
             // under: a low mound of earth heaving along the floor
-            Dot(e.x, e.y + 4, 13, 6, QuadBatch.Tint(Dirt, 0.85f));
+            Dot(ex, ey + 4, 13, 6, QuadBatch.Tint(Dirt, 0.85f));
             for (int i = 0; i < 4; i++)
-                Rect(e.x - 8 + i * 5, e.y + 1 + Mathf.Sin(Fc * 0.4f + i) * 2, 3, 2, QuadBatch.Tint(DirtLit, 0.9f));
+                Rect(ex - 8 + i * 5, ey + 1 + Mathf.Sin(Fc * 0.4f + i) * 2, 3, 2, QuadBatch.Tint(DirtLit, 0.9f));
             return true;
+        }
+
+        // ---- the eggs' rides: a rail's track under everything, an orbit's path faintly round its host ----
+        static readonly Color32 RailIron = Hex.C("#c9b48e"), RailSleeper = Hex.C("#6e5539"), RailShade = Hex.C("#000000", 0.35f), OrbitPath = Hex.C("#b6ff5c");
+
+        void DrawRides(RunState run)
+        {
+            var white = SpriteSet.WhiteTexel;
+            foreach (var e in run.enemies)
+            {
+                if (e.kind != BodyKind.Egg) continue;
+                if (e.eggForm == EggForm.Rail && e.rail != null)
+                {
+                    var pts = e.rail;
+                    int n = pts.Length / 2, segs = e.railLoop ? n : n - 1;
+                    float carry = 0;   // sleepers every 14 px along the whole track, not restarting at each joint
+                    for (int i = 0; i < segs; i++)
+                    {
+                        int j = (i + 1) % n;
+                        float x0 = (float)pts[2 * i], y0 = (float)pts[2 * i + 1], dx = (float)pts[2 * j] - x0, dy = (float)pts[2 * j + 1] - y0;
+                        float len = Mathf.Sqrt(dx * dx + dy * dy), ang = Mathf.Atan2(dy, dx);
+                        if (len < 0.01f) continue;
+                        var at = ToPanel(x0, y0);
+                        _q.Rotated(A.Texture, white, at, 0, -8, len + 1, 16, ang, RailShade);   // the bed, so the track reads on any floor
+                        for (float s = 14 - carry; s < len; s += 14) _q.Rotated(A.Texture, white, at, s - 2, -8, 4, 16, ang, RailSleeper);
+                        carry = (carry + len) % 14;
+                        _q.Rotated(A.Texture, white, at, 0, -5, len + 1, 2, ang, RailIron);
+                        _q.Rotated(A.Texture, white, at, 0, 3, len + 1, 2, ang, RailIron);
+                    }
+                }
+                else if (e.eggForm == EggForm.Orbit && e.eggHost != null)
+                {
+                    Interp.At(run, e.eggHost, Alpha, out var hx, out var hy);
+                    for (int i = 0; i < 24; i += 2)   // a dotted circle: where the egg will be
+                    {
+                        float a = i * Mathf.PI * 2 / 24 + Fc * 0.01f;
+                        Rect(hx + Mathf.Cos(a) * e.eggR - 1, hy + Mathf.Sin(a) * e.eggR - 1, 2, 2, QuadBatch.Tint(OrbitPath, 0.22f));
+                    }
+                }
+            }
         }
 
         void DrawBodies(RunState run)
@@ -364,31 +406,32 @@ namespace Depths.Unity
                 bool boss = e.kind == BodyKind.Boss;
                 float bob = fr == 1 || fr == 3 ? -2 : 0;
                 float hop = run.readyT > 0 ? -Mathf.Abs(Mathf.Sin(readyProg * Mathf.PI * 2)) * 6 : 0;
-                if (e.kind == BodyKind.Burrower && DrawBurrow(e, frame)) continue;
+                Interp.At(run, e, Alpha, out var bx, out var by);   // between the last two ticks: smooth at any frame rate
+                if (e.kind == BodyKind.Burrower && DrawBurrow(e, frame, bx, by)) continue;
                 // a digging Burrower sinks and fades into the floor, still hittable, so still flashing
                 float sink = e.kind == BodyKind.Burrower && e.move == "dig" ? 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig) : 0;
-                Dot(e.x, e.y + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
-                double ey = e.y - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop + sink * 8;
-                Spr(SpriteSet.BodyR(e.kind, frame, false), e.x, ey, 1 - 0.75f * sink);
+                Dot(bx, by + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
+                double ey = by - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop + sink * 8;
+                Spr(SpriteSet.BodyR(e.kind, frame, false), bx, ey, 1 - 0.75f * sink);
                 if (e.hitFlash > 0)   // a translucent silhouette over the body, so sustained fire still shows a creature
                 {
                     float k = 0.38f + (0.62f - 0.38f) * Mathf.Min(1, (float)e.hitFlash / Balance.HitFlash);
-                    Spr(SpriteSet.BodyR(e.kind, frame, true), e.x, ey, k);
+                    Spr(SpriteSet.BodyR(e.kind, frame, true), bx, ey, k);
                 }
                 if (sink > 0)
                     for (int i = 0; i < 5; i++)   // dust thrown up as it digs
                     {
                         float a = Fc * 0.2f + i * 1.26f, r = (float)e.r + 2 + 4 * sink;
-                        Rect(e.x + Mathf.Cos(a) * r - 1, e.y + 8 + Mathf.Sin(a) * r * 0.4f - 1, 3, 3, QuadBatch.Tint(DirtLit, 0.8f));
+                        Rect(bx + Mathf.Cos(a) * r - 1, by + 8 + Mathf.Sin(a) * r * 0.4f - 1, 3, 3, QuadBatch.Tint(DirtLit, 0.8f));
                     }
                 if (!boss)
                 {
-                    float barY = (float)(e.y - BarHeight(e.kind)), frac = (float)Math.Max(0, Math.Min(1, e.hp / Math.Max(1e-9, e.maxHp)));
-                    Rect(e.x - e.r, barY, e.r * 2, 4, BarBack);
-                    Rect(e.x - e.r, barY, e.r * 2 * frac, 4, Green);
+                    float barY = (float)(by - BarHeight(e.kind)), frac = (float)Math.Max(0, Math.Min(1, e.hp / Math.Max(1e-9, e.maxHp)));
+                    Rect(bx - e.r, barY, e.r * 2, 4, BarBack);
+                    Rect(bx - e.r, barY, e.r * 2 * frac, 4, Green);
                 }
-                if (e.stun > 0) DrawStunStars(e.x, ey - e.r - 6, (float)e.stun);
-                if (e.castT > 0) DrawCastFlash(e.x, e.y, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
+                if (e.stun > 0) DrawStunStars(bx, ey - e.r - 6, (float)e.stun);
+                if (e.castT > 0) DrawCastFlash(bx, by, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
             }
         }
 
@@ -424,16 +467,17 @@ namespace Depths.Unity
             foreach (var p in run.projectiles)
             {
                 var col = string.IsNullOrEmpty(p.color) ? HostileDefault : Hex.Of(p.color);
+                Interp.At(run, p, Alpha, out var sx, out var sy);
                 float alpha = 1;
                 if (p.lob)   // the mortar: the mark it will land on fills as it comes, the shell arcs over
                 {
                     float t = p.flight / (float)Math.Max(1, p.flightMax);
                     Dot(p.tx, p.ty, (float)p.blastR, (float)p.blastR * 0.55f, QuadBatch.Tint(col, 0.10f + 0.22f * t));
                     Ring(p.tx, p.ty, (float)p.blastR * (1.25f - 0.25f * t), 2, QuadBatch.Tint(col, 0.45f + 0.5f * t));
-                    Dot(p.x, p.y, (float)p.r, (float)p.r * 0.45f, Shadow);
-                    double arc = p.y - Mathf.Sin(t * Mathf.PI) * 70;
-                    Glow(p.x, arc, (float)p.r * 3, col, 0.7f);
-                    Dot(p.x, arc, (float)p.r, (float)p.r, col);
+                    Dot(sx, sy, (float)p.r, (float)p.r * 0.45f, Shadow);
+                    double arc = sy - Mathf.Sin(t * Mathf.PI) * 70;
+                    Glow(sx, arc, (float)p.r * 3, col, 0.7f);
+                    Dot(sx, arc, (float)p.r, (float)p.r, col);
                     continue;
                 }
                 if (p.alt)
@@ -446,22 +490,22 @@ namespace Depths.Unity
                 {
                     // the Bolt shrinks and dims along its falloff: the gun saying what the hit is worth
                     bool shrink = !p.alt && p.color == bolt && p.fNear.HasValue;
-                    float st = shrink ? Mathf.Clamp01((float)((Math.Sqrt((p.x - p.ox) * (p.x - p.ox) + (p.y - p.oy) * (p.y - p.oy)) - p.fNear.Value) / Math.Max(1, p.fFar - p.fNear.Value))) : 0;
+                    float st = shrink ? Mathf.Clamp01((float)((Math.Sqrt((sx - p.ox) * (sx - p.ox) + (sy - p.oy) * (sy - p.oy)) - p.fNear.Value) / Math.Max(1, p.fFar - p.fNear.Value))) : 0;
                     float dr = shrink ? BoltDrawR * (BoltSizeMax + (BoltSizeMin - BoltSizeMax) * st) : (float)p.r;
                     float fade = (shrink ? 1 - (1 - BoltFadeMin) * st : 1) * alpha;
                     float R = Mathf.Max(2, Mathf.Round(dr * 3.2f));
-                    Glow(p.x, p.y, R, col, fade);
-                    Dot(p.x, p.y, dr, dr, QuadBatch.Tint(col, fade));
-                    if (shrink) Ring(p.x, p.y, dr + 2.5f, 1, QuadBatch.Tint(col, 0.5f * fade));
+                    Glow(sx, sy, R, col, fade);
+                    Dot(sx, sy, dr, dr, QuadBatch.Tint(col, fade));
+                    if (shrink) Ring(sx, sy, dr + 2.5f, 1, QuadBatch.Tint(col, 0.5f * fade));
                 }
                 else
                 {
                     if (p.heavy || p.splitAt > 0)   // the gunner's shell (and the splitter's): a glow and a hot core, readable without the colour
                     {
-                        Glow(p.x, p.y, Mathf.Round((float)p.r * 4), col, 0.8f);
-                        Dot(p.x, p.y, (float)p.r * 0.55f, (float)p.r * 0.55f, Hex.Of("#fff4e0"));
+                        Glow(sx, sy, Mathf.Round((float)p.r * 4), col, 0.8f);
+                        Dot(sx, sy, (float)p.r * 0.55f, (float)p.r * 0.55f, Hex.Of("#fff4e0"));
                     }
-                    Dot(p.x, p.y, (float)p.r, (float)p.r, QuadBatch.Tint(col, alpha));
+                    Dot(sx, sy, (float)p.r, (float)p.r, QuadBatch.Tint(col, alpha));
                 }
             }
         }
@@ -470,30 +514,34 @@ namespace Depths.Unity
         void DrawPlayer(RunState run)
         {
             var pl = run.player;
+            Interp.At(run, pl, Alpha, out var plx, out var ply);
             float readyProg = run.readyT > 0 ? 1 - run.readyT / (float)Balance.Ready : 1;
-            float a = Mathf.Atan2(Aim.y - (float)pl.y, Aim.x - (float)pl.x);
+            float a = Mathf.Atan2(Aim.y - (float)ply, Aim.x - (float)plx);
             int fr = pl.anim > 0 ? (int)Math.Floor(pl.anim) % 4 : -1, frame = fr < 0 ? 1 : fr;
             float bob = fr < 0 ? Mathf.Round(Mathf.Sin(Fc * 0.07f)) : ((fr & 1) == 1 ? -2 : 0);
             float hop = run.readyT > 0 ? -Mathf.Sin(readyProg * Mathf.PI) * 7 : 0;
             bool flick = pl.iframes > 0 && (pl.iframes / Math.Max(1, Balance.Sec(0.067))) % 2 == 0;
-            double oy = pl.y + bob + hop;
+            double oy = ply + bob + hop;
             var wandCol = Hex.Of(Weapons.All[pl.weaponIdx].Color);
             bool behind = Mathf.Sin(a) < -0.35f;
 
-            double lagD = Math.Sqrt((pl.lagX - pl.x) * (pl.lagX - pl.x) + (pl.lagY - pl.y) * (pl.lagY - pl.y));
+            double lagD = Math.Sqrt((pl.lagX - plx) * (pl.lagX - plx) + (pl.lagY - ply) * (pl.lagY - ply));
             if (lagD > 3)   // the trailing hitbox after a blink, drawn faintly where it really is
             {
                 float fade = Mathf.Min(1, (float)lagD / Balance.BlinkDist);
-                Ring(pl.lagX, pl.lagY + Balance.PlayerHitDy, Balance.PlayerHitR, 1, QuadBatch.Tint(Hex.Of("#66d9ff"), 0.5f * fade));
-                Spr(SpriteSet.PlayerR(frame, false), pl.lagX, pl.lagY + bob + hop - 4, 0.18f * fade);
+                // the lag is not snapped; carried by the player's own blend it moves with the drawn body, not a tick behind
+                double gx = pl.lagX + (plx - pl.x), gy = pl.lagY + (ply - pl.y);
+                Ring(gx, gy + Balance.PlayerHitDy, Balance.PlayerHitR, 1, QuadBatch.Tint(Hex.Of("#66d9ff"), 0.5f * fade));
+                Spr(SpriteSet.PlayerR(frame, false), gx, gy + bob + hop - 4, 0.18f * fade);
             }
-            Dot(pl.x, pl.y + 13, 11, 4, Shadow);
+            DrawMomentumTrail(pl, plx, ply, frame);
+            Dot(plx, ply + 13, 11, 4, Shadow);
             float alpha = flick ? 0.35f : 1;
             float glowExtra = run.readyT > 0 ? 0.5f * readyProg : 0;
             Vector2 tip = default;
-            if (behind) tip = DrawWand(pl.x, oy, a, wandCol, glowExtra, alpha);
-            Spr(SpriteSet.PlayerR(frame, false), pl.x, oy - 4, alpha);
-            if (!behind) tip = DrawWand(pl.x, oy, a, wandCol, glowExtra, alpha);
+            if (behind) tip = DrawWand(plx, oy, a, wandCol, glowExtra, alpha);
+            Spr(SpriteSet.PlayerR(frame, false), plx, oy - 4, alpha);
+            if (!behind) tip = DrawWand(plx, oy, a, wandCol, glowExtra, alpha);
             if (pl.muzzleTimer > 0)
             {
                 var m = A[SpriteSet.Muzzle];
@@ -509,6 +557,45 @@ namespace Depths.Unity
         static Color32[] _wandCols;
 
         /// <summary>drawWand: the staff turned to the aim, its gem in the gun's colour, a glow and two motes at the tip.</summary>
+        // ---- momentum: amber afterimages that lengthen and brighten as the meter fills ----
+        public const float TrailFrom = 0.2f;   // below this much momentum, no trail
+        const int TrailLen = 5;
+        const float TrailEvery = 2.5f;          // cosmetic ticks between samples (60 a second): frame-rate free
+        static readonly Color32 TrailAmber = Hex.C("#ffb347");
+        readonly Vector2[] _trail = new Vector2[TrailLen];
+        int _trailN;
+        float _trailAt = -1;
+
+        /// <summary>How many afterimages a meter shows, and how bright the nearest is.</summary>
+        public static (int ghosts, float alpha) TrailFor(double momentum)
+        {
+            float m = Mathf.Clamp01((float)momentum);
+            if (m < TrailFrom) return (0, 0);
+            float k = (m - TrailFrom) / (1 - TrailFrom);
+            return (1 + Mathf.RoundToInt(k * (TrailLen - 1)), 0.18f + 0.32f * k);
+        }
+
+        void DrawMomentumTrail(Player pl, double x, double y, int frame)
+        {
+            if (Fc - _trailAt >= TrailEvery || _trailAt < 0 || Fc < _trailAt)
+            {
+                _trailAt = Fc;
+                // a door or a blink is a jump: the trail starts again rather than drawing a ghost across the room
+                if (_trailN > 0 && (_trail[0] - new Vector2((float)x, (float)y)).sqrMagnitude > Interp.MaxStep * Interp.MaxStep * 4) _trailN = 0;
+                for (int i = TrailLen - 1; i > 0; i--) _trail[i] = _trail[i - 1];
+                _trail[0] = new Vector2((float)x, (float)y);
+                _trailN = Mathf.Min(TrailLen, _trailN + 1);
+            }
+            var (ghosts, a) = TrailFor(pl.momentum);
+            var r = SpriteSet.PlayerR(frame, true);
+            for (int i = Mathf.Min(ghosts, _trailN - 1); i >= 1; i--)   // [0] is about where the player stands
+            {
+                var g = _trail[i];
+                if ((g - new Vector2((float)x, (float)y)).sqrMagnitude < 9) continue;   // standing still: nothing trails
+                _q.Centred(A.Texture, r, g.x + Origin.x, g.y - 4 + Origin.y, QuadBatch.Tint(TrailAmber, a * (1 - (i - 1) / (float)TrailLen)));
+            }
+        }
+
         Vector2 DrawWand(double px, double py, float a, Color32 color, float extra, float alpha)
         {
             if (_wandCols == null) { _wandCols = new Color32[WandParts.Length]; for (int i = 0; i < WandParts.Length; i++) _wandCols[i] = Hex.C(WandParts[i].c); }

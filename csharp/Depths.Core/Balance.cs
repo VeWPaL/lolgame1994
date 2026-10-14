@@ -322,6 +322,29 @@ namespace Depths
     public static bool Tuned = true;
     /// <summary>Each part of the tuning on its own, for measuring them apart (the bot's --untune). All on in the game.</summary>
     public static bool TuneWall = true, TuneRush = true, TuneDodge = true, TuneLoot = true, TuneBeam = true, TuneWarden = true;
+    /// <summary>Eased motion (owner 2026-10-13: the dodge and enemy moves "too snappy and robotic"): a dash speeds up and
+    /// slows down instead of jumping to full speed, and a ranged body glides into and out of its walk.</summary>
+    public static bool TuneEase = true;
+    /// <summary>The player's damage at <see cref="PlayerDmgMult"/> (owner 2026-10-13: "fights seem a little too winnable",
+    /// a test of 30% less). Every hit the player lands: shots, the blast, the hook's field.</summary>
+    public static bool TuneDamage = true;
+    public const double PlayerDmgMult = 0.7;
+    /// <summary>What the player's hits are multiplied by now: 1 untuned, so the JS rows stay exact.</summary>
+    public static double PlayerDmg => Tuned && TuneDamage ? PlayerDmgMult : 1;
+    /// <summary>Momentum you build and feel (owner 2026-10-13: "ramp up slower and more noticeably, as of right now it
+    /// feels barely present"). The JS meter fills in ~180 px of running (0.6 s) and empties in 0.8 s, so it is always
+    /// full or empty, and full is +14% speed. Tuned: ~5 s of running under pressure fills it, standing still drains it
+    /// over ~3 s, and full adds 0.40 to the speed bonus (1.25x -> 1.65x walking, +32%) with a sharper start and stop.</summary>
+    public static bool TuneMomentum = true;
+    public static double MomGain => Tuned && TuneMomentum ? 0.0007 : MomentumGain;   // meter per px moved (rate-free)
+    public static double MomStallDecay => Tuned && TuneMomentum ? PerSec(0.35) : MomentumStallDecay;   // meter per second
+    public static double MomSpeed => Tuned && TuneMomentum ? 0.40 : MomentumSpeed;   // speed bonus at a full meter
+    public static double MomCap => Tuned && TuneMomentum ? 0.65 : MoveSpeedHardCap;   // the ceiling with momentum; the speed stat alone stays at 0.44
+    public static double MomAccel => Tuned && TuneMomentum ? 1.0 : MomentumAccel;    // acceleration bonus at a full meter
+    /// <summary>Each run rolls which kinds each area brings, the middle five among them (Pools.cs; owner 2026-10-13).</summary>
+    public static bool TunePools = true;
+    /// <summary>The middle five's retune of 2026-10-13 (Middle.Sharp): aim, split, lead, chase, cone, ally-safe volleys.</summary>
+    public static bool TuneMiddle = true;
     /// <summary>"Close": the Scatter's full-damage reach. Inside it a Lunger does not dodge and a Brunch
     /// rushes you instead of walking to its wall slot. Read from the gun, so the two cannot drift apart.</summary>
     public static double CloseRange => Weapons.All[1].FNear ?? 180;
@@ -336,6 +359,11 @@ namespace Depths
     public const double BrunchRushRelease = 24;               // px of hysteresis, so a Brunch on the line does not flip every tick
     public const double RoomDropChance = 0.75;                // the last kill of a fought room; nothing before it
     public const double BrunchBeamTaken = 0.45;               // Brunch take this x an Arcane Beam bolt: 2-3 bolts, not 1
+    // TuneEase: each dash is a speed curve, up over the first share of it and down over the last (smoothstep ramps)
+    public const double LungeRampIn = 0.2, LungeRampOut = 0.25;   // same length and reach as the flat lunge, so the aim holds
+    public const double DodgeRampIn = 0.25, DodgeRampOut = 0.4;   // same distance, a little longer...
+    public const double DodgePeak = 1.15;                         // ...topping out just above lunge speed, so it stays snappy
+    public static double RangedWalkEase => Ease(0.045);           // per JS tick: about 0.1 s to reach or leave walking speed
 
     // Placeholder item effects (C# only, 2026-10-06; the item overhaul replaces them).
     public static int MarkTicks => Sec(5);           // Hunter's Mark: how long a body stays marked

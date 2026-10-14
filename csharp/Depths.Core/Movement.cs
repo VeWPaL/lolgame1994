@@ -43,6 +43,7 @@ namespace Depths
             var p = run.player;
             var room = run.enemies;
             if (e.lungeCd > 0) e.lungeCd--;
+            if (e.lungeState != "lunge") e.dashN = 0;   // a dash ends with its state, however it ended
             switch (e.lungeState)
             {
                 case "approach":
@@ -82,11 +83,15 @@ namespace Depths
                     {
                         e.lungeState = "lunge";
                         e.lungeT = (int)System.Math.Ceiling(e.lungeLen / Balance.LungeSpeed);
+                        if (Balance.Tuned && Balance.TuneEase) { e.dashN = e.lungeT; e.dashLen = e.lungeT * Balance.LungeSpeed; }
                     }
                     break;
                 case "lunge":
-                    e.x += e.lungeDx * Balance.LungeSpeed * sm;
-                    e.y += e.lungeDy * Balance.LungeSpeed * sm;
+                    {
+                        double step = e.dashN > 0 ? DashStep(e, Balance.LungeRampIn, Balance.LungeRampOut) : Balance.LungeSpeed;
+                        e.x += e.lungeDx * step * sm;
+                        e.y += e.lungeDy * step * sm;
+                    }
                     e.lungeT--;
                     // two lungers on one line meet mid-charge and both come off worse
                     foreach (var o in room)
@@ -177,6 +182,7 @@ namespace Depths
         {
             double dx = b.x - a.x, dy = b.y - a.y, d = Hyp(dx, dy), min = a.r + b.r;
             if (d >= min || a.buried || b.buried) return;   // a Burrower underground passes under the others
+            if (Eggs.Riding(a) || Eggs.Riding(b)) return;   // a riding egg goes where its ride puts it, through bodies
             double nx, ny;
             if (d < 0.001) { double ang = run.rng.Jitter() * 6.283; nx = System.Math.Cos(ang); ny = System.Math.Sin(ang); }
             else { nx = dx / d; ny = dy / d; }
@@ -270,6 +276,12 @@ namespace Depths
             }
             e.lungeState = "dodge"; e.lungeDx = dx; e.lungeDy = dy;
             e.lungeT = System.Math.Max(1, (int)System.Math.Ceiling(need / Balance.LungeSpeed));
+            e.dashN = 0;
+            if (Balance.TuneEase)   // the same distance as the flat dash, on a curve whose top is DodgePeak x lunge speed
+            {
+                e.dashLen = e.lungeT * Balance.LungeSpeed;
+                e.lungeT = e.dashN = (int)System.Math.Ceiling(e.dashLen / (Balance.LungeSpeed * Balance.DodgePeak * DashArea(Balance.DodgeRampIn, Balance.DodgeRampOut)));
+            }
             e.dodgeCd = Balance.LungerDodgeCd;
             if (startled) { e.startleSpent = true; e.noticeTimer = 0; e.alerted = true; e.aggroTimer = Balance.AggroTime; }
             return true;
@@ -283,12 +295,40 @@ namespace Depths
             return !burst || Hyp(ex - bx, ey - by) > Hyp(e.x - bx, e.y - by);
         }
 
-        /// <summary>One tick of a dodge, at lunge speed; it comes out of it still approaching.</summary>
+        /// <summary>One tick of a dodge, at lunge speed (eased: along its curve); it comes out of it still approaching.</summary>
         public static void StepDodge(Enemy e, double sm)
         {
-            e.x += e.lungeDx * Balance.LungeSpeed * sm;
-            e.y += e.lungeDy * Balance.LungeSpeed * sm;
-            if (--e.lungeT <= 0) { e.lungeState = "approach"; e.lungeT = 0; }
+            double step = e.dashN > 0 ? DashStep(e, Balance.DodgeRampIn, Balance.DodgeRampOut) : Balance.LungeSpeed;
+            e.x += e.lungeDx * step * sm;
+            e.y += e.lungeDy * step * sm;
+            if (--e.lungeT <= 0) { e.lungeState = "approach"; e.lungeT = 0; e.dashN = 0; }
+        }
+
+        /// <summary>
+        /// The share of a dash covered by time u (0..1): speed rises over the first <paramref name="rampIn"/> of it
+        /// and falls over the last <paramref name="rampOut"/> along smoothstep curves, flat between. 0 at 0, 1 at 1,
+        /// never decreasing, so a dash of N ticks lands exactly where the flat one did.
+        /// </summary>
+        public static double DashShare(double u, double rampIn, double rampOut)
+        {
+            u = System.Math.Max(0, System.Math.Min(1, u));
+            // the integral of smoothstep s(x) = 3x^2 - 2x^3 from 0 to x is x^3 - x^4 / 2 (and 1/2 over the whole ramp)
+            static double G(double x) => x * x * x - x * x * x * x / 2;
+            double covered;
+            if (u < rampIn) covered = rampIn * G(u / rampIn);
+            else if (u <= 1 - rampOut) covered = rampIn / 2 + (u - rampIn);
+            else covered = rampIn / 2 + (1 - rampIn - rampOut) + rampOut * (0.5 - G((1 - u) / rampOut));
+            return covered / DashArea(rampIn, rampOut);
+        }
+
+        /// <summary>A dash's mean speed over its top speed.</summary>
+        public static double DashArea(double rampIn, double rampOut) => 1 - rampIn / 2 - rampOut / 2;
+
+        // this tick's distance along an eased dash (lungeT still counts the ticks left, this one included)
+        static double DashStep(Enemy e, double rampIn, double rampOut)
+        {
+            int done = e.dashN - e.lungeT;
+            return e.dashLen * (DashShare((done + 1) / (double)e.dashN, rampIn, rampOut) - DashShare(done / (double)e.dashN, rampIn, rampOut));
         }
 
         /// <summary>
@@ -311,6 +351,38 @@ namespace Depths
                     if (System.Math.Abs(ox * dy - oy * dx) < o.r + e.pr) { clear = false; break; }
                 }
                 if (clear) return a;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// A line from <paramref name="e"/> at angle <paramref name="a"/> that passes no body of ours within
+        /// <paramref name="reach"/> px (a shell of radius <paramref name="r"/> would graze it). C# only: the volleys
+        /// that are not one aimed shell - the Sprayer's cone, the egg's ring - keep their shells off their own side.
+        /// </summary>
+        public static bool LineClear(RunState run, Enemy e, double a, double reach, double r)
+        {
+            double dx = System.Math.Cos(a), dy = System.Math.Sin(a);
+            foreach (var o in run.enemies)
+            {
+                if (o == e || o.buried || o.hp <= 0) continue;
+                double ox = o.x - e.x, oy = o.y - e.y, along = ox * dx + oy * dy;
+                if (along <= 0 || along >= reach) continue;
+                if (System.Math.Abs(ox * dy - oy * dx) < o.r + r) return false;
+            }
+            return true;
+        }
+
+        /// <summary>The first cone centre, sweeping out from <paramref name="want"/> as ClearShot does, whose every
+        /// line is clear; null when none is.</summary>
+        public static double? ClearCone(RunState run, Enemy e, double want, double half, int count, double reach)
+        {
+            foreach (var off in SweepOffsets)
+            {
+                bool clear = true;
+                for (int i = 0; i < count && clear; i++)
+                    clear = LineClear(run, e, want + off + half * (2.0 * i / (count - 1) - 1), reach, e.pr);
+                if (clear) return want + off;
             }
             return null;
         }

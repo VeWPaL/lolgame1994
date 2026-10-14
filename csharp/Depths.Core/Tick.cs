@@ -88,8 +88,8 @@ namespace Depths
 
             var player = run.player;
             player.momentum = moved > Balance.MomentumMoveFloor
-                ? System.Math.Min(1, player.momentum + Balance.MomentumGain * moved)
-                : System.Math.Max(0, player.momentum - Balance.MomentumStallDecay);
+                ? System.Math.Min(1, player.momentum + Balance.MomGain * moved)
+                : System.Math.Max(0, player.momentum - Balance.MomStallDecay);
         }
 
         /// <summary>
@@ -441,7 +441,15 @@ namespace Depths
             bool guarded = e.shieldGuardFor != null && e.shieldGuardFor.Count > 0;
             double standoff = (guarded ? e.far * Balance.GuardStandoffMult : e.far) - (e.far - e.close) * roomPress * Balance.PressureClosure;
             bool roots = e.kind == BodyKind.Gunner;
-            if (e.castT <= 0 || !roots)
+            if (Balance.Tuned && Balance.TuneEase)   // the same walk, but it glides into and out of it rather than snapping
+            {
+                double walk = e.castT > 0 && roots ? 0 : dist < e.close ? -1 : dist > standoff ? 1 : 0;
+                double k = Balance.RangedWalkEase;
+                e.vx += (edx / dist * e.speed * walk - e.vx) * k;
+                e.vy += (edy / dist * e.speed * walk - e.vy) * k;
+                e.x += e.vx * sm; e.y += e.vy * sm;
+            }
+            else if (e.castT <= 0 || !roots)
             {
                 if (dist < e.close) { e.x -= edx / dist * e.speed * sm; e.y -= edy / dist * e.speed * sm; }
                 else if (dist > standoff) { e.x += edx / dist * e.speed * sm; e.y += edy / dist * e.speed * sm; }
@@ -471,7 +479,7 @@ namespace Depths
                 sx = HitboxX + bvx * need - mx;
                 sy = ty + bvy * need - my;
             }
-            double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist);
+            double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist) * Middle.AimJitter(e.kind);
             var shot = e.kind == BodyKind.Mortar ? want : Movement.ClearShot(run, e, want);   // a lob goes over bodies
             // off the JS rate the tick's overrun is kept, so a cadence is exact in seconds (held fire does the same)
             double over = Balance.TickHz == Balance.JsHz ? 0 : e.shootCd;
@@ -532,7 +540,7 @@ namespace Depths
                         continue;   // no contact while dashing off a shot: it is leaving, not striking
                     }
                 }
-                if (e.noticeTimer > 0) { e.noticeTimer--; e.anim = 0; continue; }
+                if (e.noticeTimer > 0) { e.noticeTimer--; e.anim = 0; if (Eggs.Riding(e)) Eggs.Move(run, e); continue; }
                 double ox = e.x, oy = e.y;
                 if (e.kind == BodyKind.Gunner) Movement.GunnerDodge(run, e);
                 double edx = HitboxX - e.x, edy = HitboxY - e.y, dist = System.Math.Sqrt(edx * edx + edy * edy);
@@ -1008,7 +1016,8 @@ namespace Depths
             // moveSpeedBonus() in the game: the speed STAT plus the Momentum meter's share, capped. The
             // momentum term was missing here, invisible to every test that ran in an empty room (where
             // momentum stays 0) until the blink parity walked a player past a body.
-            double bonus = System.Math.Min(Balance.MoveSpeedHardCap, (moveSpeedBonus ?? run.stats.Value("speed")) + p.momentum * Balance.MomentumSpeed);
+            // the stat is held to the JS cap and only momentum may go past it (untuned the two caps are one, and this is the JS)
+            double bonus = System.Math.Min(Balance.MomCap, System.Math.Min(Balance.MoveSpeedHardCap, moveSpeedBonus ?? run.stats.Value("speed")) + p.momentum * Balance.MomSpeed);
             double spd = p.speed * p.slowMult * (1 + bonus) * boostMult;
             double targetVx = len != 0 ? (dx / len) * spd : 0;
             double targetVy = len != 0 ? (dy / len) * spd : 0;
@@ -1020,7 +1029,7 @@ namespace Depths
                terminal speed is 1.4025 and the first ten ticks are
                0.16269, 0.306508, 0.433643, 0.54603, 0.645381, 0.733207, 0.810845, 0.879477,
                0.940147, 0.99378. */
-            double accel = Balance.Ease(Balance.MoveAccel * (1 + p.momentum * Balance.MomentumAccel));
+            double accel = Balance.Ease(Balance.MoveAccel * (1 + p.momentum * Balance.MomAccel));
             p.vx += (targetVx - p.vx) * accel;
             p.vy += (targetVy - p.vy) * accel;
 

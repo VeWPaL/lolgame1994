@@ -40,7 +40,10 @@ trusted, and an untrusted port is worse than none because it looks like a second
 | C# | What | Rule |
 |---|---|---|
 | `Curve.cs` | the difficulty curve's eight stages over the depth ladder (off by default) | Tests run with it off (`[CurveOn(false)]`), so the parity rows keep the JS ladder |
-| `Middle.cs` | the five middle enemies (Splitter, Mortar, Burrower, Sprayer, Turret egg), 2026-10-12 | Appended after the JS kinds (`BodyKind`, `Bodies.Rows`); never in the spawn pool until the owner says so (`MiddleTests.NoneOfThemSpawnsInARun`). The shared code they touch keeps every JS path bit-identical: the cast time by kind is `Balance.CastTime` for the JS bodies, `buried` is false for them |
+| `Middle.cs` | the five middle enemies (Splitter, Mortar, Burrower, Sprayer, Turret egg), 2026-10-12; sharpened 2026-10-13 (Splitter aim and split, the Mortar's Lunger lead and wider blast, the Burrower's underground chase, the Sprayer's release aim) | Appended after the JS kinds (`BodyKind`, `Bodies.Rows`); untuned they never spawn (`MiddleTests.UntunedNoneOfThemSpawnsInARun`), tuned the run's area groups bring them (`Pools.cs`). The shared code they touch keeps every JS path bit-identical: the cast time by kind is `Balance.CastTime` for the JS bodies, `buried` is false for them, `Middle.AimJitter` is 1 for them |
+| `Eggs.cs` | the turret egg's forms: fixed, orbiting a body (a smaller, slower ring), riding a rail in the Kiln Works (eight track patterns); every ring turned off its own side | Egg-only; `Eggs.Dress` runs only on a pooled (tuned) wave and in the lab |
+| `Pools.cs` | each run's kinds per area, the next area's newcomers previewed two floors early | `Balance.TunePools`; `RunState.pools` is null untuned, and `WavePlanner.PlanWave` then plays the JS plan draw for draw (`PlanPooled` is a separate path) |
+| `Interp.cs` | drawing between ticks: each body's, shell's and the player's place at the last tick, for the presenter's blend | Nothing in the simulation reads it (`InterpTests.SnappingNeverChangesTheGame`); the bot never calls it |
 
 ## Deliberately NOT ported
 

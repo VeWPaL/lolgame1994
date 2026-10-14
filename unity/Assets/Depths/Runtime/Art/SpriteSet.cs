@@ -106,7 +106,7 @@ namespace Depths.Unity.Art
         /// <summary>An item's picture (ItemIcons) at px 2 or 4; null for an item that only has its lettered tile.</summary>
         public static string ItemIcon(string id, int px) => ItemIcons.Has(id) ? "itemicon:" + id + ":" + px : null;
         public static readonly int[] ItemIconPx = { 2, 4 };
-        public const string Glow = "glow", Muzzle = "muzzle", White = "white", Disc = "disc";
+        public const string Glow = "glow", Muzzle = "muzzle", White = "white", Disc = "disc", CrackH = "crack:h", CrackV = "crack:v";
 
         static string BodyName(BodyKind k) => k switch
         {
@@ -190,6 +190,8 @@ namespace Depths.Unity.Art
                 foreach (var c in GlyphColors) list.Add((Glyph(kv.Key, c), Sprites.Glyph(kv.Value, Hex.C(c), 2)));
             list.Add((Glow, Sprites.Glow(32, Color.white, new Color(1, 1, 1, 0))));
             list.Add((Muzzle, Sprites.Glow(11, new Color(230 / 255f, 200 / 255f, 1, 1), new Color(180 / 255f, 110 / 255f, 1, 0))));
+            list.Add((CrackH, Sprites.Crack(false, Hex.C("#07080b", 0.95f), Hex.C("#b4bccb", 0.7f), Hex.C("#000000", 0.28f))));
+            list.Add((CrackV, Sprites.Crack(true, Hex.C("#07080b", 0.95f), Hex.C("#b4bccb", 0.7f), Hex.C("#000000", 0.28f))));
             var disc = new Img(64, 64); disc.Disc(32, 32, 32, Flash);   // shells, shadows and dots: tinted and scaled
             list.Add((Disc, disc));
             var white = new Img(4, 4); white.Fill(0, 0, 4, 4, Flash);

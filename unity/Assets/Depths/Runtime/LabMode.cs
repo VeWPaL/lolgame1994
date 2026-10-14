@@ -15,14 +15,16 @@ namespace Depths.Unity
     /// </summary>
     public sealed class LabMode
     {
-        public static readonly (BodyKind kind, string name, string blurb)[] Specimens =
+        public static readonly (BodyKind kind, EggForm form, string name, string blurb)[] Specimens =
         {
-            (BodyKind.Lunger, "Lunger", "the baseline body"), (BodyKind.Brunch, "Brunch", "cover, in numbers"),
-            (BodyKind.Shooter, "Shooter", "stands off and shoots"), (BodyKind.Gunner, "Gunner", "solves your line"),
-            (BodyKind.Boss, "Warden", "the whole fight"),
-            (BodyKind.Splitter, "Splitter", "bursts at range: keep moving"), (BodyKind.Mortar, "Mortar", "lands where you stood"),
-            (BodyKind.Burrower, "Burrower", "comes up under your spot"), (BodyKind.Sprayer, "Sprayer", "long wind-up, short cone"),
-            (BodyKind.Egg, "Turret egg", "never moves; rings the room"),
+            (BodyKind.Lunger, EggForm.Fixed, "Lunger", "the baseline body"), (BodyKind.Brunch, EggForm.Fixed, "Brunch", "cover, in numbers"),
+            (BodyKind.Shooter, EggForm.Fixed, "Shooter", "stands off and shoots"), (BodyKind.Gunner, EggForm.Fixed, "Gunner", "solves your line"),
+            (BodyKind.Boss, EggForm.Fixed, "Warden", "the whole fight"),
+            (BodyKind.Splitter, EggForm.Fixed, "Splitter", "bursts close: keep moving"), (BodyKind.Mortar, EggForm.Fixed, "Mortar", "lands where you are going"),
+            (BodyKind.Burrower, EggForm.Fixed, "Burrower", "chases underground: turn on its tell"), (BodyKind.Sprayer, EggForm.Fixed, "Sprayer", "wind-up, then a tight cone"),
+            (BodyKind.Egg, EggForm.Fixed, "Turret egg", "never moves; rings the room"),
+            (BodyKind.Egg, EggForm.Orbit, "Orbiting egg", "circles a body; a smaller, slower ring"),
+            (BodyKind.Egg, EggForm.Rail, "Rail egg", "rides a track (Kiln Works); F8 again for the next track"),
         };
 
         public bool On { get; private set; }
@@ -50,10 +52,12 @@ namespace Depths.Unity
             _row.Clear(); _lastHp.Clear(); ClearNumbers();
             for (int i = 0; i < Specimens.Length; i++)
             {
-                double x = Balance.RoomLeft + 70 + (i % 5) * 140, y = Balance.RoomTop + (i < 5 ? 70 : 180);
+                double x = Balance.RoomLeft + 70 + (i % 5) * 140, y = Balance.RoomTop + 70 + (i / 5) * 110;
                 var e = Spawn.Body(run, Specimens[i].kind, x, y);
                 if (e.kind == BodyKind.Brunch) { e.packId = ++_pack; e.packSlot = 0; }
                 run.enemies.Add(e);
+                Dress(run, e, Specimens[i].form);
+                if (e.eggForm == EggForm.Rail) { x = e.x; y = e.y; }   // its plinth is on its track
                 _row.Add((e, x, y));
             }
             Hold(run);
@@ -119,7 +123,26 @@ namespace Depths.Unity
             var e = Spawn.Body(run, Specimens[Armed].kind, x, y);
             e.noticeTimer = 0; e.alerted = true; e.aggroTimer = Balance.AggroTime;
             run.enemies.Add(e);
+            Dress(run, e, Specimens[Armed].form);
             return e;
+        }
+
+        int _rail;   // each rail egg dropped takes the next track, so F8 tours all of them
+
+        // an egg's form, as the game gives it (Eggs.cs): an orbit round the nearest other body, or the next track
+        void Dress(RunState run, Enemy e, EggForm form)
+        {
+            if (e.kind != BodyKind.Egg || form == EggForm.Fixed) return;
+            if (form == EggForm.Rail) { Eggs.OnRail(run, e, _rail++ % Eggs.Patterns); return; }
+            Enemy? host = null;
+            double best = double.MaxValue;
+            foreach (var o in run.enemies)
+            {
+                if (o == e || o.kind == BodyKind.Egg || o.kind == BodyKind.Boss || o.hp <= 0) continue;
+                double d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
+                if (d < best) { best = d; host = o; }
+            }
+            if (host != null) Eggs.Orbit(e, host, Math.Atan2(e.y - host.y, e.x - host.x));
         }
 
         // a dozen of the armed body on a ring across the room from the player; Brunch as one pack

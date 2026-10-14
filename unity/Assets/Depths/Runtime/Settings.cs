@@ -54,4 +54,37 @@ namespace Depths.Unity
         /// <summary>Call at the start of a run.</summary>
         public void Apply() => Depths.Curve.On = Curve;
     }
+
+    /// <summary>
+    /// The frame rate, apart from the game's speed: the simulation always steps at <c>Balance.TickHz</c> and the
+    /// screen draws between ticks (Depths.Core <c>Interp</c>), so any cap plays the same game, only smoother or
+    /// cheaper. VSync follows the monitor; a number caps it without VSync; Uncapped draws as fast as it can.
+    /// </summary>
+    public sealed class DisplaySettings
+    {
+        public const string FrameKey = "depths.display.frames";
+        public static readonly string[] Choices = { "VSync", "30", "60", "120", "144", "165", "240", "Uncapped" };
+        readonly ISettingsStore _store;
+
+        public DisplaySettings(ISettingsStore store) { _store = store; }
+
+        /// <summary>One of <see cref="Choices"/>; anything else saved (an old or hand-edited value) reads as VSync.</summary>
+        public string Frames
+        {
+            get { var v = _store.GetString(FrameKey, "VSync"); return System.Array.IndexOf(Choices, v) >= 0 ? v : "VSync"; }
+            set { _store.SetString(FrameKey, System.Array.IndexOf(Choices, value) >= 0 ? value : "VSync"); _store.Save(); }
+        }
+
+        /// <summary>The (vSyncCount, targetFrameRate) a choice means; -1 is Unity's "as fast as the platform allows".</summary>
+        public static (int vsync, int target) Mode(string choice) =>
+            choice == "VSync" ? (1, -1) : choice == "Uncapped" ? (0, -1) : int.TryParse(choice, out var n) ? (0, n) : (1, -1);
+
+        /// <summary>Takes effect at once: called at startup and when the option changes.</summary>
+        public void Apply()
+        {
+            var (vsync, target) = Mode(Frames);
+            QualitySettings.vSyncCount = vsync;
+            Application.targetFrameRate = target;
+        }
+    }
 }

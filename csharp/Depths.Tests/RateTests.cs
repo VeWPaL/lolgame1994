@@ -191,7 +191,9 @@ namespace Depths.Tests
             ["Balance.LungerDodgeReact"] = U.Sec, ["Balance.LungerDodgeHorizon"] = U.Sec, ["Balance.LungerStartle"] = U.Sec,
             ["Middle.SplitShardSpeed"] = U.PerSec, ["Middle.LobFlight"] = U.Sec, ["Middle.SprayWind"] = U.Sec, ["Middle.EggWind"] = U.Sec,
             ["Middle.BurrowWalk"] = U.PerSec, ["Middle.BurrowRun"] = U.PerSec, ["Middle.BurrowSurface"] = U.Sec, ["Middle.BurrowDig"] = U.Sec,
-            ["Middle.BurrowUnder"] = U.Sec, ["Middle.BurrowRise"] = U.Sec,
+            ["Middle.BurrowUnder"] = U.Sec, ["Middle.BurrowRise"] = U.Sec, ["Balance.RangedWalkEase"] = U.Ease,
+            ["Eggs.OrbitSpin"] = U.PerSec, ["Eggs.RailSpeed"] = U.PerSec,
+            ["Balance.MomStallDecay"] = U.PerSec,
         };
 
         // the dials that live in tables and on fresh bodies rather than as static properties
@@ -241,7 +243,7 @@ namespace Depths.Tests
         {
             var off = new List<string>();
             var seen = new HashSet<string>();
-            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState), typeof(Middle) })
+            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState), typeof(Middle), typeof(Eggs) })
                 foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
                 {
                     if (prop.Name == nameof(Balance.TickHz) || (prop.PropertyType != typeof(int) && prop.PropertyType != typeof(double))) continue;

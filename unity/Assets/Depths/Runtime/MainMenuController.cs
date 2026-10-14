@@ -42,6 +42,7 @@ namespace Depths.Unity
         Bindings _bindings;
         VolumeSettings _volume;
         GameplaySettings _gameplay;
+        DisplaySettings _display;
         InputActionRebindingExtensions.RebindingOperation _rebind;
         readonly List<Texture2D> _owned = new List<Texture2D>();
         Texture2D _cap, _capLit, _boxOn, _boxOff;
@@ -60,6 +61,8 @@ namespace Depths.Unity
             _bindings = new Bindings(controls, store);
             _volume = new VolumeSettings(store);
             _gameplay = new GameplaySettings(store);
+            _display = new DisplaySettings(store);
+            _display.Apply();
             _volume.Changed += (c, v) => ApplyVolume();
             ApplyVolume();
 
@@ -92,6 +95,11 @@ namespace Depths.Unity
             _curve.RegisterValueChangedCallback(e => { _gameplay.Curve = e.newValue; Tick(); SoundEngine.Play("blink", 0, 0.6f); });
             Tick();
             root.Q<Button>("resetBinds").clicked += () => { _bindings.ApplyPreset(_bindings.Preset); RefreshBinds(); };
+
+            var frames = root.Q<DropdownField>("frameRate");
+            frames.choices = DisplaySettings.Choices.ToList();
+            frames.index = Array.IndexOf(DisplaySettings.Choices, _display.Frames);
+            frames.RegisterValueChangedCallback(_ => { _display.Frames = DisplaySettings.Choices[frames.index]; _display.Apply(); });
 
             var presets = Enum.GetValues(typeof(KeyPreset)).Cast<KeyPreset>().ToList();
             _preset.choices = presets.Select(KeyPresets.Label).ToList();

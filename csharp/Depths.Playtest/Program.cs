@@ -83,7 +83,7 @@ namespace Depths.Playtest
     /// <summary>`--untune part,part`: parts of Balance.Tuned turned off for one play, to measure each part on its own.</summary>
     public static class Untune
     {
-        public static readonly string[] Parts = { "wall", "rush", "dodge", "loot", "beam", "warden" };
+        public static readonly string[] Parts = { "wall", "rush", "dodge", "loot", "beam", "warden", "ease", "damage", "momentum", "pools", "middle" };
 
         public static void Set(string part, bool on)
         {
@@ -95,6 +95,11 @@ namespace Depths.Playtest
                 case "loot": Balance.TuneLoot = on; break;
                 case "beam": Balance.TuneBeam = on; break;
                 case "warden": Balance.TuneWarden = on; break;
+                case "ease": Balance.TuneEase = on; break;
+                case "damage": Balance.TuneDamage = on; break;
+                case "momentum": Balance.TuneMomentum = on; break;
+                case "pools": Balance.TunePools = on; break;
+                case "middle": Balance.TuneMiddle = on; break;
                 default: throw new UsageException("--untune: no part '" + part + "' (" + string.Join(", ", Parts) + ")");
             }
         }
@@ -108,6 +113,11 @@ namespace Depths.Playtest
             if (!Balance.TuneLoot) off.Add("loot");
             if (!Balance.TuneBeam) off.Add("beam");
             if (!Balance.TuneWarden) off.Add("warden");
+            if (!Balance.TuneEase) off.Add("ease");
+            if (!Balance.TuneDamage) off.Add("damage");
+            if (!Balance.TuneMomentum) off.Add("momentum");
+            if (!Balance.TunePools) off.Add("pools");
+            if (!Balance.TuneMiddle) off.Add("middle");
             return off;
         }
     }

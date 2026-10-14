@@ -18,6 +18,9 @@ namespace Depths.Unity
         /// <summary>Real seconds cut from long frames: the game deliberately did not play them.</summary>
         public double DroppedSeconds { get; private set; }
 
+        /// <summary>How far the clock is into the next tick, 0 to 1: where the screen draws between the last two.</summary>
+        public double Alpha => _acc;
+
         /// <summary>The ticks to run for a frame of <paramref name="seconds"/>; none while paused, and no catch-up after.</summary>
         public int Advance(double seconds, bool paused)
         {

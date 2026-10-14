@@ -19,6 +19,10 @@ namespace Depths
     public sealed class Player
     {
         public double x, y, vx, vy, kvx, kvy;
+        /// <summary>Where the last <see cref="Interp.Snap"/> found it (the screen draws between that and now), and that
+        /// snap's stamp; nothing in the simulation reads them.</summary>
+        public double px, py;
+        public int snap;
         public double hp, maxHp;
         public double armor;   // fractional: armour absorbs a 1.8 shell from 2 and keeps 0.2, as in the game
         /// <summary>The regenerating heart (C# only): drained after armour, before red; refills in a live fight once
@@ -132,6 +136,10 @@ namespace Depths
     {
         public BodyKind kind;
         public double x, y;
+        /// <summary>Where the last <see cref="Interp.Snap"/> found it (the screen draws between that and now), and that
+        /// snap's stamp; nothing in the simulation reads them.</summary>
+        public double px, py;
+        public int snap;
         public double hp, maxHp;
         /// <summary>
         /// Which pack this body belongs to, and its slot within it.
@@ -220,6 +228,10 @@ namespace Depths
         public string lungeState = "approach";
         public int lungeT, lungeCd;
         public double lungeDx, lungeDy, lungeLen;
+        /// <summary>An eased dash in progress (Balance.TuneEase): its length in ticks (0: none, or the flat JS dash) and
+        /// the distance it covers; lungeT counts it down.</summary>
+        public int dashN;
+        public double dashLen;
         public int idleTimer;
         public double idleDirX, idleDirY;
 
@@ -237,8 +249,8 @@ namespace Depths
         public int hookMark, hookStacks, hookCalm;
         /// <summary>Hunter's Mark (placeholder, C# only): ticks left marked; a marked body takes MarkVuln x damage.</summary>
         public int markT;
-        /// <summary>What a player hit is multiplied by: armour, and the mark while it lasts.</summary>
-        public double Vuln => markT > 0 ? armour * Balance.MarkVuln : armour;
+        /// <summary>What a player hit is multiplied by: armour, the mark while it lasts, and the tuned damage cut (Balance.PlayerDmg).</summary>
+        public double Vuln => (markT > 0 ? armour * Balance.MarkVuln : armour) * Balance.PlayerDmg;
         public double hookPower;
         public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
         public int lifeT;              // ticks this body has been stepped (the room's ready freeze does not count)
@@ -246,6 +258,15 @@ namespace Depths
         public bool rushing;           // a guarding Brunch rushing the player instead of holding its slot (Balance.Tuned)
         public bool buried;            // a Burrower underground: no shell, blast, field, contact or shove reaches it
         public double markX, markY;    // where it will surface
+        /// <summary>A turret egg's form (Eggs.cs): fixed, circling <see cref="eggHost"/> at eggA/eggR, or riding
+        /// <see cref="rail"/> (points x0,y0,x1,y1...) at railS px along it, railDir +1/-1, round it when railLoop.</summary>
+        public EggForm eggForm;
+        public Enemy? eggHost;
+        public double eggA, eggR;
+        public double[]? rail;
+        public double railS, railLen;
+        public int railDir = 1;
+        public bool railLoop;
 
         /// <summary>A live body of a kind at a point, with the table's radius, armour, mass and health.</summary>
         public static Enemy Of(BodyKind kind, double x, double y)
@@ -284,6 +305,10 @@ namespace Depths
     {
         // --- motion and identity
         public double x, y, vx, vy;
+        /// <summary>Where the last <see cref="Interp.Snap"/> found it (the screen draws between that and now), and that
+        /// snap's stamp; nothing in the simulation reads them.</summary>
+        public double px, py;
+        public int snap;
         public double r, dmg;
         public bool friendly, heavy;
 

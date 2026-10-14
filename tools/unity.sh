@@ -46,7 +46,7 @@ case "${1:-}" in
     rm -f "$out"
     # 1280x720 windowed: the hearts check samples panel positions at 16:9
     unity/Build/Depths.exe -screen-fullscreen 0 -screen-width 1280 -screen-height 720 \
-      -depthsShot "$out" -depthsView "$view" -logFile "unity/Logs/shot-$view.log" > /dev/null
+      -depthsShot "$out" -depthsView "$view" ${DEPTHS_SEED:+-depthsSeed "$DEPTHS_SEED"} -logFile "unity/Logs/shot-$view.log" > /dev/null
     rc=$?
     grep -E '\[Depths\] (check|note)' "unity/Logs/shot-$view.log"
     [ -f "$out" ] && echo "wrote $out" || { echo "no screenshot; see unity/Logs/shot-$view.log"; exit 1; }

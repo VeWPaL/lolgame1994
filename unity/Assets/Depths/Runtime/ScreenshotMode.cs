@@ -9,7 +9,7 @@ using Depths.Unity.Hud;
 namespace Depths.Unity
 {
     /// <summary>
-    /// A built player started with <c>-depthsShot path.png [-depthsView menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger]</c>
+    /// A built player started with <c>-depthsShot path.png [-depthsView menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|lab|labrow|secret|rail] [-depthsSeed n]</c>
     /// opens that view, captures one frame and quits. It is how the game is checked by eye from a script.
     /// <c>game</c> also measures the tick rate in real time and <c>hearts</c> samples the health row's
     /// pixels; each logs a "[Depths] check" line, and the player exits 1 if a check fails.
@@ -39,7 +39,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail" };
 
         void Check(bool ok, string what)
         {
@@ -63,8 +63,9 @@ namespace Depths.Unity
             else if (_view == "boss") yield return new WaitForSecondsRealtime(4f);
             else if (_view == "sandbox") yield return new WaitForSecondsRealtime(1.5f);
             else if (_view == "lab") yield return new WaitForSecondsRealtime(3.2f);   // long enough for a dive, a lob and a ring
-            else if (_view == "labrow") yield return new WaitForSecondsRealtime(1f);
+            else if (_view == "labrow" || _view == "rail") yield return new WaitForSecondsRealtime(1f);
             else if (_view == "hearts") { yield return CheckHearts(); yield break; }
+            else if (_view == "secret") { yield return SecretView(); yield break; }
             else if (_view == "summary") yield return SummaryView();
             else if (_view == "pause") yield return PauseView();
             else if (_view == "banner") yield return BannerView();
@@ -249,6 +250,37 @@ namespace Depths.Unity
 
         // A full page: a fixture with every line of both ledgers written (keys, mail, a held item and
         // passives, a part-spent blink, momentum, a charted floor). The harness sets these by hand.
+        // The fake wall: the frame shows its crack, then the blast opens it both ways and the room behind holds the hook.
+        IEnumerator SecretView()
+        {
+            yield return new WaitForSecondsRealtime(1.2f);
+            var view = FindAnyObjectByType<GameView>();
+            var run = view != null ? view.Run : null;
+            var room = run?.CurrentRoom;
+            if (room == null || !room.Secret.HasValue) { Check(false, "secret: the run did not open in a room with a fake wall"); Application.Quit(1); yield break; }
+            var d = room.Secret.Value;
+            Debug.Log("[Depths] note secret wall " + d + " in room (" + room.X + "," + room.Y + ")");
+            ScreenCapture.CaptureScreenshot(_path);
+            for (int i = 0; i < 10; i++) yield return null;
+            view.Frozen = true;
+            double px = d == Dir.E ? Balance.RoomRight : d == Dir.W ? Balance.RoomLeft : Balance.MidX;
+            double py = d == Dir.S ? Balance.RoomBottom : d == Dir.N ? Balance.RoomTop : Balance.MidY;
+            Check(!Blast.TryBreakSecret(run, Balance.MidX, Balance.MidY), "a blast in the middle of the room leaves the wall shut");
+            Check(Blast.TryBreakSecret(run, px, py), "a blast at the crack opens the wall");
+            Check(room.Doors.Contains(d) && !room.Secret.HasValue && run.secret, "the wall is now a door and the find is counted");
+            var behind = run.dungeon.Neighbour(room, d);
+            Check(behind != null && behind.Type == RoomKind.Secret, "the room behind is the secret room");
+            if (behind != null)
+            {
+                Rooms.EnterRoom(run, behind.X, behind.Y, d == Dir.N ? Dir.S : d == Dir.S ? Dir.N : d == Dir.E ? Dir.W : Dir.E);
+                bool hook = false;
+                foreach (var pk in run.pickups) hook |= pk.kind == "hook";
+                Check(hook, "the secret room holds the hook");
+            }
+            for (int i = 0; i < 3; i++) yield return null;
+            Application.Quit(_failed ? 1 : 0);
+        }
+
         IEnumerator LedgerView()
         {
             yield return new WaitForSecondsRealtime(2.5f);

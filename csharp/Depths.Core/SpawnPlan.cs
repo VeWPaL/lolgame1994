@@ -256,8 +256,9 @@ namespace Depths
         /// one and the shapes are still the shapes on floor twelve.
         /// </para>
         /// </summary>
-        public WavePlan PlanWave(int floor, Dir fromDir, Area area = Area.Area1, int weaponIdx = 0)
+        public WavePlan PlanWave(int floor, Dir fromDir, Area area = Area.Area1, int weaponIdx = 0, BodyKind[][]? pools = null)
         {
+            if (pools != null) return PlanPooled(floor, fromDir, area, weaponIdx, pools);
             var mix = Bodies.MixFor(area);
             var rolled = 2 + (int)(_rng.Run() * (2 + Balance.PressureRate));
             var n = Math.Max(2, (int)Math.Floor(rolled + Balance.DepthBodies(floor, 0)));
@@ -300,6 +301,79 @@ namespace Depths
                 victim.Pack = pack;
             }
 
+            return Fill(plan, weaponIdx);
+        }
+
+        /// <summary>
+        /// The wave from the run's area groups (Pools, Balance.TunePools): the same count, the same spots, the same
+        /// one-gunner and pack rules, but each slot's kind drawn by the floor's weights. A Gunner or a pack only
+        /// where the floor's groups hold one (scaled by a preview's weight); at most <see cref="Pools.MaxEggs"/>
+        /// eggs; a body that shoots never starts on the doorstep while one that comes to you can take its place.
+        /// </summary>
+        WavePlan PlanPooled(int floor, Dir fromDir, Area area, int weaponIdx, BodyKind[][] pools)
+        {
+            var mix = Bodies.MixFor(area);
+            var rolled = 2 + (int)(_rng.Run() * (2 + Balance.PressureRate));
+            var n = Math.Max(2, (int)Math.Floor(rolled + Balance.DepthBodies(floor, 0)));
+            var pts = Plan(n, fromDir);
+            double wGunner = Pools.Weight(pools, floor, BodyKind.Gunner), wBrunch = Pools.Weight(pools, floor, BodyKind.Brunch);
+            var heavy = n >= 3 && wGunner > 0 && _rng.Run() < (mix.Heavy + Curve.At(floor).Heavy) * wGunner;
+            var pack = wBrunch > 0 && n >= 2 && _rng.Run() < Balance.DepthPack(floor, mix.Brunch) * wBrunch ? RollPack() : 0;
+            var slots = pts.OrderByDescending(p => p.FromEntry).ToList();
+
+            var kinds = new List<BodyKind>();
+            var weights = new List<double>();
+            foreach (var k in Pools.Kinds)
+            {
+                double w = Pools.Weight(pools, floor, k);
+                if (w > 0 && Pools.Slot(k)) { kinds.Add(k); weights.Add(w); }
+            }
+            if (kinds.Count == 0) { kinds.Add(BodyKind.Lunger); weights.Add(1); }   // a floor whose groups are all Gunner and Brunch
+            int eggs = 0;
+            foreach (var s in slots)
+            {
+                s.Kind = Draw(kinds, weights, eggs >= Pools.MaxEggs);
+                if (s.Kind == BodyKind.Egg) eggs++;
+            }
+            if (heavy) slots[0].Kind = BodyKind.Gunner;
+            foreach (var s in slots)
+            {
+                if (s.Kind == BodyKind.Gunner || Pools.Comes(s.Kind) || s.FromEntry >= Balance.SpawnFar) continue;
+                double comes = 0;
+                for (int i = 0; i < kinds.Count; i++) if (Pools.Comes(kinds[i])) comes += weights[i];
+                if (comes <= 0) continue;   // nothing that walks in: the shooter keeps its spot
+                double r = _rng.Run() * comes;
+                for (int i = 0; i < kinds.Count; i++)
+                    if (Pools.Comes(kinds[i]) && (r -= weights[i]) < 0) { s.Kind = kinds[i]; break; }
+            }
+            var plan = new WavePlan { Slots = slots };
+            if (pack > 0 && slots.Count > 1)
+            {
+                var victim = slots[1 + (int)(_rng.Run() * (slots.Count - 1))];
+                victim.Kind = BodyKind.Brunch;
+                victim.Pack = pack;
+            }
+            return Fill(plan, weaponIdx);
+        }
+
+        BodyKind Draw(List<BodyKind> kinds, List<double> weights, bool noEgg)
+        {
+            double total = 0;
+            for (int i = 0; i < kinds.Count; i++) if (!(noEgg && kinds[i] == BodyKind.Egg)) total += weights[i];
+            if (total <= 0) return BodyKind.Lunger;
+            double r = _rng.Run() * total;
+            for (int i = 0; i < kinds.Count; i++)
+            {
+                if (noEgg && kinds[i] == BodyKind.Egg) continue;
+                if ((r -= weights[i]) < 0) return kinds[i];
+            }
+            for (int i = kinds.Count - 1; i >= 0; i--) if (!(noEgg && kinds[i] == BodyKind.Egg)) return kinds[i];   // rounding at the top end
+            return BodyKind.Lunger;
+        }
+
+        // The bodies of a planned wave, slot by slot: a lone body with its trait roll, a pack as its knot.
+        WavePlan Fill(WavePlan plan, int weaponIdx)
+        {
             foreach (var s in plan.Slots)
             {
                 if (s.Pack <= 0)
@@ -327,7 +401,7 @@ namespace Depths
                Bodies.TraitFor, which indexed the gun table by body kind), and the spawn applies it
                the game uses, so the two draws are spent here exactly as they are spent there. */
             // rollTrait reads the gun the PLAYER holds (TRAIT_TABLE by weapon), not the body's kind
-            int trait = s.Kind == BodyKind.Shooter || s.Kind == BodyKind.Gunner ? Spawn.RollTrait(_rng, weaponIdx) : 0;
+            int trait = Spawn.TakesTrait(s.Kind) ? Spawn.RollTrait(_rng, weaponIdx) : 0;
             plan.Bodies.Add(new PlannedBody { X = s.X, Y = s.Y, Kind = s.Kind, Trait = trait });
                     continue;
                 }

@@ -69,11 +69,16 @@ namespace Depths.Tests
         [Test]
         public void ABrunchTakesTwoToThreeBeamBolts()
         {
-            Assert.That(BeamBoltsToKill(0), Is.InRange(2, 3), "point blank");
-            Assert.That(BeamBoltsToKill(1000), Is.InRange(2, 3), "past the Beam's falloff");
-            Balance.Tuned = false;
-            try { Assert.That(BeamBoltsToKill(0), Is.EqualTo(1), "the JS rule: one bolt, the playtest complaint"); }
-            finally { Balance.Tuned = true; }
+            Balance.TuneDamage = false;   // the Beam rule alone; the 30% damage test cut makes it 5 (STATUS)
+            try
+            {
+                Assert.That(BeamBoltsToKill(0), Is.InRange(2, 3), "point blank");
+                Assert.That(BeamBoltsToKill(1000), Is.InRange(2, 3), "past the Beam's falloff");
+                Balance.Tuned = false;
+                try { Assert.That(BeamBoltsToKill(0), Is.EqualTo(1), "the JS rule: one bolt, the playtest complaint"); }
+                finally { Balance.Tuned = true; }
+            }
+            finally { Balance.TuneDamage = true; }
         }
 
         [Test]
@@ -86,7 +91,7 @@ namespace Depths.Tests
             double hp = b.hp;
             run.projectiles.Add(new Projectile { x = b.x, y = b.y, ox = b.x, oy = b.y, vx = 0.001, dx = 1, r = 6, dmg = 1, friendly = true, scale = 1, gun = 0 });
             TickOrder.TickProjectiles(run);
-            Assert.That(hp - b.hp, Is.EqualTo(1).Within(1e-9), "a Bolt hits a Brunch for its whole damage");
+            Assert.That(hp - b.hp, Is.EqualTo(Balance.PlayerDmg).Within(1e-9), "a Bolt hits a Brunch for its whole damage");
         }
 
         // ---- loot ----
@@ -434,6 +439,229 @@ namespace Depths.Tests
             double at60 = Dodge(60), at210 = Dodge(210);
             Assert.That(at60, Is.GreaterThan(Balance.LungerDodgeDist * 0.8));
             Assert.That(at60, Is.EqualTo(at210).Within(16), "one step of lunge travel at 60 Hz is 14.7 px");
+        }
+
+        // ---- the player's damage (TuneDamage) ----
+
+        static (double bolt, double blast) Dealt(bool cut)
+        {
+            bool was = Balance.TuneDamage;
+            Balance.TuneDamage = cut;
+            try
+            {
+                var run = Started();
+                var s = Spawn.Body(run, BodyKind.Shooter, Balance.MidX, Balance.RoomBottom - 160);   // no dodge, no beam rule
+                s.hp = s.maxHp = 1000; s.noticeTimer = int.MaxValue / 2; s.shootCd = int.MaxValue / 2;
+                run.enemies.Add(s);
+                var shot = Bolt(run, s);
+                for (int t = 0; t < Balance.Sec(1) && run.projectiles.Contains(shot); t++) Step(run);
+                double bolt = 1000 - s.hp;
+                double before = s.hp;
+                Blast.Explode(run, s.x, s.y);
+                return (bolt, before - s.hp);
+            }
+            finally { Balance.TuneDamage = was; }
+        }
+
+        [Test]
+        public void ThePlayersHitsLandAtSeventyPercent()
+        {
+            var full = Dealt(false);
+            var cut = Dealt(true);
+            Assert.That(full.bolt, Is.GreaterThan(0), "the bolt never hit");
+            Assert.That(full.blast, Is.GreaterThan(0), "the blast never hit");
+            Assert.That(cut.bolt, Is.EqualTo(full.bolt * Balance.PlayerDmgMult).Within(1e-9));
+            Assert.That(cut.blast, Is.EqualTo(full.blast * Balance.PlayerDmgMult).Within(1e-9));
+        }
+
+        [Test, TunedOn(false)]
+        public void UntunedThePlayersHitsAreTheJs()
+        {
+            Assert.That(Balance.PlayerDmg, Is.EqualTo(1.0), "the parity rows need x1 exactly");
+        }
+
+        // ---- momentum (TuneMomentum) ----
+
+        // seconds of running back and forth in a room with a (sleeping) body in it until the meter is full, and the
+        // top speed reached then, in px/s
+        static (double fill, double top) RunToFull(bool tuned)
+        {
+            bool was = Balance.TuneMomentum;
+            Balance.TuneMomentum = tuned;
+            try
+            {
+                var run = Started();
+                var b = Spawn.Body(run, BodyKind.Shooter, Balance.MidX, Balance.RoomTop + 30);
+                b.noticeTimer = int.MaxValue / 2; b.shootCd = int.MaxValue / 2;
+                run.enemies.Add(b);
+                Place(run, Balance.RoomLeft + 60, Balance.MidY);
+                int dir = 1, t = 0;
+                double top = 0;
+                for (; t < Balance.Sec(20) && run.player.momentum < 1; t++)
+                {
+                    if (run.player.x > Balance.RoomRight - 60) dir = -1; else if (run.player.x < Balance.RoomLeft + 60) dir = 1;
+                    TickOrder.TickPlayer(run, new Input(dir, 0));
+                }
+                for (int k = 0; k < Balance.Sec(1); k++)
+                {
+                    if (run.player.x > Balance.RoomRight - 60) dir = -1; else if (run.player.x < Balance.RoomLeft + 60) dir = 1;
+                    double x0 = run.player.x;
+                    TickOrder.TickPlayer(run, new Input(dir, 0));
+                    top = Math.Max(top, Math.Abs(run.player.x - x0) * Balance.TickHz);
+                }
+                return (t / (double)Balance.TickHz, top);
+            }
+            finally { Balance.TuneMomentum = was; }
+        }
+
+        [Test]
+        public void MomentumIsEarnedOverSecondsAndFeltWhenFull()
+        {
+            var js = RunToFull(false);
+            var tuned = RunToFull(true);
+            Assert.That(js.fill, Is.LessThan(1.2), "the JS meter fills in well under a second of running: barely present");
+            Assert.That(tuned.fill, Is.InRange(3.5, 7.0), "tuned, it takes seconds of moving under pressure");
+            Assert.That(tuned.top / js.top, Is.GreaterThan(1.12), "and a full meter is clearly faster than the JS full meter");
+        }
+
+        [Test]
+        public void StandingStillDrainsMomentumOverSecondsNotAnInstant()
+        {
+            var run = Started();
+            var b = Spawn.Body(run, BodyKind.Shooter, Balance.MidX, Balance.RoomTop + 30);
+            b.noticeTimer = int.MaxValue / 2; b.shootCd = int.MaxValue / 2;
+            run.enemies.Add(b);
+            run.player.momentum = 1;
+            int t = 0;
+            for (; t < Balance.Sec(10) && run.player.momentum > 0; t++) TickOrder.TickPlayer(run, Input.None);
+            Assert.That(t / (double)Balance.TickHz, Is.InRange(2.0, 4.0), "a full meter drains over about three seconds");
+        }
+
+        // ---- eased motion (TuneEase) ----
+
+        [Test]
+        public void ADashCurveStartsAtRestEndsAtRestAndCoversAllOfIt()
+        {
+            foreach (var (a, b) in new[] { (Balance.LungeRampIn, Balance.LungeRampOut), (Balance.DodgeRampIn, Balance.DodgeRampOut) })
+            {
+                Assert.That(Movement.DashShare(0, a, b), Is.EqualTo(0));
+                Assert.That(Movement.DashShare(1, a, b), Is.EqualTo(1).Within(1e-12));
+                double prev = 0, top = 0;
+                for (int i = 1; i <= 1000; i++)
+                {
+                    double s = Movement.DashShare(i / 1000.0, a, b), v = (s - prev) * 1000;
+                    Assert.That(s, Is.GreaterThanOrEqualTo(prev), "never backwards at " + i);
+                    top = Math.Max(top, v); prev = s;
+                }
+                Assert.That(top, Is.EqualTo(1 / Movement.DashArea(a, b)).Within(0.01), "the top speed is the mean over the area");
+                double first = Movement.DashShare(0.01, a, b) * 100, last = (1 - Movement.DashShare(0.99, a, b)) * 100;
+                Assert.That(first, Is.LessThan(0.05 * top), "it starts from rest");
+                Assert.That(last, Is.LessThan(0.05 * top), "and comes to rest");
+            }
+        }
+
+        // a Lunger's whole lunge, tick by tick: the steps, from the first tick of the lunge to the last
+        static (double[] steps, double ex, double ey) Lunge(bool ease)
+        {
+            bool was = Balance.TuneEase;
+            Balance.TuneEase = ease;
+            try
+            {
+                var run = Started();
+                Place(run, Balance.MidX, Balance.MidY + 150);
+                var l = Spawn.Body(run, BodyKind.Lunger, Balance.MidX, Balance.MidY - 100);
+                l.noticeTimer = 0; l.alerted = true; l.lifeT = Balance.Sec(10); l.lungeCd = 0; l.startleSpent = true;
+                l.dodgeCd = int.MaxValue / 2;
+                run.enemies.Add(l);
+                var steps = new System.Collections.Generic.List<double>();
+                for (int t = 0; t < Balance.Sec(3) && steps.Count == 0 || l.lungeState == "lunge"; t++)
+                {
+                    double x0 = l.x, y0 = l.y;
+                    bool lunging = l.lungeState == "lunge";
+                    Movement.StepLunge(run, l, 0, 0, 200, 1);   // no approach walk: only the dash moves it
+                    if (lunging) steps.Add(D(x0, y0, l.x, l.y));
+                    if (t > Balance.Sec(3)) break;
+                }
+                return (steps.ToArray(), l.x, l.y);
+            }
+            finally { Balance.TuneEase = was; }
+        }
+
+        [Test]
+        public void AnEasedLungeTakesAsLongAndLandsWhereTheFlatOneDid()
+        {
+            var flat = Lunge(false);
+            var eased = Lunge(true);
+            Assert.That(flat.steps.Length, Is.GreaterThan(2), "the fixture never lunged");
+            Assert.That(eased.steps.Length, Is.EqualTo(flat.steps.Length), "the same number of ticks: the aim (LungeIntercept) still holds");
+            Assert.That(eased.ex, Is.EqualTo(flat.ex).Within(1e-6)); Assert.That(eased.ey, Is.EqualTo(flat.ey).Within(1e-6));
+            Assert.That(flat.steps.All(s => Math.Abs(s - Balance.LungeSpeed) < 1e-9), "the JS lunge is flat");
+            Assert.That(eased.steps[0], Is.LessThan(0.5 * Balance.LungeSpeed), "the eased one leaves the windup gently");
+            Assert.That(eased.steps[eased.steps.Length - 1], Is.LessThan(0.6 * Balance.LungeSpeed), "and arrives gently");
+        }
+
+        static double[] DodgeSteps(bool ease)
+        {
+            bool was = Balance.TuneEase;
+            Balance.TuneEase = ease;
+            try
+            {
+                var (run, l) = LungerAt(300);
+                Bolt(run, l);
+                var steps = new System.Collections.Generic.List<double>();
+                for (int t = 0; t < Balance.Sec(2); t++)
+                {
+                    double x0 = l.x, y0 = l.y;
+                    bool dodging = l.lungeState == "dodge", fresh = l.dodgeCd == 0;
+                    Step(run);
+                    dodging |= fresh && l.dodgeCd > 0;   // the tick a dodge starts is its first step
+                    if (dodging) steps.Add(D(x0, y0, l.x, l.y));
+                    else if (steps.Count > 0) break;
+                }
+                return steps.ToArray();
+            }
+            finally { Balance.TuneEase = was; }
+        }
+
+        [Test]
+        public void AnEasedDodgeGoesAsFarAndStaysSnappy()
+        {
+            var flat = DodgeSteps(false);
+            var eased = DodgeSteps(true);
+            Assert.That(flat.Length, Is.GreaterThan(0), "the fixture never dodged");
+            Assert.That(eased.Sum(), Is.EqualTo(flat.Sum()).Within(1e-6), "the same distance");
+            Assert.That(eased.Max(), Is.LessThanOrEqualTo(Balance.DodgePeak * Balance.LungeSpeed + 1e-9), "never faster than its peak");
+            Assert.That(eased[0], Is.LessThan(0.5 * Balance.LungeSpeed), "it gathers itself");
+            Assert.That(eased.Length * 1.0 / Balance.TickHz, Is.LessThan(0.2), "and is still done inside 0.2 s");
+        }
+
+        [Test]
+        public void ARangedBodyGlidesIntoItsWalk()
+        {
+            double[] Walk(bool ease)
+            {
+                bool was = Balance.TuneEase;
+                Balance.TuneEase = ease;
+                try
+                {
+                    var run = Started();
+                    Place(run, Balance.MidX, Balance.RoomBottom - 40);
+                    var s = Spawn.Body(run, BodyKind.Shooter, Balance.MidX, Balance.RoomTop + 40);   // far: it walks in
+                    s.noticeTimer = 0; s.alerted = true; s.shootCd = int.MaxValue / 2;
+                    run.enemies.Add(s);
+                    var v = new double[Balance.Sec(0.5)];
+                    for (int t = 0; t < v.Length; t++) { double y0 = s.y; Step(run); v[t] = s.y - y0; }
+                    return v;
+                }
+                finally { Balance.TuneEase = was; }
+            }
+            var flat = Walk(false);
+            var eased = Walk(true);
+            double speed = flat.Max();
+            Assert.That(speed, Is.GreaterThan(0), "the fixture never walked");
+            Assert.That(flat[0], Is.EqualTo(speed).Within(1e-9), "the JS walk is at full speed from its first tick");
+            Assert.That(eased[0], Is.LessThan(0.35 * speed), "eased, it starts slower");
+            Assert.That(eased[eased.Length - 1], Is.EqualTo(speed).Within(0.05 * speed), "and is at full speed within half a second");
         }
     }
 }

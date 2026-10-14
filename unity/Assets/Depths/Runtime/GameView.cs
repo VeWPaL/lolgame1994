@@ -55,6 +55,7 @@ namespace Depths.Unity
         void Start()
         {
             new Bindings(controls, new PlayerPrefsStore());   // applies the player's saved rebinds
+            new DisplaySettings(new PlayerPrefsStore()).Apply();   // the frame rate, also when Play starts in this scene
             var map = controls.FindActionMap("Gameplay", true);
             _move = map.FindAction("Move", true);
             _cast = map.FindAction("Cast", true);
@@ -71,6 +72,12 @@ namespace Depths.Unity
             bool labRow = i >= 0 && i + 1 < args.Length && args[i + 1] == "labrow";   // the row, frozen and unshot: every sprite
             _inLab = labRow || (i >= 0 && i + 1 < args.Length && args[i + 1] == "lab");
             _demo |= _sandbox || (_inLab && !labRow);
+            _secretView = i >= 0 && i + 1 < args.Length && args[i + 1] == "secret";
+            _railView = i >= 0 && i + 1 < args.Length && args[i + 1] == "rail";   // one egg track (-depthsSeed n picks it), the lab frozen
+            _inLab |= _railView;
+            int si = Array.IndexOf(args, "-depthsSeed");
+            if (si >= 0 && si + 1 < args.Length && uint.TryParse(args[si + 1], out var fixedSeed)) _fixedSeed = fixedSeed;
+            if (_secretView && _fixedSeed == null) _fixedSeed = 1;   // seed 1 has a fake wall on floor 1 (the JS reference frame uses it too)
             NewRun();
             if (_inLab && !labRow) _lab.SetFrozen(false, _run);   // the screenshot wants the row at work
         }
@@ -81,7 +88,8 @@ namespace Depths.Unity
             Depths.Unity.Audio.MusicEngine.SetFight(false);   // back to the menu: the calm layer only
         }
 
-        bool _bossRoom, _sandbox, _inLab;
+        bool _bossRoom, _sandbox, _inLab, _secretView, _railView;
+        uint? _fixedSeed;   // -depthsSeed: the screenshot checks pick their dungeon
         readonly LabMode _lab = new LabMode();
         bool RealRun => !_sandbox && !_bossRoom && !_inLab;
 
@@ -91,11 +99,12 @@ namespace Depths.Unity
         {
             new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
             _recorded = false;
-            uint seed = (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+            uint seed = _fixedSeed ?? (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
             {
                 _run = new RunState(new Rng(seed));
                 _run.Start(seed);
+                if (_secretView) EnterSecretWall();
                 _lastShots = _lastHits = _lastKills = 0; _lastHp = _run.player.hp; _lastDmg = 0;
                 return;
             }
@@ -118,9 +127,34 @@ namespace Depths.Unity
                 _run.enemies.Add(w);
                 return;
             }
-            if (_inLab) { _lab.Enter(_run); return; }
+            if (_inLab)
+            {
+                _lab.Enter(_run);
+                if (_railView)
+                {
+                    _run.enemies.Clear();
+                    var egg = Spawn.Body(_run, BodyKind.Egg, Balance.MidX, Balance.MidY);
+                    egg.noticeTimer = int.MaxValue / 2;
+                    Eggs.OnRail(_run, egg, (int)((_fixedSeed ?? 0) % (uint)Eggs.Patterns));
+                    _run.enemies.Add(egg);
+                }
+                return;
+            }
             for (int k = 0; k < DummyKinds.Length; k++) SpawnDummy(k);
             SpawnPack();
+        }
+
+        // The "secret" screenshot view: straight into the room that holds the fake wall, emptied, the ready freeze skipped.
+        void EnterSecretWall()
+        {
+            foreach (var r in _run.dungeon.AllRooms)
+            {
+                if (!r.Secret.HasValue) continue;
+                Rooms.EnterRoom(_run, r.X, r.Y, r.Secret.Value == Dir.S ? Dir.N : Dir.S);
+                _run.enemies.Clear();
+                _run.readyT = 0; _run.fadeT = 0;
+                return;
+            }
         }
 
         // A Brunch pack of four: it walls the nearest shooter or gunner, or hunts you if there is none.
@@ -240,6 +274,7 @@ namespace Depths.Unity
                 // keys are -1/0/1 per axis in the game, and screen y points down
                 var input = new Input(Math.Sign(mv.x), -Math.Sign(mv.y), fire: fire, alt: alt, aimX: aim.x, aimY: aim.y);
                 _demoBlast = false;
+                Interp.Snap(_run);   // where everything was, so the frame can draw between this tick and the next
                 if (RealRun) TickOrder.Update(_run, input);   // gates, transitions, then player, shells, bodies, room
                 else if (_run.state == "playing")
                 {
@@ -263,6 +298,7 @@ namespace Depths.Unity
             if (_bannerS > 0) _bannerS -= _frameS;
             Section(4);
             _world.Aim = aim;
+            _world.Alpha = (float)_clock.Alpha;
             _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : _frameS);
             Section(5);
             _hud.Refresh(_run, _frameS);

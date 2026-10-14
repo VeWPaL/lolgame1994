@@ -20,6 +20,44 @@ namespace Depths.Unity.Tests
         public void Save() => Saves++;
     }
 
+    public class DisplaySettingsTests
+    {
+        [Test]
+        public void VSyncUntilChosenAndEachChoiceMeansOneCap()
+        {
+            var store = new MemoryStore();
+            var d = new DisplaySettings(store);
+            Assert.That(d.Frames, Is.EqualTo("VSync"), "a fresh install follows the monitor, as before the option");
+            Assert.That(DisplaySettings.Mode("VSync"), Is.EqualTo((1, -1)));
+            Assert.That(DisplaySettings.Mode("Uncapped"), Is.EqualTo((0, -1)));
+            Assert.That(DisplaySettings.Mode("144"), Is.EqualTo((0, 144)));
+            foreach (var c in DisplaySettings.Choices)
+            {
+                var (v, t) = DisplaySettings.Mode(c);
+                Assert.That(v == 1 || t != 0, Is.True, c + " would stop the frame loop");
+            }
+            d.Frames = "120";
+            Assert.That(new DisplaySettings(store).Frames, Is.EqualTo("120"), "the choice does not survive a restart");
+            Assert.That(store.Saves, Is.EqualTo(1));
+            store.S[DisplaySettings.FrameKey] = "999";
+            Assert.That(d.Frames, Is.EqualTo("VSync"), "an unknown saved value is honoured");
+        }
+
+        [Test]
+        public void ApplyingAChoiceSetsUnitysFrameLoop()
+        {
+            int v0 = QualitySettings.vSyncCount, t0 = Application.targetFrameRate;
+            try
+            {
+                var d = new DisplaySettings(new MemoryStore()) { Frames = "60" };
+                d.Apply();
+                Assert.That(QualitySettings.vSyncCount, Is.EqualTo(0));
+                Assert.That(Application.targetFrameRate, Is.EqualTo(60));
+            }
+            finally { QualitySettings.vSyncCount = v0; Application.targetFrameRate = t0; }
+        }
+    }
+
     public class GameplaySettingsTests
     {
         [Test]
@@ -56,6 +94,14 @@ namespace Depths.Unity.Tests
             Assert.That(root.Q<UnityEngine.UIElements.Button>("tabGameplay"), Is.Not.Null);
             Assert.That(root.Q("gameplayPage"), Is.Not.Null);
             Assert.That(root.Q<UnityEngine.UIElements.Toggle>("curve"), Is.Not.Null, "the menu reads a toggle named curve");
+        }
+
+        [Test]
+        public void TheGameplayPageOffersTheFrameRate()
+        {
+            var tree = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>("Assets/Depths/UI/MainMenu.uxml");
+            var page = tree.Instantiate().Q("gameplayPage");
+            Assert.That(page.Q<UnityEngine.UIElements.DropdownField>("frameRate"), Is.Not.Null, "the menu reads a dropdown named frameRate");
         }
     }
 

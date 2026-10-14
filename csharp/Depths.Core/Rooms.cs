@@ -157,13 +157,15 @@ namespace Depths
                 r.Spawned = true;
                 if (r.Type == RoomKind.Normal)
                 {
-                    var plan = run.planner.PlanWave(run.floor, from, AreaRules.AreaForFloor(run.floor), run.player.weaponIdx);
+                    var plan = run.planner.PlanWave(run.floor, from, AreaRules.AreaForFloor(run.floor), run.player.weaponIdx,
+                                                     Balance.Tuned && Balance.TunePools ? run.pools : null);
                     foreach (var b in plan.Bodies)
                     {
                         var e = Spawn.Body(run, b.Kind, b.X, b.Y, b.Trait);
                         if (b.Kind == BodyKind.Brunch && b.PackId > 0) { e.packId = b.PackId; e.packSlot = b.PackSlot; }
                         run.enemies.Add(e);
                     }
+                    foreach (var e in run.enemies) if (e.kind == BodyKind.Egg) Eggs.Dress(run, e);   // once the wave is in: an orbit needs its host
                 }
                 else if (r.Type == RoomKind.Boss) run.enemies.Add(Spawn.BodyAnywhere(run, BodyKind.Boss));
                 else if (r.Type == RoomKind.Secret) run.pickups.Add(Pickup.Of("hook", Balance.MidX, Balance.MidY, 16));

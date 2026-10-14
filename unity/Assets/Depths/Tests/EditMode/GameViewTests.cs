@@ -16,6 +16,26 @@ namespace Depths.Unity.Tests
 
         // a 0-tick frame followed by a 2-tick one is a visible stutter. Pins Unity's float frame times
         // for whole divisors of 60; a display slightly off 60 Hz still double-steps now and then.
+        // the frame draws between the last two ticks by this fraction (Interp): it must be what the clock has not
+        // yet spent, so a 144 Hz frame 2/5 of the way into a tick draws 2/5 of the way along
+        [Test]
+        public void AlphaIsTheUnspentFractionOfATick()
+        {
+            var c = new TickClock();
+            Assert.That(c.Alpha, Is.EqualTo(0));
+            c.Advance(0.4 / 60, false);
+            Assert.That(c.Alpha, Is.EqualTo(0.4).Within(1e-9));
+            int n = c.Advance(1.0 / 60, false);
+            Assert.That(n, Is.EqualTo(1));
+            Assert.That(c.Alpha, Is.EqualTo(0.4).Within(1e-9));
+            var rng = new System.Random(5);
+            for (int f = 0; f < 5000; f++)
+            {
+                c.Advance(rng.NextDouble() / 30, rng.Next(10) == 0);
+                Assert.That(c.Alpha, Is.GreaterThanOrEqualTo(0).And.LessThan(1), "frame " + f);
+            }
+        }
+
         [Test]
         public void AWholeDivisorFrameRateStepsTheSameTicksEveryFrame()
         {
