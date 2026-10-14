@@ -109,7 +109,7 @@ namespace Depths.Unity
                     Glow(f.X, f.Y, rr, new Color32(255, 255, 255, 255), 0.16f + 0.34f * grow);
                     continue;
                 }
-                Color32 c = f.Mine ? MomentumTint(f.Mom) : new Color32(255, 255, 255, 255);
+                Color32 c = f.Mine ? Sprites.BlinkBlue : new Color32(255, 255, 255, 255);
                 Glow(f.X, f.Y, 14, c, 0.35f * f.Life / f.Max);
             }
 
@@ -130,13 +130,6 @@ namespace Depths.Unity
                 Rect(Balance.RoomLeft - wt, Balance.RoomTop - wt, Balance.RoomRight - Balance.RoomLeft + wt * 2, Balance.RoomBottom - Balance.RoomTop + wt * 2,
                      Hex.Rgba(0, 0, 0, Mathf.Clamp01((float)run.roomFade)));
             _q.Flush();
-        }
-
-        static Color32 MomentumTint(float m)
-        {
-            int i = Mathf.RoundToInt(Mathf.Clamp01(m) * 4);   // MOMENTUM_STEPS 5: white to green
-            float t = i / 4f;
-            return new Color32((byte)Mathf.RoundToInt(255 + (120 - 255) * t), 255, (byte)Mathf.RoundToInt(255 + (160 - 255) * t), 255);
         }
 
         // ---- the room's edge ----
@@ -532,7 +525,7 @@ namespace Depths.Unity
                 float fade = Mathf.Min(1, (float)lagD / Balance.BlinkDist);
                 // the lag is not snapped; carried by the player's own blend it moves with the drawn body, not a tick behind
                 double gx = pl.lagX + (plx - pl.x), gy = pl.lagY + (ply - pl.y);
-                Ring(gx, gy + Balance.PlayerHitDy, Balance.PlayerHitR, 1, QuadBatch.Tint(Hex.Of("#66d9ff"), 0.5f * fade));
+                Ring(gx, gy + Balance.PlayerHitDy, Balance.PlayerHitR, 1, QuadBatch.Tint(Sprites.BlinkBlue, 0.5f * fade));
                 Spr(SpriteSet.PlayerR(frame, false), gx, gy + bob + hop - 4, 0.18f * fade);
             }
             DrawMomentumTrail(pl, plx, ply, frame);
@@ -558,11 +551,11 @@ namespace Depths.Unity
         static Color32[] _wandCols;
 
         /// <summary>drawWand: the staff turned to the aim, its gem in the gun's colour, a glow and two motes at the tip.</summary>
-        // ---- momentum: amber afterimages that lengthen and brighten as the meter fills ----
+        // ---- momentum: afterimages in the blink's blue that lengthen and brighten as the meter fills ----
         public const float TrailFrom = 0.2f;   // below this much momentum, no trail
         const int TrailLen = 5, TrailGhosts = 3;   // the ring keeps five samples; at most three are drawn
         const float TrailEvery = 2.5f;          // cosmetic ticks between samples (60 a second): frame-rate free
-        static readonly Color32 TrailAmber = Hex.C("#ffb347");
+
         readonly Vector2[] _trail = new Vector2[TrailLen];
         int _trailN;
         float _trailAt = -1;
@@ -593,7 +586,7 @@ namespace Depths.Unity
             {
                 var g = _trail[i];
                 if ((g - new Vector2((float)x, (float)y)).sqrMagnitude < 9) continue;   // standing still: nothing trails
-                _q.Centred(A.Texture, r, g.x + Origin.x, g.y - 4 + Origin.y, QuadBatch.Tint(TrailAmber, a * (1 - (i - 1) / (float)TrailLen)));
+                _q.Centred(A.Texture, r, g.x + Origin.x, g.y - 4 + Origin.y, QuadBatch.Tint(Sprites.BlinkBlue, a * (1 - (i - 1) / (float)TrailLen)));
             }
         }
 

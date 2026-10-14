@@ -45,11 +45,15 @@ namespace Depths
         public static double BurrowRamp => Balance.Ease(0.0068);              // per JS tick: ~0.7 s from walk to top speed
         public static double BurrowBrake => Balance.Ease(0.03);               // per JS tick: it sheds speed faster than it gains it
         public static double BurrowRoot => Balance.Ease(0.12);                // per JS tick: it stops within ~0.1 s as it digs
-        public static double BurrowTurn => Balance.PerSec(3.4);               // rad/s under the floor
+        public static double BurrowTurn => Balance.PerSec(7.5);               // rad/s under the floor: a direct line, not a sweep
+        public static double BurrowCurveEase => Balance.Ease(0.03);           // per JS tick: how fast it reads the player's turning
+        public static double BurrowCurveMax => Balance.PerSec(6);             // rad/s: a faster turn is a reversal, not a curve
+        public const double BurrowSwerveTrust = 1.0;                          // a reverser's swerve shortens the lead (pacing)
+        public const double BurrowCurveMinSpeed = 0.4;                        // x walking speed: slower, the heading means nothing
         public static double BurrowArrive => Balance.SecF(0.14);              // slows within this many ticks of its mark
         public static double BurrowLeadMax => Balance.SecF(1.0);              // the longest lead it ever takes
-        public const double BurrowTrustMin = 0.1, BurrowTrustMax = 0.8;       // share of the lead, rolled per dive
-        public const double BurrowSlop = 26;                                  // px of random offset, rolled per dive
+        public const double BurrowTrustMin = 0.8, BurrowTrustMax = 1.05;      // share of the lead, rolled per dive
+        public const double BurrowSlop = 18;                                  // px of random offset, rolled per dive
         public const double BurrowSurfaceAt = 14;                             // px from its mark: up it comes
         public static int BurrowSurface => Balance.Sec(1.6);
         public static int BurrowDig => Balance.Sec(0.45);
@@ -202,6 +206,7 @@ namespace Depths
                     if (Sharp)
                     {
                         e.digTrust = BurrowTrustMin + (BurrowTrustMax - BurrowTrustMin) * run.rng.Jitter();
+                        e.digVx = e.digVy = e.digOmega = 0;
                         double a = run.rng.Jitter() * 2 * System.Math.PI, r = BurrowSlop * run.rng.Jitter();
                         e.digOffX = System.Math.Cos(a) * r; e.digOffY = System.Math.Sin(a) * r;
                         e.curSpeed = System.Math.Max(e.curSpeed, BurrowWalkSharp * Balance.DepthRate(run.floor));
@@ -250,11 +255,13 @@ namespace Depths
             var p = run.player;
             double top = BurrowRun * Balance.DepthRate(run.floor);
             double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy;
-            double gap = System.Math.Sqrt((hx - e.x) * (hx - e.x) + (hy - e.y) * (hy - e.y));
-            double lead = System.Math.Min(BurrowLeadMax, gap / System.Math.Max(1e-9, e.curSpeed) + BurrowRise) * e.digTrust * (1 - p.swerve);
+            // the lead is its own time to the mark plus the rise, so it arrives as the player does (an intercept, not a guess)
+            double toMark = System.Math.Sqrt((e.markX - e.x) * (e.markX - e.x) + (e.markY - e.y) * (e.markY - e.y));
+            double lead = System.Math.Min(BurrowLeadMax, toMark / System.Math.Max(BurrowWalkSharp, e.curSpeed) + BurrowRise) * e.digTrust * (1 - p.swerve * BurrowSwerveTrust);
+            var (lx, ly) = AlongCurve(e, p.vx, p.vy, lead);
             double rm = e.r + 4;
-            e.markX = Clamp(hx + p.vx * lead + e.digOffX, Balance.RoomLeft + rm, Balance.RoomRight - rm);
-            e.markY = Clamp(hy + p.vy * lead + e.digOffY, Balance.RoomTop + rm, Balance.RoomBottom - rm);
+            e.markX = Clamp(hx + lx + e.digOffX, Balance.RoomLeft + rm, Balance.RoomRight - rm);
+            e.markY = Clamp(hy + ly + e.digOffY, Balance.RoomTop + rm, Balance.RoomBottom - rm);
             double mx = e.markX - e.x, my = e.markY - e.y, md = System.Math.Sqrt(mx * mx + my * my);
             if (md <= BurrowSurfaceAt) { Surface(e); return; }
             double speed = System.Math.Min(top, System.Math.Max(BurrowWalkSharp * 0.25, md / BurrowArrive));
@@ -263,6 +270,25 @@ namespace Depths
             double turn = md < 80 ? System.Math.Max(BurrowTurn * 2, e.curSpeed / (BurrowSurfaceAt * 0.6)) : BurrowTurn;
             Steer(e, System.Math.Atan2(my, mx), speed, speed < e.curSpeed ? BurrowBrake : BurrowRamp, turn, sm);
             if (--e.moveT <= 0) Surface(e);
+        }
+
+        // where the player's motion takes them in `ticks`: their velocity turned at the rate their heading has been turning
+        // (a circling player is followed round the circle, a straight runner along the line, a stander nowhere)
+        static (double x, double y) AlongCurve(Enemy e, double vx, double vy, double ticks)
+        {
+            double speed = System.Math.Sqrt(vx * vx + vy * vy), slow = Balance.PlayerMove * BurrowCurveMinSpeed;
+            if (speed > slow && (e.digVx != 0 || e.digVy != 0))
+            {
+                // a reversal, or a stale sample after a stun, reads as a turn of ~pi in a tick: it is not a curve to follow
+                double turned = System.Math.IEEERemainder(System.Math.Atan2(vy, vx) - System.Math.Atan2(e.digVy, e.digVx), 2 * System.Math.PI);
+                if (System.Math.Abs(turned) <= BurrowCurveMax) e.digOmega += (turned - e.digOmega) * BurrowCurveEase;
+                else e.digOmega = 0;
+            }
+            if (speed > slow) { e.digVx = vx; e.digVy = vy; } else { e.digVx = e.digVy = 0; }
+            double w = e.digOmega, th = w * ticks;
+            if (System.Math.Abs(w) < 1e-5) return (vx * ticks, vy * ticks);
+            double s = System.Math.Sin(th), c = System.Math.Cos(th);
+            return ((s * vx + (c - 1) * vy) / w, ((1 - c) * vx + s * vy) / w);
         }
 
         // speed eases toward `speed` by `ease`, the heading turns toward `want` by at most `turn` a tick (0: it keeps its heading)

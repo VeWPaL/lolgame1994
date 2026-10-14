@@ -191,7 +191,7 @@ namespace Depths.Tests
             ["Eggs.OrbitSpin"] = U.PerSec, ["Eggs.RailSpeed"] = U.PerSec, ["Balance.AimHorizon"] = U.SecF,
             ["Middle.BurrowWalkSharp"] = U.PerSec, ["Middle.BurrowRamp"] = U.Ease, ["Middle.BurrowTurn"] = U.PerSec,
             ["Middle.BurrowTurnWalk"] = U.PerSec, ["Middle.BurrowWeave"] = U.PerSec, ["Middle.BurrowWalkEase"] = U.Ease,
-            ["Middle.BurrowArrive"] = U.SecF, ["Middle.BurrowLeadMax"] = U.SecF, ["Middle.BurrowBrake"] = U.Ease, ["Middle.BurrowRoot"] = U.Ease,
+            ["Middle.BurrowArrive"] = U.SecF, ["Middle.BurrowLeadMax"] = U.SecF, ["Middle.BurrowBrake"] = U.Ease, ["Middle.BurrowRoot"] = U.Ease, ["Middle.BurrowCurveEase"] = U.Ease, ["Middle.BurrowCurveMax"] = U.PerSec,
             ["Balance.MomStallDecay"] = U.PerSec,
         };
 

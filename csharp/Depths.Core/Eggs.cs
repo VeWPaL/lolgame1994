@@ -11,12 +11,13 @@ namespace Depths
         public const int OrbitRing = 5;                          // shells (the fixed egg: 8)
         public const double OrbitShellSpeed = 0.8;               // x the egg's shell speed
         public const double OrbitGap = 34;                       // px between the host's edge and the egg's centre
-        public static double OrbitSpin => Balance.PerSec(1.1);   // radians a second
+        public static double OrbitSpin => Balance.PerSec(1.6);   // radians a second
         public const double OrbitChance = 0.45;                  // an egg with a body to circle does, this often
 
         // ---- rail ----
         public const int RailRing = 6;
-        public static double RailSpeed => Balance.PerSec(70);    // px a second along the track
+        public static double RailSpeed => Balance.PerSec(140);   // px a second along the track
+        public const double RailScaleMin = 0.38, RailScaleMax = 0.55;   // a track is this share of the room's, rolled per egg
         public const double RailChance = 0.6;                    // a Kiln Works egg rides a rail, this often
         public const double RailInset = 80;                      // px the track keeps from the walls: the doors stay clear
 
@@ -45,7 +46,8 @@ namespace Depths
 
         public static void OnRail(RunState run, Enemy e, int pattern)
         {
-            var (pts, loop) = Track(pattern, run.rng.Run() < 0.5, run.rng.Run() < 0.5);
+            double scale = RailScaleMin + (RailScaleMax - RailScaleMin) * run.rng.Run();
+            var (pts, loop) = Track(pattern, run.rng.Run() < 0.5, run.rng.Run() < 0.5, scale, run.rng.Run(), run.rng.Run());
             e.eggForm = EggForm.Rail; e.rail = pts; e.railLoop = loop; e.railLen = Length(pts, loop);
             e.railS = run.rng.Run() * e.railLen;
             e.railDir = run.rng.Run() < 0.5 ? 1 : -1;
@@ -111,13 +113,19 @@ namespace Depths
         public const int Patterns = 8;
         public static readonly string[] PatternNames = { "loop", "figure eight", "zigzag", "serpentine", "ring", "spiral", "diamond", "clover" };
 
-        /// <summary>A track through the room as points (x0, y0, x1, y1, ...), closed (a loop the egg circles) or open (a line it... [h:Eggs-2]</summary>
-        public static (double[] pts, bool loop) Track(int pattern, bool flipX, bool flipY)
+        /// <summary>A track as points (x0, y0, x1, y1, ...), a loop or an open line [h:Eggs-2], at `scale` of the room's size,
+        /// centred at (u, v) of the room's free span (0..1 each way; 0.5, 0.5 is the middle).</summary>
+        public static (double[] pts, bool loop) Track(int pattern, bool flipX, bool flipY, double scale = 1, double u = 0.5, double v = 0.5)
         {
             double l = Balance.RoomLeft + RailInset, r = Balance.RoomRight - RailInset, t = Balance.RoomTop + RailInset, b = Balance.RoomBottom - RailInset;
             double cx = (l + r) / 2, cy = (t + b) / 2, hw = (r - l) / 2, hh = (b - t) / 2;
+            double ox = l + hw * scale + (r - l - 2 * hw * scale) * u, oy = t + hh * scale + (b - t - 2 * hh * scale) * v;
             var p = new List<double>();
-            void Add(double x, double y) { p.Add(flipX ? 2 * cx - x : x); p.Add(flipY ? 2 * cy - y : y); }
+            void Add(double x, double y)
+            {
+                x = flipX ? 2 * cx - x : x; y = flipY ? 2 * cy - y : y;
+                p.Add(ox + (x - cx) * scale); p.Add(oy + (y - cy) * scale);
+            }
             const double Tau = 2 * System.Math.PI;
             bool loop;
             switch (((pattern % Patterns) + Patterns) % Patterns)

@@ -222,6 +222,34 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void ARailIsASmallTrackLaidAnywhereInTheRoom()
+        {
+            // owner 2026-10-14: the tracks were the whole room, slow, and always centred
+            double l = Balance.RoomLeft + Eggs.RailInset, r = Balance.RoomRight - Eggs.RailInset;
+            double t = Balance.RoomTop + Eggs.RailInset, b = Balance.RoomBottom - Eggs.RailInset;
+            double cxLo = double.MaxValue, cxHi = double.MinValue, cyLo = double.MaxValue, cyHi = double.MinValue;
+            var run = Room();   // one run: each egg's rolls follow the last's
+            for (int i = 0; i < 64; i++)
+            {
+                var egg = Add(run, BodyKind.Egg, 0, 0);
+                Eggs.OnRail(run, egg, i % Eggs.Patterns);
+                double x0 = double.MaxValue, x1 = double.MinValue, y0 = double.MaxValue, y1 = double.MinValue;
+                for (int k = 0; k < egg.rail!.Length; k += 2)
+                {
+                    x0 = Math.Min(x0, egg.rail[k]); x1 = Math.Max(x1, egg.rail[k]); y0 = Math.Min(y0, egg.rail[k + 1]); y1 = Math.Max(y1, egg.rail[k + 1]);
+                }
+                Assert.That(x0, Is.GreaterThanOrEqualTo(l - 1)); Assert.That(x1, Is.LessThanOrEqualTo(r + 1));
+                Assert.That(y0, Is.GreaterThanOrEqualTo(t - 1)); Assert.That(y1, Is.LessThanOrEqualTo(b + 1));
+                Assert.That(x1 - x0, Is.LessThanOrEqualTo((r - l) * Eggs.RailScaleMax + 1), "a small track, not the room");
+                cxLo = Math.Min(cxLo, (x0 + x1) / 2); cxHi = Math.Max(cxHi, (x0 + x1) / 2);
+                cyLo = Math.Min(cyLo, (y0 + y1) / 2); cyHi = Math.Max(cyHi, (y0 + y1) / 2);
+            }
+            Assert.That(cxHi - cxLo, Is.GreaterThan(150), "laid across the room, not always in the middle");
+            Assert.That(cyHi - cyLo, Is.GreaterThan(80));
+            Assert.That(Eggs.RailSpeed * Balance.TickHz, Is.GreaterThanOrEqualTo(120), "it rides fast");
+        }
+
+        [Test]
         public void ARailEggRidesItsTrackBackAndForthOrRound()
         {
             foreach (int pattern in new[] { 2, 0 })   // the zigzag is open, the loop is closed

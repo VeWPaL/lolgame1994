@@ -10,7 +10,6 @@ namespace Depths.Unity.Art
         public Color32 Color;
         public sbyte Dir;          // a ring: +1 grows from the point, -1 collapses onto it
         public bool Ring, Charge, Mine;
-        public float Mom;          // the momentum a blink was spent at, for its tint
     }
 
     /// <summary>The JS keeps its blink trail, lunge puffs and burst rings as lists the simulation pushes to. [h:FxTracker-1]</summary>
@@ -77,7 +76,7 @@ namespace Depths.Unity.Art
                 for (int i = 0; i < puffs; i++)
                 {
                     float t = puffs == 1 ? 1 : i / (float)(puffs - 1);
-                    Add(new Fx { X = _px + (ex - _px) * t, Y = _py + (ey - _py) * t, Life = DashTrail, Max = DashTrail, Mine = true, Mom = Mathf.Clamp01((float)p.momentum) });
+                    Add(new Fx { X = _px + (ex - _px) * t, Y = _py + (ey - _py) * t, Life = DashTrail, Max = DashTrail, Mine = true });
                 }
             }
 

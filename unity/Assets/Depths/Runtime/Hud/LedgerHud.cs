@@ -377,8 +377,8 @@ namespace Depths.Unity.Hud
             }
 
             static readonly Color32 Soot = Hex.C("#0d0a08"), Cream = Hex.C("#e8dcc0"), Dull = Hex.C("#6b5a44"), Spent = Hex.C("#c85a5a"),
-                RobeLit = Hex.C("#7a55c4"), BossGreen = Hex.C("#4fd06c"), PhaseGray = Hex.C("#d8c4a0"), BlinkFull = Hex.C("#7fc4ff"),
-                BlinkPart = Hex.C("#2f5c9e"), Shine = Hex.Rgba(255, 255, 255, 0.45f), Under = Hex.Rgba(0, 0, 0, 0.30f), NotchInk = Hex.C("#3a2a18");
+                RobeLit = Hex.C("#7a55c4"), BossGreen = Hex.C("#4fd06c"), PhaseGray = Hex.C("#d8c4a0"), BlinkFull = Sprites.BlinkBlue,
+                BlinkPart = Sprites.BlinkDeep, Shine = Hex.Rgba(255, 255, 255, 0.45f), Under = Hex.Rgba(0, 0, 0, 0.30f), NotchInk = Hex.C("#3a2a18");
             static readonly Color32[] Accent = AreaInk(false), AccentDim = AreaInk(true);
             static readonly Color32 DoorCut = Hex.C("#f4ead2");
             static readonly Color32 Visited = Hex.C("#d9c9a0"), StartFill = Hex.C("#cbb98c"), Shell = Hex.Rgba(70, 50, 30, 0.10f);
@@ -434,11 +434,11 @@ namespace Depths.Unity.Hud
                     Digits(n, tl.x + 4, tl.y - 1, 2, LedgerArt.Ink);   // over the last heart, never under the row
                 }
 
-                // momentum, straight under the hearts: one slim well filled amber as it rises, ruled in quarters. Not
-                // green: green is every health bar in the room, and a green bar under the hearts read as health (critic)
+                // momentum, straight under the hearts, in the blink's blue (owner 2026-10-14). Not green: green is every
+                // health bar in the room, and a green bar under the hearts read as health (critic)
                 var mw = HudLayout.MomentumWell;
                 float m = Mathf.Clamp01((float)p.momentum);
-                Bar(mw, FillPx(m, mw.width), new Color32((byte)(190 + 60 * m), (byte)(120 + 70 * m), (byte)(40 + 30 * m), 255));
+                Bar(mw, FillPx(m, mw.width), Color32.Lerp(Sprites.BlinkDeep, Sprites.BlinkBlue, m));   // the blink's blue, brightening as it fills
                 for (int i = 1; i < 4; i++) Rect(mw.x + Mathf.Round(mw.width * i / 4f), mw.y + 2, 1, mw.height - 3, NotchInk);
 
                 // keys: held ones in their metal, missing ones a quarter-strength ghost in the dark well

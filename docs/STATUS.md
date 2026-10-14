@@ -3,7 +3,8 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-14 (notes batch 3 and the sweep: the Burrower steers, `Aim.Intercept`, the HUD headings
+_Last updated: 2026-10-14, later (notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
+faster eggs, momentum in the blink's blue; before that, notes batch 3 and the sweep: the Burrower steers, `Aim.Intercept`, the HUD headings
 gone, momentum and shell VFX; long comments moved to `docs/history/csharp/` and gated; four reviewers' findings
 fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/status-2026-10.md`)._
 
@@ -108,12 +109,16 @@ it from another checkout or the first command spends minutes importing.
   - Mortar: marks the player's velocity x the 1 s flight x a trust rolled 0.3-0.85 per shell (x 1 - swerve), at most
     230 px ahead; 2 HP inside 56 px (34). A stander is under the mark; a turn beats it.
   - Burrower: a weaving 150 px/s walk (66) that steers; dives (0.45 s tell, a short skid), gathers speed from its walk
-    to 480 px/s (300) over ~0.7 s, turns at a limited rate onto a mark = the player plus a share of their lead rolled
-    0.1-0.8 per dive plus up to 26 px of slop, eases off as it arrives, surfaces within 14 px (or after 2.2 s), a
-    0.6 s crack tell, then up: 2 HP within 30 px.
+    to 480 px/s (300) over ~0.7 s, turning at 7.5 rad/s straight onto its mark: where the player's motion takes them
+    in its own time to the mark plus the rise, followed round a curve at the rate their heading has been turning
+    (2026-10-14: circling had beaten it every dive, 0 of 48; now ~40%; a turn faster than 6 rad/s is a reversal, not
+    a curve, and a reverser's swerve shortens the lead, so pacing gets hit ~28%), x a trust rolled 0.8-1.05 per dive,
+    plus up to 18 px of slop; eases off as it arrives, surfaces within 14 px (or after 2.2 s), a 0.6 s crack tell, then up: 2 HP
+    within 30 px.
   - Sprayer: 0.85 s wind-up (1.0), cadence x0.82, aimed again as it fires, 5 weak shots +-0.19 rad (0.35).
-  - Turret egg: fixed (8 shells), orbiting a body of its wave (45%; 5 shells at 0.8x), or on a rail in the Kiln Works
-    (60%; 6 shells; eight tracks). The Sprayer's cone and the egg's ring keep off their allies.
+  - Turret egg (radius 14, was 18): fixed (8 shells), orbiting a body of its wave (45%; 5 shells at 0.8x; 1.6 rad/s),
+    or on a rail in the Kiln Works (60%; 6 shells; 140 px/s; eight tracks at 38-55% of the room's size, laid anywhere
+    inside it). The Sprayer's cone and the egg's ring keep off their allies.
   Unplaytested beyond the owner's notes: HP, cooldowns and damage are first guesses.
 - **Notes batch 2 (2026-10-13), archived** (`docs/history/status-2026-10.md`): frame rate apart from the tick
   (`Interp.cs`, Options > Gameplay > Frame rate), the secret wall's crack, `TuneEase`, `TuneDamage` (x0.7, a test
@@ -124,7 +129,9 @@ it from another checkout or the first command spends minutes importing.
     runner's path; `Aim.Intercept` steps and bisects instead (AimTests). Not reproduced on the live path in a test:
     owner to confirm in play.
   - HUD: THE BODY, THE MAP and THE KIT headings removed; pages re-spaced; hearts stay one row (they close up past 8).
-  - Momentum drains in ~1.25 s; trail at most 3 ghosts, fainter. Every shell: glow x0.65 and a 1 px black rim.
+  - Momentum drains in ~1.25 s; trail at most 3 ghosts, fainter, in the blink's blue (batch 4; so is the momentum
+    bar, deep to full blink blue, and the blink puffs, which were white-to-green). Every shell: glow x0.65 and a 1 px
+    black rim.
   - Reviews (a cold critic and three sweep reviewers) found and fixed, each with a test:
     - the Burrower circling its mark;
     - a held right click detonating the hook 0.18 s out;

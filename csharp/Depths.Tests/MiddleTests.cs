@@ -178,13 +178,16 @@ namespace Depths.Tests
         public void ABurrowerComesUpUnderAPlayerWhoStandsStill()
         {
             int hits = 0;
+            double lo = double.MaxValue, hi = double.MinValue;
             for (uint s = 1; s <= Dives; s++)
             {
                 var d = Dive(s, null);
                 Assert.That(Math.Sqrt((d.x - d.px) * (d.x - d.px) + (d.y - d.py) * (d.y - d.py)), Is.LessThan(Near), "seed " + s);
                 if (d.took > 0) hits++;
+                lo = Math.Min(lo, d.x - d.px); hi = Math.Max(hi, d.x - d.px);
             }
             Assert.That(hits, Is.GreaterThan(Dives * 3 / 4), "standing still is punished");
+            Assert.That(hi - lo, Is.GreaterThan(12), "but not on the same spot every dive");
         }
 
         [Test]
@@ -228,7 +231,81 @@ namespace Depths.Tests
             Assert.That(straightHits, Is.GreaterThan(Dives / 2), "a straight line is punished more often than not");
             Assert.That(turnedHits, Is.LessThan(Dives / 4), "turning on the tell beats it");
             Assert.That(ahead.Average(), Is.GreaterThan(20), "it comes up ahead of a runner");
-            Assert.That(ahead.Max() - ahead.Min(), Is.GreaterThan(40), "but not at the same lead every dive");
+
+        }
+
+        // a player running in a circle (radius ~ speed / turn), the escape the owner found on 2026-10-14
+        static (int dives, int hits) Circling(double turnPerSec)
+        {
+            int dives = 0, hits = 0;
+            for (uint s = 1; s <= 24; s++)
+            {
+                var run = Started(s);
+                Place(run, Balance.MidX, Balance.MidY);
+                var b = Add(run, BodyKind.Burrower, Balance.MidX + 220, Balance.MidY - 120);
+                double ang = 0, step = turnPerSec / Balance.TickHz;
+                for (int t = 0; t < Balance.Sec(12); t++)
+                {
+                    ang += step;
+                    double before = Health(run);
+                    bool rising = b.move == "rise";
+                    TickOrder.TickPlayer(run, new Input(Math.Cos(ang), Math.Sin(ang)));
+                    TickOrder.TickProjectiles(run);
+                    TickOrder.TickBodies(run);
+                    if (rising && b.move != "rise") { dives++; if (Health(run) < before) hits++; }
+                    run.player.hp = run.player.maxHp; run.player.regenHeart = run.player.regenHeartMax; run.player.iframes = 0;
+                }
+            }
+            return (dives, hits);
+        }
+
+        // a player pacing wall to wall, reversing every `every` seconds
+        static (int dives, int hits) Pacing(double every)
+        {
+            int dives = 0, hits = 0;
+            for (uint s = 1; s <= 24; s++)
+            {
+                var run = Started(s);
+                Place(run, Balance.MidX, Balance.MidY + 40);
+                var b = Add(run, BodyKind.Burrower, Balance.MidX + 200, Balance.RoomTop + 60);
+                int dir = 1, flip = Balance.Sec(every);
+                for (int t = 0; t < Balance.Sec(12); t++)
+                {
+                    if (t % flip == 0) dir = -dir;
+                    var p = run.player;
+                    if (p.x > Balance.RoomRight - 40) dir = -1; else if (p.x < Balance.RoomLeft + 40) dir = 1;
+                    bool rising = b.move == "rise";
+                    double before = Health(run);
+                    TickOrder.TickPlayer(run, new Input(dir, 0));
+                    TickOrder.TickProjectiles(run);
+                    TickOrder.TickBodies(run);
+                    if (rising && b.move != "rise") { dives++; if (Health(run) < before) hits++; }
+                    p.hp = p.maxHp; p.regenHeart = p.regenHeartMax; p.iframes = 0;
+                }
+            }
+            return (dives, hits);
+        }
+
+        [Test]
+        public void PacingBackAndForthDoesNotBeatABurrower()
+        {
+            // the cold critic's case: a reversal read as a 19 rad/s turn curled the lead onto the player's feet
+            var (dives, hits) = Pacing(1.2);
+            TestContext.WriteLine("pacing: " + hits + " of " + dives);
+            Assert.That(dives, Is.GreaterThan(30));
+            Assert.That(hits, Is.GreaterThan(dives / 5), "pacing must not be a safe answer");
+        }
+
+        [Test]
+        public void RunningInCirclesDoesNotBeatABurrower()
+        {
+            foreach (double turn in new[] { 2.5, 4.0 })
+            {
+                var (dives, hits) = Circling(turn);
+                TestContext.WriteLine("circling at " + turn + " rad/s: " + hits + " of " + dives + " dives hit");
+                Assert.That(dives, Is.GreaterThan(30), "the fixture dives");
+                Assert.That(hits, Is.GreaterThan(dives / 3), "circling at " + turn + " rad/s must not be a safe answer");
+            }
         }
 
         [Test]

@@ -83,7 +83,7 @@ namespace Depths
                       CdMin = Balance.Sec(1.4), CdVar = Balance.Sec(0.6), Dmg = 1,
                       PShotSpeed = Balance.PerSec(400), PShotRadius = 4 },
             // turret egg: never moves (mass is so a shove barely does), so it gets the most health
-            new BodyRow { Mass = 40, Radius = 18, Art = 2, Bar = 30, Hp = 12 * Tough, Armour = Armour,
+            new BodyRow { Mass = 40, Radius = 14, Art = 2, Bar = 26, Hp = 12 * Tough, Armour = Armour,
                       Base = 0, Sense = 100000, CdMin = Balance.Sec(2.6), CdVar = Balance.Sec(0.8), Dmg = 1,
                       PShotSpeed = Balance.PerSec(190), PShotRadius = 5 },
         };
