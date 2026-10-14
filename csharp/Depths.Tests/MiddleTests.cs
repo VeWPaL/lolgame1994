@@ -201,16 +201,72 @@ namespace Depths.Tests
             }
         }
 
-        [Test]
-        public void ItLandsWhereThePlayerStoodAsItJumpedAndARunnerIsGone()
+        // a walker who changes direction every so often (and off the walls); once it leaps they keep going, or turn back
+        static Action<RunState, int> Walker(bool turnInTheAir)
         {
-            for (uint s = 1; s <= Dives; s++)
+            int dir = 1; bool turned = false;
+            return (run, i) =>
             {
-                var d = Dive(s, (run, i) => Walk(run, i / 90 % 2 == 0 ? 1 : -1, 0.3));   // keeps moving, turning now and then
-                double toTakeoff = Math.Sqrt((d.LandX - d.TakeoffPx) * (d.LandX - d.TakeoffPx) + (d.LandY - d.TakeoffPy) * (d.LandY - d.TakeoffPy));
-                Assert.That(toTakeoff, Is.LessThan(1).Or.EqualTo(Middle.BurrowLeapMax).Within(1), "seed " + s + ": the landing is the takeoff spot (or a full jump toward it)");
-                Assert.That(d.Took, Is.EqualTo(0), "seed " + s + ": moving off the mark during the flight escapes it");
-            }
+                var b = run.enemies.First(e => e.kind == BodyKind.Burrower);
+                var p = run.player;
+                if (b.move != "leap")
+                {
+                    turned = false;
+                    if (i % Balance.Sec(1.2) == 0) dir = -dir;
+                    if (p.x > Balance.RoomRight - 90) dir = -1; else if (p.x < Balance.RoomLeft + 90) dir = 1;
+                }
+                else if (turnInTheAir && !turned) { dir = -dir; turned = true; }
+                Walk(run, dir, 0);
+            };
+        }
+
+        [Test]
+        public void ItLeapsWhereAWalkerIsGoingSoKeepingOnIsPunished()
+        {
+            int hits = 0;
+            for (uint s = 1; s <= Dives; s++) if (Dive(s, Walker(false)).Took > 0) hits++;
+            Assert.That(hits, Is.GreaterThan(Dives * 3 / 4), "walking on in a straight line after it jumps is met");
+        }
+
+        [Test]
+        public void TurningBackWhileItIsInTheAirEscapes()
+        {
+            int hits = 0;
+            for (uint s = 1; s <= Dives; s++) if (Dive(s, Walker(true)).Took > 0) hits++;
+            Assert.That(hits, Is.LessThan(Dives / 6), "a turn once it is airborne leaves the mark behind");
+        }
+
+        [Test]
+        public void ExplosionsAreCountedForTheScreenToFeel()
+        {
+            var run = Started();
+            int booms = run.booms;
+            Blast.Explode(run, Balance.MidX, Balance.MidY);
+            Assert.That(run.booms, Is.EqualTo(booms + 1), "the blast");
+            var m = Add(run, BodyKind.Mortar, Balance.MidX, Balance.RoomTop + 40);
+            TickOrder.TickPlayer(run, Input.None);
+            Middle.Release(run, m);
+            run.enemies.Clear();
+            for (int t = 0; t <= Middle.LobFlight; t++) Step(run);
+            Assert.That(run.booms, Is.EqualTo(booms + 2), "and a Mortar shell landing");
+        }
+
+        [Test]
+        public void ALandingDazesItAndJars()
+        {
+            var run = Started();
+            var b = Add(run, BodyKind.Burrower, run.player.x + 120, run.player.y);
+            TickOrder.TickPlayer(run, Input.None);
+            b.buried = true; b.move = "crack"; b.moveT = 1;
+            int thuds = run.thuds;
+            for (int t = 0; t < Balance.Sec(2) && b.move != "walk"; t++) TickOrder.TickBodies(run);
+            Assert.That(b.move, Is.EqualTo("walk"));
+            Assert.That(b.stun, Is.GreaterThan(Middle.BurrowDaze - 3), "stunned where it lands");
+            Assert.That(b.dazed, "and tumbling");
+            Assert.That(run.thuds, Is.EqualTo(thuds + 1), "one heavy landing for the screen to feel");
+            Assert.That(Math.Sign(b.kvx), Is.EqualTo(Math.Sign(b.markX - b.leapX)), "skidding on along its flight");
+            for (int t = 0; t < Middle.BurrowDaze + 2; t++) TickOrder.TickBodies(run);
+            Assert.That(b.stun, Is.LessThanOrEqualTo(0)); Assert.That(b.dazed, Is.False, "up again, walking");
         }
 
         [Test]
@@ -250,7 +306,7 @@ namespace Depths.Tests
             Assert.That(crack, Is.EqualTo(Middle.BurrowCrack));
             Assert.That(flight, Is.EqualTo(Middle.BurrowLeap));
             Assert.That(Middle.BurrowCrack / (double)Balance.TickHz, Is.EqualTo(0.3).Within(0.01));
-            Assert.That(Middle.BurrowLeap / (double)Balance.TickHz, Is.EqualTo(0.6).Within(0.01), "time enough to step off the mark");
+            Assert.That(Middle.BurrowLeap / (double)Balance.TickHz, Is.EqualTo(0.45).Within(0.01), "time enough to turn off the mark");
         }
 
         [Test]

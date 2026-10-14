@@ -68,6 +68,7 @@
                     <ui:VisualElement name="gameplayPage" class="opt-page hidden">
                         <ui:Toggle name="curve" label="Difficulty curve" class="ledger-toggle" />
                         <ui:Label text="On: the new pacing. A hard start with no drops on floors 1-2, an easier middle (3-10), then a climb into a hard end. Off: the original depth ladder. Takes effect on the next run." class="hint italic" />
+                        <ui:DropdownField name="shake" label="Screen shake" class="ledger-dropdown" />
                         <ui:DropdownField name="frameRate" label="Frame rate" class="ledger-dropdown" />
                         <ui:Label text="How often the screen draws. The game itself always runs at 60 steps a second and is drawn smoothly between them, so this changes smoothness and power use, never speed." class="hint italic" />
                     </ui:VisualElement>

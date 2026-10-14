@@ -153,6 +153,8 @@ namespace Depths
         public double markX, markY;    // where it will surface
         public double heading;         // a Burrower's travel direction (Middle.Steer)
         public double leapX, leapY;   // where a Burrower's leap took off (Middle.Leap); markX/markY is where it lands
+        public bool dazed;            // stunned by its own landing: the presenter tumbles it (tumbleDir: the way it fell)
+        public int tumbleDir;
         /// <summary>A turret egg's form (Eggs.cs): fixed, circling <see cref="eggHost"/> at eggA/eggR, or riding
         /// <see cref="rail"/> (points x0,y0,x1,y1...) at railS px along it, railDir +1/-1, round it when railLoop.</summary>
         public EggForm eggForm;

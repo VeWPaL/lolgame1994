@@ -48,7 +48,9 @@ namespace Depths
         public const double BurrowLeapRange = 170;                            // px from the player: close enough, it comes up
         public static int BurrowMinUnder => Balance.Sec(0.4);                 // it travels at least this long before it may
         public static int BurrowCrack => Balance.Sec(0.3);                    // the crack where it breaks the floor
-        public static int BurrowLeap => Balance.Sec(0.6);                     // the flight: its landing marked the whole time
+        public static int BurrowLeap => Balance.Sec(0.45);                    // the flight: its landing marked the whole time
+        public static int BurrowDaze => Balance.Sec(0.6);                     // stunned where it lands, tumbling
+        public const double BurrowThud = 3;                                   // the knock along its flight as it hits the floor
         public const double BurrowLeapMax = 220;                              // px: the longest jump
         public static int BurrowSurface => Balance.Sec(1.6);
         public static int BurrowDig => Balance.Sec(0.45);
@@ -165,6 +167,7 @@ namespace Depths
             }
             p.x = p.tx; p.y = p.ty;
             Strike(run, p.tx, p.ty, p.blastR, p.dmg, 2.5);
+            run.booms++;
             return true;
         }
 
@@ -222,7 +225,7 @@ namespace Depths
                     return;
                 case "crack":
                     if (--e.moveT > 0) return;
-                    Leap(e);
+                    Leap(run, e);
                     return;
                 case "leap":
                 {
@@ -239,6 +242,7 @@ namespace Depths
                     Land(run, e);
                     return;
                 default:   // "walk", and "idle" on the first step
+                    e.dazed = false;
                     if (e.move != "walk") { e.move = "walk"; e.moveT = BurrowSurface; e.heading = System.Math.Atan2(edy, edx); }
                     if (Sharp)
                     {
@@ -255,10 +259,13 @@ namespace Depths
             }
         }
 
-        // out of the floor and into the air: the landing is where the player stands now, no further than a jump, in the room
-        static void Leap(Enemy e)
+        // out of the floor and into the air: the landing is where the player's velocity takes them by the time it lands,
+        // decided once at takeoff (keep going and it meets you; turn or stop and it misses), no further than a jump
+        static void Leap(RunState run, Enemy e)
         {
-            double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy;
+            var p = run.player;
+            // from the player's real place (the lagged hitbox catches up in flight, after a blink too)
+            double hx = p.x + p.vx * BurrowLeap, hy = p.y + Balance.PlayerHitDy + p.vy * BurrowLeap;
             double dx = hx - e.x, dy = hy - e.y, d = System.Math.Sqrt(dx * dx + dy * dy);
             if (d > BurrowLeapMax) { dx *= BurrowLeapMax / d; dy *= BurrowLeapMax / d; }
             double rm = e.r + 4;
@@ -273,6 +280,14 @@ namespace Depths
             e.buried = false;
             Strike(run, e.x, e.y, BurrowHitR, BurrowDmg, 6);
             e.move = "walk"; e.moveT = BurrowSurface; e.curSpeed = 0;
+            if (!Sharp) return;
+            // the landing jars it: dazed where it hit, skidding on along its flight, tumbling (the presenter's tumble and shake)
+            e.stun = System.Math.Max(e.stun, BurrowDaze);
+            e.dazed = true;
+            double fx = e.markX - e.leapX, fy = e.markY - e.leapY;
+            if (fx * fx + fy * fy > 1) Movement.Knock(run, e, fx, fy, BurrowThud * Balance.KnockGain);
+            e.tumbleDir = fx >= 0 ? 1 : -1;
+            run.thuds++;
         }
 
         // speed eases toward `speed` by `ease`, the heading turns toward `want` by at most `turn` a tick (0: it keeps its heading)

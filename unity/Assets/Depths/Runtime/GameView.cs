@@ -23,7 +23,8 @@ namespace Depths.Unity
         WorldView _world;
         LedgerHud _hud;
         bool _devOn;
-        int _lastPicked, _lastWinding;
+        int _lastPicked, _lastWinding, _lastThuds, _lastBooms;
+        readonly ScreenShake _shake = new ScreenShake();
         bool _lastWarned;
         Bindings _binds;
         long _devKey = long.MinValue;
@@ -71,7 +72,7 @@ namespace Depths.Unity
             _demo |= _sandbox || (_inLab && !labRow);
             _secretView = i >= 0 && i + 1 < args.Length && args[i + 1] == "secret";
             _railView = i >= 0 && i + 1 < args.Length && args[i + 1] == "rail";   // one egg track (-depthsSeed n picks it), the lab frozen
-            _leapView = i >= 0 && i + 1 < args.Length && args[i + 1] == "leap";   // a Burrower about to jump at the player
+            _leapView = i >= 0 && i + 1 < args.Length && (args[i + 1] == "leap" || args[i + 1] == "thud");   // a Burrower about to jump at the player
             _inLab |= _railView || _leapView;
             int si = Array.IndexOf(args, "-depthsSeed");
             if (si >= 0 && si + 1 < args.Length && uint.TryParse(args[si + 1], out var fixedSeed)) _fixedSeed = fixedSeed;
@@ -79,6 +80,20 @@ namespace Depths.Unity
             NewRun();
             if (_inLab && !labRow) _lab.SetFrozen(false, _run);   // the screenshot wants the row at work
         }
+
+        // the room jolts (the ledger too, at Insanity) and settles as the trauma drains; a paused or frozen game holds still
+        void Shake()
+        {
+            bool still = _paused || Frozen;
+            if (!still) _shake.Step(_frameS);
+            var (x, y, deg) = still ? (0f, 0f, 0f) : _shake.Offset();
+            if (x == 0 && y == 0 && deg == 0 && !_shook) return;
+            _world.style.translate = new Translate(x, y);
+            _world.style.rotate = new Rotate(deg);
+            _hud.style.translate = _shake.HudToo ? new Translate(x * 0.5f, y * 0.5f) : new Translate(0, 0);
+            _shook = x != 0 || y != 0 || deg != 0;
+        }
+        bool _shook;
 
         // alt-tab pauses a live run, and the time away is not fed to the clock
         void OnApplicationFocus(bool focused)
@@ -105,7 +120,8 @@ namespace Depths.Unity
             new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
             _recorded = false;
             _paused = false; _bannerS = 0; _lastFloor = 1; _respawnT = 0;   // the view starts with the run
-            _lastPicked = 0; _lastWarned = false; _lastWinding = 0;
+            _lastPicked = 0; _lastWarned = false; _lastWinding = 0; _lastThuds = 0; _lastBooms = 0;
+            _shake.Clear(); _shake.Level = new GameplaySettings(new PlayerPrefsStore()).Shake;
             uint seed = _fixedSeed ?? (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
             {
@@ -313,6 +329,7 @@ namespace Depths.Unity
             _world.Aim = aim;
             _world.Alpha = (float)_clock.Alpha;
             _world.Step(_paused || Frozen || _run.state != "playing" ? 0 : _frameS);
+            Shake();
             Section(5);
             _hud.Refresh(_run, _frameS);
             _hud.Overlays.SetPause(_paused && _run.state == "playing", _run);
@@ -372,6 +389,12 @@ namespace Depths.Unity
             if (_run.dmgTaken > _lastDmg) Depths.Unity.Audio.SoundEngine.Play("hurt");
             if (_run.state != "playing" && _lastHp > 0 && p.hp <= 0) Depths.Unity.Audio.SoundEngine.Play("over");
             if (_run.picked > _lastPicked) Depths.Unity.Audio.SoundEngine.Play("pickup");
+            if (_run.thuds > _lastThuds) { Depths.Unity.Audio.SoundEngine.Play("door", 0, 0.7f); _shake.Add(ScreenShake.Kick.Thud, _run.thuds - _lastThuds); }
+            if (_run.booms > _lastBooms) _shake.Add(ScreenShake.Kick.Boom, _run.booms - _lastBooms);
+            if (_run.dmgTaken > _lastDmg) _shake.Add(ScreenShake.Kick.Hurt);
+            if (_run.kills > _lastKills) _shake.Add(ScreenShake.Kick.Kill, _run.kills - _lastKills);
+            if (_run.shots > _lastShots) _shake.Add(ScreenShake.Kick.Shot, 1, ScreenShake.ShotWeight(Weapons.All[p.weaponIdx].CooldownS));
+            if (_run.hits > _lastHits) _shake.Add(ScreenShake.Kick.Hit, _run.hits - _lastHits);
             if (_run.bossWarned && !_lastWarned) Depths.Unity.Audio.SoundEngine.Play("boss");
             // a long wind-up (the Sprayer, the Mortar, the egg) is heard as it starts: the tell is the warning
             int winding = 0;
@@ -379,7 +402,7 @@ namespace Depths.Unity
                 if (e.castT > 0 && (e.kind == BodyKind.Sprayer || e.kind == BodyKind.Mortar || e.kind == BodyKind.Egg)) winding++;
             if (winding > _lastWinding) Depths.Unity.Audio.SoundEngine.Play("tell");
             _lastShots = _run.shots; _lastHits = _run.hits; _lastKills = _run.kills; _lastHp = p.hp; _lastDmg = _run.dmgTaken;
-            _lastPicked = _run.picked; _lastWarned = _run.bossWarned; _lastWinding = winding;
+            _lastPicked = _run.picked; _lastWarned = _run.bossWarned; _lastWinding = winding; _lastThuds = _run.thuds; _lastBooms = _run.booms;
         }
 
         // Screenshot mode: strafe and shoot at the nearest target, so a still frame shows the sim running.

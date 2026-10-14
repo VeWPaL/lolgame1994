@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud" };
 
         void Check(bool ok, string what)
         {
@@ -61,7 +61,8 @@ namespace Depths.Unity
             else if (_view == "labrow" || _view == "rail") yield return new WaitForSecondsRealtime(1f);
             else if (_view == "hearts") { yield return CheckHearts(); yield break; }
             else if (_view == "secret") { yield return SecretView(); yield break; }
-            else if (_view == "leap") yield return LeapView();
+            else if (_view == "leap") yield return LeapView(false);
+            else if (_view == "thud") yield return LeapView(true);
             else if (_view == "summary") yield return SummaryView();
             else if (_view == "pause") yield return PauseView();
             else if (_view == "banner") yield return BannerView();
@@ -276,15 +277,16 @@ namespace Depths.Unity
         }
 
         // the Burrower's leap, frozen mid-flight: the body in the air, its shadow, the landing marked on the floor
-        IEnumerator LeapView()
+        IEnumerator LeapView(bool landed)
         {
             yield return new WaitForSecondsRealtime(0.5f);
             var view = FindAnyObjectByType<GameView>();
             Enemy b = null;
             foreach (var e in view.Run.enemies) if (e.kind == BodyKind.Burrower) b = e;
-            for (int i = 0; i < 600 && b != null && !(b.move == "leap" && b.moveT <= Middle.BurrowLeap / 2); i++) yield return null;
+            for (int i = 0; i < 600 && b != null && !(landed ? b.dazed && b.stun < Middle.BurrowDaze * 0.75 : b.move == "leap" && b.moveT <= Middle.BurrowLeap / 2); i++) yield return null;
             view.Frozen = true;
-            Check(b != null && b.move == "leap", "the Burrower is in the air (" + (b != null ? b.move : "none") + ")");
+            if (landed) Check(b != null && b.dazed, "the Burrower is down, dazed, tumbling");
+            else Check(b != null && b.move == "leap", "the Burrower is in the air (" + (b != null ? b.move : "none") + ")");
             for (int i = 0; i < 10; i++) yield return null;
         }
 

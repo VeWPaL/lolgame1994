@@ -37,7 +37,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
   `RunRecords` in PlayerPrefs) are paper sheets. `Runtime/Hud/`: `HudLayout` is the one geometry
   table, `LedgerArt` the bakes, `LedgerHud` retained + zero-alloc, `HudOverlays`. F10 shows the dev
   line. Menus are an open ledger on a desk (`MainMenu.uxml/uss`, textures baked in the controller,
-  Georgia read from the OS via `LedgerFonts`). EditMode 88/88 (`HudTests`: layout never on the room,
+  Georgia read from the OS via `LedgerFonts`). EditMode 93/93 (`HudTests`: layout never on the room,
   hearts one row at 2x, half hearts exact, 0 bytes per 100 updates, repaint only on change, records).
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
   20 min in about 2 s; 4.8 s at `--hz 210`) and writes `playtest/<label>.json` (header `tickHz`):
@@ -72,11 +72,11 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 88/88. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 93/93. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|lab|labrow|secret|rail|leap`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
-  checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap)
+  checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap, `thud` just after it lands)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
   (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
   every heart on the ledger page (`HudLayout.HeartTopLeft`) against the atlas heart colours in `HeartRow`.
@@ -112,9 +112,11 @@ it from another checkout or the first command spends minutes importing.
   - Burrower (redesigned 2026-10-14 after four rounds of prediction patches were each baited: circling, pacing, a
     1 s feint): a weaving 150 px/s walk (66); dives (0.45 s tell, a short skid); under the floor it homes straight on
     where the player is now, no prediction, gathering speed to 400 px/s (300); within 170 px (after at least 0.4 s,
-    or when its 2.2 s run out) it breaks the floor with a 0.3 s crack, then LEAPS at the spot the player stood on as
-    it jumped (at most 220 px), marked on the floor for the 0.6 s flight; it lands there: 2 HP within 30 px.
-    Untouchable under the floor and in the air. Standing still is punished; stepping off the mark escapes.
+    or when its 2.2 s run out) it breaks the floor with a 0.3 s crack, then LEAPS at where the player's velocity takes
+    them by the time it lands (decided at takeoff, at most 220 px), marked on the floor for the 0.45 s flight; it lands
+    there: 2 HP within 30 px, and is dazed 0.6 s where it hit (stunned, skidding on, tumbling) with a screen shake.
+    Untouchable under the floor and in the air. Standing still and walking on are punished; turning or stopping once
+    it is airborne escapes.
     Bot (seeds 101-200 x 3 profiles, 60 min) against batch 3's build: deaths 156 -> 146 (novice 86 -> 77, average
     41 -> 38, skilled 29 -> 31). A player who keeps moving escapes every leap (the critic's probe): watch whether it
     plays as harmless; the levers are the flight (0.6 s), the leap range and the strike radius.
@@ -161,6 +163,9 @@ it from another checkout or the first command spends minutes importing.
     floor 15, 20.0 HP of damage a floor, boss fight 63 s. One part off: the new aim 139 (it adds ~17 deaths), the
     middle retune 70 (it still adds ~86, most of them average and skilled players: the main lever if the fights feel
     unfair), the damage cut 153 (~3 deaths, but fights a third longer: 22.4 -> 19.7 kills a minute, boss 47 -> 63 s).
+- **Screen shake** (owner 2026-10-14; Options > Gameplay): Off / Medium (Isaac: landings, blasts, Mortar shells,
+  taking damage) / High (Gungeon: those, plus kills, every shot and hit as small kicks) / Insanity (Nuclear Throne:
+  everything, hard, the room tilting and the ledger shaking too). Trauma-based (`ScreenShake.cs`); Medium by default.
 - **Items**: overhaul later. Placeholders (C# only) until then: Hunter's Mark marks the room for 5s
   (+50% damage taken); Brass Compass opens the fake wall when carried into its room. Lantern Friend is
   still `unimplemented` (not loot).

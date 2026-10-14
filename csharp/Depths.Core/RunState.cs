@@ -32,6 +32,8 @@ namespace Depths
         /// <summary>Kills this run. Written by killEnemy and read by the clear condition, which is why it lives on the run rather... [h:RunState-2]</summary>
         public int kills;
         public int picked;   // pickups collected this run: the presenter's cue (nothing in the simulation reads it)
+        public int thuds;    // heavy landings (a Burrower's leap): the presenter's screen shake
+        public int booms;    // explosions (the blast, the hook, a Mortar shell landing): the presenter's screen shake
 
         /// <summary>Damage the player was dealt this run, before armour (run.dmgTaken).</summary>
         public double dmgTaken;

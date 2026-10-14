@@ -102,6 +102,7 @@ namespace Depths.Unity.Tests
             var tree = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>("Assets/Depths/UI/MainMenu.uxml");
             var page = tree.Instantiate().Q("gameplayPage");
             Assert.That(page.Q<UnityEngine.UIElements.DropdownField>("frameRate"), Is.Not.Null, "the menu reads a dropdown named frameRate");
+            Assert.That(page.Q<UnityEngine.UIElements.DropdownField>("shake"), Is.Not.Null, "the menu reads a dropdown named shake");
         }
     }
 

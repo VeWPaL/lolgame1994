@@ -86,6 +86,7 @@ namespace Depths
         /// <summary>One damage pool shared by everyone caught, divided by count^DISPERSE, so a crowd takes less each; a shove... [h:Combat-4]</summary>
         public static void Explode(RunState run, double x, double y, string mode = "blast")
         {
+            run.booms++;
             bool hook = mode == "hook";
             double aoe = hook ? Balance.HookAoe : Balance.AltAoe, pool = hook ? 0 : Balance.AltPool;
             var en = run.enemies;

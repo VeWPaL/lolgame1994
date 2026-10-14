@@ -48,6 +48,15 @@ namespace Depths.Unity
             set { _store.SetString(CurveKey, value ? "on" : "off"); _store.Save(); }
         }
 
+        public const string ShakeKey = "depths.gameplay.shake";
+
+        /// <summary>Screen shake, Off to Insanity (ScreenShake). Medium until chosen; an old "on" reads as Medium.</summary>
+        public ShakeLevel Shake
+        {
+            get => ScreenShake.Parse(_store.GetString(ShakeKey, "medium"));
+            set { _store.SetString(ShakeKey, ScreenShake.Name(value)); _store.Save(); }
+        }
+
         /// <summary>Call at the start of a run.</summary>
         public void Apply() => Depths.Curve.On = Curve;
     }

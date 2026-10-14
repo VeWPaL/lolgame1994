@@ -409,7 +409,8 @@ namespace Depths.Unity
                 float sink = e.kind == BodyKind.Burrower && e.move == "dig" ? 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig) : 0;
                 Dot(bx, by + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
                 double ey = by - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop + sink * 8;
-                Spr(SpriteSet.BodyR(e.kind, frame, false), bx, ey, 1 - 0.75f * sink);
+                if (e.dazed && e.stun > 0) DrawTumble(e, frame, bx, ey);   // jarred by its own landing: tipped over, rocking back up
+                else Spr(SpriteSet.BodyR(e.kind, frame, false), bx, ey, 1 - 0.75f * sink);
                 if (e.hitFlash > 0)   // a translucent silhouette over the body, so sustained fire still shows a creature
                 {
                     float k = 0.38f + (0.62f - 0.38f) * Mathf.Min(1, (float)e.hitFlash / Balance.HitFlash);
@@ -430,6 +431,15 @@ namespace Depths.Unity
                 if (e.stun > 0) DrawStunStars(bx, ey - e.r - 6, (float)e.stun);
                 if (e.castT > 0) DrawCastFlash(bx, by, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
             }
+        }
+
+        // a dazed body tips toward the way it fell and rocks back upright as the daze runs out
+        void DrawTumble(Enemy e, int frame, double x, double y)
+        {
+            float k = Mathf.Clamp01((float)e.stun / Middle.BurrowDaze);
+            float ang = e.tumbleDir * (1.1f * k * k + 0.25f * k * Mathf.Sin(Fc * 0.9f));
+            var r = SpriteSet.BodyR(e.kind, frame, false);
+            _q.Rotated(A.Texture, r, ToPanel(x, y + r.H * 0.3f), -r.W / 2f, -r.H * 0.8f, r.W, r.H, ang, QuadBatch.Alpha(1));
         }
 
         void DrawStunStars(double x, double y, float stun)

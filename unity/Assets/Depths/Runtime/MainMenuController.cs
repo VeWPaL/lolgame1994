@@ -89,6 +89,10 @@ namespace Depths.Unity
             _curve = root.Q<Toggle>("curve");
             _curve.SetValueWithoutNotify(_gameplay.Curve);
             _curve.RegisterValueChangedCallback(e => { _gameplay.Curve = e.newValue; Tick(); SoundEngine.Play("blink", 0, 0.6f); });
+            var shake = root.Q<DropdownField>("shake");
+            shake.choices = new List<string> { "Off", "Medium (Isaac)", "High (Gungeon)", "Insanity (Nuclear Throne)" };
+            shake.index = (int)_gameplay.Shake;
+            shake.RegisterValueChangedCallback(_ => { _gameplay.Shake = (ShakeLevel)shake.index; SoundEngine.Play("blink", 0, 0.6f); });
             Tick();
             root.Q<Button>("resetBinds").clicked += () => { _bindings.ApplyPreset(_bindings.Preset); RefreshBinds(); };
 
@@ -167,22 +171,25 @@ namespace Depths.Unity
             e.style.width = img.W; e.style.height = img.H;
         }
 
-        Label _curveState;
 
         // the tick box, and On or Off written beside it so the state never rests on the tick alone
-        void Tick()
+        void Tick() => Tick(_curve);
+
+        // the ledger's checkbox and its "On"/"Off" in the book's hand, beside the box
+        void Tick(Toggle t)
         {
-            var mark = _curve.Q(className: "unity-toggle__checkmark");
-            if (mark != null) mark.style.backgroundImage = new StyleBackground(_curve.value ? _boxOn : _boxOff);
-            if (_curveState == null)
+            var mark = t.Q(className: "unity-toggle__checkmark");
+            if (mark != null) mark.style.backgroundImage = new StyleBackground(t.value ? _boxOn : _boxOff);
+            var state = t.Q<Label>(t.name + "State");
+            if (state == null)
             {
-                _curveState = new Label { name = "curveState" };
-                _curveState.AddToClassList("toggle-state");
-                LedgerFonts.Use(_curveState, LedgerFonts.Italic);
-                (_curve.Q(className: "unity-toggle__input") ?? _curve).Add(_curveState);
+                state = new Label { name = t.name + "State" };
+                state.AddToClassList("toggle-state");
+                LedgerFonts.Use(state, LedgerFonts.Italic);
+                (t.Q(className: "unity-toggle__input") ?? t).Add(state);
             }
-            _curveState.text = _curve.value ? "On" : "Off";
-            _curveState.EnableInClassList("on", _curve.value);
+            state.text = t.value ? "On" : "Off";
+            state.EnableInClassList("on", t.value);
         }
 
         // Dragging a slider plays the level you are setting, at most a few times a second.
