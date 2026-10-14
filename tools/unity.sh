@@ -55,5 +55,14 @@ case "${1:-}" in
       keep="unity/Logs/fail-$view-$(date +%Y%m%d-%H%M%S).log"; cp "unity/Logs/shot-$view.log" "$keep"; echo "kept $keep"; exit 1
     fi
     exit $rc ;;
-  *) echo "usage: tools/unity.sh bootstrap | test | build | shot <view> [out.png]"; exit 2 ;;
+  publish)
+    # the owner's playtest copy: one fixed folder outside every checkout, replaced whole by the current build
+    dest=${2:-"/c/Users/neefloW/Documents/Depths-playtest"}
+    [ -x unity/Build/Depths.exe ] || { echo "build first: tools/unity.sh build"; exit 2; }
+    rm -rf "$dest.new" && cp -r unity/Build "$dest.new" || exit 1
+    { echo "Depths playtest build"; echo "commit $(git rev-parse --short HEAD) on $(git branch --show-current)"; echo "built $(date -r "$(find unity/Build -type f -printf '%T@ %p
+' | sort -n | tail -1 | cut -d' ' -f2-)" '+%Y-%m-%d %H:%M')"; } > "$dest.new/BUILD.txt"
+    rm -rf "$dest.old"; [ -d "$dest" ] && mv "$dest" "$dest.old"; mv "$dest.new" "$dest" && rm -rf "$dest.old"
+    echo "published to $dest"; cat "$dest/BUILD.txt" ;;
+  *) echo "usage: tools/unity.sh bootstrap | test | build | shot <view> [out.png] | publish [dir]"; exit 2 ;;
 esac
