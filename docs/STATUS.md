@@ -11,6 +11,9 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 
 ## Where things are
 
+- **How the game works now** (mechanics, every enemy, switches, feel, workflow): **`docs/DESIGN.md`**. Read it after
+  this file; keep it current when a mechanic changes.
+
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).

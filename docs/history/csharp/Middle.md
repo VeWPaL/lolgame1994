@@ -9,7 +9,7 @@ near: `public static class Middle`
 /// The middle enemies (C# only): Splitter, Mortar and Sprayer walk and aim like a shooter (TickOrder.StepRanged)
 /// and differ in what leaves when the cast ends (<see cref="Release"/>); the Burrower and the egg (Eggs.cs) have
 /// their own steps. <see cref="Sharp"/> is the 2026-10-13/14 retune; off, the lab-era bodies. Design notes and
-/// the numbers' history: docs/enemies.md.
+/// the numbers' history: docs/DESIGN.md (written 2026-10-14; there was never an enemies.md).
 /// </summary>
 
 ## [h:Middle-2]
