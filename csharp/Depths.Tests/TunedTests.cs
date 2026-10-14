@@ -525,7 +525,7 @@ namespace Depths.Tests
         }
 
         [Test]
-        public void StandingStillDrainsMomentumOverSecondsNotAnInstant()
+        public void StandingStillDrainsMomentumInAboutASecond()
         {
             var run = Started();
             var b = Spawn.Body(run, BodyKind.Shooter, Balance.MidX, Balance.RoomTop + 30);
@@ -534,7 +534,7 @@ namespace Depths.Tests
             run.player.momentum = 1;
             int t = 0;
             for (; t < Balance.Sec(10) && run.player.momentum > 0; t++) TickOrder.TickPlayer(run, Input.None);
-            Assert.That(t / (double)Balance.TickHz, Is.InRange(2.0, 4.0), "a full meter drains over about three seconds");
+            Assert.That(t / (double)Balance.TickHz, Is.InRange(1.0, 1.6), "a full meter drains in about a second and a quarter");
         }
 
         // ---- eased motion (TuneEase) ----

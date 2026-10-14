@@ -322,7 +322,6 @@ namespace Depths.Tests
             {
                 Assert.That(Middle.SplitRange, Is.EqualTo(170)); Assert.That(Middle.SplitSpread, Is.EqualTo(0.42));
                 Assert.That(Middle.LobBlast, Is.EqualTo(34)); Assert.That(Middle.SprayCone, Is.EqualTo(0.35));
-                Assert.That(Middle.AimJitter(BodyKind.Sprayer), Is.EqualTo(1));
                 double off = Spawn.Body(Room(), BodyKind.Sprayer, Balance.MidX, Balance.MidY).cdMin;
                 Balance.TuneMiddle = true;
                 double on = Spawn.Body(Room(), BodyKind.Sprayer, Balance.MidX, Balance.MidY).cdMin;

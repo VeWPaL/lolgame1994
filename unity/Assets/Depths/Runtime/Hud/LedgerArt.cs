@@ -111,16 +111,9 @@ namespace Depths.Unity.Hud
 
         static void RuleAt(Img g, int x, int y, int w) { g.Fill(x, y, w, 1, InkFaint); g.Fill(x, y + 3, w, 2, InkFaint); }
 
-        static void Header(Img g, string text, int cx, int y)
-        {
-            LedgerType.Struck(g, text, cx, y, HudLayout.TextScale, Ink, Lift);
-            int w = LedgerType.Width(text, HudLayout.TextScale) + 48;
-            RuleAt(g, cx - w / 2, y + 20, w);
-        }
-
         /// <summary>
         /// One board: a plank as tall as the screen allows, its inset and aged page, a clip at the top,
-        /// and the page's fixed parts (headers, labels, rules, wells, the seal, the slots and their name
+        /// and the page's fixed parts (labels, rules, wells, the seal, the slots and their name
         /// plates). Everything that changes is drawn over it by the ink layer. Origin: HudLayout.Board.
         /// </summary>
         public static Img Board(bool left)
@@ -158,7 +151,6 @@ namespace Depths.Unity.Hud
         static void Body(Img g, int ox, int oy, int x0, int cx)
         {
             int w = HudLayout.InkW;
-            Header(g, "THE BODY", cx, HudLayout.HeaderY + oy);
             var m = HudLayout.MomentumWell; CutWell(g, (int)m.x + ox, (int)m.y + oy, (int)m.width, (int)m.height);
             // keys: a key in the margin, then the two wells; blink: a dash mark, then its two pips
             Picto(g, Sprites.KeyRows, HudLayout.IconX + ox - 2, HudLayout.KeysY + 11 + oy, 2, InkSoft);
@@ -191,8 +183,6 @@ namespace Depths.Unity.Hud
 
         static void MapAndKit(Img g, int ox, int oy, int x0, int cx)
         {
-            Header(g, "THE MAP", cx, HudLayout.HeaderY + oy);
-            Header(g, "THE KIT", cx, HudLayout.KitHeaderY + oy);
             for (int i = 0; i < 3; i++)
             {
                 var s = HudLayout.Slot(i);

@@ -472,14 +472,23 @@ namespace Depths
                     else if (ad > standoff) { mx += ax / ad * v; my += ay / ad * v; }
                 }
             }
-            double sx = HitboxX - mx, sy = ty - my;
-            for (int k = 0; k < 14; k++)
+            double aim;
+            if (Balance.Tuned && Balance.TuneAim)
+                aim = e.kind == BodyKind.Splitter
+                    ? Aim.Intercept(mx, my, HitboxX, ty, bvx, bvy, cast, e.pspd, Middle.SplitRange, Middle.SplitShardSpeed)
+                    : Aim.Intercept(mx, my, HitboxX, ty, bvx, bvy, cast, e.pspd);
+            else
             {
-                double need = cast + System.Math.Sqrt(sx * sx + sy * sy) / e.pspd;
-                sx = HitboxX + bvx * need - mx;
-                sy = ty + bvy * need - my;
+                double sx = HitboxX - mx, sy = ty - my;
+                for (int k = 0; k < 14; k++)
+                {
+                    double need = cast + System.Math.Sqrt(sx * sx + sy * sy) / e.pspd;
+                    sx = HitboxX + bvx * need - mx;
+                    sy = ty + bvy * need - my;
+                }
+                aim = System.Math.Atan2(sy, sx);
             }
-            double want = System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist) * Middle.AimJitter(e.kind);
+            double want = aim + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist);
             var shot = e.kind == BodyKind.Mortar ? want : Movement.ClearShot(run, e, want);   // a lob goes over bodies
             // off the JS rate the tick's overrun is kept, so a cadence is exact in seconds (held fire does the same)
             double over = Balance.TickHz == Balance.JsHz ? 0 : e.shootCd;

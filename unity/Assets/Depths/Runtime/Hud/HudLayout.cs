@@ -23,13 +23,13 @@ namespace Depths.Unity.Hud
         /// <summary>Where writing starts on a page, and how wide it may run.</summary>
         public static int Ink0(bool left) => (left ? LeftX : RightX) + PaperPad + 10;
         public const int InkW = BoardW - (PaperPad + 10) * 2;   // 222
-        public const int HeaderY = BoardTop + 28, TextScale = 2, LabelH = 7 * TextScale;
+        public const int TextScale = 2, LabelH = 7 * TextScale;
         public static int PaperBottom => BoardTop + BoardH - PaperPad;
 
         // ---- the body: read top to bottom as icons, no form labels ----
         /// <summary>Hearts: one row of eight across the page, Isaac order (red, the regen heart, armour); a ninth wraps.</summary>
         public const int HeartPx = 4, HeartW = 7 * HeartPx + 4, HeartH = 6 * HeartPx + 4, HeartStep = 30, HeartsPerLine = 8, HeartLines = 2;
-        public const int HeartsX = LeftX + PaperPad, HeartsY = BoardTop + 58, HeartLineStep = 30;
+        public const int HeartsX = LeftX + PaperPad, HeartsY = BoardTop + 26, HeartLineStep = 30;   // no page heading: the hearts open it
         public static int HeartCapacity => HeartsPerLine * HeartLines;
         public static Rect HeartsBox => new Rect(HeartsX, HeartsY, HeartStep * (HeartsPerLine - 1) + HeartW, HeartH);
 
@@ -45,7 +45,7 @@ namespace Depths.Unity.Hud
         public static Rect MomentumWell => new Rect(HeartsX + 2, HeartsY + HeartH + 6, HeartStep * (HeartsPerLine - 1) + HeartW - 4, 12);
         /// <summary>Each icon row: a pictogram in the margin, then its wells.</summary>
         public const int IconX = LeftX + PaperPad + 8, RowX = IconX + 26;
-        public const int KeysY = BoardTop + 122;
+        public const int KeysY = BoardTop + 98;
         public static Rect KeyWell(int i) => new Rect(RowX + i * 60, KeysY, 54, 32);
         public const int BlinkY = KeysY + 44;
         public static Rect BlinkWell(int i) => new Rect(RowX + i * 100, BlinkY + 4, 94, 20);
@@ -53,7 +53,7 @@ namespace Depths.Unity.Hud
         public static Rect DepthSeal => new Rect(Ink0(true), Rule2 + 12, 76, 58);
         public const int AreaX = LeftX + PaperPad + 10 + 88, AreaY = Rule2 + 16;
         /// <summary>The descent: each area a band of four floors, passed floors struck through, this one inked.</summary>
-        public const int LadderY = Rule2 + 84, BandStep = 62, RungW = 50, RungH = 24, RungStep = 56;
+        public const int LadderY = Rule2 + 86, BandStep = 68, RungW = 50, RungH = 24, RungStep = 56;
         public static Rect Rung(int band, int i) => new Rect(Ink0(true) + i * RungStep, LadderY + band * BandStep + 20, band == 3 ? InkW : RungW, RungH);
         public static int BandLabelY(int band) => LadderY + band * BandStep;
         public const int Rule3 = LadderY + BandStep * 4 + 4;
@@ -64,13 +64,13 @@ namespace Depths.Unity.Hud
 
         // ---- the map and the kit ----
         public const int MapCell = 32, MapBox = 27, MapMaxCell = 46;
-        public static Rect Map => new Rect(RightX + (BoardW - MapCell * 7) / 2, BoardTop + 58, MapCell * 7, MapCell * 7);
-        public const int KitHeaderY = BoardTop + 302;
+        public static Rect Map => new Rect(RightX + (BoardW - MapCell * 7) / 2, BoardTop + 26, MapCell * 7, MapCell * 7);   // no page heading: the map opens it
+        public const int KitY = BoardTop + 266;   // the first slot's top: no heading, the slots speak for themselves
         public const int SlotSize = 66, KitRowStep = 78;
-        public static Rect Slot(int i) => new Rect(Ink0(false), KitHeaderY + 34 + i * KitRowStep, SlotSize, SlotSize);
+        public static Rect Slot(int i) => new Rect(Ink0(false), KitY + i * KitRowStep, SlotSize, SlotSize);
         /// <summary>The name plate beside each slot: what is in it, and the key that fires it.</summary>
         public static Rect Plate(int i) { var s = Slot(i); return new Rect(s.xMax + 8, s.y + 4, InkW - SlotSize - 8, SlotSize - 8); }
-        public const int CarryLabelY = KitHeaderY + 34 + KitRowStep * 3 + 4;
+        public const int CarryLabelY = KitY + KitRowStep * 3 + 4;
         public const int CarryY = CarryLabelY + 20, CarryTile = 28, CarryStep = 31, CarryPerLine = 7;
 
         // ---- the bands above and below the room ----

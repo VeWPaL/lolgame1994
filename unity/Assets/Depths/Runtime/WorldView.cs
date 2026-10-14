@@ -476,8 +476,8 @@ namespace Depths.Unity
                     Ring(p.tx, p.ty, (float)p.blastR * (1.25f - 0.25f * t), 2, QuadBatch.Tint(col, 0.45f + 0.5f * t));
                     Dot(sx, sy, (float)p.r, (float)p.r * 0.45f, Shadow);
                     double arc = sy - Mathf.Sin(t * Mathf.PI) * 70;
-                    Glow(sx, arc, (float)p.r * 3, col, 0.7f);
-                    Dot(sx, arc, (float)p.r, (float)p.r, col);
+                    Glow(sx, arc, (float)p.r * 3, col, 0.7f * ShellGlow);
+                    Shell(sx, arc, (float)p.r, col, 1);
                     continue;
                 }
                 if (p.alt)
@@ -494,20 +494,28 @@ namespace Depths.Unity
                     float dr = shrink ? BoltDrawR * (BoltSizeMax + (BoltSizeMin - BoltSizeMax) * st) : (float)p.r;
                     float fade = (shrink ? 1 - (1 - BoltFadeMin) * st : 1) * alpha;
                     float R = Mathf.Max(2, Mathf.Round(dr * 3.2f));
-                    Glow(sx, sy, R, col, fade);
-                    Dot(sx, sy, dr, dr, QuadBatch.Tint(col, fade));
+                    Glow(sx, sy, R, col, fade * ShellGlow);
+                    Shell(sx, sy, dr, QuadBatch.Tint(col, fade), fade);
                     if (shrink) Ring(sx, sy, dr + 2.5f, 1, QuadBatch.Tint(col, 0.5f * fade));
                 }
                 else
                 {
-                    if (p.heavy || p.splitAt > 0)   // the gunner's shell (and the splitter's): a glow and a hot core, readable without the colour
-                    {
-                        Glow(sx, sy, Mathf.Round((float)p.r * 4), col, 0.8f);
-                        Dot(sx, sy, (float)p.r * 0.55f, (float)p.r * 0.55f, Hex.Of("#fff4e0"));
-                    }
-                    Dot(sx, sy, (float)p.r, (float)p.r, QuadBatch.Tint(col, alpha));
+                    bool hot = p.heavy || p.splitAt > 0;   // the gunner's shell (and the splitter's): a glow and a hot core
+                    if (hot) Glow(sx, sy, Mathf.Round((float)p.r * 4), col, 0.8f * ShellGlow);
+                    Shell(sx, sy, (float)p.r, QuadBatch.Tint(col, alpha), alpha);
+                    if (hot) Dot(sx, sy, (float)p.r * 0.55f, (float)p.r * 0.55f, HotCore);
                 }
             }
+        }
+
+        public const float ShellGlow = 0.65f;   // every shell's light, softened so a cluster reads as shells, not one ball
+        static readonly Color32 ShellRim = new Color32(0, 0, 0, 230), HotCore = Hex.C("#fff4e0");
+
+        // a shell: its disc inside a one-pixel black rim, so shells that overlap stay countable
+        void Shell(double x, double y, float r, Color32 c, float alpha)
+        {
+            Dot(x, y, r + 1.25f, r + 1.25f, QuadBatch.Tint(ShellRim, alpha));
+            Dot(x, y, r, r, c);
         }
 
         // ---- the player ----
@@ -559,7 +567,7 @@ namespace Depths.Unity
         /// <summary>drawWand: the staff turned to the aim, its gem in the gun's colour, a glow and two motes at the tip.</summary>
         // ---- momentum: amber afterimages that lengthen and brighten as the meter fills ----
         public const float TrailFrom = 0.2f;   // below this much momentum, no trail
-        const int TrailLen = 5;
+        const int TrailLen = 5, TrailGhosts = 3;   // the ring keeps five samples; at most three are drawn
         const float TrailEvery = 2.5f;          // cosmetic ticks between samples (60 a second): frame-rate free
         static readonly Color32 TrailAmber = Hex.C("#ffb347");
         readonly Vector2[] _trail = new Vector2[TrailLen];
@@ -572,7 +580,7 @@ namespace Depths.Unity
             float m = Mathf.Clamp01((float)momentum);
             if (m < TrailFrom) return (0, 0);
             float k = (m - TrailFrom) / (1 - TrailFrom);
-            return (1 + Mathf.RoundToInt(k * (TrailLen - 1)), 0.18f + 0.32f * k);
+            return (1 + Mathf.RoundToInt(k * (TrailGhosts - 1)), 0.08f + 0.16f * k);
         }
 
         void DrawMomentumTrail(Player pl, double x, double y, int frame)

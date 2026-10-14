@@ -129,8 +129,8 @@ namespace Depths.Tests
         public void ABuriedBurrowerCannotBeShotBlastedOrTouched()
         {
             var run = Started();
-            var b = Add(run, BodyKind.Burrower, run.player.x, run.player.y - 4);   // standing on the player
-            b.buried = true; b.move = "under"; b.moveT = 1000; b.markX = b.x; b.markY = b.y - 300;   // still running: the under state, not the rise
+            var b = Add(run, BodyKind.Burrower, run.player.x, run.player.y - 300);   // far off: still running for a while
+            b.buried = true; b.move = "under"; b.moveT = 1000; b.curSpeed = 0; b.digTrust = 0.5;
             double hp = b.hp, health = Health(run);
             run.projectiles.Add(new Projectile { x = b.x, y = b.y, ox = b.x - 50, oy = b.y, vx = 0.01, r = 6, dmg = 50, friendly = true, dx = 1 });
             Blast.Explode(run, b.x, b.y);
@@ -142,27 +142,32 @@ namespace Depths.Tests
             Assert.That(Health(run), Is.EqualTo(health), "nor does it touch the player");
         }
 
-        // dig, then follow it down: where it comes up, and the health it took
-        static (double x, double y, double took, double playerX) Dive(Action<RunState, int>? move)
+        // dig, then follow it down: where it comes up, the health it took, where the player was, its speeds under the floor
+        static (double x, double y, double took, double px, double py, double first, double top) Dive(uint seed, Action<RunState, int>? move)
         {
-            var run = Started();
+            var run = Started(seed);
             var b = Add(run, BodyKind.Burrower, Balance.MidX, Balance.RoomTop + 60);
             Place(run, Balance.RoomLeft + 120, Balance.MidY + 60);
             int t = 0;
             while (b.move != "under" && t++ < Balance.Sec(4)) Step(run);
             Assert.That(b.buried, "it dug in within four seconds");
-            double before = Health(run);
+            double before = Health(run), first = -1, top = 0;
             int under = 0;
             while (b.buried && t++ < Balance.Sec(8))
             {
+                double x0 = b.x, y0 = b.y;
+                bool diving = b.move == "under";
                 if (move != null) move(run, under++);
                 else Step(run);
+                if (!diving) continue;
+                double v = Math.Sqrt((b.x - x0) * (b.x - x0) + (b.y - y0) * (b.y - y0));
+                if (first < 0) first = v;
+                top = Math.Max(top, v);
             }
             Assert.That(b.buried, Is.False, "it came up");
-            return (b.x, b.y, before - Health(run), run.player.x);
+            return (b.x, b.y, before - Health(run), run.player.x, run.player.y + Balance.PlayerHitDy, first, top);
         }
 
-        // the player walking right (the real input path, so the belief and the trend the lead reads are real)
         static void WalkRight(RunState run, int _)
         {
             TickOrder.TickPlayer(run, new Input(1, 0));
@@ -170,38 +175,64 @@ namespace Depths.Tests
             TickOrder.TickBodies(run);
         }
 
+        const int Dives = 24;
+        static double Near => Middle.BurrowSlop + Middle.BurrowSurfaceAt + 3;   // the most a dive at a stander can miss by
+
         [Test]
         public void ABurrowerComesUpUnderAPlayerWhoStandsStill()
         {
-            var (x, y, took, px) = Dive(null);
-            Assert.That(x, Is.EqualTo(px).Within(2));
-            Assert.That(took, Is.EqualTo(Middle.BurrowDmg), "standing still is punished");
+            int hits = 0;
+            for (uint s = 1; s <= Dives; s++)
+            {
+                var d = Dive(s, null);
+                Assert.That(Math.Sqrt((d.x - d.px) * (d.x - d.px) + (d.y - d.py) * (d.y - d.py)), Is.LessThan(Near), "seed " + s);
+                if (d.took > 0) hits++;
+            }
+            Assert.That(hits, Is.GreaterThan(Dives * 3 / 4), "standing still is punished");
         }
 
         [Test]
         public void ABurrowerChasesUnderground()
         {
-            // the player is somewhere else by the time it is down: it follows, it does not dig up an empty spot
-            var (x, _, took, px) = Dive((run, i) => { if (i == 0) Place(run, run.player.x + 220, run.player.y); Step(run); });
-            Assert.That(x, Is.EqualTo(px).Within(2), "it surfaced under the player's new spot");
-            Assert.That(took, Is.EqualTo(Middle.BurrowDmg));
+            // the player is elsewhere by the time it is down: it follows, it does not dig up an empty spot
+            for (uint s = 1; s <= Dives; s++)
+            {
+                var d = Dive(s, (run, i) => { if (i == 0) Place(run, run.player.x + 220, run.player.y); Step(run); });
+                Assert.That(Math.Abs(d.x - d.px), Is.LessThan(Near), "seed " + s + ": it surfaced under the new spot");
+            }
         }
 
         [Test]
-        public void ABurrowerLeadsARunnerAndATurnBeatsIt()
+        public void ABurrowerGathersSpeedUnderTheFloor()
         {
-            // running straight, it comes up ahead and the runner walks onto it
-            var straight = Dive(WalkRight);
-            Assert.That(straight.took, Is.EqualTo(Middle.BurrowDmg), "a straight line is punished");
-            // the same run, but the player turns back the moment it starts to rise (the tell): safe
-            var turned = Dive((run, i) =>
+            var d = Dive(3, (run, i) => { Place(run, i % 2 == 0 ? Balance.RoomRight - 60 : Balance.RoomLeft + 60, Balance.RoomBottom - 40); Step(run); });
+            double walk = Middle.BurrowWalkSharp * Balance.DepthRate(1), run = Middle.BurrowRun * Balance.DepthRate(1);
+            Assert.That(d.first, Is.LessThan(walk * 1.1), "it leaves at about its walk, not at full speed");
+            Assert.That(d.top, Is.GreaterThan(run * 0.8), "and builds to its top speed");
+        }
+
+        [Test]
+        public void ABurrowerLeadsARunnerButNotAlwaysTheSameAndATurnBeatsIt()
+        {
+            int straightHits = 0, turnedHits = 0;
+            var ahead = new System.Collections.Generic.List<double>();
+            for (uint s = 1; s <= Dives; s++)
             {
-                var b = run.enemies.First(e => e.kind == BodyKind.Burrower);
-                if (b.move == "rise") { TickOrder.TickPlayer(run, new Input(-1, 0)); TickOrder.TickProjectiles(run); TickOrder.TickBodies(run); }
-                else WalkRight(run, i);
-            });
-            Assert.That(turned.took, Is.EqualTo(0), "turning on the tell beats it");
-            Assert.That(turned.x, Is.GreaterThan(turned.playerX + 20), "it had come up ahead of the runner");
+                var straight = Dive(s, WalkRight);
+                if (straight.took > 0) straightHits++;
+                var turned = Dive(s, (run, i) =>
+                {
+                    var b = run.enemies.First(e => e.kind == BodyKind.Burrower);
+                    if (b.move == "rise") { TickOrder.TickPlayer(run, new Input(-1, 0)); TickOrder.TickProjectiles(run); TickOrder.TickBodies(run); }
+                    else WalkRight(run, i);
+                });
+                if (turned.took > 0) turnedHits++;
+                ahead.Add(turned.x - turned.px);
+            }
+            Assert.That(straightHits, Is.GreaterThan(Dives / 2), "a straight line is punished more often than not");
+            Assert.That(turnedHits, Is.LessThan(Dives / 4), "turning on the tell beats it");
+            Assert.That(ahead.Average(), Is.GreaterThan(20), "it comes up ahead of a runner");
+            Assert.That(ahead.Max() - ahead.Min(), Is.GreaterThan(40), "but not at the same lead every dive");
         }
 
         [Test]

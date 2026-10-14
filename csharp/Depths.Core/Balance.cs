@@ -334,10 +334,10 @@ namespace Depths
     /// <summary>Momentum you build and feel (owner 2026-10-13: "ramp up slower and more noticeably, as of right now it
     /// feels barely present"). The JS meter fills in ~180 px of running (0.6 s) and empties in 0.8 s, so it is always
     /// full or empty, and full is +14% speed. Tuned: ~5 s of running under pressure fills it, standing still drains it
-    /// over ~3 s, and full adds 0.40 to the speed bonus (1.25x -> 1.65x walking, +32%) with a sharper start and stop.</summary>
+    /// over ~1.25 s, and full adds 0.40 to the speed bonus (1.25x -> 1.65x walking, +32%) with a sharper start and stop.</summary>
     public static bool TuneMomentum = true;
     public static double MomGain => Tuned && TuneMomentum ? 0.0007 : MomentumGain;   // meter per px moved (rate-free)
-    public static double MomStallDecay => Tuned && TuneMomentum ? PerSec(0.35) : MomentumStallDecay;   // meter per second
+    public static double MomStallDecay => Tuned && TuneMomentum ? PerSec(0.8) : MomentumStallDecay;   // meter per second
     public static double MomSpeed => Tuned && TuneMomentum ? 0.40 : MomentumSpeed;   // speed bonus at a full meter
     public static double MomCap => Tuned && TuneMomentum ? 0.65 : MoveSpeedHardCap;   // the ceiling with momentum; the speed stat alone stays at 0.44
     public static double MomAccel => Tuned && TuneMomentum ? 1.0 : MomentumAccel;    // acceleration bonus at a full meter
@@ -345,6 +345,9 @@ namespace Depths
     public static bool TunePools = true;
     /// <summary>The middle five's retune of 2026-10-13 (Middle.Sharp): aim, split, lead, chase, cone, ally-safe volleys.</summary>
     public static bool TuneMiddle = true;
+    /// <summary>Every ranged body aims with Aim.Intercept (owner 2026-10-14: shots "completely away" from a straight walker).</summary>
+    public static bool TuneAim = true;
+    public static double AimHorizon => SecF(1.6);   // the longest lead a shot is solved for
     /// <summary>"Close": the Scatter's full-damage reach. Inside it a Lunger does not dodge and a Brunch
     /// rushes you instead of walking to its wall slot. Read from the gun, so the two cannot drift apart.</summary>
     public static double CloseRange => Weapons.All[1].FNear ?? 180;

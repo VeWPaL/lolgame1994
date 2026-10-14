@@ -76,7 +76,7 @@ namespace Depths.Unity.Tests
             Assert.That(HudLayout.Rung(2, 3).xMax, Is.LessThanOrEqualTo(HudLayout.Ink0(true) + HudLayout.InkW));
             Assert.That(HudLayout.SeedTag.yMax, Is.LessThan(HudLayout.PaperBottom));
             Assert.That(HudLayout.PaperBottom - HudLayout.SeedTag.yMax, Is.LessThan(48), "no dead paper band under the footer");
-            Assert.That(HudLayout.Map.yMax, Is.LessThan(HudLayout.KitHeaderY), "the map and the kit's heading");
+            Assert.That(HudLayout.Map.yMax, Is.LessThan(HudLayout.KitY), "the map and the kit");
             Assert.That(HudLayout.Plate(2).xMax, Is.LessThanOrEqualTo(HudLayout.RightX + HudLayout.BoardW - HudLayout.PaperPad), "plates are on the page");
             Assert.That(HudLayout.Slot(2).yMax, Is.LessThan(HudLayout.CarryLabelY));
             Assert.That(HudLayout.CarryY + HudLayout.CarryStep * 2, Is.LessThan(HudLayout.PaperBottom));

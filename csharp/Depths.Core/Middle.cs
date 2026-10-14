@@ -1,66 +1,63 @@
 namespace Depths
 {
     /// <summary>
-    /// The middle enemies (C# only, after js-final; the owner's idea of 2026-10-12): five bodies for
-    /// floors 3-10 whose threat a skilled player can read and dodge, so skill orders deaths there the
-    /// way the gunner's shell does not. NOT in the spawn pool yet - the lab spawns them for playtesting.
-    /// Splitter, Mortar and Sprayer walk and aim like a shooter (<c>StepRanged</c>) and differ in what
-    /// leaves when the cast ends (<see cref="Release"/>); the Burrower and the Turret egg have their own
-    /// steps. Every dial is in seconds or per-second units.
+    /// The middle enemies (C# only): Splitter, Mortar and Sprayer walk and aim like a shooter (TickOrder.StepRanged)
+    /// and differ in what leaves when the cast ends (<see cref="Release"/>); the Burrower and the egg (Eggs.cs) have
+    /// their own steps. <see cref="Sharp"/> is the 2026-10-13/14 retune; off, the lab-era bodies. Design notes and
+    /// the numbers' history: docs/enemies.md.
     /// </summary>
     public static class Middle
     {
-        // named, not "k >= Splitter": a kind appended later must not land in Release by enum order
         public static bool Is(BodyKind k) => k == BodyKind.Splitter || k == BodyKind.Mortar || k == BodyKind.Burrower || k == BodyKind.Sprayer || k == BodyKind.Egg;
-
-        /// <summary>Never moved by the hook's yank or its field: the egg is a fixture the room is built around.</summary>
         public static bool Anchored(BodyKind k) => k == BodyKind.Egg;
-
-        /// <summary>Walks a standoff and casts at an intercept, as a shooter does.</summary>
         public static bool Ranged(BodyKind k) => k == BodyKind.Splitter || k == BodyKind.Mortar || k == BodyKind.Sprayer;
-
-        /// <summary>How long the cast tell runs before the release: the Sprayer's long wind-up is its whole design.</summary>
         public static int CastTime(BodyKind k) => k == BodyKind.Sprayer ? SprayWind : k == BodyKind.Egg ? EggWind : Balance.CastTime;
-
-        /// <summary>How much of the shooter's aim jitter a kind keeps: the Splitter and the Sprayer aim tighter (owner
-        /// 2026-10-13: "a little better aimed"). 1 for the shooter and the gunner, so their shots are the JS's.</summary>
-        public static double AimJitter(BodyKind k) => Sharp && (k == BodyKind.Splitter || k == BodyKind.Sprayer) ? 0.5 : 1;
-
-        /// <summary>The 2026-10-13 retune of the five (Balance.TuneMiddle): every changed dial and behaviour below
-        /// reads this, so the bot can measure it apart and the lab-era bodies are one switch away.</summary>
         public static bool Sharp => Balance.Tuned && Balance.TuneMiddle;
 
-        // ---- Splitter: a slow shell that bursts into shards at a set range; punishes standing still ----
-        public static double SplitRange => Sharp ? 120 : 170;      // px from the muzzle: it splits sooner
+        // ---- Splitter ----
+        public static double SplitRange => Sharp ? 120 : 170;      // px from the muzzle
         public const int SplitCount = 3;
-        public static double SplitSpread => Sharp ? 0.30 : 0.42;   // radians either side of the heading
+        public static double SplitSpread => Sharp ? 0.22 : 0.42;   // radians either side
         public static double SplitShardSpeed => Balance.PerSec(380);
         public const double SplitShardR = 4, SplitShardDmg = 1;
 
-        // ---- Mortar: lobs where you are going, led like a Lunger's lunge; the marker shows it the whole flight,
-        // so turning beats it and running straight on does not ----
+        // ---- Mortar ----
         public static int LobFlight => Balance.Sec(1.0);
-        public static double LobBlast => Sharp ? 56 : 34;          // px: "significantly wider"
+        public static double LobBlast => Sharp ? 56 : 34;          // px
         public const double LobDmg = 2;
+        public const double LobTrustMin = 0.3, LobTrustMax = 0.85;  // share of the lead it trusts, rolled per shell
+        public const double LobLeadMax = 230;                       // px: the furthest ahead it marks
 
-        // ---- Sprayer: a long, visible wind-up, then a short cone of weak shots, aimed as it leaves ----
+        // ---- Sprayer ----
         public static int SprayWind => Balance.Sec(Sharp ? 0.85 : 1.0);
         public const int SprayCount = 5;
-        public static double SprayCone => Sharp ? 0.26 : 0.35;     // radians either side
+        public static double SprayCone => Sharp ? 0.19 : 0.35;     // radians either side
         public const double SprayCadence = 0.82;                   // x its cooldown when Sharp (Spawn.Body)
+        const double SprayReach = 360;                             // px of each line checked for an ally
 
-        // ---- Turret egg: never walks; a slow ring every few seconds shapes the room. Two variants (Eggs.cs): one
-        // circling a body (a smaller, slower ring) and, in the Kiln Works, one riding a rail ----
+        // ---- Turret egg ----
         public static int EggWind => Balance.Sec(0.6);
         public const int EggRing = 8;
 
-        // ---- Burrower: walks, digs in, chases you underground to where a straight line would take you, a tell,
-        // then up under that spot: running straight is what it punishes ----
-        public static double BurrowWalk => Balance.PerSec(66);
-        public static double BurrowRun => Balance.PerSec(Sharp ? 430 : 300);   // fast enough to catch a runner
+        // ---- Burrower ----
+        public static double BurrowWalk => Balance.PerSec(66);                // lab-era walk
+        public static double BurrowWalkSharp => Balance.PerSec(150);
+        public static double BurrowWalkEase => Balance.Ease(0.02);            // per JS tick: ~0.25 s to its walk
+        public static double BurrowTurnWalk => Balance.PerSec(4.5);           // rad/s
+        public static double BurrowWeave => Balance.PerSec(2.6);              // rad/s of the weave's phase
+        public const double BurrowWeaveAmp = 0.5;                             // rad either side of its heading
+        public static double BurrowRun => Balance.PerSec(Sharp ? 430 : 300);  // top speed under the floor
+        public static double BurrowRamp => Balance.Ease(0.0068);              // per JS tick: ~0.7 s from walk to top speed
+        public static double BurrowBrake => Balance.Ease(0.03);               // per JS tick: it sheds speed faster than it gains it
+        public static double BurrowTurn => Balance.PerSec(3.4);               // rad/s under the floor
+        public static double BurrowArrive => Balance.SecF(0.14);              // slows within this many ticks of its mark
+        public static double BurrowLeadMax => Balance.SecF(1.0);              // the longest lead it ever takes
+        public const double BurrowTrustMin = 0.1, BurrowTrustMax = 0.8;       // share of the lead, rolled per dive
+        public const double BurrowSlop = 26;                                  // px of random offset, rolled per dive
+        public const double BurrowSurfaceAt = 14;                             // px from its mark: up it comes
         public static int BurrowSurface => Balance.Sec(1.6);
         public static int BurrowDig => Balance.Sec(0.45);
-        public static int BurrowUnder => Balance.Sec(Sharp ? 1.8 : 1.2);   // the longest it stays down; it surfaces where it got to
+        public static int BurrowUnder => Balance.Sec(Sharp ? 2.2 : 1.2);
         public static int BurrowRise => Balance.Sec(0.6);
         public const double BurrowHitR = 30, BurrowDmg = 2;
 
@@ -76,12 +73,10 @@ namespace Depths
                     break;
                 case BodyKind.Mortar:
                 {
-                    // where the player will be when it lands, if they keep going as they believe they are (the Lunger's
-                    // lead): the marker shows that spot for the whole flight, so a turn beats it
-                    var (tx, ty) = Sharp ? Lead(run, LobFlight) : (TickOrder.HitboxX, TickOrder.HitboxY + Balance.PlayerHitDy);
+                    var (tx, ty) = Sharp ? LobMark(run) : (TickOrder.HitboxX, TickOrder.HitboxY + Balance.PlayerHitDy);
                     double m = LobBlast * 0.5;
-                    tx = System.Math.Max(Balance.RoomLeft + m, System.Math.Min(Balance.RoomRight - m, tx));
-                    ty = System.Math.Max(Balance.RoomTop + m, System.Math.Min(Balance.RoomBottom - m, ty));
+                    tx = Clamp(tx, Balance.RoomLeft + m, Balance.RoomRight - m);
+                    ty = Clamp(ty, Balance.RoomTop + m, Balance.RoomBottom - m);
                     run.projectiles.Add(new Projectile
                     {
                         x = e.x, y = e.y, ox = e.x, oy = e.y, tx = tx, ty = ty, lob = true, flightMax = LobFlight,
@@ -91,8 +86,7 @@ namespace Depths
                 }
                 case BodyKind.Sprayer:
                 {
-                    // aimed again as it leaves (the wind-up showed THAT it fires, not where), then swung off its own
-                    if (!Sharp)   // the lab-era cone: the aim the cast began with, no check for its own
+                    if (!Sharp)
                     {
                         for (int i = 0; i < SprayCount; i++)
                             run.projectiles.Add(Shell(e, e.castAim + SprayCone * (2.0 * i / (SprayCount - 1) - 1), e.pspd, e.pr, e.dmg, SprayColor, 0));
@@ -104,7 +98,7 @@ namespace Depths
                     for (int i = 0; i < SprayCount; i++)
                     {
                         double a = aim + SprayCone * (2.0 * i / (SprayCount - 1) - 1);
-                        if (!clear.HasValue && !Movement.LineClear(run, e, a, SprayReach, e.pr)) continue;   // no clear cone: hold the shells that would hit a friend
+                        if (!clear.HasValue && !Movement.LineClear(run, e, a, SprayReach, e.pr)) continue;
                         run.projectiles.Add(Shell(e, a, e.pspd, e.pr, e.dmg, SprayColor, 0));
                     }
                     break;
@@ -112,37 +106,33 @@ namespace Depths
                 case BodyKind.Egg:
                     Eggs.Ring(run, e);
                     break;
-                default:   // a kind that casts must say what leaves, or its cast would finish and fire nothing
+                default:
                     throw new System.InvalidOperationException("Middle.Release: no release for " + e.kind);
             }
         }
 
-        /// <summary>The Lunger's kind of lead (Movement.LungeIntercept: trusted by how settled the player looks,
-        /// 1 - swerve), <paramref name="ticks"/> ahead of the hitbox - but on the player's velocity now, not the
-        /// believed heading at walking speed: the belief keeps its last direction after a stop, so a player who
-        /// had ever moved could stand still and never be hit (the cold critic, 2026-10-13).</summary>
-        public static (double x, double y) Lead(RunState run, double ticks)
+        static double Clamp(double v, double lo, double hi) => v < lo ? lo : v > hi ? hi : v;
+
+        // where the lob lands: the player's velocity over the flight, trusted by how settled they look and by a share
+        // rolled per shell, never more than LobLeadMax ahead
+        static (double x, double y) LobMark(RunState run)
         {
             var p = run.player;
-            double k = (1 - p.swerve) * ticks;
-            return (TickOrder.HitboxX + p.vx * k, TickOrder.HitboxY + Balance.PlayerHitDy + p.vy * k);
+            double k = (1 - p.swerve) * (LobTrustMin + (LobTrustMax - LobTrustMin) * run.rng.Jitter()) * LobFlight;
+            double lx = p.vx * k, ly = p.vy * k, len = System.Math.Sqrt(lx * lx + ly * ly);
+            if (len > LobLeadMax) { lx *= LobLeadMax / len; ly *= LobLeadMax / len; }
+            return (TickOrder.HitboxX + lx, TickOrder.HitboxY + Balance.PlayerHitDy + ly);
         }
 
-        const double SprayReach = 360;   // px: how far along a line the Sprayer checks for its own (its Range)
-
-        // the Sprayer's release aim: an intercept on the player's velocity for the flight, a halved jitter
+        // the Sprayer aims again as it fires: the shooter's intercept and jitter, from where it stands now
         static double SprayAim(RunState run, Enemy e)
         {
             var p = run.player;
             double conf = System.Math.Max(0, 1 - p.swerve * Balance.SwerveTrustRooted);
-            double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy, sx = hx - e.x, sy = hy - e.y;
-            for (int k = 0; k < 8; k++)
-            {
-                double t = System.Math.Sqrt(sx * sx + sy * sy) / e.pspd;
-                sx = hx + p.vx * conf * t - e.x; sy = hy + p.vy * conf * t - e.y;
-            }
+            double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy;
             double dist = System.Math.Sqrt((hx - e.x) * (hx - e.x) + (hy - e.y) * (hy - e.y));
-            return System.Math.Atan2(sy, sx) + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist) * AimJitter(e.kind);
+            return Aim.Intercept(e.x, e.y, hx, hy, p.vx * conf, p.vy * conf, 0, e.pspd)
+                   + (run.rng.Jitter() - 0.5) * 2 * Aim.GunSpread(p.swerve, dist);
         }
 
         internal static Projectile Shell(Enemy e, double a, double speed, double r, double dmg, string color, double splitAt) => new Projectile
@@ -168,8 +158,7 @@ namespace Depths
             }
         }
 
-        /// <summary>A lob, once a tick: it flies the straight line to its mark over its flight and only lands
-        /// there; the player is hit if they are inside the blast as it lands. True once it has landed.</summary>
+        /// <summary>A lob, once a tick: the straight line to its mark over its flight; it strikes only as it lands.</summary>
         public static bool StepLob(RunState run, Projectile p)
         {
             if (++p.flight < p.flightMax)
@@ -180,92 +169,118 @@ namespace Depths
                 return false;
             }
             p.x = p.tx; p.y = p.ty;
-            var pl = run.player;
-            if (Hit.PlayerHit(p.tx, p.ty, p.blastR, pl.lagX, pl.lagY))
-            {
-                double dx = pl.lagX - p.tx, dy = pl.lagY + Balance.PlayerHitDy - p.ty, d = System.Math.Sqrt(dx * dx + dy * dy);
-                if (d == 0) { dx = 0; dy = 1; d = 1; }
-                Combat.DamagePlayer(run, p.dmg, dx / d, dy / d, 2.5 * Balance.KnockPGain, false);
-            }
+            Strike(run, p.tx, p.ty, p.blastR, p.dmg, 2.5);
             return true;
         }
 
-        /// <summary>The egg: no walking; counts its cooldown, winds up, and lets a ring go (through the
-        /// shared cast clock, so a stun still lets a finished cast leave).</summary>
+        static void Strike(RunState run, double x, double y, double r, double dmg, double knock)
+        {
+            var pl = run.player;
+            if (!Hit.PlayerHit(x, y, r, pl.lagX, pl.lagY)) return;
+            double dx = pl.lagX - x, dy = pl.lagY + Balance.PlayerHitDy - y, d = System.Math.Sqrt(dx * dx + dy * dy);
+            if (d == 0) { dx = 0; dy = 1; d = 1; }
+            Combat.DamagePlayer(run, dmg, dx / d, dy / d, knock * Balance.KnockPGain, false);
+        }
+
+        /// <summary>The egg: rides (Eggs.Move), counts its cooldown, winds up, lets a ring go through the shared cast clock.</summary>
         public static void StepEgg(RunState run, Enemy e, double roomPress)
         {
             Eggs.Move(run, e);
             if (e.castT > 0 || e.castReady) { TickOrder.FireCommittedShot(run, e, roomPress); return; }
             if (--e.shootCd > 0) return;
-            e.castAim = run.rng.Jitter() * 2 * System.Math.PI / EggRing;   // the ring turns a little each volley
+            e.castAim = run.rng.Jitter() * 2 * System.Math.PI / EggRing;
             e.castT = EggWind;
         }
 
         /// <summary>
-        /// Where a Burrower under the floor heads: the spot the player reaches, at their present velocity (trusted
-        /// by how settled they look), by the time it has got there and risen - an intercept, solved as the Lunger's
-        /// lunge is. It arrives as they do: a runner meets it, a turn on the tell escapes it. Inside the room.
-        /// </summary>
-        public static void BurrowMark(RunState run, Enemy e, double step)
-        {
-            var p = run.player;
-            double conf = 1 - p.swerve, vx = p.vx * conf, vy = p.vy * conf;
-            double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy, lx = hx, ly = hy, rm = e.r + 4;
-            for (int k = 0; k < 6; k++)
-            {
-                double t = System.Math.Sqrt((lx - e.x) * (lx - e.x) + (ly - e.y) * (ly - e.y)) / System.Math.Max(1e-9, step) + BurrowRise;
-                lx = System.Math.Max(Balance.RoomLeft + rm, System.Math.Min(Balance.RoomRight - rm, hx + vx * t));
-                ly = System.Math.Max(Balance.RoomTop + rm, System.Math.Min(Balance.RoomBottom - rm, hy + vy * t));
-            }
-            e.markX = lx; e.markY = ly;
-        }
-
-        /// <summary>
-        /// The Burrower's cycle on <c>move</c>/<c>moveT</c>: walk (slow, hittable), dig (a tell, rooted),
-        /// under (buried: no contact, no hits; it runs at the spot the player stood on when it dug), rise
-        /// (a tell at that spot, still buried), then up - and the spot is struck as it breaks the floor.
+        /// The Burrower's cycle on <c>move</c>/<c>moveT</c>: walk (hittable), dig (a rooted tell), under (buried: no
+        /// contact, no hits), rise (a tell where it stopped, still buried), then up, striking that spot. Sharp, it
+        /// steers rather than slides: a weaving walk, a dive that gathers speed and curves onto its mark.
         /// </summary>
         public static void StepBurrower(RunState run, Enemy e, double edx, double edy, double dist, double sm)
         {
             switch (e.move)
             {
                 case "dig":
+                    if (Sharp) Steer(e, e.heading, 0, BurrowWalkEase, 0, sm);   // it slides to a stop as it sinks
                     if (--e.moveT > 0) return;
                     e.buried = true;
                     e.markX = TickOrder.HitboxX; e.markY = TickOrder.HitboxY + Balance.PlayerHitDy;
                     e.move = "under"; e.moveT = BurrowUnder;
+                    if (Sharp)
+                    {
+                        e.digTrust = BurrowTrustMin + (BurrowTrustMax - BurrowTrustMin) * run.rng.Jitter();
+                        double a = run.rng.Jitter() * 2 * System.Math.PI, r = BurrowSlop * run.rng.Jitter();
+                        e.digOffX = System.Math.Cos(a) * r; e.digOffY = System.Math.Sin(a) * r;
+                        e.curSpeed = System.Math.Max(e.curSpeed, BurrowWalkSharp * Balance.DepthRate(run.floor));
+                    }
                     return;
                 case "under":
-                {
-                    // the chase: every tick it re-aims at where a straight line takes the player by the time it is there
-                    // and has risen, so it surfaces ahead of a runner and under a stander
-                    double step = BurrowRun * Balance.DepthRate(run.floor) * sm;
-                    if (Sharp) BurrowMark(run, e, step);   // else: the spot the player stood on when it dug
-                    double mx = e.markX - e.x, my = e.markY - e.y, md = System.Math.Sqrt(mx * mx + my * my);
-                    if (md <= step) { e.x = e.markX; e.y = e.markY; }
-                    else { e.x += mx / md * step; e.y += my / md * step; }
-                    if (md <= step || --e.moveT <= 0) { e.markX = e.x; e.markY = e.y; e.move = "rise"; e.moveT = BurrowRise; }
+                    if (Sharp) Dive(run, e, sm);
+                    else
+                    {
+                        double step = BurrowRun * Balance.DepthRate(run.floor) * sm;
+                        double mx = e.markX - e.x, my = e.markY - e.y, md = System.Math.Sqrt(mx * mx + my * my);
+                        if (md <= step) { e.x = e.markX; e.y = e.markY; }
+                        else { e.x += mx / md * step; e.y += my / md * step; }
+                        if (md <= step || --e.moveT <= 0) Surface(e);
+                    }
                     return;
-                }
                 case "rise":
                     if (--e.moveT > 0) return;
                     e.buried = false;
-                    var pl = run.player;
-                    if (Hit.PlayerHit(e.x, e.y, BurrowHitR, pl.lagX, pl.lagY))
-                    {
-                        double dx = pl.lagX - e.x, dy = pl.lagY + Balance.PlayerHitDy - e.y, d = System.Math.Sqrt(dx * dx + dy * dy);
-                        if (d == 0) { dx = 0; dy = 1; d = 1; }
-                        Combat.DamagePlayer(run, BurrowDmg, dx / d, dy / d, 6 * Balance.KnockPGain, false);
-                    }
-                    e.move = "walk"; e.moveT = BurrowSurface;
+                    Strike(run, e.x, e.y, BurrowHitR, BurrowDmg, 6);
+                    e.move = "walk"; e.moveT = BurrowSurface; e.curSpeed = 0;
                     return;
                 default:   // "walk", and "idle" on the first step
-                    if (e.move != "walk") { e.move = "walk"; e.moveT = BurrowSurface; }
-                    double v = BurrowWalk * Balance.DepthRate(run.floor) * sm;   // deeper floors move faster, as every body does
-                    e.x += edx / dist * v; e.y += edy / dist * v;
+                    if (e.move != "walk") { e.move = "walk"; e.moveT = BurrowSurface; e.heading = System.Math.Atan2(edy, edx); }
+                    if (Sharp)
+                    {
+                        double want = System.Math.Atan2(edy, edx) + BurrowWeaveAmp * System.Math.Sin(e.lifeT * BurrowWeave);
+                        Steer(e, want, BurrowWalkSharp * Balance.DepthRate(run.floor), BurrowWalkEase, BurrowTurnWalk, sm);
+                    }
+                    else
+                    {
+                        double v = BurrowWalk * Balance.DepthRate(run.floor) * sm;
+                        e.x += edx / dist * v; e.y += edy / dist * v;
+                    }
                     if (--e.moveT <= 0) { e.move = "dig"; e.moveT = BurrowDig; }
                     return;
             }
+        }
+
+        static void Surface(Enemy e) { e.markX = e.x; e.markY = e.y; e.move = "rise"; e.moveT = BurrowRise; }
+
+        // one tick under the floor: the mark is the player plus the share of their lead this dive trusts, plus its slop;
+        // it gathers speed toward its top, eases off as it arrives, and turns at a limited rate, so it curves in
+        static void Dive(RunState run, Enemy e, double sm)
+        {
+            var p = run.player;
+            double top = BurrowRun * Balance.DepthRate(run.floor);
+            double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy;
+            double gap = System.Math.Sqrt((hx - e.x) * (hx - e.x) + (hy - e.y) * (hy - e.y));
+            double lead = System.Math.Min(BurrowLeadMax, gap / System.Math.Max(1e-9, e.curSpeed) + BurrowRise) * e.digTrust * (1 - p.swerve);
+            double rm = e.r + 4;
+            e.markX = Clamp(hx + p.vx * lead + e.digOffX, Balance.RoomLeft + rm, Balance.RoomRight - rm);
+            e.markY = Clamp(hy + p.vy * lead + e.digOffY, Balance.RoomTop + rm, Balance.RoomBottom - rm);
+            double mx = e.markX - e.x, my = e.markY - e.y, md = System.Math.Sqrt(mx * mx + my * my);
+            if (md <= BurrowSurfaceAt) { Surface(e); return; }
+            double speed = System.Math.Min(top, System.Math.Max(BurrowWalkSharp, md / BurrowArrive));
+            Steer(e, System.Math.Atan2(my, mx), speed, speed < e.curSpeed ? BurrowBrake : BurrowRamp, BurrowTurn * (md < 80 ? 2 : 1), sm);
+            if (--e.moveT <= 0) Surface(e);
+        }
+
+        // speed eases toward `speed` by `ease`, the heading turns toward `want` by at most `turn` a tick (0: it keeps its heading)
+        static void Steer(Enemy e, double want, double speed, double ease, double turn, double sm)
+        {
+            if (turn > 0)
+            {
+                double d = System.Math.IEEERemainder(want - e.heading, 2 * System.Math.PI);
+                e.heading += d > turn ? turn : d < -turn ? -turn : d;
+            }
+            e.curSpeed += (speed - e.curSpeed) * ease;
+            e.x += System.Math.Cos(e.heading) * e.curSpeed * sm;
+            e.y += System.Math.Sin(e.heading) * e.curSpeed * sm;
         }
     }
 }
