@@ -16,7 +16,7 @@ namespace Depths.Unity
             (BodyKind.Shooter, EggForm.Fixed, "Shooter", "stands off and shoots"), (BodyKind.Gunner, EggForm.Fixed, "Gunner", "solves your line"),
             (BodyKind.Boss, EggForm.Fixed, "Warden", "the whole fight"),
             (BodyKind.Splitter, EggForm.Fixed, "Splitter", "bursts close: keep moving"), (BodyKind.Mortar, EggForm.Fixed, "Mortar", "lands where you are going"),
-            (BodyKind.Burrower, EggForm.Fixed, "Burrower", "chases underground: turn on its tell"), (BodyKind.Sprayer, EggForm.Fixed, "Sprayer", "wind-up, then a tight cone"),
+            (BodyKind.Burrower, EggForm.Fixed, "Burrower", "homes underground, then leaps: step off the mark"), (BodyKind.Sprayer, EggForm.Fixed, "Sprayer", "wind-up, then a tight cone"),
             (BodyKind.Egg, EggForm.Fixed, "Turret egg", "never moves; rings the room"),
             (BodyKind.Egg, EggForm.Orbit, "Orbiting egg", "circles a body; a smaller, slower ring"),
             (BodyKind.Egg, EggForm.Rail, "Rail egg", "rides a track (Kiln Works); F8 again for the next track"),

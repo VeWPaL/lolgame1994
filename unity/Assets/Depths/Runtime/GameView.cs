@@ -71,7 +71,8 @@ namespace Depths.Unity
             _demo |= _sandbox || (_inLab && !labRow);
             _secretView = i >= 0 && i + 1 < args.Length && args[i + 1] == "secret";
             _railView = i >= 0 && i + 1 < args.Length && args[i + 1] == "rail";   // one egg track (-depthsSeed n picks it), the lab frozen
-            _inLab |= _railView;
+            _leapView = i >= 0 && i + 1 < args.Length && args[i + 1] == "leap";   // a Burrower about to jump at the player
+            _inLab |= _railView || _leapView;
             int si = Array.IndexOf(args, "-depthsSeed");
             if (si >= 0 && si + 1 < args.Length && uint.TryParse(args[si + 1], out var fixedSeed)) _fixedSeed = fixedSeed;
             if (_secretView && _fixedSeed == null) _fixedSeed = 1;   // seed 1 has a fake wall on floor 1 (the JS reference frame uses it too)
@@ -92,7 +93,7 @@ namespace Depths.Unity
             Depths.Unity.Audio.MusicEngine.SetFight(false);   // back to the menu: the calm layer only
         }
 
-        bool _bossRoom, _sandbox, _inLab, _secretView, _railView;
+        bool _bossRoom, _sandbox, _inLab, _secretView, _railView, _leapView;
         uint? _fixedSeed;   // -depthsSeed: the screenshot checks pick their dungeon
         readonly LabMode _lab = new LabMode();
         bool RealRun => !_sandbox && !_bossRoom && !_inLab;
@@ -136,6 +137,14 @@ namespace Depths.Unity
             if (_inLab)
             {
                 _lab.Enter(_run);
+                if (_leapView)
+                {
+                    _run.enemies.Clear();
+                    var b = Spawn.Body(_run, BodyKind.Burrower, _run.player.x - 150, _run.player.y - 90);
+                    b.noticeTimer = 0; b.alerted = true; b.buried = true; b.move = "crack"; b.moveT = Middle.BurrowCrack;
+                    _run.enemies.Add(b);
+                    _lab.SetFrozen(false, _run);
+                }
                 if (_railView)
                 {
                     _run.enemies.Clear();

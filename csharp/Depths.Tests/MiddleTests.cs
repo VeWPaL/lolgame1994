@@ -126,7 +126,7 @@ namespace Depths.Tests
         {
             var run = Started();
             var b = Add(run, BodyKind.Burrower, run.player.x, run.player.y - 300);   // far off: still running for a while
-            b.buried = true; b.move = "under"; b.moveT = 1000; b.curSpeed = 0; b.digTrust = 0.5;
+            b.buried = true; b.move = "under"; b.moveT = 1000; b.curSpeed = 0;
             double hp = b.hp, health = Health(run);
             run.projectiles.Add(new Projectile { x = b.x, y = b.y, ox = b.x - 50, oy = b.y, vx = 0.01, r = 6, dmg = 50, friendly = true, dx = 1 });
             Blast.Explode(run, b.x, b.y);
@@ -138,196 +138,134 @@ namespace Depths.Tests
             Assert.That(Health(run), Is.EqualTo(health), "nor does it touch the player");
         }
 
-        // dig, then follow it down: where it comes up, the health it took, where the player was, its speeds under the floor
-        static (double x, double y, double took, double px, double py, double first, double top) Dive(uint seed, Action<RunState, int>? move)
+        // one dive, followed through its landing; `move` drives the player each tick (null: they stand still)
+        sealed class DiveLog
+        {
+            public double LandX, LandY, Took, TakeoffPx, TakeoffPy, First = -1, Top, GapAtCrack = double.MaxValue;
+            public bool BuriedInFlight = true, TimedOut;
+        }
+
+        static DiveLog Dive(uint seed, Action<RunState, int>? move)
         {
             var run = Started(seed);
             var b = Add(run, BodyKind.Burrower, Balance.MidX, Balance.RoomTop + 60);
             Place(run, Balance.RoomLeft + 120, Balance.MidY + 60);
-            int t = 0;
+            var log = new DiveLog();
+            int t = 0, i = 0;
             while (b.move != "under" && t++ < Balance.Sec(4)) Step(run);
             Assert.That(b.buried, "it dug in within four seconds");
-            double before = Health(run), first = -1, top = 0;
-            int under = 0;
-            while (b.buried && t++ < Balance.Sec(8))
+            double before = Health(run);
+            while (b.move != "walk" && t++ < Balance.Sec(8))
             {
+                string was = b.move;
+                int left = b.moveT;
                 double x0 = b.x, y0 = b.y;
-                bool diving = b.move == "under";
-                if (move != null) move(run, under++);
-                else Step(run);
-                if (!diving) continue;
-                double v = Math.Sqrt((b.x - x0) * (b.x - x0) + (b.y - y0) * (b.y - y0));
-                if (first < 0) first = v;
-                top = Math.Max(top, v);
+                if (move != null) move(run, i++); else Step(run);
+                if (was == "under")
+                {
+                    double v = Math.Sqrt((b.x - x0) * (b.x - x0) + (b.y - y0) * (b.y - y0));
+                    if (log.First < 0) log.First = v;
+                    log.Top = Math.Max(log.Top, v);
+                    if (b.move == "crack")
+                    {
+                        log.TimedOut = left <= 1;
+                        log.GapAtCrack = Math.Sqrt((TickOrder.HitboxX - b.x) * (TickOrder.HitboxX - b.x) + (TickOrder.HitboxY + Balance.PlayerHitDy - b.y) * (TickOrder.HitboxY + Balance.PlayerHitDy - b.y));
+                    }
+                }
+                if (was == "crack" && b.move == "leap") { log.TakeoffPx = TickOrder.HitboxX; log.TakeoffPy = TickOrder.HitboxY + Balance.PlayerHitDy; }
+                if (b.move == "leap") log.BuriedInFlight &= b.buried;
             }
-            Assert.That(b.buried, Is.False, "it came up");
-            return (b.x, b.y, before - Health(run), run.player.x, run.player.y + Balance.PlayerHitDy, first, top);
+            Assert.That(b.move, Is.EqualTo("walk"), "it came back up");
+            log.LandX = b.x; log.LandY = b.y; log.Took = before - Health(run);
+            return log;
         }
 
-        static void WalkRight(RunState run, int _)
+        static void Walk(RunState run, double dx, double dy)
         {
-            TickOrder.TickPlayer(run, new Input(1, 0));
+            TickOrder.TickPlayer(run, new Input(dx, dy));
             TickOrder.TickProjectiles(run);
             TickOrder.TickBodies(run);
         }
 
         const int Dives = 24;
-        static double Near => Middle.BurrowSlop + Middle.BurrowSurfaceAt + 3;   // the most a dive at a stander can miss by
 
         [Test]
-        public void ABurrowerComesUpUnderAPlayerWhoStandsStill()
+        public void ABurrowerLandsOnAPlayerWhoStandsStill()
         {
-            int hits = 0;
-            double lo = double.MaxValue, hi = double.MinValue;
             for (uint s = 1; s <= Dives; s++)
             {
                 var d = Dive(s, null);
-                Assert.That(Math.Sqrt((d.x - d.px) * (d.x - d.px) + (d.y - d.py) * (d.y - d.py)), Is.LessThan(Near), "seed " + s);
-                if (d.took > 0) hits++;
-                lo = Math.Min(lo, d.x - d.px); hi = Math.Max(hi, d.x - d.px);
+                Assert.That(d.LandX, Is.EqualTo(d.TakeoffPx).Within(1)); Assert.That(d.LandY, Is.EqualTo(d.TakeoffPy).Within(1));
+                Assert.That(d.Took, Is.EqualTo(Middle.BurrowDmg), "seed " + s + ": standing still is punished");
+                Assert.That(d.BuriedInFlight, "nothing reaches it under the floor or in the air");
             }
-            Assert.That(hits, Is.GreaterThan(Dives * 3 / 4), "standing still is punished");
-            Assert.That(hi - lo, Is.GreaterThan(12), "but not on the same spot every dive");
         }
 
         [Test]
-        public void ABurrowerChasesUnderground()
+        public void ItLandsWhereThePlayerStoodAsItJumpedAndARunnerIsGone()
         {
-            // the player is elsewhere by the time it is down: it follows, it does not dig up an empty spot
             for (uint s = 1; s <= Dives; s++)
             {
-                var d = Dive(s, (run, i) => { if (i == 0) Place(run, run.player.x + 220, run.player.y); Step(run); });
-                Assert.That(Math.Abs(d.x - d.px), Is.LessThan(Near), "seed " + s + ": it surfaced under the new spot");
+                var d = Dive(s, (run, i) => Walk(run, i / 90 % 2 == 0 ? 1 : -1, 0.3));   // keeps moving, turning now and then
+                double toTakeoff = Math.Sqrt((d.LandX - d.TakeoffPx) * (d.LandX - d.TakeoffPx) + (d.LandY - d.TakeoffPy) * (d.LandY - d.TakeoffPy));
+                Assert.That(toTakeoff, Is.LessThan(1).Or.EqualTo(Middle.BurrowLeapMax).Within(1), "seed " + s + ": the landing is the takeoff spot (or a full jump toward it)");
+                Assert.That(d.Took, Is.EqualTo(0), "seed " + s + ": moving off the mark during the flight escapes it");
             }
+        }
+
+        [Test]
+        public void NoFeintSendsItTheWrongWay()
+        {
+            // the owner's exploit of 2026-10-14: walk one way for a second, switch, and the predicting Burrower ran off
+            foreach (double every in new[] { 0.6, 1.0, 1.5 })
+                for (uint s = 1; s <= 12; s++)
+                {
+                    var d = Dive(s, (run, i) => Walk(run, (int)(i / (every * Balance.TickHz)) % 2 == 0 ? 1 : -1, 0));
+                    Assert.That(d.TimedOut, Is.False, "feinting every " + every + " s, seed " + s + ": it ran out its time instead of closing in");
+                    Assert.That(d.GapAtCrack, Is.LessThanOrEqualTo(Middle.BurrowLeapRange + 1), "it broke the floor within range");
+                }
         }
 
         [Test]
         public void ABurrowerGathersSpeedUnderTheFloor()
         {
-            var d = Dive(3, (run, i) => { Place(run, i % 2 == 0 ? Balance.RoomRight - 60 : Balance.RoomLeft + 60, Balance.RoomBottom - 40); Step(run); });
-            double walk = Middle.BurrowWalkSharp * Balance.DepthRate(1), run = Middle.BurrowRun * Balance.DepthRate(1);
-            Assert.That(d.first, Is.LessThan(walk * 1.1), "it leaves at about its walk, not at full speed");
-            Assert.That(d.top, Is.GreaterThan(run * 0.8), "and builds to its top speed");
+            // a far, still player: one long straight run, broken off only once it is in range
+            var d = Dive(3, (run, i) => { if (i == 0) Place(run, Balance.RoomRight - 30, Balance.RoomBottom - 30); Step(run); });
+            double walk = Middle.BurrowWalkSharp * Balance.DepthRate(1), top = Middle.BurrowRun * Balance.DepthRate(1);
+            Assert.That(d.First, Is.LessThan(walk * 1.1), "it leaves at about its walk, not at full speed");
+            Assert.That(d.Top, Is.GreaterThan(walk + (top - walk) * 0.6), "and gathers most of the way to its top speed");
         }
 
         [Test]
-        public void ABurrowerLeadsARunnerButNotAlwaysTheSameAndATurnBeatsIt()
+        public void TheCrackAndTheFlightTakeTheirTime()
         {
-            int straightHits = 0, turnedHits = 0;
-            var ahead = new System.Collections.Generic.List<double>();
-            for (uint s = 1; s <= Dives; s++)
-            {
-                var straight = Dive(s, WalkRight);
-                if (straight.took > 0) straightHits++;
-                var turned = Dive(s, (run, i) =>
-                {
-                    var b = run.enemies.First(e => e.kind == BodyKind.Burrower);
-                    if (b.move == "rise") { TickOrder.TickPlayer(run, new Input(-1, 0)); TickOrder.TickProjectiles(run); TickOrder.TickBodies(run); }
-                    else WalkRight(run, i);
-                });
-                if (turned.took > 0) turnedHits++;
-                ahead.Add(turned.x - turned.px);
-            }
-            Assert.That(straightHits, Is.GreaterThan(Dives / 2), "a straight line is punished more often than not");
-            Assert.That(turnedHits, Is.LessThan(Dives / 4), "turning on the tell beats it");
-            Assert.That(ahead.Average(), Is.GreaterThan(20), "it comes up ahead of a runner");
-
-        }
-
-        // a player running in a circle (radius ~ speed / turn), the escape the owner found on 2026-10-14
-        static (int dives, int hits) Circling(double turnPerSec)
-        {
-            int dives = 0, hits = 0;
-            for (uint s = 1; s <= 24; s++)
-            {
-                var run = Started(s);
-                Place(run, Balance.MidX, Balance.MidY);
-                var b = Add(run, BodyKind.Burrower, Balance.MidX + 220, Balance.MidY - 120);
-                double ang = 0, step = turnPerSec / Balance.TickHz;
-                for (int t = 0; t < Balance.Sec(12); t++)
-                {
-                    ang += step;
-                    double before = Health(run);
-                    bool rising = b.move == "rise";
-                    TickOrder.TickPlayer(run, new Input(Math.Cos(ang), Math.Sin(ang)));
-                    TickOrder.TickProjectiles(run);
-                    TickOrder.TickBodies(run);
-                    if (rising && b.move != "rise") { dives++; if (Health(run) < before) hits++; }
-                    run.player.hp = run.player.maxHp; run.player.regenHeart = run.player.regenHeartMax; run.player.iframes = 0;
-                }
-            }
-            return (dives, hits);
-        }
-
-        // a player pacing wall to wall, reversing every `every` seconds
-        static (int dives, int hits) Pacing(double every)
-        {
-            int dives = 0, hits = 0;
-            for (uint s = 1; s <= 24; s++)
-            {
-                var run = Started(s);
-                Place(run, Balance.MidX, Balance.MidY + 40);
-                var b = Add(run, BodyKind.Burrower, Balance.MidX + 200, Balance.RoomTop + 60);
-                int dir = 1, flip = Balance.Sec(every);
-                for (int t = 0; t < Balance.Sec(12); t++)
-                {
-                    if (t % flip == 0) dir = -dir;
-                    var p = run.player;
-                    if (p.x > Balance.RoomRight - 40) dir = -1; else if (p.x < Balance.RoomLeft + 40) dir = 1;
-                    bool rising = b.move == "rise";
-                    double before = Health(run);
-                    TickOrder.TickPlayer(run, new Input(dir, 0));
-                    TickOrder.TickProjectiles(run);
-                    TickOrder.TickBodies(run);
-                    if (rising && b.move != "rise") { dives++; if (Health(run) < before) hits++; }
-                    p.hp = p.maxHp; p.regenHeart = p.regenHeartMax; p.iframes = 0;
-                }
-            }
-            return (dives, hits);
+            // the warning is the whole counterplay: its length is pinned, not just compared between rates
+            var run = Started();
+            var b = Add(run, BodyKind.Burrower, run.player.x + 120, run.player.y);
+            TickOrder.TickPlayer(run, Input.None);
+            b.buried = true; b.move = "crack"; b.moveT = Middle.BurrowCrack;
+            int crack = 0, flight = 0;
+            while (b.move == "crack" && crack < 1000) { TickOrder.TickBodies(run); crack++; }
+            while (b.move == "leap" && flight < 1000) { TickOrder.TickBodies(run); flight++; }
+            Assert.That(crack, Is.EqualTo(Middle.BurrowCrack));
+            Assert.That(flight, Is.EqualTo(Middle.BurrowLeap));
+            Assert.That(Middle.BurrowCrack / (double)Balance.TickHz, Is.EqualTo(0.3).Within(0.01));
+            Assert.That(Middle.BurrowLeap / (double)Balance.TickHz, Is.EqualTo(0.6).Within(0.01), "time enough to step off the mark");
         }
 
         [Test]
-        public void PacingBackAndForthDoesNotBeatABurrower()
+        public void ALeapIsNeverLongerThanAJumpNorOutOfTheRoom()
         {
-            // the cold critic's case: a reversal read as a 19 rad/s turn curled the lead onto the player's feet
-            var (dives, hits) = Pacing(1.2);
-            TestContext.WriteLine("pacing: " + hits + " of " + dives);
-            Assert.That(dives, Is.GreaterThan(30));
-            Assert.That(hits, Is.GreaterThan(dives / 5), "pacing must not be a safe answer");
-        }
-
-        [Test]
-        public void RunningInCirclesDoesNotBeatABurrower()
-        {
-            foreach (double turn in new[] { 2.5, 4.0 })
-            {
-                var (dives, hits) = Circling(turn);
-                TestContext.WriteLine("circling at " + turn + " rad/s: " + hits + " of " + dives + " dives hit");
-                Assert.That(dives, Is.GreaterThan(30), "the fixture dives");
-                Assert.That(hits, Is.GreaterThan(dives / 3), "circling at " + turn + " rad/s must not be a safe answer");
-            }
-        }
-
-        [Test]
-        public void ABurrowerSettlesOntoItsMarkInsteadOfCirclingIt()
-        {
-            // the critic's case: a stander, the Burrower 200 px off; every dive must end by reaching the mark, not the timer
-            int dives = 0, timedOut = 0;
-            for (uint s = 1; s <= 40; s++)
-            {
-                var run = Started(s);
-                var b = Add(run, BodyKind.Burrower, run.player.x + 200, run.player.y - 60);
-                for (int t = 0; t < Balance.Sec(14); t++)
-                {
-                    bool under = b.move == "under";
-                    int left = b.moveT;
-                    Step(run);
-                    if (under && b.move == "rise") { dives++; if (left <= 1) timedOut++; }
-                    run.player.hp = run.player.maxHp;
-                }
-            }
-            Assert.That(dives, Is.GreaterThan(80), "the fixture dives");
-            Assert.That(timedOut, Is.EqualTo(0), "no dive at a standing player runs out its clock circling");
+            var run = Started();
+            var b = Add(run, BodyKind.Burrower, Balance.RoomLeft + 40, Balance.RoomTop + 40);
+            Place(run, Balance.RoomRight - 40, Balance.RoomBottom - 40);
+            TickOrder.TickPlayer(run, Input.None);
+            b.buried = true; b.move = "crack"; b.moveT = 1;
+            TickOrder.TickBodies(run);
+            Assert.That(b.move, Is.EqualTo("leap"));
+            double len = Math.Sqrt((b.markX - b.leapX) * (b.markX - b.leapX) + (b.markY - b.leapY) * (b.markY - b.leapY));
+            Assert.That(len, Is.LessThanOrEqualTo(Middle.BurrowLeapMax + 1e-9));
+            Assert.That(b.markX, Is.InRange(Balance.RoomLeft, Balance.RoomRight)); Assert.That(b.markY, Is.InRange(Balance.RoomTop, Balance.RoomBottom));
         }
 
         [Test]
@@ -465,7 +403,7 @@ namespace Depths.Tests
                     int t = 0;
                     while (b.move != "dig" && t < hz * 10) { Step(run); t++; }
                     int start = t;
-                    while (b.move != "walk" && t < hz * 20) { Step(run); t++; }   // dig, under, rise, up
+                    while (b.move != "walk" && t < hz * 20) { Step(run); t++; }   // dig, under, crack, leap, land
                     return (t - start) / (double)hz;
                 }
                 finally { Balance.TickHz = was; }

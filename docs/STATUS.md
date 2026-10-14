@@ -3,7 +3,8 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-14, later (notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
+_Last updated: 2026-10-14, evening (the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
+notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
 faster eggs, momentum in the blink's blue; before that, notes batch 3 and the sweep: the Burrower steers, `Aim.Intercept`, the HUD headings
 gone, momentum and shell VFX; long comments moved to `docs/history/csharp/` and gated; four reviewers' findings
 fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/status-2026-10.md`)._
@@ -73,9 +74,9 @@ it from another checkout or the first command spends minutes importing.
   touches `unity/` or `Depths.Core`.
 - `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 88/88. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|lab|labrow|secret|rail`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|lab|labrow|secret|rail|leap`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
-  checks the blast opens it and the hook is behind; `rail` shows egg track n % 8)
+  checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
   (60 +-2%); `hearts` freezes a fixture (5/8 HP, regen 1/4, armour 3) and samples both lobes of
   every heart on the ledger page (`HudLayout.HeartTopLeft`) against the atlas heart colours in `HeartRow`.
@@ -108,13 +109,15 @@ it from another checkout or the first command spends minutes importing.
   - Splitter: a 360 px/s pink shell (300) that bursts 120 px out (170) into 3 shards, +-0.22 rad (0.42).
   - Mortar: marks the player's velocity x the 1 s flight x a trust rolled 0.3-0.85 per shell (x 1 - swerve), at most
     230 px ahead; 2 HP inside 56 px (34). A stander is under the mark; a turn beats it.
-  - Burrower: a weaving 150 px/s walk (66) that steers; dives (0.45 s tell, a short skid), gathers speed from its walk
-    to 480 px/s (300) over ~0.7 s, turning at 7.5 rad/s straight onto its mark: where the player's motion takes them
-    in its own time to the mark plus the rise, followed round a curve at the rate their heading has been turning
-    (2026-10-14: circling had beaten it every dive, 0 of 48; now ~40%; a turn faster than 6 rad/s is a reversal, not
-    a curve, and a reverser's swerve shortens the lead, so pacing gets hit ~28%), x a trust rolled 0.8-1.05 per dive,
-    plus up to 18 px of slop; eases off as it arrives, surfaces within 14 px (or after 2.2 s), a 0.6 s crack tell, then up: 2 HP
-    within 30 px.
+  - Burrower (redesigned 2026-10-14 after four rounds of prediction patches were each baited: circling, pacing, a
+    1 s feint): a weaving 150 px/s walk (66); dives (0.45 s tell, a short skid); under the floor it homes straight on
+    where the player is now, no prediction, gathering speed to 400 px/s (300); within 170 px (after at least 0.4 s,
+    or when its 2.2 s run out) it breaks the floor with a 0.3 s crack, then LEAPS at the spot the player stood on as
+    it jumped (at most 220 px), marked on the floor for the 0.6 s flight; it lands there: 2 HP within 30 px.
+    Untouchable under the floor and in the air. Standing still is punished; stepping off the mark escapes.
+    Bot (seeds 101-200 x 3 profiles, 60 min) against batch 3's build: deaths 156 -> 146 (novice 86 -> 77, average
+    41 -> 38, skilled 29 -> 31). A player who keeps moving escapes every leap (the critic's probe): watch whether it
+    plays as harmless; the levers are the flight (0.6 s), the leap range and the strike radius.
   - Sprayer: 0.85 s wind-up (1.0), cadence x0.82, aimed again as it fires, 5 weak shots +-0.19 rad (0.35).
   - Turret egg (radius 14, was 18): fixed (8 shells), orbiting a body of its wave (45%; 5 shells at 0.8x; 1.6 rad/s),
     or on a rail in the Kiln Works (60%; 6 shells; 140 px/s; eight tracks at 38-55% of the room's size, laid anywhere

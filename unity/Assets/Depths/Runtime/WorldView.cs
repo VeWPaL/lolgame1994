@@ -324,9 +324,20 @@ namespace Depths.Unity
         bool DrawBurrow(Enemy e, int frame, double ex, double ey)
         {
             if (!e.buried) return false;   // walking or digging it is a body you can hit: drawn as one (DrawBodies)
-            if (e.move == "rise")
+            if (e.move == "leap")   // in the air: its landing marked on the floor (filling as it comes), the body arcing over
             {
-                float p = 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowRise), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * 0.5f);
+                float t = 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowLeap);
+                Dot(e.markX, e.markY, (float)Middle.BurrowHitR, (float)Middle.BurrowHitR * 0.55f, QuadBatch.Tint(Crack, 0.12f + 0.25f * t));
+                Ring(e.markX, e.markY, (float)Middle.BurrowHitR * (1.3f - 0.3f * t), 2, QuadBatch.Tint(Crack, 0.45f + 0.5f * t));
+                Dot(ex, ey + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
+                double arc = ey - 2 - Mathf.Sin(t * Mathf.PI) * 56;   // -2: where DrawBodies stands a body, so no pop at either end
+                Spr(SpriteSet.BodyR(e.kind, frame, false), ex, arc);
+                return true;
+            }
+            if (e.move == "rise" || e.move == "crack")   // breaking the floor: cracks reaching out as it comes
+            {
+                float full = e.move == "crack" ? Middle.BurrowCrack : Middle.BurrowRise;
+                float p = 1 - Mathf.Clamp01(e.moveT / full), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * 0.5f);
                 Dot(ex, ey, (float)Middle.BurrowHitR, (float)Middle.BurrowHitR * 0.5f, QuadBatch.Tint(Dirt, 0.35f + 0.4f * p));
                 Ring(ex, ey, (float)Middle.BurrowHitR, 2, QuadBatch.Tint(Crack, 0.35f + 0.5f * p * pulse + 0.15f));
                 for (int i = 0; i < 6; i++)   // cracks reach out further as it comes

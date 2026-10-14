@@ -41,24 +41,19 @@ namespace Depths
         public static double BurrowTurnWalk => Balance.PerSec(4.5);           // rad/s
         public static double BurrowWeave => Balance.PerSec(2.6);              // rad/s of the weave's phase
         public const double BurrowWeaveAmp = 0.5;                             // rad either side of its heading
-        public static double BurrowRun => Balance.PerSec(Sharp ? 480 : 300);  // top speed under the floor: above a full-momentum runner
+        public static double BurrowRun => Balance.PerSec(Sharp ? 400 : 300);  // top speed under the floor: a little above a base run
         public static double BurrowRamp => Balance.Ease(0.0068);              // per JS tick: ~0.7 s from walk to top speed
-        public static double BurrowBrake => Balance.Ease(0.03);               // per JS tick: it sheds speed faster than it gains it
         public static double BurrowRoot => Balance.Ease(0.12);                // per JS tick: it stops within ~0.1 s as it digs
-        public static double BurrowTurn => Balance.PerSec(7.5);               // rad/s under the floor: a direct line, not a sweep
-        public static double BurrowCurveEase => Balance.Ease(0.03);           // per JS tick: how fast it reads the player's turning
-        public static double BurrowCurveMax => Balance.PerSec(6);             // rad/s: a faster turn is a reversal, not a curve
-        public const double BurrowSwerveTrust = 1.0;                          // a reverser's swerve shortens the lead (pacing)
-        public const double BurrowCurveMinSpeed = 0.4;                        // x walking speed: slower, the heading means nothing
-        public static double BurrowArrive => Balance.SecF(0.14);              // slows within this many ticks of its mark
-        public static double BurrowLeadMax => Balance.SecF(1.0);              // the longest lead it ever takes
-        public const double BurrowTrustMin = 0.8, BurrowTrustMax = 1.05;      // share of the lead, rolled per dive
-        public const double BurrowSlop = 18;                                  // px of random offset, rolled per dive
-        public const double BurrowSurfaceAt = 14;                             // px from its mark: up it comes
+        public static double BurrowTurn => Balance.PerSec(7.5);               // rad/s under the floor: straight at the player
+        public const double BurrowLeapRange = 170;                            // px from the player: close enough, it comes up
+        public static int BurrowMinUnder => Balance.Sec(0.4);                 // it travels at least this long before it may
+        public static int BurrowCrack => Balance.Sec(0.3);                    // the crack where it breaks the floor
+        public static int BurrowLeap => Balance.Sec(0.6);                     // the flight: its landing marked the whole time
+        public const double BurrowLeapMax = 220;                              // px: the longest jump
         public static int BurrowSurface => Balance.Sec(1.6);
         public static int BurrowDig => Balance.Sec(0.45);
         public static int BurrowUnder => Balance.Sec(Sharp ? 2.2 : 1.2);
-        public static int BurrowRise => Balance.Sec(0.6);
+        public static int BurrowRise => Balance.Sec(0.6);                      // the lab-era tell before it rose under its mark
         public const double BurrowHitR = 30, BurrowDmg = 2;
 
         public const string SplitColor = "#ff6ad5", LobColor = "#ffb03a", SprayColor = "#ff4d4d", EggColor = "#b6ff5c";
@@ -192,7 +187,8 @@ namespace Depths
             e.castT = EggWind;
         }
 
-        /// <summary>The Burrower's cycle on move/moveT: walk (hittable), dig (a rooted tell), under (buried: no contact, no... [h:Middle-2]</summary>
+        /// <summary>The Burrower: walk, dig, under (untouchable), out. Sharp: it homes on the player, cracks the floor when close,
+        /// and leaps at the spot the player stood on as it jumped, marked for the flight (STATUS: Middle enemies).</summary>
         public static void StepBurrower(RunState run, Enemy e, double edx, double edy, double dist, double sm)
         {
             switch (e.move)
@@ -203,31 +199,44 @@ namespace Depths
                     e.buried = true;
                     e.markX = TickOrder.HitboxX; e.markY = TickOrder.HitboxY + Balance.PlayerHitDy;
                     e.move = "under"; e.moveT = BurrowUnder;
-                    if (Sharp)
-                    {
-                        e.digTrust = BurrowTrustMin + (BurrowTrustMax - BurrowTrustMin) * run.rng.Jitter();
-                        e.digVx = e.digVy = e.digOmega = 0;
-                        double a = run.rng.Jitter() * 2 * System.Math.PI, r = BurrowSlop * run.rng.Jitter();
-                        e.digOffX = System.Math.Cos(a) * r; e.digOffY = System.Math.Sin(a) * r;
-                        e.curSpeed = System.Math.Max(e.curSpeed, BurrowWalkSharp * Balance.DepthRate(run.floor));
-                    }
+                    if (Sharp) e.curSpeed = System.Math.Max(e.curSpeed, BurrowWalkSharp * Balance.DepthRate(run.floor));
                     return;
                 case "under":
-                    if (Sharp) Dive(run, e, sm);
+                    if (Sharp)
+                    {
+                        // no prediction at all: straight at where the player is now, a little faster than they run
+                        double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy;
+                        Steer(e, System.Math.Atan2(hy - e.y, hx - e.x), BurrowRun * Balance.DepthRate(run.floor), BurrowRamp, BurrowTurn, sm);
+                        double gap = System.Math.Sqrt((hx - e.x) * (hx - e.x) + (hy - e.y) * (hy - e.y));
+                        --e.moveT;
+                        if ((gap <= BurrowLeapRange && BurrowUnder - e.moveT >= BurrowMinUnder) || e.moveT <= 0) { e.move = "crack"; e.moveT = BurrowCrack; }
+                    }
                     else
                     {
                         double step = BurrowRun * Balance.DepthRate(run.floor) * sm;
                         double mx = e.markX - e.x, my = e.markY - e.y, md = System.Math.Sqrt(mx * mx + my * my);
                         if (md <= step) { e.x = e.markX; e.y = e.markY; }
                         else { e.x += mx / md * step; e.y += my / md * step; }
-                        if (md <= step || --e.moveT <= 0) Surface(e);
+                        if (md <= step || --e.moveT <= 0) { e.markX = e.x; e.markY = e.y; e.move = "rise"; e.moveT = BurrowRise; }
                     }
                     return;
+                case "crack":
+                    if (--e.moveT > 0) return;
+                    Leap(e);
+                    return;
+                case "leap":
+                {
+                    double t = 1 - --e.moveT / (double)BurrowLeap;
+                    e.x = e.leapX + (e.markX - e.leapX) * t;
+                    e.y = e.leapY + (e.markY - e.leapY) * t;
+                    if (e.moveT > 0) return;
+                    e.x = e.markX; e.y = e.markY;
+                    Land(run, e);
+                    return;
+                }
                 case "rise":
                     if (--e.moveT > 0) return;
-                    e.buried = false;
-                    Strike(run, e.x, e.y, BurrowHitR, BurrowDmg, 6);
-                    e.move = "walk"; e.moveT = BurrowSurface; e.curSpeed = 0;
+                    Land(run, e);
                     return;
                 default:   // "walk", and "idle" on the first step
                     if (e.move != "walk") { e.move = "walk"; e.moveT = BurrowSurface; e.heading = System.Math.Atan2(edy, edx); }
@@ -246,49 +255,24 @@ namespace Depths
             }
         }
 
-        static void Surface(Enemy e) { e.markX = e.x; e.markY = e.y; e.move = "rise"; e.moveT = BurrowRise; }
-
-        // one tick under the floor: the mark is the player plus the share of their lead this dive trusts, plus its slop;
-        // it gathers speed toward its top, eases off as it arrives, and turns at a limited rate, so it curves in
-        static void Dive(RunState run, Enemy e, double sm)
+        // out of the floor and into the air: the landing is where the player stands now, no further than a jump, in the room
+        static void Leap(Enemy e)
         {
-            var p = run.player;
-            double top = BurrowRun * Balance.DepthRate(run.floor);
             double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy;
-            // the lead is its own time to the mark plus the rise, so it arrives as the player does (an intercept, not a guess)
-            double toMark = System.Math.Sqrt((e.markX - e.x) * (e.markX - e.x) + (e.markY - e.y) * (e.markY - e.y));
-            double lead = System.Math.Min(BurrowLeadMax, toMark / System.Math.Max(BurrowWalkSharp, e.curSpeed) + BurrowRise) * e.digTrust * (1 - p.swerve * BurrowSwerveTrust);
-            var (lx, ly) = AlongCurve(e, p.vx, p.vy, lead);
+            double dx = hx - e.x, dy = hy - e.y, d = System.Math.Sqrt(dx * dx + dy * dy);
+            if (d > BurrowLeapMax) { dx *= BurrowLeapMax / d; dy *= BurrowLeapMax / d; }
             double rm = e.r + 4;
-            e.markX = Clamp(hx + lx + e.digOffX, Balance.RoomLeft + rm, Balance.RoomRight - rm);
-            e.markY = Clamp(hy + ly + e.digOffY, Balance.RoomTop + rm, Balance.RoomBottom - rm);
-            double mx = e.markX - e.x, my = e.markY - e.y, md = System.Math.Sqrt(mx * mx + my * my);
-            if (md <= BurrowSurfaceAt) { Surface(e); return; }
-            double speed = System.Math.Min(top, System.Math.Max(BurrowWalkSharp * 0.25, md / BurrowArrive));
-            // near its mark it may turn as tightly as its speed needs to come inside the surfacing radius, so it
-            // settles onto the mark instead of circling it (the critic: 150 px/s at 6.8 rad/s orbits at 22 px)
-            double turn = md < 80 ? System.Math.Max(BurrowTurn * 2, e.curSpeed / (BurrowSurfaceAt * 0.6)) : BurrowTurn;
-            Steer(e, System.Math.Atan2(my, mx), speed, speed < e.curSpeed ? BurrowBrake : BurrowRamp, turn, sm);
-            if (--e.moveT <= 0) Surface(e);
+            e.leapX = e.x; e.leapY = e.y;
+            e.markX = Clamp(e.x + dx, Balance.RoomLeft + rm, Balance.RoomRight - rm);
+            e.markY = Clamp(e.y + dy, Balance.RoomTop + rm, Balance.RoomBottom - rm);
+            e.move = "leap"; e.moveT = BurrowLeap;
         }
 
-        // where the player's motion takes them in `ticks`: their velocity turned at the rate their heading has been turning
-        // (a circling player is followed round the circle, a straight runner along the line, a stander nowhere)
-        static (double x, double y) AlongCurve(Enemy e, double vx, double vy, double ticks)
+        static void Land(RunState run, Enemy e)
         {
-            double speed = System.Math.Sqrt(vx * vx + vy * vy), slow = Balance.PlayerMove * BurrowCurveMinSpeed;
-            if (speed > slow && (e.digVx != 0 || e.digVy != 0))
-            {
-                // a reversal, or a stale sample after a stun, reads as a turn of ~pi in a tick: it is not a curve to follow
-                double turned = System.Math.IEEERemainder(System.Math.Atan2(vy, vx) - System.Math.Atan2(e.digVy, e.digVx), 2 * System.Math.PI);
-                if (System.Math.Abs(turned) <= BurrowCurveMax) e.digOmega += (turned - e.digOmega) * BurrowCurveEase;
-                else e.digOmega = 0;
-            }
-            if (speed > slow) { e.digVx = vx; e.digVy = vy; } else { e.digVx = e.digVy = 0; }
-            double w = e.digOmega, th = w * ticks;
-            if (System.Math.Abs(w) < 1e-5) return (vx * ticks, vy * ticks);
-            double s = System.Math.Sin(th), c = System.Math.Cos(th);
-            return ((s * vx + (c - 1) * vy) / w, ((1 - c) * vx + s * vy) / w);
+            e.buried = false;
+            Strike(run, e.x, e.y, BurrowHitR, BurrowDmg, 6);
+            e.move = "walk"; e.moveT = BurrowSurface; e.curSpeed = 0;
         }
 
         // speed eases toward `speed` by `ease`, the heading turns toward `want` by at most `turn` a tick (0: it keeps its heading)

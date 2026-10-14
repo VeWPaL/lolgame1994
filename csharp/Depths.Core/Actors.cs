@@ -152,7 +152,7 @@ namespace Depths
         public bool buried;            // a Burrower underground: no shell, blast, field, contact or shove reaches it
         public double markX, markY;    // where it will surface
         public double heading;         // a Burrower's travel direction (Middle.Steer)
-        public double digTrust, digOffX, digOffY, digVx, digVy, digOmega;   // a dive's share of the lead and its slop, rolled as it goes under
+        public double leapX, leapY;   // where a Burrower's leap took off (Middle.Leap); markX/markY is where it lands
         /// <summary>A turret egg's form (Eggs.cs): fixed, circling <see cref="eggHost"/> at eggA/eggR, or riding
         /// <see cref="rail"/> (points x0,y0,x1,y1...) at railS px along it, railDir +1/-1, round it when railLoop.</summary>
         public EggForm eggForm;
