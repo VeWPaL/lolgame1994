@@ -23,12 +23,8 @@
  * says four are wrong" are very different findings wearing the same output.
  */
 
-/* audit-constants.js - compare EVERY Brunch and lunge constant in the C# port against the running
- * game, by value. Exists because two stale ones have already been found by hand (SwerveDecay, and
- * the Brunch ramp at 2.2s against the game's 1.5s), and both were found only because something
- * happened to read them.
- */
-const pw=require('C:/Users/neefloW/AppData/Local/hermes/hermes-agent/node_modules/playwright');
+const path=require('path');
+const pw=require(path.join(process.env.LOCALAPPDATA||'', 'hermes/hermes-agent/node_modules/playwright'));
 (async()=>{
   const b=await pw.chromium.launch({channel:'msedge'});
   const p=await b.newPage({viewport:{width:800,height:600}});
@@ -57,36 +53,11 @@ const pw=require('C:/Users/neefloW/AppData/Local/hermes/hermes-agent/node_module
     return out;
   });
   await b.close();
-  // read the C# values by compiling a tiny probe
-  const fs=require('fs');
-  const cs=fs.readFileSync('C:/Users/neefloW/Documents/Default Project/csharp/Depths.Core/Balance.cs','utf8');
-  const ac=fs.readFileSync('C:/Users/neefloW/Documents/Default Project/csharp/Depths.Core/Actors.cs','utf8');
-  const csVals={};
-  // const X = <number>;   and  public static int X => Sec(<number>);
-  // A declaration can name SEVERAL constants: `public const int A = 1, B = 2;`. Reading only the
-  // first made four correct constants look absent, which is the false-positive version of the very
-  // bug this audit exists to find.
-  for(const m of cs.matchAll(/public const (?:int|double) ([^;]+);/g)){
-    for(const part of m[1].split(',')){
-      const kv=part.trim().match(/^(\w+)\s*=\s*([\d.]+)$/);
-      if(kv) csVals[kv[1]]=Number(kv[2]);
-    }
-  }
-  // `public static readonly int X = Sec(2.5);` - resolved through TickHz, which the C# derives from
-  // Speedup rather than hard-coding 210. Reading only the `=>` form made AggroTime look absent.
-  for(const m of cs.matchAll(/public static readonly (?:int|double) (\w+) = Sec\(([\d.]+)\)/g))
-    csVals[m[1]]=Number(m[2])*(csVals['TickHz']||210);
-  for(const m of cs.matchAll(/public static (?:int|double) (\w+) => Sec\(([\d.]+)\)/g))
-    csVals[m[1]]=Number(m[2])*(csVals['TickHz']||210);
-  // TickHz itself is `(int)Math.Round(60 * Speedup)` with Speedup = 3.5, i.e. 210.
-  const sp = cs.match(/public const double Speedup = ([\d.]+)/);
-  if (sp) csVals['TickHz'] = Math.round(60*Number(sp[1]));
-  for(const m of ac.matchAll(/public (?:int|double) ([^;]+);/g)){
-    for(const part of m[1].split(',')){
-      const kv=part.trim().match(/^(\w+)\s*=\s*([\d.]+)$/);
-      if(kv) csVals[kv[1]]=Number(kv[2]);
-    }
-  }
+  // the C# values, from the C# itself (Depths.Playtest `constants`: every Balance dial at the JS rate, untuned):
+  // a regex over the source silently lost every dial written in per-second units
+  const root=path.join(__dirname,'..');
+  const out=require('child_process').execFileSync('dotnet',['run','--project',path.join(root,'csharp','Depths.Playtest'),'-c','Release','--','constants'],{encoding:'utf8'});
+  const csVals=JSON.parse(out.trim().split('\n').pop());
   // map the JS names to the C# names
   const MAP={
     BRUNCH_SCAN_TICKS:'BrunchScanTicks', BRUNCH_SHIELD_MIN:'BrunchShieldMin',
@@ -104,8 +75,8 @@ const pw=require('C:/Users/neefloW/AppData/Local/hermes/hermes-agent/node_module
     LUNGE_FLOOR:'LungeFloor', LUNGE_ITER:'LungeIter', LUNGE_SPEED:'LungeSpeed',
     LUNGE_RANGE:'LungeRange', PLAYER_HIT_R:'PlayerHitR', PLAYER_HIT_DY:'PlayerHitDy',
     BLINK_RECHARGE:'BlinkRecharge', TICK_HZ:'TickHz',
-    'GUNNER_DODGE.sight':null, 'GUNNER_DODGE.chance':null, 'GUNNER_DODGE.kick':null,
-    'GUNNER_DODGE.cd':null, 'ENEMY.brunch.r':null, 'ENEMY.brunch.walk':null,
+    'GUNNER_DODGE.sight':'GunnerDodgeSight', 'GUNNER_DODGE.chance':'GunnerDodgeChance', 'GUNNER_DODGE.kick':'GunnerDodgeKick',
+    'GUNNER_DODGE.cd':'GunnerDodgeCd', 'ENEMY.brunch.r':null, 'ENEMY.brunch.walk':null,
     'player.speed':'speed', 'player.r':'r',
   };
   const rows=[]; let bad=0, missing=0;

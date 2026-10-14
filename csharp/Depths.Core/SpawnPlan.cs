@@ -40,8 +40,6 @@ namespace Depths
         public List<SpawnSlot> Slots = new List<SpawnSlot>();
         public List<PlannedBody> Bodies = new List<PlannedBody>();
 
-        /// <summary>How many bodies actually arrive - a pack slot is several bodies.</summary>
-        public int BodyCount => Bodies.Count;
     }
 
     /// <summary>THE SPAWN PLANNER, and the one piece of run-scoped state in the port that is not the RNG. [h:SpawnPlan-2]</summary>
@@ -314,10 +312,5 @@ namespace Depths
 
             return plan;
         }
-    }
-
-    /// <summary>THE HYPOT DIVERGENCE IS REAL AND DOES NOT MATTER - measured, because it is the kind of thing that gets... [h:SpawnPlan-13]</summary>
-    public static class HypotNote
-    {
     }
 }

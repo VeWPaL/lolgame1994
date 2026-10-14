@@ -69,7 +69,7 @@ namespace Depths
             new BodyRow { Mass = 0.9, Radius = 14, Art = 2, Bar = 26, Hp = 6 * Tough, Armour = Armour,
                       Base = Balance.PerSec(85) * Balance.LungerPay, Sense = 620, Range = 520, Close = 170, Far = 280,
                       CdMin = Balance.Sec(1.1), CdVar = Balance.Sec(0.5), Dmg = ShotDmg,
-                      PShotSpeed = Balance.PerSec(300), PShotRadius = 6 },
+                      PShotSpeed = Balance.PerSec(360), PShotRadius = 6 },
             // mortar: heavy and far back; the lob ignores shot speed (Middle.LobFlight)
             new BodyRow { Mass = 1.6, Radius = 16, Art = 2, Bar = 28, Hp = 7 * Tough, Armour = Armour,
                       Base = Balance.PerSec(55) * Balance.LungerPay, Sense = 700, Range = 640, Close = 230, Far = 360,
@@ -89,88 +89,6 @@ namespace Depths
         };
 
         public static BodyRow Of(BodyKind kind) => Rows[(int)kind];
-
-        // the archetype's own spawn windows, as ported (24 and 135 ticks at the JS rate); a live spawn's are longer
-        public static double ArchNoticeWindow => Balance.SecF(4.0 / 35);
-        public static double ArchIdleWindow => Balance.SecF(9.0 / 14);
-
-        /// <summary>Builds a body. The depth ladder is read HERE and nowhere else on this type, and it is read as a function of... [h:Bodies-7]</summary>
-        public static Body Spawn(BodyKind kind, int floor, Rng rng)
-        {
-            BodyRow c = Of(kind);
-            double tough = Balance.DepthTough(floor);
-            double rate = Balance.DepthRate(floor);
-
-            var b = new Body
-            {
-                Kind = kind,
-                Type = kind.ToString().ToLowerInvariant(),
-                Art = c.Art,
-                Bar = c.Bar,
-                Mass = c.Mass,
-                Radius = c.Radius,
-                MaxHp = c.Hp * tough,
-                Armour = c.Armour,
-
-                // transients, drawn from jitter so they never touch the run stream
-                NoticeTimer = (int)(rng.Jitter() * ArchNoticeWindow),
-                IdleTimer = (int)(rng.Jitter() * ArchIdleWindow),
-                IdleDir = new[] { rng.Jitter() * 2 - 1, rng.Jitter() * 2 - 1 },
-                Flank = rng.Jitter() * 6.283185307179586,
-            };
-
-            if (c.Walk.HasValue)
-            {
-                // A walker. The depth rate does NOT scale a walker's top speed: the rate dial is the reaction-time dial, and a... [h:Bodies-8]
-                b.WalkSpeed = c.Walk;
-                b.RunSpeed = c.Run;
-                b.CurSpeed = c.Walk.Value;
-                b.AggroTimer = 0;
-                b.LungeState = "approach";
-            }
-            else
-            {
-                // A ranged body. depthRate scales BOTH its approach speed and its cadence, and the
-                // bound on that dial is the reason a gunner never outruns the player.
-                b.Speed = c.Base * Balance.PressureRate * rate;
-                b.Sense = c.Sense;
-                b.Range = c.Range;
-                b.Close = c.Close;
-                b.Far = c.Far;
-                b.CdMin = c.CdMin / Balance.PressureRate / rate;
-                b.CdVar = c.CdVar / Balance.PressureRate / rate;
-                b.Dmg = c.Dmg;
-                b.PShotSpeed = c.PShotSpeed;
-                b.PShotRadius = c.PShotRadius;
-                b.ShootCd = b.CdMin + rng.Jitter() * b.CdVar;
-                b.AggroTimer = 0;
-            }
-
-            return b;
-        }
-
-        // ------------------------------------------------------------------ the trait
-
-        /// <summary>Which answer a gun gets, and how reliably. [h:Bodies-9]</summary>
-        public static Trait TraitFor(BodyKind gun, Rng rng)
-        {
-            Trait t;
-            double weight;
-            switch (gun)
-            {
-                case BodyKind.Lunger: t = Trait.Close; weight = 0.50; break;
-                case BodyKind.Brunch: t = Trait.Hold; weight = 0.70; break;
-                case BodyKind.Shooter: t = Trait.Hold; weight = 0.62; break;
-                default: t = Trait.Close; weight = 0.50; break;
-            }
-            return rng.Run() < 0.5 * weight ? t : Trait.None;
-        }
-
-        public const double TraitHoldScale = 1.45;    // shift the band outward by this much
-        public const double TraitCloseScale = 0.72;   // ...or inward by this much
-        public const double TraitFarCeil = 0.78;      // far must stay under sense*this
-        public const double TraitFarFloor = 90;       // ...and above this
-        public const double TraitBandMin = 40;        // a band narrower than this is a jitter, not a stance
 
         // ------------------------------------------------------------- the Brunch pack
 
@@ -208,25 +126,5 @@ namespace Depths
 
         /// <summary>A pack smaller than this is a knot rather than a wall. [h:Bodies-13]</summary>
         public const int BrunchWallMin = 3;
-
-        /// <summary>Applies a trait to a body, in place. [h:Bodies-14]</summary>
-        public static Trait ApplyTrait(Body b, Trait t)
-        {
-            if (t == Trait.None || !b.CanTakeTrait) return Trait.None;
-
-            double k = t == Trait.Hold ? TraitHoldScale : TraitCloseScale;
-            double cap = b.Sense!.Value * TraitFarCeil;
-            double far = b.Far!.Value * k;
-            double close = b.Close!.Value * k;
-
-            if (far > cap) far = cap;
-            if (far < TraitFarFloor) far = TraitFarFloor;
-            if (far - close < TraitBandMin) close = far - TraitBandMin;
-
-            b.Far = far;
-            b.Close = close;
-            b.Trait = t;
-            return t;
-        }
     }
 }

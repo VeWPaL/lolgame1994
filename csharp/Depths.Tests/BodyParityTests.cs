@@ -97,57 +97,51 @@ namespace Depths.Tests
                 + "shot must not land differently on two bodies of the same radius: " + string.Join(", ", wrong));
         }
 
-        // ------------------------------------------------- the spawner
+        // ------------------------------------------------- the spawner (Spawn.Body, the one the game uses)
+
+        static Enemy Make(BodyKind kind, int floor, uint seed = 1, int trait = 0)
+        {
+            var run = new RunState(new Rng(seed)) { floor = floor };
+            return Spawn.Body(run, kind, 0, 0, trait);
+        }
 
         [Test]
         public void TheSpawnerBuildsTheRightShapeOfBody()
         {
-            var rng = new Rng(1u);
-            var lunger = Bodies.Spawn(BodyKind.Lunger, 1, rng);
-            Assert.That(lunger.HasWalkSpeed, Is.True, "a lunger came out ranged");
-            Assert.That(lunger.CanTakeTrait, Is.False, "a walker is offered a trait it cannot use");
-            Assert.That(lunger.CurSpeed, Is.EqualTo(0.3456).Within(1e-9));
-            Assert.That(lunger.LungeState, Is.EqualTo("approach"));
+            var lunger = Make(BodyKind.Lunger, 1);
+            Assert.That(lunger.walkSpeed, Is.GreaterThan(0), "a lunger came out ranged");
+            Assert.That(lunger.curSpeed, Is.EqualTo(0.3456).Within(1e-9));
+            Assert.That(lunger.lungeState, Is.EqualTo("approach"));
 
-            var shooter = Bodies.Spawn(BodyKind.Shooter, 1, rng);
-            Assert.That(shooter.HasWalkSpeed, Is.False, "a shooter came out a walker");
-            Assert.That(shooter.CanTakeTrait, Is.True);
-            Assert.That(shooter.Sense, Is.EqualTo(600));
-            Assert.That(shooter.ShootCd, Is.Not.Null, "a ranged body spawns with no first shot scheduled, " +
-                "so it stands there until something else tells it to");
-            Assert.That(shooter.ShootCd!.Value,
-                Is.InRange(shooter.CdMin!.Value, shooter.CdMin!.Value + shooter.CdVar!.Value));
+            var shooter = Make(BodyKind.Shooter, 1);
+            Assert.That(shooter.walkSpeed, Is.EqualTo(0), "a shooter came out a walker");
+            Assert.That(shooter.sense, Is.EqualTo(600));
+            Assert.That(shooter.shootCd, Is.InRange(shooter.cdMin, shooter.cdMin + shooter.cdVar),
+                "a ranged body spawns with its first shot scheduled");
         }
 
         [Test]
         public void FloorOneIsNeutral()
         {
-            // at floor 1 the ladder is exactly 1 on both dials, so a floor-1 body must equal its table
-            // row with no scaling applied. Anything else means the scaling is applied twice.
-            var rng = new Rng(1u);
+            // at floor 1 the ladder is exactly 1 on both dials: a floor-1 body is its table row, tempo-scaled once
             var row = Bodies.Of(BodyKind.Shooter);
-            var b = Bodies.Spawn(BodyKind.Shooter, 1, rng);
-            Assert.That(b.MaxHp, Is.EqualTo(row.Hp).Within(1e-9));
-            Assert.That(b.Speed, Is.EqualTo(row.Base * Balance.PressureRate).Within(1e-9));
-            Assert.That(b.CdMin, Is.EqualTo(row.CdMin / Balance.PressureRate).Within(1e-9));
+            var b = Make(BodyKind.Shooter, 1);
+            Assert.That(b.maxHp, Is.EqualTo(row.Hp).Within(1e-9));
+            Assert.That(b.speed, Is.EqualTo(row.Base!.Value * Balance.TempoRate).Within(1e-9));
+            Assert.That(b.cdMin, Is.EqualTo(row.CdMin!.Value / Balance.TempoRate).Within(1e-9));
         }
 
         [Test]
         public void ADeeperFloorMakesARangedBodyFasterAndAWalkerNoFaster()
         {
-            // THE asymmetry, and it is the whole reason the rate dial is bounded. [h:BodyParityTests-3]
-            var rng = new Rng(1u);
-            var near = Bodies.Spawn(BodyKind.Shooter, 1, rng);
-            var far = Bodies.Spawn(BodyKind.Shooter, 50, rng);
-            Assert.That(far.Speed, Is.GreaterThan(near.Speed!), "depth did not make a ranged body faster");
-            Assert.That(far.CdMin, Is.LessThan(near.CdMin!.Value), "depth did not make a ranged body faster to shoot");
-
-            var lNear = Bodies.Spawn(BodyKind.Lunger, 1, rng);
-            var lFar = Bodies.Spawn(BodyKind.Lunger, 50, rng);
-            Assert.That(lFar.RunSpeed, Is.EqualTo(lNear.RunSpeed!.Value).Within(1e-12),
-                "a walker's top speed now scales with depth, so a lunger at floor 50 is faster than " +
-                "the player and the game stops being reactive");
-            Assert.That(lFar.MaxHp, Is.GreaterThan(lNear.MaxHp), "depth did not make a body tougher");
+            var near = Make(BodyKind.Shooter, 1);
+            var far = Make(BodyKind.Shooter, 50);
+            Assert.That(far.speed, Is.GreaterThan(near.speed), "depth did not make a ranged body faster");
+            Assert.That(far.cdMin, Is.LessThan(near.cdMin), "depth did not make a ranged body faster to shoot");
+            var lNear = Make(BodyKind.Lunger, 1);
+            var lFar = Make(BodyKind.Lunger, 50);
+            Assert.That(lFar.runSpeed, Is.EqualTo(lNear.runSpeed).Within(1e-12), "a walker's top speed must not scale with depth");
+            Assert.That(lFar.maxHp, Is.GreaterThan(lNear.maxHp), "depth did not make a body tougher");
         }
 
         [Test]
@@ -155,150 +149,92 @@ namespace Depths.Tests
         {
             for (int floor = 1; floor <= 1000; floor++)
             {
-                var rng = new Rng(1u);
-                var g = Bodies.Spawn(BodyKind.Gunner, floor, rng);
-                Assert.That(g.Speed!.Value, Is.LessThan(Balance.PlayerMove),
-                    "a gunner at floor " + floor + " approaches at " + g.Speed +
-                    " px/tick against a player who moves at " + Balance.PlayerMove);
+                var g = Make(BodyKind.Gunner, floor);
+                Assert.That(g.speed, Is.LessThan(Balance.PlayerMove), "a gunner at floor " + floor + " approaches at " + g.speed);
             }
         }
-
-        // ------------------------------------------------- THE bug this file exists for
 
         [Test]
         public void TheSpawnerNeverGivesARangedBodyAWalkSpeed()
         {
-            foreach (BodyKind kind in new[] { BodyKind.Shooter, BodyKind.Gunner })
-            {
+            foreach (var kind in new[] { BodyKind.Shooter, BodyKind.Gunner })
                 for (int floor = 1; floor <= 60; floor++)
+                    Assert.That(Make(kind, floor, (uint)(floor * 7 + (int)kind)).walkSpeed, Is.EqualTo(0),
+                        kind + " at floor " + floor + " was given a walk speed: the tick would take the walker branch");
+        }
+
+        [Test]
+        public void AWalkerIsNeverGivenATrait()
+        {
+            foreach (var kind in new[] { BodyKind.Lunger, BodyKind.Brunch })
+                foreach (int t in new[] { 1, 2 })
                 {
-                    var b = Bodies.Spawn(kind, floor, new Rng((uint)(floor * 7 + (int)kind)));
-                    Assert.That(b.WalkSpeed, Is.Null,
-                        kind + " at floor " + floor + " was given a walkSpeed, so the simulation will " +
-                        "take the walker branch for a body that has no ranged kit. Its shell, its " +
-                        "cadence, its muzzle prediction and its standoff rule all stop running.");
+                    var b = Make(kind, 20, 5, t);
+                    Assert.That(b.trait, Is.EqualTo(0), kind + " accepted a trait");
+                    Assert.That(b.far, Is.EqualTo(0));
                 }
-            }
         }
 
         [Test]
-        public void ABodyGivenATraitKeepsItsKit()
+        public void ATraitMovesTheBandAndKeepsItsKit()
         {
-            foreach (BodyKind kind in new[] { BodyKind.Shooter, BodyKind.Gunner })
-            {
-                var rng = new Rng(99u);
-                for (int i = 0; i < 400; i++)
-                {
-                    var b = Bodies.Spawn(kind, 20, rng);
-                    Bodies.ApplyTrait(b, Bodies.TraitFor(kind, rng));
-                    Assert.That(b.WalkSpeed, Is.Null,
-                        "a traited " + kind + " acquired a walkSpeed and is now a walker");
-                    Assert.That(b.CanTakeTrait, Is.True, "a traited " + kind + " can no longer take a trait");
-                }
-            }
-        }
-
-        [Test]
-        public void AWalkerIsNeverOfferedATrait()
-        {
-            foreach (BodyKind kind in new[] { BodyKind.Lunger, BodyKind.Brunch })
-            {
-                var b = Bodies.Spawn(kind, 20, new Rng(5u));
-                Assert.That(Bodies.ApplyTrait(b, Trait.Hold), Is.EqualTo(Trait.None),
-                    "a walker accepted a trait, and the only fields available to it are the ones " +
-                    "that define what kind of body it is");
-                Assert.That(Bodies.ApplyTrait(b, Trait.Close), Is.EqualTo(Trait.None));
-            }
-        }
-
-        // ------------------------------------------------- the trait itself
-
-        [Test]
-        public void ATraitMovesTheBandAndKeepsItsWidth()
-        {
-            var rng = new Rng(7u);
-            var plain = Bodies.Spawn(BodyKind.Shooter, 1, rng);
-            double plainWidth = plain.Far!.Value - plain.Close!.Value;
-
-            var held = Bodies.Spawn(BodyKind.Shooter, 1, rng);
-            Bodies.ApplyTrait(held, Trait.Hold);
-            Assert.That(held.Far, Is.GreaterThan(plain.Far!.Value), "HOLD did not move the body out");
-            Assert.That(held.Close, Is.GreaterThan(plain.Close!.Value),
-                "HOLD moved only Far, so the band WIDENED as a side effect. Both are shifted by the " +
-                "same factor so the width is preserved and a body does not start dithering.");
-            Assert.That((held.Far!.Value - held.Close!.Value), Is.GreaterThan(plainWidth));
-
-            var closed = Bodies.Spawn(BodyKind.Shooter, 1, rng);
-            Bodies.ApplyTrait(closed, Trait.Close);
-            Assert.That(closed.Far, Is.LessThan(plain.Far!.Value), "CLOSE did not move the body in");
-            Assert.That(closed.Close, Is.LessThan(plain.Close!.Value), "CLOSE moved only Far, so the band widened");
+            var plain = Make(BodyKind.Shooter, 1, 7);
+            var held = Make(BodyKind.Shooter, 1, 7, 1);
+            var closed = Make(BodyKind.Shooter, 1, 7, 2);
+            Assert.That(held.far, Is.GreaterThan(plain.far), "HOLD did not move the body out");
+            Assert.That(held.close, Is.GreaterThan(plain.close), "HOLD moved only far");
+            Assert.That(closed.far, Is.LessThan(plain.far), "CLOSE did not move the body in");
+            Assert.That(closed.close, Is.LessThan(plain.close), "CLOSE moved only far");
+            Assert.That(held.far, Is.EqualTo(Math.Min(plain.far * Spawn.TraitHoldScale, plain.sense * Spawn.TraitFarCeil)).Within(1e-9), "the hold scale");
+            Assert.That(closed.far, Is.EqualTo(Math.Max(plain.far * Spawn.TraitCloseScale, Spawn.TraitFarFloor)).Within(1e-9), "the close scale");
+            Assert.That(held.walkSpeed, Is.EqualTo(0), "a traited body is still a ranged body");
         }
 
         [Test]
         public void ATraitChangesNoCombatNumberAtAll()
         {
-            // THE rule, measured. A trait may change where a fight happens and never how hard it is.
-            var rng = new Rng(3u);
-            var plain = Bodies.Spawn(BodyKind.Gunner, 20, rng);
-            var traited = Bodies.Spawn(BodyKind.Gunner, 20, rng);
-            Bodies.ApplyTrait(traited, Trait.Hold);
-
-            Assert.That(traited.MaxHp, Is.EqualTo(plain.MaxHp));
-            Assert.That(traited.Mass, Is.EqualTo(plain.Mass));
-            Assert.That(traited.Radius, Is.EqualTo(plain.Radius));
-            Assert.That(traited.Armour, Is.EqualTo(plain.Armour));
-            Assert.That(traited.Dmg, Is.EqualTo(plain.Dmg));
-            Assert.That(traited.Speed, Is.EqualTo(plain.Speed), "the trait changed the approach speed, " +
-                "which is a difficulty change wearing a behavioural hat");
-            Assert.That(traited.CdMin, Is.EqualTo(plain.CdMin), "the trait changed the cadence, which " +
-                "is the same failure through a different number");
-            Assert.That(traited.Sense, Is.EqualTo(plain.Sense));
-            Assert.That(traited.Range, Is.EqualTo(plain.Range));
-            Assert.That(traited.Far, Is.Not.EqualTo(plain.Far), "the trait did not do anything at all");
+            // a trait may change where a fight happens and never how hard it is
+            var plain = Make(BodyKind.Gunner, 20, 3);
+            var traited = Make(BodyKind.Gunner, 20, 3, 1);
+            Assert.That(traited.maxHp, Is.EqualTo(plain.maxHp));
+            Assert.That(traited.mass, Is.EqualTo(plain.mass));
+            Assert.That(traited.r, Is.EqualTo(plain.r));
+            Assert.That(traited.armour, Is.EqualTo(plain.armour));
+            Assert.That(traited.dmg, Is.EqualTo(plain.dmg));
+            Assert.That(traited.speed, Is.EqualTo(plain.speed), "the trait changed the approach speed");
+            Assert.That(traited.cdMin, Is.EqualTo(plain.cdMin), "the trait changed the cadence");
+            Assert.That(traited.sense, Is.EqualTo(plain.sense));
+            Assert.That(traited.far, Is.Not.EqualTo(plain.far), "the trait did nothing at all");
         }
 
         [Test]
         public void AShiftedBandStaysInsideTheClampsThatKeepTheBodyAbleToFight()
         {
-            // far under sense, or a body notices you and then holds somewhere it can never shoot from - which reads as... [h:BodyParityTests-4]
             var rng = new Rng(11u);
             for (int i = 0; i < 400; i++)
-            {
-                foreach (BodyKind kind in new[] { BodyKind.Shooter, BodyKind.Gunner })
+                foreach (var kind in new[] { BodyKind.Shooter, BodyKind.Gunner, BodyKind.Splitter, BodyKind.Mortar, BodyKind.Sprayer })
                 {
-                    var b = Bodies.Spawn(kind, 30, rng);
-                    Bodies.ApplyTrait(b, Bodies.TraitFor(kind, rng));
-                    if (b.Trait == Trait.None) continue;
-                    Assert.That(b.Far!.Value, Is.LessThan(b.Sense!.Value * Bodies.TraitFarCeil),
-                        "a traited body holds beyond its own awareness");
-                    Assert.That(b.Far - b.Close, Is.GreaterThanOrEqualTo(Bodies.TraitBandMin - 1e-9),
-                        "the band collapsed, so the body dithers on the spot rather than standing somewhere");
-                    Assert.That(b.Close, Is.GreaterThan(0));
+                    var b = Make(kind, 30, (uint)i + 1, Spawn.RollTrait(rng, i % 4));
+                    if (b.trait == 0) continue;
+                    Assert.That(b.far, Is.LessThanOrEqualTo(b.sense * Spawn.TraitFarCeil + 1e-9), "a traited body holds beyond its own awareness");
+                    Assert.That(b.far, Is.GreaterThanOrEqualTo(Spawn.TraitFarFloor - 1e-9));
+                    Assert.That(b.far - b.close, Is.GreaterThanOrEqualTo(Spawn.TraitBandMin - 1e-9), "the band collapsed");
                 }
-            }
         }
 
         [Test]
-        public void TheStandoffIsDerivedRatherThanStored()
+        public void ABodyWithAPlannedTraitDrawsNoRunNumber()
         {
-            // A cached standoff is a second number that has to be kept in step with the two it comes from. [h:BodyParityTests-5]
+            // the wave planner rolls the trait; the spawn itself must not spend a run draw on it again
             var rng = new Rng(1u);
-            var b = Bodies.Spawn(BodyKind.Shooter, 1, rng);
-            Assert.That(b.Standoff(1.0, 0.85), Is.EqualTo(165).Within(0.5),
-                "full pressure: 250 - (250-150)*0.85");
-            Assert.That(b.Standoff(0.0, 0.85), Is.EqualTo(250).Within(0.5),
-                "an empty room: the body holds at its far threshold");
-        }
-
-        [Test]
-        public void TheTraitRollUsesTheRunStreamSoItIsPartOfTheRun()
-        {
-            // A body's trait is what the run IS - same bodies, same answers, every replay - so it has to come from the run... [h:BodyParityTests-6]
-            var rng = new Rng(1u);
-            Bodies.Spawn(BodyKind.Shooter, 1, rng);
+            var run = new RunState(rng) { floor = 1 };
+            long before = rng.RunCalls;
+            Spawn.Body(run, BodyKind.Shooter, 0, 0, 0);
+            Spawn.Body(run, BodyKind.Lunger, 0, 0);
+            Assert.That(rng.RunCalls, Is.EqualTo(before), "a spawn drew from the run stream");
             Assert.That(rng.JitterCalls, Is.GreaterThan(0), "a body drew no jitter at all");
-            Assert.That(rng.RunCalls, Is.EqualTo(0), "spawning a body drew from the run stream, so a " +
-                "cosmetic roll can shift the dungeon");
+            Spawn.Body(run, BodyKind.Shooter, 0, 0);
+            Assert.That(rng.RunCalls, Is.EqualTo(before + 1), "a lone ranged spawn rolls its trait: one run draw");
         }
     }
 }

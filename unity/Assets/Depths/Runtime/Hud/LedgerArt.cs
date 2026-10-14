@@ -230,18 +230,6 @@ namespace Depths.Unity.Hud
             return g;
         }
 
-        /// <summary>A paper tag pinned in the empty hand: "NOTHING HELD" in ink, a brass pin, a shadow.</summary>
-        public static Img NothingTag(int w, int h)
-        {
-            var g = new Img(w + 3, h + 4);
-            g.Fill(3, 4, w, h, Hex.Rgba(0, 0, 0, 0.40f));
-            g.Draw(AgedPaper(w, h, 0x7A6u, 0.04f), 0, 0);
-            LedgerType.Stamp(g, "NOTHING", w / 2 - LedgerType.Width(7, 1) / 2, h / 2 - 9, 1, Ink);
-            LedgerType.Stamp(g, "HELD", w / 2 - LedgerType.Width(4, 1) / 2, h / 2 + 2, 1, Ink);
-            g.Disc(w / 2f, 4, 3, BrassDark); g.Disc(w / 2f - 0.5f, 3.5f, 2, Materials.Brass);
-            return g;
-        }
-
         /// <summary>A heart at the HUD's size, filled by exact halves: the split runs down the middle of
         /// the centre column, so half a heart is half the pixels (1 HP is half a heart).</summary>
         public static Img Heart(Sprites.HeartScheme scheme, int fill, int px)

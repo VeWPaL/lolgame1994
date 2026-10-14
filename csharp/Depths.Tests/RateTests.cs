@@ -179,7 +179,7 @@ namespace Depths.Tests
             ["Balance.LungerFar"] = U.PerSec, ["Balance.LungerSpread"] = U.PerSec, ["Balance.SwerveDecay"] = U.PerSec,
             ["Balance.CastTime"] = U.Sec, ["Balance.Substeps"] = U.Substeps, ["Balance.CastLag"] = U.TickGap,
             ["Balance.BossFirstCd"] = U.Sec, ["Balance.BossPhaseCd"] = U.Sec, ["Balance.FadeStart"] = U.Sec,
-            ["Balance.NoticeWindow"] = U.SecF, ["Bodies.ArchNoticeWindow"] = U.SecF, ["Bodies.ArchIdleWindow"] = U.SecF,
+            ["Balance.NoticeWindow"] = U.SecF,
             ["Weapons.MuzzleTicks"] = U.Sec, ["Bodies.BrunchWalk"] = U.PerSec, ["Bodies.BrunchRun"] = U.PerSec,
             ["RunState.FadeDescend"] = U.Sec,
             // C# only: the playtest tuning (Balance.Tuned) and the middle enemies (Middle.cs)
@@ -191,7 +191,7 @@ namespace Depths.Tests
             ["Eggs.OrbitSpin"] = U.PerSec, ["Eggs.RailSpeed"] = U.PerSec, ["Balance.AimHorizon"] = U.SecF,
             ["Middle.BurrowWalkSharp"] = U.PerSec, ["Middle.BurrowRamp"] = U.Ease, ["Middle.BurrowTurn"] = U.PerSec,
             ["Middle.BurrowTurnWalk"] = U.PerSec, ["Middle.BurrowWeave"] = U.PerSec, ["Middle.BurrowWalkEase"] = U.Ease,
-            ["Middle.BurrowArrive"] = U.SecF, ["Middle.BurrowLeadMax"] = U.SecF, ["Middle.BurrowBrake"] = U.Ease,
+            ["Middle.BurrowArrive"] = U.SecF, ["Middle.BurrowLeadMax"] = U.SecF, ["Middle.BurrowBrake"] = U.Ease, ["Middle.BurrowRoot"] = U.Ease,
             ["Balance.MomStallDecay"] = U.PerSec,
         };
 

@@ -373,10 +373,66 @@ namespace Depths.Tests
             var b = pack[0];
             Step(run, Balance.Sec(0.3));
             Assert.That(b.rushing, "beside the player, far from its slot: rushing");
-            b.x = TickOrder.HitboxX; b.y = TickOrder.HitboxY - Balance.PlayerHitDy;   // on the player
+            b.x = TickOrder.HitboxX; b.y = TickOrder.HitboxY + Balance.PlayerHitDy;   // on the player's hitbox
             double hp = b.hp;
             TickOrder.TickBodies(run);
             Assert.That(b.hp, Is.LessThan(hp), "it paid half its health for the hit, as a chasing Brunch does");
+        }
+
+        [Test]
+        public void AHeldRightClickThrowsTheHookButOnlyAFreshClickDetonatesIt()
+        {
+            var run = Started();
+            run.player.altMode = "hook"; run.player.altCooldown = 0;
+            var held = new Input(0, 0, alt: true, aimX: Balance.RoomRight - 20, aimY: run.player.y);
+            TickOrder.TickPlayer(run, held);
+            var hook = run.projectiles.Single(p => p.alt && p.mode == "hook");
+            for (int t = 0; t < Balance.HookEarlyMin + Balance.Sec(0.2); t++) { TickOrder.TickPlayer(run, held); TickOrder.TickProjectiles(run); }
+            Assert.That(run.projectiles, Does.Contain(hook), "held, the button is one click: the hook flies on");
+            TickOrder.TickPlayer(run, Input.None);
+            TickOrder.TickPlayer(run, held);
+            Assert.That(run.projectiles, Does.Not.Contain(hook), "a fresh click detonates it");
+        }
+
+        [Test]
+        public void AWardenPhaseChangeDropsTheCastItCut()
+        {
+            var run = Started();
+            var w = Spawn.Body(run, BodyKind.Boss, Balance.MidX, Balance.MidY);
+            w.castT = 20;
+            TickOrder.BossPhase(w, 2);
+            Assert.That(w.castT, Is.EqualTo(0), "no volley warning left flashing over a sweep or a wall");
+        }
+
+        [Test]
+        public void DescendingLeavesTheHookFieldsBehind()
+        {
+            var run = Started();
+            run.hookFields.Add(new RunState.HookField { x = 100, y = 100, r = 40, life = 100, max = 100 });
+            run.Descend();
+            Assert.That(run.hookFields, Is.Empty);
+        }
+
+        [Test]
+        public void ABodyTouchesTheSameHitboxAShellHits()
+        {
+            // the JS tested bodies against a circle 20 px above the shells' one: a body from below had to come 20 px closer
+            double Touch(double dy)
+            {
+                var run = Started();
+                var b = Spawn.Body(run, BodyKind.Brunch, Balance.MidX, Balance.MidY);
+                b.noticeTimer = 0; b.alerted = true; run.enemies.Add(b);   // a body that has not noticed touches no one
+                TickOrder.TickPlayer(run, Input.None);
+                double before = run.player.hp + run.player.regenHeart + run.player.armor;
+                b.x = TickOrder.HitboxX; b.y = TickOrder.HitboxY + Balance.PlayerHitDy + dy;
+                TickOrder.TickBodies(run);
+                return before - (run.player.hp + run.player.regenHeart + run.player.armor);
+            }
+            double reach = Bodies.Of(BodyKind.Brunch).Radius + Balance.PlayerHitR;
+            Assert.That(Touch(reach - 2), Is.GreaterThan(0), "just inside reach, below");
+            Assert.That(Touch(-(reach - 2)), Is.GreaterThan(0), "just inside reach, above");
+            Assert.That(Touch(reach + 2), Is.EqualTo(0), "just outside, below");
+            Assert.That(Touch(-(reach + 2)), Is.EqualTo(0), "just outside, above");
         }
 
         [Test]

@@ -41,9 +41,10 @@ namespace Depths
         public static double BurrowTurnWalk => Balance.PerSec(4.5);           // rad/s
         public static double BurrowWeave => Balance.PerSec(2.6);              // rad/s of the weave's phase
         public const double BurrowWeaveAmp = 0.5;                             // rad either side of its heading
-        public static double BurrowRun => Balance.PerSec(Sharp ? 430 : 300);  // top speed under the floor
+        public static double BurrowRun => Balance.PerSec(Sharp ? 480 : 300);  // top speed under the floor: above a full-momentum runner
         public static double BurrowRamp => Balance.Ease(0.0068);              // per JS tick: ~0.7 s from walk to top speed
         public static double BurrowBrake => Balance.Ease(0.03);               // per JS tick: it sheds speed faster than it gains it
+        public static double BurrowRoot => Balance.Ease(0.12);                // per JS tick: it stops within ~0.1 s as it digs
         public static double BurrowTurn => Balance.PerSec(3.4);               // rad/s under the floor
         public static double BurrowArrive => Balance.SecF(0.14);              // slows within this many ticks of its mark
         public static double BurrowLeadMax => Balance.SecF(1.0);              // the longest lead it ever takes
@@ -193,7 +194,7 @@ namespace Depths
             switch (e.move)
             {
                 case "dig":
-                    if (Sharp) Steer(e, e.heading, 0, BurrowWalkEase, 0, sm);   // it slides to a stop as it sinks
+                    if (Sharp) Steer(e, e.heading, 0, BurrowRoot, 0, sm);   // a short skid, then rooted for the tell
                     if (--e.moveT > 0) return;
                     e.buried = true;
                     e.markX = TickOrder.HitboxX; e.markY = TickOrder.HitboxY + Balance.PlayerHitDy;
@@ -256,8 +257,11 @@ namespace Depths
             e.markY = Clamp(hy + p.vy * lead + e.digOffY, Balance.RoomTop + rm, Balance.RoomBottom - rm);
             double mx = e.markX - e.x, my = e.markY - e.y, md = System.Math.Sqrt(mx * mx + my * my);
             if (md <= BurrowSurfaceAt) { Surface(e); return; }
-            double speed = System.Math.Min(top, System.Math.Max(BurrowWalkSharp, md / BurrowArrive));
-            Steer(e, System.Math.Atan2(my, mx), speed, speed < e.curSpeed ? BurrowBrake : BurrowRamp, BurrowTurn * (md < 80 ? 2 : 1), sm);
+            double speed = System.Math.Min(top, System.Math.Max(BurrowWalkSharp * 0.25, md / BurrowArrive));
+            // near its mark it may turn as tightly as its speed needs to come inside the surfacing radius, so it
+            // settles onto the mark instead of circling it (the critic: 150 px/s at 6.8 rad/s orbits at 22 px)
+            double turn = md < 80 ? System.Math.Max(BurrowTurn * 2, e.curSpeed / (BurrowSurfaceAt * 0.6)) : BurrowTurn;
+            Steer(e, System.Math.Atan2(my, mx), speed, speed < e.curSpeed ? BurrowBrake : BurrowRamp, turn, sm);
             if (--e.moveT <= 0) Surface(e);
         }
 

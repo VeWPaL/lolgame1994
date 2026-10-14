@@ -53,12 +53,14 @@ namespace Depths.Unity.Tests
                                  HudLayout.BoardW - HudLayout.PaperPad * 2, HudLayout.BoardH - HudLayout.PaperPad * 2);
             for (int i = 0; i < HudLayout.HeartCapacity; i++)
             {
-                var tl = HudLayout.HeartTopLeft(i);
+                var tl = HudLayout.HeartTopLeft(i, HudLayout.HeartCapacity);
                 var r = new Rect(tl.x + 1, tl.y + 1, HudLayout.HeartW - 2, HudLayout.HeartH - 2);   // the visible heart, not its clear pad
                 Assert.That(paper.Contains(r.min) && paper.Contains(r.max), "heart " + i + " at " + r + " falls off the page " + paper);
             }
             Assert.That(HudLayout.HeartTopLeft(1).x - HudLayout.HeartTopLeft(0).x, Is.EqualTo(HudLayout.HeartStep));
-            Assert.That(HudLayout.HeartTopLeft(HudLayout.HeartsPerLine).y, Is.GreaterThan(HudLayout.HeartTopLeft(0).y), "the row wraps");
+            Assert.That(HudLayout.HeartTopLeft(HudLayout.HeartsPerLine, 9).y, Is.EqualTo(HudLayout.HeartTopLeft(0).y), "a ninth heart stays on the row");
+            Assert.That(HudLayout.HeartTopLeft(15, 16).x, Is.EqualTo(HudLayout.HeartTopLeft(7, 8).x).Within(0.01f), "a full row is as wide as eight");
+            Assert.That(HudLayout.HeartTopLeft(0).y + HudLayout.HeartH, Is.LessThanOrEqualTo(HudLayout.MomentumWell.y), "never onto the momentum bar");
             Assert.That(HudLayout.HeartW - 4, Is.GreaterThanOrEqualTo(28), "hearts are drawn at twice the old 14px");
         }
 
@@ -263,7 +265,7 @@ namespace Depths.Unity.Tests
             Assert.That(hud.Q("board-left"), Is.Not.Null); Assert.That(hud.Q("board-right"), Is.Not.Null);
             Assert.That(hud.Q("seed-tag").style.backgroundImage.value.texture, Is.Not.Null, "the seed is not on its tag");
             Assert.That(hud.SeedShown, Is.EqualTo(run.rootSeed));
-            Assert.That(hud.DevVisible, Is.False, "the developer line is hidden until F3");
+            Assert.That(hud.DevVisible, Is.False, "the developer line is hidden until F10");
         }
 
         [Test]

@@ -22,6 +22,7 @@ namespace Depths
         public double momentum;
         public int weaponIdx;
         public string altMode = "blast";
+        public bool altHeld;   // the alt button was down last tick: a held button is one click (Balance.Tuned)
         public bool hasSilver, hasGold;
         public double lagX, lagY;
     

@@ -31,6 +31,7 @@ namespace Depths
 
         /// <summary>Kills this run. Written by killEnemy and read by the clear condition, which is why it lives on the run rather... [h:RunState-2]</summary>
         public int kills;
+        public int picked;   // pickups collected this run: the presenter's cue (nothing in the simulation reads it)
 
         /// <summary>Damage the player was dealt this run, before armour (run.dmgTaken).</summary>
         public double dmgTaken;
@@ -165,6 +166,7 @@ namespace Depths
             // Shells from the floor above must not arrive here.
             projectiles.Clear();
             transients.Clear();
+            if (Balance.Tuned) hookFields.Clear();   // a field thrown on the way out stays on the floor above
 
             // The old room keeps its pickups and bodies (stashed above, as the JS keeps r.pickups); the
             // run's lists were then cleared because they now stand for the new start room, which is empty.

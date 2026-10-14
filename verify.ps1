@@ -186,6 +186,7 @@ if ($SkipCsharp) {
     Pop-Location
     $m = [regex]::Match($out, 'Passed!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+),\s+Skipped:\s+(\d+),\s+Total:\s+(\d+)')
     if ($m.Success) {
+      $csTotal = [int]$m.Groups[4].Value
       if ([int]$m.Groups[1].Value -eq 0) { Note "   C# $($m.Groups[2].Value)/$($m.Groups[4].Value) passed" }
       else { Bad "C# suite: $($m.Groups[1].Value) failing" }
     } else {
@@ -207,6 +208,9 @@ $csClaim = [regex]::Match($conv, 'Depths\.Tests` has \*\*(\d+) checks\*\*')
 $fixes = ([regex]::Matches([System.IO.File]::ReadAllText("$root\src\80-ui.js"), "(?m)^\s*'[^']{10,}':\['")).Count
 if ($jsClaim.Success) { Note "   JS suite claimed as $($jsClaim.Groups[1].Value); FIXES table holds $fixes entries" }
 if ($csClaim.Success) { Note "   C# suite claimed as $($csClaim.Groups[1].Value)" }
+if ($csClaim.Success -and $csTotal -and [int]$csClaim.Groups[1].Value -ne $csTotal) {
+  Bad "CONVENTIONS.md claims $($csClaim.Groups[1].Value) C# checks but the suite runs $csTotal"
+}
 Note "   (the run above is authoritative - if these disagree, CONVENTIONS.md is the wrong one)"
 
 # ---------------------------------------------------------------- 6. the JavaScript suite, RUN
@@ -451,8 +455,11 @@ if (-not (Test-Path $manifest)) {
           }
         }
         Bad "$mis constant(s) in the port disagree with the running game. A tuning constant that is wrong is worse than one that is missing: it compiles, it reads as deliberate, and nothing catches it until a caller does."
+      } elseif ($miss -gt 0) {
+        foreach ($line in ($constOut -split "`n")) { if ($line -match 'MISSING') { Note ("      " + $line.Trim()) } }
+        Bad "$miss mapped constant(s) are missing from the C# side: the audit cannot vouch for them"
       } else {
-        Note "   $cmp constants agree with the running game ($miss not yet ported)"
+        Note "   $cmp constants agree with the running game"
       }
     } else {
       Bad "the constant audit printed no verdict; treat every tuning constant as UNVERIFIED rather than as passing"

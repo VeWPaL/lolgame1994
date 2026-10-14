@@ -9,7 +9,7 @@ namespace Depths.Unity
     {
         /// <summary>The rebindable keyboard slots, as "Action" or "Action/compositePart".</summary>
         public static readonly string[] Slots =
-            { "Move/up", "Move/left", "Move/down", "Move/right", "Active", "Blink", "Pause", "Sheet", "Controls" };
+            { "Move/up", "Move/left", "Move/down", "Move/right", "Active", "Blink", "Pause" };
 
         static string Pos(string key) => "<Keyboard>/" + key;
         static string Chr(char c) => "<Keyboard>/#(" + c + ")";
@@ -20,22 +20,21 @@ namespace Depths.Unity
             {
                 ["Move/up"] = Pos("w"), ["Move/left"] = Pos("a"), ["Move/down"] = Pos("s"), ["Move/right"] = Pos("d"),
                 ["Active"] = Pos("q"), ["Blink"] = Pos("leftShift"), ["Pause"] = Pos("escape"),
-                ["Sheet"] = Pos("tab"), ["Controls"] = Pos("h"),
             };
             switch (p)
             {
                 case KeyPreset.Qwerty:
-                case KeyPreset.Qwertz:   // W A S D Q H are the same letters on both
+                case KeyPreset.Qwertz:   // W A S D Q are the same letters on both
                     m["Move/up"] = Chr('W'); m["Move/left"] = Chr('A'); m["Move/down"] = Chr('S'); m["Move/right"] = Chr('D');
-                    m["Active"] = Chr('Q'); m["Controls"] = Chr('H');
+                    m["Active"] = Chr('Q');
                     break;
                 case KeyPreset.Azerty:
                     m["Move/up"] = Chr('Z'); m["Move/left"] = Chr('Q'); m["Move/down"] = Chr('S'); m["Move/right"] = Chr('D');
-                    m["Active"] = Chr('A'); m["Controls"] = Chr('H');
+                    m["Active"] = Chr('A');
                     break;
-                case KeyPreset.Dvorak:   // the characters Dvorak prints where QWERTY has W A S D, Q and H
+                case KeyPreset.Dvorak:   // the characters Dvorak prints where QWERTY has W A S D and Q
                     m["Move/up"] = Chr(','); m["Move/left"] = Chr('A'); m["Move/down"] = Chr('O'); m["Move/right"] = Chr('E');
-                    m["Active"] = Chr('\''); m["Controls"] = Chr('D');
+                    m["Active"] = Chr('\'');
                     break;
             }
             return m;

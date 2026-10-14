@@ -82,7 +82,7 @@ namespace Depths
                 var b = room[i];
                 if (b.packId != Balance.BossWallId) continue;
                 b.wallAge = b.wallAge.HasValue ? b.wallAge + 1 : 0;
-                if (b.wallAge > Balance.BossWallLife) room.RemoveAt(i);
+                if (b.wallAge > Balance.BossWallLife) { room.RemoveAt(i); if (Balance.Tuned) b.hp = 0; }
             }
             if (e.wallBodies != null)
             {
@@ -91,7 +91,7 @@ namespace Depths
                 foreach (var b in e.wallBodies) if (b.hp > 0) { standing = true; break; }
                 if (e.wallT > Balance.BossWallLife || !standing)
                 {
-                    foreach (var b in e.wallBodies) { int i = room.IndexOf(b); if (i >= 0) room.RemoveAt(i); }
+                    foreach (var b in e.wallBodies) { int i = room.IndexOf(b); if (i >= 0) room.RemoveAt(i); if (Balance.Tuned) b.hp = 0; }
                     e.wallBodies = null;
                 }
             }
@@ -118,6 +118,7 @@ namespace Depths
             e.move = "idle";
             e.moveT = Balance.BossRecover;      // the phase change is itself a beat of recovery
             e.volleyLeft = 0;
+            if (Balance.Tuned) e.castT = 0;   // a volley cut by the phase change must not keep its warning flash
             e.bossCd = Balance.BossPhaseCd;
         }
 
@@ -373,7 +374,7 @@ namespace Depths
             else
             {
                 double sx = HitboxX - mx, sy = ty - my;
-                for (int k = 0; k < 14; k++)
+                for (int k = 0; k < Balance.GunIter; k++)
                 {
                     double need = cast + System.Math.Sqrt(sx * sx + sy * sy) / e.pspd;
                     sx = HitboxX + bvx * need - mx;
@@ -466,12 +467,13 @@ namespace Depths
                 double mv = System.Math.Sqrt((e.x - ox) * (e.x - ox) + (e.y - oy) * (e.y - oy));
                 e.anim = mv > Balance.MoveEps ? e.anim + mv / Balance.Stride : 0;
                 Movement.Clamp(e);
-                double cy = edy - Balance.PlayerHitDy;
+                double hitDy = Balance.Tuned ? -Balance.PlayerHitDy : Balance.PlayerHitDy;   // tuned: the shells' hitbox, not one 20 px above it
+                double cy = edy - hitDy;
                 // off the JS rate the body's move this tick is swept in JS-tick parts, as Substeps does for shells
                 bool touching = !e.buried && System.Math.Sqrt(edx * edx + cy * cy) < e.r + Balance.PlayerHitR;
                 for (int k = 1, sub = Balance.Substeps; !touching && !e.buried && k < sub; k++)
                 {
-                    double qx = HitboxX - (ox + (e.x - ox) * k / sub), qy = HitboxY - Balance.PlayerHitDy - (oy + (e.y - oy) * k / sub);
+                    double qx = HitboxX - (ox + (e.x - ox) * k / sub), qy = HitboxY - hitDy - (oy + (e.y - oy) * k / sub);
                     touching = System.Math.Sqrt(qx * qx + qy * qy) < e.r + Balance.PlayerHitR;
                 }
                 if (touching)
@@ -760,6 +762,7 @@ namespace Depths
                 else continue;   // an unknown kind is left on the floor rather than eaten
 
                 run.pickups.RemoveAt(i);
+                run.picked++;
             }
 
             // THE ORIGINAL RETURNS OUT OF THE MIDDLE OF THE FUNCTION HERE, and that has to be honoured. [h:Tick-21]
@@ -897,7 +900,9 @@ namespace Depths
             if (p.shootSlow > 0) p.shootSlow = System.Math.Max(0, p.shootSlow - Balance.ShootSlowRecover);
             // held fire shoots the moment the cooldown runs out (mouseDown in the game); the alt is not ported
             if (input.fire && p.cooldown <= 0) Weapons.Fire(run, input.aimX, input.aimY, run.stats.Value("strength"), run.stats.Value("precision"));
-            if (input.alt) Weapons.FireAlt(run, input.aimX, input.aimY);   // not gated here: fireAlt decides
+            // tuned, only a fresh press detonates a flying hook: a held button used to blow it 0.18 s out
+            if (input.alt) Weapons.FireAlt(run, input.aimX, input.aimY, !Balance.Tuned || !p.altHeld);
+            p.altHeld = input.alt;
 
             // THE LAGGED HITBOX, and the publish. [h:Tick-32]
             p.lagX += (p.x - p.lagX) * Balance.HitboxLagEase;

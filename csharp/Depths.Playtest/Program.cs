@@ -186,7 +186,7 @@ namespace Depths.Playtest
         static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial", "tuned", "untune" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden,ease,damage,momentum,pools,middle,aim] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]  |  constants";
 
         static string Name(string s, string what)
         {
@@ -295,6 +295,7 @@ namespace Depths.Playtest
         {
             try
             {
+                if (args.Length == 1 && args[0] == "constants") return Constants();
                 var c = Cli.Parse(args);
                 return c.Command == "play" ? Play(c) : c.Command == "curve" ? CurveCmd(c) : ReportCmd(c);
             }
@@ -309,6 +310,24 @@ namespace Depths.Playtest
                 Console.Error.WriteLine("internal error: " + e.GetType().Name + ": " + e.Message);
                 return 3;
             }
+        }
+
+        /// <summary>`constants`: every int/double dial of Balance and the player's start, at the JS rate and untuned,
+        /// as JSON, for tools/constant-audit.js to compare with the running game by value.</summary>
+        static int Constants()
+        {
+            Balance.TickHz = Balance.JsHz; Balance.Tuned = false; Depths.Curve.On = false;
+            var vals = new SortedDictionary<string, double>(StringComparer.Ordinal);
+            const BindingFlags F = BindingFlags.Public | BindingFlags.Static;
+            foreach (var f in typeof(Balance).GetFields(F))
+                if (f.FieldType == typeof(int) || f.FieldType == typeof(double)) vals[f.Name] = Convert.ToDouble(f.GetValue(null), CultureInfo.InvariantCulture);
+            foreach (var pr in typeof(Balance).GetProperties(F))
+                if ((pr.PropertyType == typeof(int) || pr.PropertyType == typeof(double)) && pr.GetIndexParameters().Length == 0)
+                    vals[pr.Name] = Convert.ToDouble(pr.GetValue(null), CultureInfo.InvariantCulture);
+            var p = new Player();
+            vals["speed"] = p.speed; vals["r"] = p.r;
+            Console.WriteLine(Json.Text(vals));
+            return 0;
         }
 
         static int Play(Cli c)

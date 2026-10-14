@@ -31,17 +31,6 @@ namespace Depths
 
         public int Next(int maxExclusive) => (int)(NextDouble() * maxExclusive);
 
-        /// <summary>Fisher-Yates, in place. Matches the original's shuffle exactly.</summary>
-        public void Shuffle<T>(System.Collections.Generic.IList<T> list)
-        {
-            for (int i = list.Count - 1; i > 0; i--)
-            {
-                int j = Next(i + 1);
-                T tmp = list[i];
-                list[i] = list[j];
-                list[j] = tmp;
-            }
-        }
     }
 
     /// <summary>The random source, and the three streams it is split into. [h:Rng-3]</summary>
@@ -101,7 +90,6 @@ namespace Depths
 
         /// <summary>Convenience, so a call site reads as a decision rather than as plumbing.</summary>
         public double Range(double lo, double hi) => lo + Run() * (hi - lo);
-        public int Int(int n) => (int)(Run() * n);
         public T Pick<T>(System.Collections.Generic.IList<T> items) => items[(int)(Run() * items.Count)];
 
         /// <summary>THE FLOOR SEED. Floor N is generated from the root seed the player typed, mixed with N, and NOT from the... [h:Rng-9]</summary>

@@ -4,8 +4,8 @@ namespace Depths
     public static class Spawn
     {
         const double FlankStep = 2.399963229728653, Tau = 6.283185307179586;
-        const double TraitHoldScale = 1.45, TraitCloseScale = 0.72, TraitChance = 0.5;
-        const double TraitFarCeil = 0.78, TraitFarFloor = 90, TraitBandMin = 40;
+        public const double TraitHoldScale = 1.45, TraitCloseScale = 0.72, TraitChance = 0.5;
+        public const double TraitFarCeil = 0.78, TraitFarFloor = 90, TraitBandMin = 40;
 
         // trait: one the wave planner already rolled (no draw here); null rolls it, as a lone spawn does
         public static Enemy Body(RunState run, BodyKind kind, double x, double y, int? trait = null)

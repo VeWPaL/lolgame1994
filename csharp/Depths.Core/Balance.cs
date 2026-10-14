@@ -222,7 +222,7 @@ namespace Depths
     public static bool TuneMiddle = true;
     /// <summary>Every ranged body aims with Aim.Intercept (owner 2026-10-14: shots "completely away" from a straight walker).</summary>
     public static bool TuneAim = true;
-    public static double AimHorizon => SecF(1.6);   // the longest lead a shot is solved for
+    public static double AimHorizon => SecF(2.4);   // the longest lead a shot is solved for: a flight across the room
     /// <summary>"Close": the Scatter's full-damage reach. Inside it a Lunger does not dodge and a Brunch
     /// rushes you instead of walking to its wall slot. Read from the gun, so the two cannot drift apart.</summary>
     public static double CloseRange => Weapons.All[1].FNear ?? 180;
@@ -309,9 +309,6 @@ namespace Depths
     public const double BrunchDeadzone = 6;
 
 
-    /// <summary>The peak chase speed of a pack. [h:Balance-25]</summary>
-    public const double BrunchShieldR = 118;
-
     /// <summary>Where the shield forms, as a FRACTION OF THE GAP between the guarded body and the player. [h:Balance-26]</summary>
     public const double BrunchShieldFrac = 0.25;
 
@@ -382,9 +379,6 @@ namespace Depths
 
     /// <summary>What a full Momentum meter adds to the movement bonus. Read out: 0.18.</summary>
     public const double MomentumSpeed = 0.18;
-
-    /// <summary>The movement bonus a run starts with, before any item and before any momentum. [h:Balance-44]</summary>
-    public const double MoveSpeedBonusBase = 0.25;
 
     /// <summary>Below this speed the player's direction-of-travel estimate stops updating, so a player standing still is not... [h:Balance-45]</summary>
     public static double PlayerSpeedEps => PerSec(10.5);   // px/s
@@ -475,7 +469,6 @@ namespace Depths
 
         /// <summary>How the lunger believes the player is moving. [h:Balance-61]</summary>
         public static double LungeTrack => Ease(0.014);   // per JS tick
-        public const double LungeConfMin = 0.30;
 
         /// <summary>Iterations for the intercept's fixed point. [h:Balance-62]</summary>
         public const int LungeIter = 3;

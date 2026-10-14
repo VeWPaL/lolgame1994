@@ -81,14 +81,18 @@ namespace Depths.Unity
             Save();
         }
 
+        /// <summary>Keys the game reads directly (new run, menu, guns, the lab and dev views): never bindable to an action.</summary>
+        public static readonly string[] Reserved = { "m", "r", "b", "1", "2", "3", "4", "f1", "f2", "f3", "f4", "f7", "f8", "f10" };
+
         /// <summary>Waits for the next key and binds it to the slot. Escape cancels; the mouse is ignored.</summary>
         public InputActionRebindingExtensions.RebindingOperation StartRebind(string slot, Action done)
         {
             var a = ActionFor(slot);
             bool wasEnabled = a.enabled;
             a.Disable();
-            return a.PerformInteractiveRebinding(FindIndex(a, slot))
-                .WithControlsExcluding("<Mouse>")
+            var op = a.PerformInteractiveRebinding(FindIndex(a, slot)).WithControlsExcluding("<Mouse>");
+            foreach (var key in Reserved) op.WithControlsExcluding("<Keyboard>/" + key);
+            return op
                 .WithCancelingThrough("<Keyboard>/escape")
                 .OnMatchWaitForAnother(0.1f)
                 .OnComplete(op => { op.Dispose(); if (wasEnabled) a.Enable(); Save(); done(); })

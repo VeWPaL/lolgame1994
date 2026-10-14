@@ -97,7 +97,7 @@ namespace Depths.Unity.Hud
             Overlays.Release();
         }
 
-        /// <summary>The developer line (seed, curve, Brunch rule, keys): F3. The caller rebuilds the text only when it changes.</summary>
+        /// <summary>The developer line (seed, curve, pools, keys): F10. The caller rebuilds the text only when it changes.</summary>
         public void SetDev(bool visible, string text)
         {
             var d = visible ? DisplayStyle.Flex : DisplayStyle.None;
@@ -380,7 +380,6 @@ namespace Depths.Unity.Hud
                 RobeLit = Hex.C("#7a55c4"), BossGreen = Hex.C("#4fd06c"), PhaseGray = Hex.C("#d8c4a0"), BlinkFull = Hex.C("#7fc4ff"),
                 BlinkPart = Hex.C("#2f5c9e"), Shine = Hex.Rgba(255, 255, 255, 0.45f), Under = Hex.Rgba(0, 0, 0, 0.30f), NotchInk = Hex.C("#3a2a18");
             static readonly Color32[] Accent = AreaInk(false), AccentDim = AreaInk(true);
-            static readonly Color32[] PickupInk = { default, Hex.C("#e8395a"), Hex.C("#9aa0ab"), Hex.C("#d8dee9"), Hex.C("#ffd23d") };
             static readonly Color32 DoorCut = Hex.C("#f4ead2");
             static readonly Color32 Visited = Hex.C("#d9c9a0"), StartFill = Hex.C("#cbb98c"), Shell = Hex.Rgba(70, 50, 30, 0.10f);
             static readonly Color32[] PhaseInk = { Hex.C("#8fd89a"), Hex.C("#8fd89a"), Hex.C("#e8c46a"), Hex.C("#e8804a") };
@@ -414,25 +413,25 @@ namespace Depths.Unity.Hud
                     for (int i = 0; i < _row.Count && i < HudLayout.HeartCapacity; i++) if (_row[i].Kind == HeartKind.Red && _row[i].Fill != HeartFill.Empty) last = i;
                     if (last >= 0)
                     {
-                        var at = HudLayout.HeartTopLeft(last) + new Vector2(HudLayout.HeartW / 2f, HudLayout.HeartH / 2f);
+                        var at = HudLayout.HeartTopLeft(last, Mathf.Min(_row.Count, HudLayout.HeartCapacity)) + new Vector2(HudLayout.HeartW / 2f, HudLayout.HeartH / 2f);
                         float r = 26 + 7 * pu;
                         _q.Sprite(T, _glow, at.x - r, at.y - r, r * 2, r * 2, Hex.Rgba(232, 57, 90, 0.40f + 0.55f * pu));
                     }
                 }
                 int shown = Mathf.Min(_row.Count, HudLayout.HeartCapacity);
-                for (int i = 0; i < shown; i++)
+                for (int i = shown - 1; i >= 0; i--)   // drawn right to left, so a closed-up row overlaps in reading order
                 {
                     var h = _row[i];
                     int k = h.Kind == HeartKind.Red ? 0 : h.Kind == HeartKind.Regen ? 1 : 2;
                     int f = h.Fill == HeartFill.Full ? 2 : h.Fill == HeartFill.Half ? 1 : 0;
-                    var tl = HudLayout.HeartTopLeft(i);
+                    var tl = HudLayout.HeartTopLeft(i, shown);
                     Art(_hearts[k, f], tl.x, tl.y);
                 }
                 if (_row.Count > HudLayout.HeartCapacity)
                 {
-                    var tl = HudLayout.HeartTopLeft(HudLayout.HeartCapacity - 1);
+                    var tl = HudLayout.HeartTopLeft(HudLayout.HeartCapacity - 1, HudLayout.HeartCapacity);
                     int n = Num(_row.Count - HudLayout.HeartCapacity, "+");
-                    Digits(n, tl.x - 20, tl.y + 34, 2, LedgerArt.Ink);
+                    Digits(n, tl.x + 4, tl.y - 1, 2, LedgerArt.Ink);   // over the last heart, never under the row
                 }
 
                 // momentum, straight under the hearts: one slim well filled amber as it rises, ruled in quarters. Not

@@ -21,15 +21,19 @@ namespace Depths.Unity.Hud
         public static int PaperBottom => BoardTop + BoardH - PaperPad;
 
         // ---- the body: read top to bottom as icons, no form labels ----
-        /// <summary>Hearts: one row of eight across the page, Isaac order (red, the regen heart, armour); a ninth wraps.</summary>
-        public const int HeartPx = 4, HeartW = 7 * HeartPx + 4, HeartH = 6 * HeartPx + 4, HeartStep = 30, HeartsPerLine = 8, HeartLines = 2;
-        public const int HeartsX = LeftX + PaperPad, HeartsY = BoardTop + 26, HeartLineStep = 30;   // no page heading: the hearts open it
-        public static int HeartCapacity => HeartsPerLine * HeartLines;
+        /// <summary>Hearts: one row of eight across the page, Isaac order (red, the regen heart, armour).</summary>
+        public const int HeartPx = 4, HeartW = 7 * HeartPx + 4, HeartH = 6 * HeartPx + 4, HeartStep = 30, HeartsPerLine = 8, HeartCapacity = 16;
+        public const int HeartsX = LeftX + PaperPad, HeartsY = BoardTop + 26;   // no page heading: the hearts open it
         public static Rect HeartsBox => new Rect(HeartsX, HeartsY, HeartStep * (HeartsPerLine - 1) + HeartW, HeartH);
 
         /// <summary>The i-th heart of the row (all kinds share it): its sprite's top-left.</summary>
-        public static Vector2 HeartTopLeft(int i) =>
-            new Vector2(HeartsX + (i % HeartsPerLine) * HeartStep, HeartsY + (i / HeartsPerLine) * HeartLineStep);
+        public static Vector2 HeartTopLeft(int i, int count = HeartsPerLine) =>
+            new Vector2(HeartsX + i * HeartStepFor(count), HeartsY);
+
+        /// <summary>One row always: past eight the hearts close up so the row keeps its width (they never wrap onto the
+        /// momentum bar and the keys).</summary>
+        public static float HeartStepFor(int count) =>
+            count <= HeartsPerLine ? HeartStep : (HeartStep * (HeartsPerLine - 1)) / (float)(System.Math.Min(count, HeartCapacity) - 1);
 
         /// <summary>The middle of a heart sprite's left and right lobes (row 2 of heartRows, clear of the highlight).</summary>
         public static Vector2 LeftLobe(Vector2 topLeft) => topLeft + new Vector2(2 + 1 * HeartPx + HeartPx / 2f, 2 + 2 * HeartPx + HeartPx / 2f);
@@ -54,7 +58,6 @@ namespace Depths.Unity.Hud
         /// <summary>The footer: what has been slain, and the seed on its tag.</summary>
         public const int SlainY = Rule3 + 14;
         public static Rect SeedTag => new Rect(Ink0(true) + 6, SlainY + 36, 208, 56);
-        public const int Rule1 = HeartsY + HeartH + 26;
 
         // ---- the map and the kit ----
         public const int MapCell = 32, MapBox = 27, MapMaxCell = 46;

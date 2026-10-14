@@ -115,7 +115,10 @@ namespace Depths.Tests
                         if (castDir != dir || ahead < 200) continue;
                         if (q.splitAt <= 0 && kind == BodyKind.Splitter) continue;   // its shards: their parent was the shot
                         // against the shot it should have been: where the runner is when a perfect shell would arrive
-                        double ideal = Aim.Intercept(e.x, e.y, p.x, p.y + Balance.PlayerHitDy, p.vx, p.vy, 0, Math.Sqrt(q.vx * q.vx + q.vy * q.vy));
+                        double sp = Math.Sqrt(q.vx * q.vx + q.vy * q.vy);
+                        double ideal = kind == BodyKind.Splitter
+                            ? Aim.Intercept(e.x, e.y, p.x, p.y + Balance.PlayerHitDy, p.vx, p.vy, 0, sp, Middle.SplitRange, Middle.SplitShardSpeed)
+                            : Aim.Intercept(e.x, e.y, p.x, p.y + Balance.PlayerHitDy, p.vx, p.vy, 0, sp);
                         double off = Math.Abs(Math.IEEERemainder(Math.Atan2(q.vy, q.vx) - ideal, 2 * Math.PI));
                         worst = Math.Max(worst, off - (kind == BodyKind.Sprayer ? Middle.SprayCone : 0));
                         shots++;

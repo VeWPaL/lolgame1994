@@ -232,6 +232,28 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void ABurrowerSettlesOntoItsMarkInsteadOfCirclingIt()
+        {
+            // the critic's case: a stander, the Burrower 200 px off; every dive must end by reaching the mark, not the timer
+            int dives = 0, timedOut = 0;
+            for (uint s = 1; s <= 40; s++)
+            {
+                var run = Started(s);
+                var b = Add(run, BodyKind.Burrower, run.player.x + 200, run.player.y - 60);
+                for (int t = 0; t < Balance.Sec(14); t++)
+                {
+                    bool under = b.move == "under";
+                    int left = b.moveT;
+                    Step(run);
+                    if (under && b.move == "rise") { dives++; if (left <= 1) timedOut++; }
+                    run.player.hp = run.player.maxHp;
+                }
+            }
+            Assert.That(dives, Is.GreaterThan(80), "the fixture dives");
+            Assert.That(timedOut, Is.EqualTo(0), "no dive at a standing player runs out its clock circling");
+        }
+
+        [Test]
         public void TheSprayerWindsUpLongThenSendsAWeakCone()
         {
             var run = Started();

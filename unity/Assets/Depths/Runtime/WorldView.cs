@@ -24,8 +24,6 @@ namespace Depths.Unity
         public float Alpha { get; set; } = 1;
         /// <summary>A cosmetic clock at 60 a second that stops with the game (the JS's frameCount / SPEEDUP).</summary>
         public float Fc { get; private set; }
-        public int LastDrawCalls => _q.DrawCalls;
-        public int LastQuads => _q.Quads;
 
         public WorldView(Func<RunState> run)
         {
@@ -509,7 +507,7 @@ namespace Depths.Unity
         // a shell: its disc inside a one-pixel black rim, so shells that overlap stay countable
         void Shell(double x, double y, float r, Color32 c, float alpha)
         {
-            Dot(x, y, r + 1.25f, r + 1.25f, QuadBatch.Tint(ShellRim, alpha));
+            Dot(x, y, r + 1.25f, r + 1.25f, QuadBatch.Tint(ShellRim, alpha * alpha));   // a fading shell's rim fades faster: no dark smudge
             Dot(x, y, r, r, c);
         }
 

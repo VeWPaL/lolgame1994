@@ -110,9 +110,6 @@ namespace Depths
 
         public IReadOnlyList<Room> AllRooms => _all;
 
-        /// <summary>Rooms adjacent to the boss room, which are the ones the warning can come from.</summary>
-        public IReadOnlyCollection<Room> BossFront => _bossFront.Values;
-
         /// <summary>The run seed, so a caller can print what a floor was actually built from.</summary>
         public uint Seed => _rng.Seed;
 

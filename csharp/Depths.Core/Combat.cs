@@ -113,7 +113,7 @@ namespace Depths
                     double near = 1 - Smooth(t);
                     Movement.Knock(run, e, e.x - x, e.y - y, Balance.AltKnock * (Balance.AltKnockFar + (Balance.AltKnockNear - Balance.AltKnockFar) * near));
                 }
-                if (e.hp <= 0) Kills.KillEnemy(run, j);
+                if (e.hp <= 0) { Kills.KillEnemy(run, j); if (j > en.Count) j = en.Count; }   // the Warden takes its statues with it
             }
             if (hook) run.hookFields.Add(new RunState.HookField { x = x, y = y, r = Balance.HookAoe, life = Balance.HookField, max = Balance.HookField, id = ++run.hookFieldId });
             TryBreakSecret(run, x, y);
@@ -147,7 +147,7 @@ namespace Depths
                     e.hp -= Balance.HookDps * power / Balance.TickHz * e.Vuln;
                     e.hitFlash = System.Math.Max(e.hitFlash, Balance.HookFieldFlash * power);
                     Combat.AlertEnemy(e);
-                    if (e.hp <= 0) Kills.KillEnemy(run, j);
+                    if (e.hp <= 0) { Kills.KillEnemy(run, j); if (j > en.Count) j = en.Count; }
                 }
             }
         }

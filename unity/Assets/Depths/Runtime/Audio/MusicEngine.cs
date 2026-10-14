@@ -56,6 +56,7 @@ namespace Depths.Unity.Audio
             }
 
             if (_playing != _want && _cache.ContainsKey(_want)) _swapping = true;
+            if (_swapping && !_cache.ContainsKey(_want)) _swapping = false;   // the wanted area changed mid-fade to one not rendered yet
             if (_swapping)
             {
                 _master = Mathf.MoveTowards(_master, 0, SwapFade * dt);
@@ -78,9 +79,12 @@ namespace Depths.Unity.Audio
         Area? NextToRender()
         {
             if (!_cache.ContainsKey(_want)) return _want;
-            foreach (Area a in System.Enum.GetValues(typeof(Area))) if (!_cache.ContainsKey(a)) return a;
+            if (_cache.Count == Areas.Length) return null;
+            foreach (var a in Areas) if (!_cache.ContainsKey(a)) return a;
             return null;
         }
+
+        static readonly Area[] Areas = (Area[])System.Enum.GetValues(typeof(Area));
 
         static AudioClip Clip(string name, float[] data)
         {

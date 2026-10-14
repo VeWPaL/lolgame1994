@@ -99,7 +99,6 @@ namespace Depths.Unity.Art
         public static string Icon(string idx) => "icon:" + idx;
         public static string Mouse(bool left, string color) => "mouse:" + (left ? "L:" : "R:") + color;
         public static string Item(string id, int px) => "item:" + (ItemKnown(id) ? id : "?") + ":" + px;
-        public static string Glyph(string kind, string color) => "glyph:" + kind + ":" + color;
         /// <summary>An item's picture (ItemIcons) at px 2 or 4; null for an item that only has its lettered tile.</summary>
         public static string ItemIcon(string id, int px) => ItemIcons.Has(id) ? "itemicon:" + id + ":" + px : null;
         public static readonly int[] ItemIconPx = { 2, 4 };
@@ -137,8 +136,6 @@ namespace Depths.Unity.Art
             foreach (var w in Weapons.All) yield return w.Color;
             yield return Sprites.BlastColor; yield return Sprites.HookColor;
         }
-
-        public static IEnumerable<string> GlyphColors => new[] { "#ffd23d", "#d8dee9", "#2a1a10" };
 
         static List<(string, Img)> All()
         {
@@ -183,8 +180,6 @@ namespace Depths.Unity.Art
             }
             foreach (int px in ItemIconPx)
                 foreach (var id in ItemIcons.Ids) list.Add(("itemicon:" + id + ":" + px, ItemIcons.Bake(id, px)));
-            foreach (var kv in Sprites.MiniGlyph)
-                foreach (var c in GlyphColors) list.Add((Glyph(kv.Key, c), Sprites.Glyph(kv.Value, Hex.C(c), 2)));
             list.Add((Glow, Sprites.Glow(32, Color.white, new Color(1, 1, 1, 0))));
             list.Add((Muzzle, Sprites.Glow(11, new Color(230 / 255f, 200 / 255f, 1, 1), new Color(180 / 255f, 110 / 255f, 1, 0))));
             list.Add((CrackH, Sprites.Crack(false, Hex.C("#07080b", 0.95f), Hex.C("#b4bccb", 0.7f), Hex.C("#000000", 0.28f))));

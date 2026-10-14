@@ -74,7 +74,7 @@ namespace Depths
         }
 
         /// <summary>fireAlt for the BLAST: a slow bolt to the cursor (clamped to the room), on its own cooldown. [h:Weapons-3]</summary>
-        public static void FireAlt(RunState run, double aimX, double aimY)
+        public static void FireAlt(RunState run, double aimX, double aimY, bool fresh = true)
         {
             var p = run.player;
             bool hook = p.altMode == "hook";
@@ -85,7 +85,7 @@ namespace Depths
                 if (live >= 0)
                 {
                     var q = run.projectiles[live];
-                    if (q.age >= Balance.HookEarlyMin) { Blast.Explode(run, q.x, q.y, "hook"); run.projectiles.RemoveAt(live); }
+                    if (fresh && q.age >= Balance.HookEarlyMin) { Blast.Explode(run, q.x, q.y, "hook"); run.projectiles.RemoveAt(live); }
                     return;
                 }
             }

@@ -74,7 +74,7 @@ namespace Depths.Unity
                 if (Frozen)   // re-frozen mid-dive, a Burrower comes back up onto its plinth
                 {
                     e.x = x; e.y = y; e.kvx = e.kvy = 0; e.noticeTimer = int.MaxValue / 2; e.castT = 0; e.castReady = false;
-                    e.buried = false; e.move = "idle"; e.moveT = 0;
+                    e.buried = false; e.move = "idle"; e.moveT = 0; e.curSpeed = 0;
                 }
             }
         }
@@ -233,7 +233,9 @@ namespace Depths.Unity
             _legend.style.left = 274; _legend.style.width = 732; _legend.style.top = 682; _legend.style.height = 30;
             _legend.style.flexDirection = FlexDirection.Row; _legend.style.alignItems = Align.Center;
             _legend.style.paddingLeft = 10; _legend.style.paddingRight = 10;
-            _legend.style.backgroundImage = Atlas.ToTexture(Materials.WoodPlate(732, 30, false), "lab-legend");
+            var plank = Atlas.ToTexture(Materials.WoodPlate(732, 30, false), "lab-legend");
+            _legend.style.backgroundImage = plank;
+            _legend.RegisterCallback<DetachFromPanelEvent>(_ => Atlas.Free(plank));   // a new Game scene bakes its own
             foreach (var (k, what) in new[] { ("F2", "leave"), ("F3", "freeze"), ("F4", "arm"), ("F7", "drop 12"), ("F8", "drop 1"), ("G Y", "keys"), ("H", "heal") })
             {
                 var cap = new Label(k);

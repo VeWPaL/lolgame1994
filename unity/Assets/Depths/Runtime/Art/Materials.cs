@@ -96,15 +96,6 @@ namespace Depths.Unity.Art
             return c;
         }
 
-        /// <summary>A plate with a paper sheet laid in it: wood, an inset at 8, paper at 10.</summary>
-        public static Img PaperOnWood(int w, int h, int pad = 10)
-        {
-            var c = WoodPlate(w, h);
-            Inset(c, pad - 2, pad - 2, w - (pad - 2) * 2, h - (pad - 2) * 2, null);
-            c.Draw(PaperTex(w - pad * 2, h - pad * 2), pad, pad);
-            return c;
-        }
-
         // ---- the room ----
 
         /// <summary>caveTile: 128px of the area's floor with flecks of light and dark and wider stains.</summary>

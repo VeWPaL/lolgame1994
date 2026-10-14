@@ -14,7 +14,6 @@ namespace Depths.Unity
     {
         public InputActionAsset controls;
 
-        static readonly Vector2 Offset = new Vector2(640 - 400, 360 - 355);   // room centre to screen centre
         static readonly BodyKind[] DummyKinds = { BodyKind.Lunger, BodyKind.Shooter, BodyKind.Lunger, BodyKind.Gunner };
 
         RunState _run;
@@ -24,6 +23,9 @@ namespace Depths.Unity
         WorldView _world;
         LedgerHud _hud;
         bool _devOn;
+        int _lastPicked, _lastWinding;
+        bool _lastWarned;
+        Bindings _binds;
         long _devKey = long.MinValue;
         bool _recorded;   // the records take a run once, on the frame it ends
         RunRecords.Result _rec;
@@ -49,7 +51,7 @@ namespace Depths.Unity
 
         void Start()
         {
-            new Bindings(controls, new PlayerPrefsStore());   // applies the player's saved rebinds
+            _binds = new Bindings(controls, new PlayerPrefsStore());   // applies the player's saved rebinds
             new DisplaySettings(new PlayerPrefsStore()).Apply();   // the frame rate, also when Play starts in this scene
             var map = controls.FindActionMap("Gameplay", true);
             _move = map.FindAction("Move", true);
@@ -77,6 +79,13 @@ namespace Depths.Unity
             if (_inLab && !labRow) _lab.SetFrozen(false, _run);   // the screenshot wants the row at work
         }
 
+        // alt-tab pauses a live run, and the time away is not fed to the clock
+        void OnApplicationFocus(bool focused)
+        {
+            if (focused) { _lastFrameAt = -1; return; }
+            if (_run != null && _run.state == "playing" && RealRun && !_demo) _paused = true;
+        }
+
         void OnDestroy()
         {
             controls?.FindActionMap("Gameplay")?.Disable();
@@ -94,6 +103,8 @@ namespace Depths.Unity
         {
             new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
             _recorded = false;
+            _paused = false; _bannerS = 0; _lastFloor = 1; _respawnT = 0;   // the view starts with the run
+            _lastPicked = 0; _lastWarned = false; _lastWinding = 0;
             uint seed = _fixedSeed ?? (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
             {
@@ -231,11 +242,12 @@ namespace Depths.Unity
             if (kb != null)
             {
                 for (int w = 0; w < 4; w++) if (kb[Key.Digit1 + w].wasPressedThisFrame) _run.player.weaponIdx = w;
-                if (kb.rKey.wasPressedThisFrame) { NewRun(); _paused = false; _lastFloor = 1; }
+                if (kb.rKey.wasPressedThisFrame) NewRun();
                 if (kb.f10Key.wasPressedThisFrame) _devOn = !_devOn;   // not F3: in the lab F3 freezes the row, as in the JS lab
-                if (kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; LeaveLab(); NewRun(); }
-                if (kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; LeaveLab(); NewRun(); }
-                if (kb.f2Key.wasPressedThisFrame) { bool enter = !_inLab; _sandbox = _bossRoom = false; LeaveLab(); _inLab = enter; NewRun(); _paused = false; }
+                // the sandbox and the Warden arena are developer views: only with the dev line up (F10)
+                if (_devOn && kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; LeaveLab(); NewRun(); }
+                if (_devOn && kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; LeaveLab(); NewRun(); }
+                if (kb.f2Key.wasPressedThisFrame) { bool enter = !_inLab; _sandbox = _bossRoom = false; LeaveLab(); _inLab = enter; NewRun(); }
             }
 
             // the aim: the pointer, from screen pixels to panel units to the room
@@ -253,11 +265,11 @@ namespace Depths.Unity
             if (_inLab) _lab.Keys(kb, _run, aim);
 
             // the blink is a key press, so it lands between ticks, as in the game
-            if (_blink.WasPressedThisFrame() && TickOrder.TryBlink(_run, new Input(Math.Sign(mv.x), -Math.Sign(mv.y), aimX: aim.x, aimY: aim.y)))
+            if (!_paused && _blink.WasPressedThisFrame() && TickOrder.TryBlink(_run, new Input(Math.Sign(mv.x), -Math.Sign(mv.y), aimX: aim.x, aimY: aim.y)))
                 Depths.Unity.Audio.SoundEngine.Play("blink");
 
             // Q uses the active item, between ticks like the game's key handler
-            if (_active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
+            if (!_paused && _active.WasPressedThisFrame() && _run.state == "playing" && Items.UseActive(_run))
                 Depths.Unity.Audio.SoundEngine.Play("pickup");
 
             Section(0);
@@ -287,7 +299,7 @@ namespace Depths.Unity
             Depths.Unity.Audio.MusicEngine.SetArea(AreaRules.AreaForFloor(_run.floor));
             Depths.Unity.Audio.MusicEngine.SetFight(_run.state == "playing" && !_paused && _run.enemies.Count > 0);
             if (_run.floor != _lastFloor) { _lastFloor = _run.floor; _bannerS = BannerS; Depths.Unity.Audio.SoundEngine.Play("door"); }
-            if (_bannerS > 0) _bannerS -= _frameS;
+            if (_bannerS > 0 && !_paused && !Frozen) _bannerS -= _frameS;
             Section(4);
             _world.Aim = aim;
             _world.Alpha = (float)_clock.Alpha;
@@ -295,6 +307,7 @@ namespace Depths.Unity
             Section(5);
             _hud.Refresh(_run, _frameS);
             _hud.Overlays.SetPause(_paused && _run.state == "playing", _run);
+            if (_paused) _hud.Overlays.SetPauseKey(_binds.Display("Pause"));
             if (_run.state != "playing" && !_recorded) { _recorded = true; _rec = RecordRun(); }
             _hud.Overlays.SetSummary(_run.state != "playing", _run, _rec);
             _hud.Overlays.SetBanner(_run.floor, BannerAlpha(_bannerS));
@@ -320,7 +333,7 @@ namespace Depths.Unity
         /// <summary>The floor heading's envelope: in over a quarter second, held, out over the last 0.6 s.</summary>
         public static float BannerAlpha(float left) => left <= 0 ? 0 : Mathf.Clamp01(Mathf.Min((BannerS - left) / 0.25f, left / 0.6f));
 
-        // The developer line (F3): its text is rebuilt only when what it says changes.
+        // The developer line (F10): its text is rebuilt only when what it says changes.
         void UpdateDev()
         {
             if (!_devOn) { _hud.SetDev(false, null); return; }
@@ -331,9 +344,10 @@ namespace Depths.Unity
             {
                 _devKey = key;
                 string mode = RealRun ? "floor " + _run.floor + " - " + AreaRules.AreaForFloor(_run.floor) + "   room " + (room != null ? room.Type.ToString() : "?")
-                                      : _inLab ? "The lab: every body, the five middle ones too (not in runs yet)" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning";
-                text = mode + "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") +
-                       "\n1-4 guns   right-click blast   Shift blink   Q item   R new run   F1 sandbox   F2 lab   B Warden arena   Esc pause   F10 this line";
+                                      : _inLab ? "The lab: every body and every egg form" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning";
+                string pools = RealRun && _run.pools != null ? "\n" + Pools.Describe(_run.pools) : "";
+                text = mode + "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + pools +
+                       "\n1-4 guns   right-click blast   " + _binds.Display("Blink") + " blink   " + _binds.Display("Active") + " item   R new run   F1 sandbox   F2 lab   B Warden arena   " + _binds.Display("Pause") + " pause   F10 this line";
             }
             _hud.SetDev(true, text);
         }
@@ -348,7 +362,15 @@ namespace Depths.Unity
             // dmgTaken grows on every landed hit, so a hit is heard even on the tick the regen heart refills
             if (_run.dmgTaken > _lastDmg) Depths.Unity.Audio.SoundEngine.Play("hurt");
             if (_run.state != "playing" && _lastHp > 0 && p.hp <= 0) Depths.Unity.Audio.SoundEngine.Play("over");
+            if (_run.picked > _lastPicked) Depths.Unity.Audio.SoundEngine.Play("pickup");
+            if (_run.bossWarned && !_lastWarned) Depths.Unity.Audio.SoundEngine.Play("boss");
+            // a long wind-up (the Sprayer, the Mortar, the egg) is heard as it starts: the tell is the warning
+            int winding = 0;
+            foreach (var e in _run.enemies)
+                if (e.castT > 0 && (e.kind == BodyKind.Sprayer || e.kind == BodyKind.Mortar || e.kind == BodyKind.Egg)) winding++;
+            if (winding > _lastWinding) Depths.Unity.Audio.SoundEngine.Play("tell");
             _lastShots = _run.shots; _lastHits = _run.hits; _lastKills = _run.kills; _lastHp = p.hp; _lastDmg = _run.dmgTaken;
+            _lastPicked = _run.picked; _lastWarned = _run.bossWarned; _lastWinding = winding;
         }
 
         // Screenshot mode: strafe and shoot at the nearest target, so a still frame shows the sim running.

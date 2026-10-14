@@ -58,7 +58,7 @@ namespace Depths.Unity.Hud
             var paused = LedgerFonts.Ink("Paused", 34, (Color)LedgerArt.Ink, LedgerFonts.Italic, TextAnchor.MiddleCenter);
             Put(paused, 20, 16, PauseW - 40, 48);
             _pause.Add(paused);
-            Line(_pause, "Esc", "put the ledger down and play on", 92);
+            _pauseKey = Line(_pause, "Esc", "put the ledger down and play on", 92);
             Line(_pause, "R", "begin a new run", 120);
             Line(_pause, "M", "back to the menu", 148);
             _pauseLine = LedgerFonts.Ink("", 14, (Color)LedgerArt.InkSoft, LedgerFonts.Italic, TextAnchor.MiddleCenter);
@@ -138,7 +138,12 @@ namespace Depths.Unity.Hud
         }
 
         // a key cap and what it does, written on the line
-        static void Line(VisualElement page, string key, string what, int y, int x = 64)
+        Label _pauseKey;
+
+        /// <summary>The pause page names the key that pauses, whatever it is bound to.</summary>
+        public void SetPauseKey(string key) { if (_pauseKey != null && _pauseKey.text != key) _pauseKey.text = key; }
+
+        static Label Line(VisualElement page, string key, string what, int y, int x = 64)
         {
             var cap = LedgerFonts.Ink(key, 13, new Color(0.94f, 0.88f, 0.75f), LedgerFonts.Bold, TextAnchor.MiddleCenter);
             Put(cap, x, y, 44, 22);
@@ -149,6 +154,7 @@ namespace Depths.Unity.Hud
             var l = LedgerFonts.Ink(what, 16, (Color)LedgerArt.Ink, LedgerFonts.Italic);
             Put(l, x + 56, y - 1, 280, 24);
             page.Add(l);
+            return cap;
         }
 
         static void Put(VisualElement e, int x, int y, int w, int h)

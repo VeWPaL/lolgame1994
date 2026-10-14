@@ -23,7 +23,7 @@ namespace Depths.Unity
         static readonly (string slot, string label)[] Rows =
         {
             ("Move/up", "Move up"), ("Move/left", "Move left"), ("Move/down", "Move down"), ("Move/right", "Move right"),
-            ("Blink", "Blink"), ("Active", "Use active item"), ("Pause", "Pause"), ("Sheet", "Character sheet"), ("Controls", "Controls help"),
+            ("Blink", "Blink"), ("Active", "Use active item"), ("Pause", "Pause"),
         };
 
         public const int KeyCapW = 132, KeyCapH = 30;
