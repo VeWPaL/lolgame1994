@@ -95,6 +95,114 @@ namespace Depths.Tests
             Assert.That(late, Is.InRange(5, 60), "200 chances at 0.135 should blink about 27 times");
         }
 
+        // a Mortar shell due to land `ticks` from now at (dx, dy) from the player's hitbox
+        static Projectile Lob(Player p, double dx, double dy, int ticks) => new Projectile
+        {
+            x = p.x, y = p.y, ox = p.x, oy = p.y, tx = p.lagX + dx, ty = p.lagY + Balance.PlayerHitDy + dy, lob = true,
+            flightMax = Middle.LobFlight, flight = Middle.LobFlight - ticks, r = 6, dmg = 2, blastR = 56,
+        };
+
+        // a Burrower in the air, airborne for `airborne` ticks, landing at (dx, dy) from the player's hitbox
+        static Enemy Leaping(Player p, double dx, double dy, int airborne)
+        {
+            var e = Enemy.Of(BodyKind.Burrower, p.x - 150, p.y);
+            e.buried = true; e.move = "leap"; e.moveT = Middle.BurrowLeap - airborne;
+            e.markX = p.lagX + dx; e.markY = p.lagY + Balance.PlayerHitDy + dy;
+            return e;
+        }
+
+        [Test]
+        public void AMortarMarkIsRunOutOfOnceSeen()
+        {
+            // the body east is in the band, so circling moves only north or south: east or west is the mark's doing
+            var (run, bot) = Facing(200);
+            var p = run.player;
+            run.projectiles.Add(Lob(p, 20, 0, 50));   // its centre 20px east: the way out is west
+            int react = React("average");
+            Assert.That(bot.Decide(run, 0).Input.dx, Is.EqualTo(0), "ran from a mark it has only just seen");
+            Assert.That(bot.Decide(run, react - 1).Input.dx, Is.EqualTo(0), "ran before its reaction time");
+            var go = bot.Decide(run, react).Input;
+            Assert.That((go.dx, go.dy), Is.EqualTo((-1, 0)), "did not run straight out of the mark");
+        }
+
+        [Test]
+        public void AMarkFarAwayIsIgnoredAndOneOnItsCourseIsNot()
+        {
+            int react = React("average");
+            var (run, bot) = Facing(200);
+            run.projectiles.Add(Lob(run.player, 0, 200, 50));
+            bot.Decide(run, 0);
+            Assert.That(bot.Decide(run, react).Input.dx, Is.EqualTo(0), "ran from a mark 200px off it was never near");
+
+            // standing 80px west of a Burrower's landing and walking at it: by the landing it is well inside (at any tick rate)
+            int left = Math.Min(20, Middle.BurrowLeap - react);
+            (run, bot) = Facing(200);
+            run.player.vx = 70.0 / left;
+            run.enemies.Add(Leaping(run.player, 80, 0, Middle.BurrowLeap - left));
+            Assert.That(bot.Decide(run, 0).Input.dx, Is.EqualTo(-1), "walked on into a landing");
+            (run, bot) = Facing(200);
+            run.enemies.Add(Leaping(run.player, 80, 0, Middle.BurrowLeap - left));
+            Assert.That(bot.Decide(run, 0).Input.dx, Is.EqualTo(0), "standing still, a mark 80px off is no threat");
+        }
+
+        [Test]
+        public void ALeapIsDodgedOnlyOnceTheBotHasSeenItInTheAir()
+        {
+            int react = React("average");
+            var (run, bot) = Facing(200);
+            run.enemies.Add(Leaping(run.player, -10, 0, react - 1));
+            Assert.That(bot.Decide(run, 0).Input.dx, Is.EqualTo(0), "dodged a leap before it could have seen it");
+            (run, bot) = Facing(200);
+            run.enemies.Add(Leaping(run.player, -10, 0, react));
+            Assert.That(bot.Decide(run, 0).Input.dx, Is.EqualTo(1), "never ran from a Burrower landing on it");
+        }
+
+        [Test]
+        public void AMarkTooCloseToRunFromIsSometimesBlinkedAndOneWithTimeToSpareNever()
+        {
+            // dead centre, 3 ticks left: no run clears 48px in 3 ticks, so the skilled bot rolls its blink each tick
+            int react = React("skilled"), soon = 0, spare = 0;
+            var (run, bot) = Facing(200, "skilled");
+            var e = Leaping(run.player, 0, 0, Middle.BurrowLeap - 3);
+            run.enemies.Add(e);
+            for (int t = 0; t < 200; t++) if (bot.Decide(run, t).Input.blink) soon++;
+            Assert.That(soon, Is.InRange(5, 60), "200 chances at 0.135 should blink about 27 times");
+
+            (run, bot) = Facing(200, "skilled");
+            run.projectiles.Add(Lob(run.player, 30, 0, Middle.LobFlight - 1));
+            for (int t = 0; t < 200; t++) if (bot.Decide(run, t).Input.blink) spare++;
+            Assert.That(spare, Is.EqualTo(0), "blinked from a mark it could walk out of");
+            Assert.That(react, Is.LessThan(Middle.BurrowLeap), "fixture: the skilled bot cannot see a leap in time");
+        }
+
+        [Test]
+        public void AMarkAgainstAWallIsLeftAlongTheWallNotIntoIt()
+        {
+            // the player against the west wall, a landing just east of it: the way out is along the wall, never west
+            var (run, bot) = Facing(200);
+            var p = run.player;
+            p.x = p.lagX = run.CurrentRoom!.Bounds.L + 14;
+            run.enemies.Add(Leaping(p, 16, 0, React("average")));
+            var go = bot.Decide(run, 0).Input;
+            Assert.That(go.dx, Is.EqualTo(0), "pressed into the wall");
+            Assert.That(go.dy, Is.Not.EqualTo(0), "stood still in the mark");
+        }
+
+        [Test]
+        public void AShellAndAMarkAtOnceAreBothDodged()
+        {
+            // a shell falling from the north onto the player (a sidestep is east or west) inside a landing to the south-east
+            var (run, bot) = Facing(200);
+            var p = run.player;
+            int react = React("average");
+            run.projectiles.Add(new Projectile { x = p.x, y = p.y - 40, vy = 2, r = 5, dmg = 2 });
+            run.enemies.Add(Leaping(p, 10, 10, Middle.BurrowLeap - 25));
+            bot.Decide(run, 0);
+            var both = bot.Decide(run, react).Input;
+            Assert.That(both.dx, Is.EqualTo(1), "the sidestep (east, the stronger pull) was lost to the mark");
+            Assert.That(both.dy, Is.EqualTo(-1), "the mark's way out (north) was lost to the sidestep");
+        }
+
         [TestCase(50, -1, true)]     // too close: back off
         [TestCase(200, 0, true)]     // in the band: circle only
         [TestCase(350, 1, true)]     // too far: close in, and fire (under 420)

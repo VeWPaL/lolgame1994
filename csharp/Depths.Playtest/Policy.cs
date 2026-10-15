@@ -121,6 +121,7 @@ namespace Depths.Playtest
             }
 
             // dodging: only a shot the bot has had time to react to, heading for it
+            bool sidestep = false;
             foreach (var p in ps)
             {
                 if (p.friendly || t - _born[p] < _react) continue;
@@ -133,10 +134,12 @@ namespace Depths.Playtest
                 {
                     double s = (cx * p.vy - cy * p.vx) > 0 ? 1 : -1, vn = Math.Sqrt(vv);
                     _mvX = -p.vy / vn * s * 2; _mvY = p.vx / vn * s * 2;
+                    sidestep = true;
                     if (tc < Balance.SecF(BlinkLookS) && run.blinkCharges > 0 && _rnd.Next() < Balance.Chance(_p.Dodge * 0.15)) blink = true;   // a roll per tick
                     break;
                 }
             }
+            Marks(run, r, t, sidestep, ref blink);
 
             double a = Math.Atan2(target.y - pl.y, target.x - pl.x) + _aimJ;
             double td = Hyp(target.x - pl.x, target.y - pl.y);
@@ -144,6 +147,58 @@ namespace Depths.Playtest
             var input = new Input(Axis(_mvX, 0.3), Axis(_mvY, 0.3), _fire, alt, blink, _aimX.Value, _aimY.Value);
             return new BotAction(input, useActive);
         }
+
+        /// <summary>The floor's marks: a Mortar shell's landing and a leaping Burrower's, each a circle that hurts once, as it... [h:Policy-2]</summary>
+        internal bool Marks(RunState run, Room room, int t, bool sidestep, ref bool blink)
+        {
+            var pl = run.player;
+            double hx = pl.lagX, hy = pl.lagY + Balance.PlayerHitDy, ex = 0, ey = 0, need = 0;
+            int soonest = int.MaxValue;
+            foreach (var p in run.projectiles)
+            {
+                if (p.friendly || !p.lob || !_born.TryGetValue(p, out var born) || t - born < _react) continue;
+                Threat(p.tx, p.ty, p.blastR, p.flightMax - p.flight);
+            }
+            foreach (var e in run.enemies)
+            {
+                if (e.hp <= 0 || e.kind != BodyKind.Burrower || e.move != "leap") continue;
+                if (Middle.BurrowLeap - e.moveT < _react) continue;   // airborne for less than a reaction: not seen yet
+                Threat(e.markX, e.markY, Middle.BurrowHitR, e.moveT);
+            }
+            if (soonest == int.MaxValue) return false;
+            double n = Hyp(ex, ey);
+            if (n < 1e-9) { ex = -pl.vy; ey = pl.vx; n = Hyp(ex, ey); }     // dead centre and still: any way out
+            if (n < 1e-9) { ex = _strafe; ey = 0; n = 1; }
+            ex = ex / n * 2; ey = ey / n * 2;
+            // a wall in the way out: slide along it, away from the nearer corner, instead of pressing into it
+            var b = room.Bounds;
+            if ((ex < 0 && pl.x < b.L + WallGap) || (ex > 0 && pl.x > b.R - WallGap)) { ex = 0; ey = Away(ey, pl.y, Balance.MidY); }
+            if ((ey < 0 && pl.y < b.T + WallGap) || (ey > 0 && pl.y > b.B - WallGap)) { ey = 0; ex = Away(ex, pl.x, Balance.MidX); }
+            // a shell being sidestepped this tick and a mark: both ways at once
+            if (sidestep) { _mvX += ex; _mvY += ey; }
+            else { _mvX = ex; _mvY = ey; }
+            // out of reach in time on foot (at base speed, no bonus), and not still trailing a blink? then one, rolled as for a shot
+            bool settled = Hyp(pl.x - pl.lagX, pl.y - pl.lagY) < 4;
+            if (settled && need > pl.speed * soonest && run.blinkCharges > 0 && _rnd.Next() < Balance.Chance(_p.Dodge * 0.15)) blink = true;
+            return true;
+
+            double Away(double v, double at, double mid) => Math.Abs(v) > 0.3 ? Math.Sign(v) * 2 : at <= mid ? 2 : -2;
+
+            void Threat(double mx, double my, double r, int ticksLeft)
+            {
+                double reach = r + Balance.PlayerHitR + MarkMargin;
+                double dx = hx - mx, dy = hy - my, d = Hyp(dx, dy);
+                int ahead = Math.Min(ticksLeft, Balance.Sec(CourseS));   // where its present course puts it, a short look ahead
+                double fx = dx + pl.vx * ahead, fy = dy + pl.vy * ahead;
+                if (d >= reach && Hyp(fx, fy) >= reach) return;
+                double w = 1 / Math.Max(d, 1) * Balance.Sec(1) / (ticksLeft + Balance.Sec(0.1));   // the sooner it lands, the more it counts
+                ex += dx * w * reach; ey += dy * w * reach;
+                need = Math.Max(need, reach - d);
+                soonest = Math.Min(soonest, Math.Max(ticksLeft, 1));
+            }
+        }
+
+        const double MarkMargin = 8, WallGap = 40, CourseS = 0.5;   // px kept from a mark; px from a wall that blocks a run; s of course looked ahead
 
         void Prune(List<Projectile> ps)
         {

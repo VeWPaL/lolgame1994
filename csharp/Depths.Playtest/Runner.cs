@@ -295,6 +295,7 @@ namespace Depths.Playtest
                 if (Run.projectiles.Contains(s)) continue;
                 double d = Math.Min(Math.Sqrt((s.x - p.x) * (s.x - p.x) + (s.y - p.y) * (s.y - p.y)),
                                     Math.Sqrt((s.x - sx) * (s.x - sx) + (s.y - sy) * (s.y - sy)));
+                if (s.lob) { if (!Hit.PlayerHit(s.tx, s.ty, s.blastR, p.lagX, p.lagY)) continue; d = 0; }   // a mortar shell hits anywhere in its blast, and only there
                 if (d < best) { best = d; near = s; }
             }
             if (near != null) return "shot:" + (near.owner != null ? Name(near.owner.kind) : "?");

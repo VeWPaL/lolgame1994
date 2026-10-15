@@ -3,7 +3,8 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-14, evening (the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
+_Last updated: 2026-10-14, night (a typed frame cap; the bot dodges landing marks, with the numbers and the
+recommended next steps under "Bot reads marks"; before that, the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
 notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
 faster eggs, momentum in the blink's blue; before that, notes batch 3 and the sweep: the Burrower steers, `Aim.Intercept`, the HUD headings
 gone, momentum and shell VFX; long comments moved to `docs/history/csharp/` and gated; four reviewers' findings
@@ -17,7 +18,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  659/659, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  672/672, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -40,7 +41,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
   `RunRecords` in PlayerPrefs) are paper sheets. `Runtime/Hud/`: `HudLayout` is the one geometry
   table, `LedgerArt` the bakes, `LedgerHud` retained + zero-alloc, `HudOverlays`. F10 shows the dev
   line. Menus are an open ledger on a desk (`MainMenu.uxml/uss`, textures baked in the controller,
-  Georgia read from the OS via `LedgerFonts`). EditMode 93/93 (`HudTests`: layout never on the room,
+  Georgia read from the OS via `LedgerFonts`). EditMode 95/95 (`HudTests`: layout never on the room,
   hearts one row at 2x, half hearts exact, 0 bytes per 100 updates, repaint only on change, records).
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
   20 min in about 2 s; 4.8 s at `--hz 210`) and writes `playtest/<label>.json` (header `tickHz`):
@@ -75,9 +76,9 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 93/93. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 95/95. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
   checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap, `thud` just after it lands)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -100,6 +101,28 @@ it from another checkout or the first command spends minutes importing.
 
 ## Owner decisions
 
+- **Bot reads marks; custom frame cap (owner 2026-10-14, night).**
+  - Options > Gameplay > Frame rate has **Custom**: a typed cap, 20-500 fps (`DisplaySettings.Custom`, saved;
+    junk keeps the old cap). `shot customfps` shows the field.
+  - The bot (`BotPolicy.Marks`) runs straight out of a Mortar or Burrower landing mark once it has had its reaction
+    time on it (or will walk into it within 0.5 s on its present course), slides along a wall rather than into it,
+    adds the way out to a shell sidestep in the same tick, and rolls a blink when it cannot clear it on foot. The
+    runner books a hit inside a landing Mortar shell's blast on the Mortar (it fell to the nearest body before).
+    Not dodged: the untuned Burrower's "rise" landing (tests only).
+  - Same build, seeds 101-200 x 3 profiles, 60 min (`playtest/b6-old`, `b6-dodge`): deaths 183 -> 111 (novice
+    94 -> 53, average 48 -> 9, skilled 41 -> 8; 125 saved vs 12 newly died, p 7e-25). Damage share: Mortar 13% ->
+    1%, Burrower 15% -> 4%. The earlier "middle retune is the main killer" reading was mostly the bot standing in
+    marks. Now: Brunch contact 24%, Lunger contact 21%, Sprayer 12%; killing blows Brunch 31, Lunger 26, all
+    else 13. The bot never reads a lunge or a rush, so those two are overstated the same way.
+  - Where runs die (b6-dodge): 60% at floor 13+ (42 of 70); average and skilled together lose 7 of 200 runs
+    before floor 13 and 17 in all. Damage a floor 13.5 / 15.3 / 17.9 / 24.1 by area; healing keeps pace (about 60%
+    from the regen heart and its refill). 230 of 300 runs are still alive at 60 min: **there is no win** (nothing calls
+    `EndRun(true)`), the Deep goes on forever.
+  - The curve on (`b6-curve`): deaths 70 -> 236. It hurts less a floor but heals less still: with `TuneLoot` on top, the curve's dry start bleeds runs out. Not ready to default on.
+  - Recommended next (for the owner): (1) a run end, the Warden as the final boss and a win screen, aiming at a
+    35-45 min run; (2) teach the bot lunges and rushes, then retune Brunch and Lunger contact from honest numbers;
+    (3) the item overhaul (actives healed 0.4 times a run); (4) the Deep is a cliff after a flat middle: steepen
+    floors 5-12, or fix the curve's loot rule and use the curve for it.
 - **Brunch**: A+ (decided 2026-10-06).
 - **Done and archived** (`docs/history/status-2026-10.md`): heart values (whole HP, 8 at the start), the
   regenerating heart, the 60 Hz switch and its wide matrix, the difficulty curve (built, off until the owner

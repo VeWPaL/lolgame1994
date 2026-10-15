@@ -105,6 +105,46 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void AMortarShellLandingAtTheEdgeOfItsBlastIsBookedOnTheMortar()
+        {
+            // it lands 50px from the hitbox, inside its 56px blast: the Mortar's hit, not the nearest body's
+            var run = OneTick(r =>
+            {
+                var p = r.player;
+                r.enemies.Add(Dummy(p.x + 60, p.y));
+                double hx = p.lagX, hy = p.lagY + Balance.PlayerHitDy;
+                r.projectiles.Add(new Projectile
+                {
+                    x = hx - 50, y = hy, ox = hx - 50, oy = hy, tx = hx - 50, ty = hy, lob = true, flight = Middle.LobFlight - 1,
+                    flightMax = Middle.LobFlight, r = 6, dmg = 2, blastR = 56, friendly = false,
+                    owner = Enemy.Of(BodyKind.Mortar, Balance.RoomLeft + 30, Balance.RoomTop + 30),
+                });
+            });
+            Assert.That(run.Run.dmgTaken, Is.EqualTo(2), "fixture: the shell did not land on the player");
+            Assert.That(run.Result.dmgBySource, Is.EqualTo(D(("shot:mortar", 2))));
+        }
+
+        [Test]
+        public void AMortarShellThatMissesIsNotBookedForABodysHit()
+        {
+            // a Lunger touches the player in the tick a shell lands 80px off: outside its 56px blast, so the hit is the Lunger's
+            var run = OneTick(r =>
+            {
+                var p = r.player;
+                r.enemies.Add(Enemy.Of(BodyKind.Lunger, p.lagX, p.lagY - Balance.PlayerHitDy + 10));
+                double hx = p.lagX, hy = p.lagY + Balance.PlayerHitDy;
+                r.projectiles.Add(new Projectile
+                {
+                    x = hx - 80, y = hy, ox = hx - 80, oy = hy, tx = hx - 80, ty = hy, lob = true, flight = Middle.LobFlight - 1,
+                    flightMax = Middle.LobFlight, r = 6, dmg = 2, blastR = 56, friendly = false,
+                    owner = Enemy.Of(BodyKind.Mortar, Balance.RoomLeft + 30, Balance.RoomTop + 30),
+                });
+            });
+            Assert.That(run.Run.dmgTaken, Is.EqualTo(1), "fixture: only the Lunger's contact should land");
+            Assert.That(run.Result.dmgBySource, Is.EqualTo(D(("contact:lunger", 1))));
+        }
+
+        [Test]
         public void AnOrdinaryHitOnArmourCostsTheArmourRateNotTheWholeHit()
         {
             // a 2 HP gunner shell on armour 4: armour pays floor(2 x 0.6) = 1 and covers it all

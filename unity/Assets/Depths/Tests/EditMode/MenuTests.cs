@@ -44,6 +44,46 @@ namespace Depths.Unity.Tests
         }
 
         [Test]
+        public void ACustomCapIsTypedClampedAndSaved()
+        {
+            var store = new MemoryStore();
+            var d = new DisplaySettings(store);
+            Assert.That(d.Custom, Is.EqualTo(DisplaySettings.CustomDefault), "an unset cap has no default");
+            Assert.That(DisplaySettings.ParseCustom("75"), Is.EqualTo(75));
+            Assert.That(DisplaySettings.ParseCustom(" 9 0fps"), Is.EqualTo(90), "stray characters around the digits");
+            Assert.That(DisplaySettings.ParseCustom("5"), Is.EqualTo(DisplaySettings.CustomMin), "a cap under 20 would make the game a slideshow");
+            Assert.That(DisplaySettings.ParseCustom("99999999999"), Is.EqualTo(DisplaySettings.CustomMax), "a huge number overflows instead of clamping");
+            Assert.That(DisplaySettings.ParseCustom("abc"), Is.Null, "junk must keep the old cap, not become one");
+            Assert.That(DisplaySettings.ParseCustom(""), Is.Null);
+            Assert.That(DisplaySettings.ParseCustom("\u0661\u0662\u0660"), Is.Null, "a non-ASCII digit must not throw in the field's callback");
+
+            d.Frames = DisplaySettings.CustomChoice;
+            d.Custom = 75;
+            var again = new DisplaySettings(store);
+            Assert.That(again.Frames, Is.EqualTo(DisplaySettings.CustomChoice), "Custom does not survive a restart");
+            Assert.That(again.Custom, Is.EqualTo(75), "the typed cap does not survive a restart");
+            Assert.That(DisplaySettings.Mode(again.Frames, again.Custom), Is.EqualTo((0, 75)));
+            d.Custom = 4000;
+            Assert.That(d.Custom, Is.EqualTo(DisplaySettings.CustomMax));
+            store.S[DisplaySettings.CustomKey] = "garbage";
+            Assert.That(d.Custom, Is.EqualTo(DisplaySettings.CustomDefault), "a hand-edited cap breaks the frame loop");
+        }
+
+        [Test]
+        public void ApplyingACustomCapSetsUnitysFrameLoop()
+        {
+            int v0 = QualitySettings.vSyncCount, t0 = Application.targetFrameRate;
+            try
+            {
+                var d = new DisplaySettings(new MemoryStore()) { Frames = DisplaySettings.CustomChoice, Custom = 87 };
+                d.Apply();
+                Assert.That(QualitySettings.vSyncCount, Is.EqualTo(0));
+                Assert.That(Application.targetFrameRate, Is.EqualTo(87));
+            }
+            finally { QualitySettings.vSyncCount = v0; Application.targetFrameRate = t0; }
+        }
+
+        [Test]
         public void ApplyingAChoiceSetsUnitysFrameLoop()
         {
             int v0 = QualitySettings.vSyncCount, t0 = Application.targetFrameRate;
@@ -103,6 +143,9 @@ namespace Depths.Unity.Tests
             var page = tree.Instantiate().Q("gameplayPage");
             Assert.That(page.Q<UnityEngine.UIElements.DropdownField>("frameRate"), Is.Not.Null, "the menu reads a dropdown named frameRate");
             Assert.That(page.Q<UnityEngine.UIElements.DropdownField>("shake"), Is.Not.Null, "the menu reads a dropdown named shake");
+            var custom = page.Q<UnityEngine.UIElements.TextField>("customFps");
+            Assert.That(custom, Is.Not.Null, "the menu reads a text field named customFps");
+            Assert.That(custom.ClassListContains("hidden"), Is.True, "the custom cap shows only once Custom is chosen");
         }
     }
 

@@ -51,6 +51,7 @@ Label, .unity-base-field__label { color: rgb(43, 29, 18); }
 .ledger-dropdown:hover .unity-base-field__input, .ledger-dropdown:focus .unity-base-field__input { -unity-background-image-tint-color: rgb(255, 226, 200); }
 .unity-base-popup-field__text { color: rgb(43, 29, 18); font-size: 15px; -unity-text-align: middle-left; padding: 0; margin: 0; }
 .unity-base-popup-field__arrow { -unity-background-image-tint-color: rgb(255, 255, 255); }
+.ledger-text .unity-base-text-field__input { max-width: 90px; font-size: 15px; -unity-text-align: middle-left; }
 
 .bind-list { max-height: 330px; margin-top: 2px; }
 .bind-row { flex-direction: row; align-items: center; justify-content: space-between; height: 34px;

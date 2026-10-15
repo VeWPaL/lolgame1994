@@ -97,9 +97,23 @@ namespace Depths.Unity
             root.Q<Button>("resetBinds").clicked += () => { _bindings.ApplyPreset(_bindings.Preset); RefreshBinds(); };
 
             var frames = root.Q<DropdownField>("frameRate");
+            var custom = root.Q<TextField>("customFps");
             frames.choices = DisplaySettings.Choices.ToList();
             frames.index = Array.IndexOf(DisplaySettings.Choices, _display.Frames);
-            frames.RegisterValueChangedCallback(_ => { _display.Frames = DisplaySettings.Choices[frames.index]; _display.Apply(); });
+            custom.SetValueWithoutNotify(_display.Custom.ToString());
+            custom.EnableInClassList("hidden", _display.Frames != DisplaySettings.CustomChoice);
+            frames.RegisterValueChangedCallback(_ =>
+            {
+                _display.Frames = DisplaySettings.Choices[frames.index];
+                custom.EnableInClassList("hidden", _display.Frames != DisplaySettings.CustomChoice);
+                _display.Apply();
+            });
+            // typed then confirmed (Enter or leaving the field); junk keeps the old cap, a number is held to 20-500
+            custom.RegisterValueChangedCallback(e =>
+            {
+                if (DisplaySettings.ParseCustom(e.newValue) is int fps) { _display.Custom = fps; _display.Apply(); }
+                custom.SetValueWithoutNotify(_display.Custom.ToString());
+            });
 
             var presets = Enum.GetValues(typeof(KeyPreset)).Cast<KeyPreset>().ToList();
             _preset.choices = presets.Select(KeyPresets.Label).ToList();
@@ -155,6 +169,7 @@ namespace Depths.Unity
             root.Query(className: "unity-base-slider__tracker").ForEach(t => Sliced(t, groove, 5));
             var field = Tex(LedgerArt.FieldFrame(48, 30), "field");
             root.Query(className: "unity-base-popup-field__input").ForEach(f => Sliced(f, field, 6));
+            root.Query(className: "unity-base-text-field__input").ForEach(f => Sliced(f, field, 6));
             var arrow = Tex(LedgerArt.BrassArrow(13, 9), "arrow");
             root.Query(className: "unity-base-popup-field__arrow").ForEach(a => { a.style.backgroundImage = new StyleBackground(arrow); a.style.width = 13; a.style.height = 9; });
         }
@@ -226,8 +241,8 @@ namespace Depths.Unity
         }
 
         /// <summary>The menu views the screenshot mode can show besides the pages: keyboard focus on a key cap or a
-        /// slider, the dropdown's list open, the mouse over an entry, the curve ticked. None of them saves a setting.</summary>
-        public static readonly string[] EvidenceViews = { "focuskey", "focusslider", "dropdown", "hover", "gameplayon" };
+        /// slider, the dropdown's list open, the mouse over an entry, the curve ticked, the custom cap. None of them saves a setting.</summary>
+        public static readonly string[] EvidenceViews = { "focuskey", "focusslider", "dropdown", "hover", "gameplayon", "customfps" };
 
         public void Evidence(string view)
         {
@@ -237,6 +252,11 @@ namespace Depths.Unity
                 case "focuskey": ShowView("controls"); root.Q(className: "bind-key")?.Focus(); break;
                 case "focusslider": ShowView("audio"); root.Q<Slider>("vol-Music")?.Focus(); break;
                 case "gameplayon": ShowView("gameplay"); _curve.SetValueWithoutNotify(true); Tick(); break;
+                case "customfps":
+                    ShowView("gameplay");
+                    root.Q<DropdownField>("frameRate").SetValueWithoutNotify(DisplaySettings.CustomChoice);
+                    root.Q<TextField>("customFps").RemoveFromClassList("hidden");
+                    break;
                 case "dropdown":
                     // after the page has been laid out, or the list opens at the origin with no size
                     ShowView("controls");

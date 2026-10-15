@@ -16,7 +16,7 @@ disagree. Long code comments live in `docs/history/csharp/<File>.md` under `[h:F
   recorded from the JS stay bit-exact. `RateTests` fails if a rate-derived dial is not declared.
 - **Frame vs tick**: `TickClock` turns frame time into ticks (a hitch is cut at 0.25 s, never fast-forwarded).
   `Interp.Snap` before each tick + `TickClock.Alpha` lets the renderer draw bodies, shells and the player between the
-  last two ticks, so motion is smooth at any refresh. Options > Gameplay > Frame rate: VSync / 30-240 / Uncapped.
+  last two ticks, so motion is smooth at any refresh. Options > Gameplay > Frame rate: VSync / 30-240 / Custom (a typed cap, 20-500) / Uncapped.
 - **Tick order** (`TickOrder.Update`): gates and transitions, then player, projectiles, bodies, room. The player's
   lagged hitbox (`HitboxX/Y`, it trails after a blink) is what enemies aim at and what shells hit.
 - **Switches**: `Balance.Tuned` (on in the game and the bot, off in tests) gates every C#-only change to ported
@@ -101,5 +101,7 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
   secret, rail (DEPTHS_SEED=n picks a track), leap, thud, lab, labrow, gameplay.
 - The owner plays `Documents\Depths-playtest` (`tools/unity.sh publish`); snapshots via `tools/snapshot.sh DDMMYY.V.S`.
 - Bot: `dotnet run --project csharp/Depths.Playtest -c Release -- play --label X --minutes 60 --seeds 101,...` then
-  `report A B`. Bot dodging is a rough stand-in for a player: confirm feel with the owner.
+  `report A B`. Bot dodging is a rough stand-in for a player: it sidesteps shells and, after its reaction time,
+  runs out of Mortar and Burrower landing marks (blinking when it cannot clear one on foot); it does NOT read a
+  Lunger's wind-up or a Brunch rush, so contact damage is overstated. Confirm feel with the owner.
 - `python tools/move-comments.py` moves any comment block of 3+ lines out of C# (the gate fails otherwise).
