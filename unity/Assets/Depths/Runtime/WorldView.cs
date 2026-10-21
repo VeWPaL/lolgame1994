@@ -255,7 +255,22 @@ namespace Depths.Unity
                 Dashes(ex, ey, tx, ty, 1 + 2 * grow, QuadBatch.Tint(col, 0.20f + 0.55f * grow));
                 Ring(tx, ty, 5 + 3 * grow, 1 + 2 * grow, QuadBatch.Tint(col, 0.30f + 0.50f * grow));
             }
+            // a Brunch winding up to rush: the same committed line, growing from it toward the player
+            var pl = run.player;
+            foreach (var e in run.enemies)
+            {
+                if (e.rushWind <= 0) continue;
+                float grow = 1 - e.rushWind / (float)Balance.BrunchRushWind;
+                Interp.At(run, e, Alpha, out var bx, out var by);
+                double dx = pl.x - bx, dy = pl.y - by, d = Math.Sqrt(dx * dx + dy * dy);
+                if (d < 1) continue;
+                double len = Math.Min(d, RushLine) * (0.35 + 0.65 * grow);
+                Dashes(bx, by, bx + dx / d * len, by + dy / d * len, 1 + 2 * grow, QuadBatch.Tint(col, 0.25f + 0.6f * grow));
+            }
         }
+
+        const float RushLine = 70;   // px of the Brunch's wind-up line at full growth
+        static float RushShiver(Enemy e) => 0.5f + 1.5f * (1 - e.rushWind / (float)Balance.BrunchRushWind);
 
         void Dashes(double x0, double y0, double x1, double y1, float width, Color32 c)
         {
@@ -404,6 +419,7 @@ namespace Depths.Unity
                 float bob = fr == 1 || fr == 3 ? -2 : 0;
                 float hop = run.readyT > 0 ? -Mathf.Abs(Mathf.Sin(readyProg * Mathf.PI * 2)) * 6 : 0;
                 Interp.At(run, e, Alpha, out var bx, out var by);   // between the last two ticks: smooth at any frame rate
+                if (e.rushWind > 0) bx += RushShiver(e) * Mathf.Sin(Fc * 2.3f);   // a Brunch about to rush trembles where it stands
                 if (e.kind == BodyKind.Burrower && DrawBurrow(e, frame, bx, by)) continue;
                 // a digging Burrower sinks and fades into the floor, still hittable, so still flashing
                 float sink = e.kind == BodyKind.Burrower && e.move == "dig" ? 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig) : 0;

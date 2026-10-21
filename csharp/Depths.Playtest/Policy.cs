@@ -37,6 +37,10 @@ namespace Depths.Playtest
         readonly Dictionary<Projectile, int> _born =
             new Dictionary<Projectile, int>(ReferenceEqualityComparer.Instance);
         readonly HashSet<Room> _tookItemIn = new HashSet<Room>(ReferenceEqualityComparer.Instance);
+        // when the bot first SAW each body's tell (a Lunger's wind-up, a Brunch's tremble): the same reaction clock
+        readonly Dictionary<Enemy, int> _tell = new Dictionary<Enemy, int>(ReferenceEqualityComparer.Instance);
+        readonly List<Enemy> _pruneTell = new List<Enemy>();
+        Room? _tellRoom;
         Pickup? _itemGoal;   // the item last steered at, so a take is seen even when one tick's step skips the 2px band
         Room? _itemGoalIn;
         readonly List<Projectile> _prune = new List<Projectile>();
@@ -153,7 +157,8 @@ namespace Depths.Playtest
         {
             var pl = run.player;
             double hx = pl.lagX, hy = pl.lagY + Balance.PlayerHitDy, ex = 0, ey = 0, need = 0;
-            int soonest = int.MaxValue;
+            int soonest = int.MaxValue, lineSoonest = int.MaxValue;
+            if (room != _tellRoom) { _tell.Clear(); _tellRoom = room; }   // a new room: every tell is a fresh one
             foreach (var p in run.projectiles)
             {
                 if (p.friendly || !p.lob || !_born.TryGetValue(p, out var born) || t - born < _react) continue;
@@ -165,6 +170,7 @@ namespace Depths.Playtest
                 if (Middle.BurrowLeap - e.moveT < _react) continue;   // airborne for less than a reaction: not seen yet
                 Threat(e.markX, e.markY, Middle.BurrowHitR, e.moveT);
             }
+            Lines(run, t, Line);
             if (soonest == int.MaxValue) return false;
             double n = Hyp(ex, ey);
             if (n < 1e-9) { ex = -pl.vy; ey = pl.vx; n = Hyp(ex, ey); }     // dead centre and still: any way out
@@ -172,6 +178,10 @@ namespace Depths.Playtest
             ex = ex / n * 2; ey = ey / n * 2;
             // a wall in the way out: slide along it, away from the nearer corner, instead of pressing into it
             var b = room.Bounds;
+            bool Blocked(double x, double y) =>
+                (x < -0.3 && pl.x < b.L + WallGap) || (x > 0.3 && pl.x > b.R - WallGap) || (y < -0.3 && pl.y < b.T + WallGap) || (y > 0.3 && pl.y > b.B - WallGap);
+            // off a charge's line into a wall: cross to its other side, never slide along it (toward the body, maybe)
+            if (lineSoonest == soonest && Blocked(ex, ey) && !Blocked(-ex, -ey)) { ex = -ex; ey = -ey; }
             if ((ex < 0 && pl.x < b.L + WallGap) || (ex > 0 && pl.x > b.R - WallGap)) { ex = 0; ey = Away(ey, pl.y, Balance.MidY); }
             if ((ey < 0 && pl.y < b.T + WallGap) || (ey > 0 && pl.y > b.B - WallGap)) { ey = 0; ex = Away(ex, pl.x, Balance.MidX); }
             // a shell being sidestepped this tick and a mark: both ways at once
@@ -183,6 +193,24 @@ namespace Depths.Playtest
             return true;
 
             double Away(double v, double at, double mid) => Math.Abs(v) > 0.3 ? Math.Sign(v) * 2 : at <= mid ? 2 : -2;
+
+            // a body charging along a line: step off it, to the side the bot is already on
+            void Line(double ax, double ay, double dx, double dy, double len, double r, double speed, int lead)
+            {
+                double reach = r + Balance.PlayerHitR + MarkMargin;
+                double rx = hx - ax, ry = hy - ay, along = rx * dx + ry * dy;
+                if (along < -reach || along > len + reach) return;
+                double c = Math.Max(0, Math.Min(len, along));
+                double px = rx - dx * c, py = ry - dy * c, d = Hyp(px, py);
+                if (d >= reach) return;
+                if (d < 1) { px = -dy * _strafe; py = dx * _strafe; d = 1; }   // dead on the line: its strafe side
+                int ticksLeft = Math.Max(1, lead + (int)(Math.Max(0, along) / Math.Max(speed, 1e-6)));
+                double w = Balance.Sec(1) / (ticksLeft + Balance.Sec(0.1));
+                ex += px / d * w * reach; ey += py / d * w * reach;
+                need = Math.Max(need, reach - d);
+                soonest = Math.Min(soonest, ticksLeft);
+                lineSoonest = Math.Min(lineSoonest, ticksLeft);
+            }
 
             void Threat(double mx, double my, double r, int ticksLeft)
             {
@@ -197,6 +225,47 @@ namespace Depths.Playtest
                 soonest = Math.Min(soonest, Math.Max(ticksLeft, 1));
             }
         }
+
+        // every body charging or about to charge along a line the bot has watched for its reaction time: its start, its
+        // way, its length, its radius, its speed (px a tick) and the ticks before it moves
+        void Lines(RunState run, int t, Action<double, double, double, double, double, double, double, int> line)
+        {
+            foreach (var e in run.enemies)
+            {
+                bool lunger = e.kind == BodyKind.Lunger && (e.lungeState == "wind" || e.lungeState == "lunge");
+                bool brunch = e.kind == BodyKind.Brunch && (e.rushWind > 0 || e.rushing);
+                if (e.hp <= 0 || !(lunger || brunch)) { _tell.Remove(e); continue; }
+                if (!_tell.TryGetValue(e, out var seen)) _tell[e] = seen = t;
+                if (t - seen < _react) continue;
+                if (lunger)
+                {
+                    // the whole lunge, rounded up to its last full step; mid-lunge the same length from here (never short of
+                    // what is left: an eased lunge starts slow)
+                    bool wind = e.lungeState == "wind";
+                    double len = Math.Ceiling(e.lungeLen / Balance.LungeSpeed) * Balance.LungeSpeed;
+                    line(e.x, e.y, e.lungeDx, e.lungeDy, len, e.r, Balance.LungeSpeed, wind ? e.lungeT : 0);
+                }
+                else if (e.rushing)
+                {
+                    double v = TickOrder.DashSpeed(e);
+                    line(e.x, e.y, e.rushDx, e.rushDy, e.rushT * v, e.r, v, 0);
+                }
+                else
+                {
+                    // the tell points at the player and the dash runs past them: the bot reads it as reaching its hitbox and beyond
+                    var pl = run.player;
+                    double gx = pl.lagX - e.x, gy = pl.lagY + Balance.PlayerHitDy - e.y, g = Hyp(gx, gy);
+                    if (g > 1e-9) line(e.x, e.y, gx / g, gy / g, g + Balance.BrunchDashOver, e.r, TickOrder.DashSpeed(e), e.rushWind);
+                }
+            }
+            if (_tell.Count <= 64) return;
+            _pruneTell.Clear();
+            foreach (var e in _tell.Keys) if (!run.enemies.Contains(e)) _pruneTell.Add(e);
+            foreach (var e in _pruneTell) _tell.Remove(e);
+        }
+
+        /// <summary>The move the bot holds now (its decision, after any dodging), for the tests.</summary>
+        internal (double x, double y) Move => (_mvX, _mvY);
 
         const double MarkMargin = 8, WallGap = 40, CourseS = 0.5;   // px kept from a mark; px from a wall that blocks a run; s of course looked ahead
 

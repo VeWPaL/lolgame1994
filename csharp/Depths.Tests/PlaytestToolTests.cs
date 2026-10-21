@@ -203,6 +203,98 @@ namespace Depths.Tests
             Assert.That(both.dy, Is.EqualTo(-1), "the mark's way out (north) was lost to the sidestep");
         }
 
+        // a Lunger winding up at the player from `from` px east, its line passing `off` px north of the hitbox
+        static Enemy Winding(Player p, double from, double off)
+        {
+            var e = Enemy.Of(BodyKind.Lunger, p.lagX + from, p.lagY + Balance.PlayerHitDy - off);
+            e.lungeState = "wind"; e.lungeT = Balance.LungeWindup; e.lungeDx = -1; e.lungeDy = 0; e.lungeLen = from + 40;
+            return e;
+        }
+
+        static (double x, double y) MarksAt(BotPolicy bot, RunState run, int t)
+        {
+            bool blink = false;
+            return bot.Marks(run, run.CurrentRoom!, t, false, ref blink) ? bot.Move : (double.NaN, double.NaN);
+        }
+
+        [TestCase(6, 1)]     // the line 6px north of the hitbox: off it to the south
+        [TestCase(-6, -1)]   // and 6px south: off it to the north (whichever way the bot happens to circle)
+        public void ALungersLineIsSteppedOffOnceSeenToTheSideTheBotIsOn(double off, int way)
+        {
+            var (run, bot) = Facing(200);
+            run.enemies.Add(Winding(run.player, 150, off));
+            int react = React("average");
+            Assert.That(double.IsNaN(MarksAt(bot, run, 0).x), "stepped off a line it has only just seen");
+            Assert.That(double.IsNaN(MarksAt(bot, run, react - 1).x), "stepped off before its reaction time");
+            var (x, y) = MarksAt(bot, run, react);
+            Assert.That(y * way, Is.GreaterThan(1.5), "did not step off to its own side");
+            Assert.That(Math.Abs(x), Is.LessThan(0.2), "stepped along the line, not off it");
+        }
+
+        [Test]
+        public void OffALineIntoAWallCrossesTheLineInstead()
+        {
+            // the bot against the south wall, a lunge line 6px north of it: south is the wall, sliding would run along the line
+            var (run, bot) = Facing(200);
+            var p = run.player;
+            p.y = p.lagY = run.CurrentRoom!.Bounds.B - 14;
+            run.enemies.Add(Winding(p, 150, 6));
+            MarksAt(bot, run, 0);   // first seen
+            var (x, y) = MarksAt(bot, run, React("average"));
+            Assert.That(double.IsNaN(y), Is.False, "never stepped off the line (NaN compares below every number)");
+            Assert.That(y, Is.LessThan(-1.5), "pressed into the wall or slid along the line instead of crossing it");
+            Assert.That(Math.Abs(x), Is.LessThan(0.2));
+        }
+
+        [Test]
+        public void ADashIsReadFromItsFirstTickBeforeTheBodyHasMoved()
+        {
+            // the tell's standstill: on the tick the dash starts its velocity is still zero
+            var (run, bot) = Facing(200);
+            var p = run.player;
+            var b = Enemy.Of(BodyKind.Brunch, p.lagX - 70, p.lagY + Balance.PlayerHitDy - 4);
+            b.rushing = true; b.rushT = 30; b.rushDx = 1; b.rushDy = 0; b.vx = b.vy = 0;
+            b.runSpeed = Balance.BrunchRun;
+            run.enemies.Add(b);
+            MarksAt(bot, run, 0);
+            Assert.That(MarksAt(bot, run, React("average")).y, Is.GreaterThan(1.5), "blind to a dash whose body has not moved yet");
+        }
+
+        [Test]
+        public void ALineThatMissesIsIgnored()
+        {
+            var (run, bot) = Facing(200);
+            var e = Winding(run.player, 150, 60);   // 60px off the hitbox: clear of it
+            run.enemies.Add(e);
+            MarksAt(bot, run, 0);
+            Assert.That(double.IsNaN(MarksAt(bot, run, React("average")).x), "dodged a line 60px away");
+            e.lungeDx = 1; e.y = run.player.lagY + Balance.PlayerHitDy;   // on the hitbox's row, but charging away from it
+            Assert.That(double.IsNaN(MarksAt(bot, run, React("average") + 1).x), "dodged a lunge going the other way");
+        }
+
+        [Test]
+        public void ABrunchsTellAndItsDashAreSteppedOff()
+        {
+            var (run, bot) = Facing(200);
+            var p = run.player;
+            var b = Enemy.Of(BodyKind.Brunch, p.lagX - 70, p.lagY + Balance.PlayerHitDy - 4);   // west, a hair north
+            b.rushWind = Balance.BrunchRushWind;
+            run.enemies.Add(b);
+            int react = React("average");
+            Assert.That(double.IsNaN(MarksAt(bot, run, 0).x));
+            var tell = MarksAt(bot, run, react);   // the tell points straight at the hitbox: either side is off it
+            Assert.That(Math.Abs(tell.y), Is.GreaterThan(1.5), "stood on a Brunch's tell");
+            Assert.That(Math.Abs(tell.x), Is.LessThan(0.2), "backed along the tell's line instead of leaving it");
+
+            // a fresh tell is a fresh reaction: the dash after it is seen as part of it
+            b.rushWind = 0; b.rushing = true; b.rushT = 40; b.rushDx = 1; b.rushDy = 0; b.runSpeed = Balance.BrunchRun;
+            Assert.That(MarksAt(bot, run, react + 1).y, Is.GreaterThan(1.5), "stood in a Brunch's dash");
+            b.rushing = false; b.rushT = 0;
+            MarksAt(bot, run, react + 2);   // the attack is over: the clock is forgotten
+            b.rushWind = Balance.BrunchRushWind;
+            Assert.That(double.IsNaN(MarksAt(bot, run, react + 3).x), "a new tell was taken as already seen");
+        }
+
         [TestCase(50, -1, true)]     // too close: back off
         [TestCase(200, 0, true)]     // in the band: circle only
         [TestCase(350, 1, true)]     // too far: close in, and fire (under 420)

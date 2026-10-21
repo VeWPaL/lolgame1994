@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush" };
 
         void Check(bool ok, string what)
         {
@@ -63,6 +63,7 @@ namespace Depths.Unity
             else if (_view == "secret") { yield return SecretView(); yield break; }
             else if (_view == "leap") yield return LeapView(false);
             else if (_view == "thud") yield return LeapView(true);
+            else if (_view == "rush") yield return RushView();
             else if (_view == "summary") yield return SummaryView();
             else if (_view == "pause") yield return PauseView();
             else if (_view == "banner") yield return BannerView();
@@ -287,6 +288,22 @@ namespace Depths.Unity
             view.Frozen = true;
             if (landed) Check(b != null && b.dazed, "the Burrower is down, dazed, tumbling");
             else Check(b != null && b.move == "leap", "the Burrower is in the air (" + (b != null ? b.move : "none") + ")");
+            for (int i = 0; i < 10; i++) yield return null;
+        }
+
+        // a Brunch winding up its rush, frozen two thirds in: trembling, its line grown toward the player
+        IEnumerator RushView()
+        {
+            GameView view = null;
+            while (view == null || view.Run == null) { yield return null; view = FindAnyObjectByType<GameView>(); }
+            Enemy w = null;
+            for (int i = 0; i < 600 && w == null; i++)
+            {
+                foreach (var e in view.Run.enemies) if (e.rushWind > 0 && e.rushWind <= Balance.BrunchRushWind / 3) w = e;
+                if (w == null) yield return null;
+            }
+            view.Frozen = true;
+            Check(w != null, "a Brunch is winding up its rush");
             for (int i = 0; i < 10; i++) yield return null;
         }
 

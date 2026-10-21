@@ -300,17 +300,17 @@ namespace Depths
             double mdx = edx, mdy = edy;
             var tgt = e.shieldTarget;
             Pt? anchor = tgt != null && tgt.hp > 0 && pc != null && pc.Count >= Balance.BrunchShieldMin ? GuardAnchor(run, tgt) : null;
+            double reach = Balance.BrunchChaseCommit;
             if (anchor.HasValue)
             {
                 var slot = BrunchArcSlot(anchor.Value.X, anchor.Value.Y, p.x, p.y, pc!.Count, e.packSlot, tgt!.r);
                 if (slot.HasValue) { mdx = slot.Value.X - e.x; mdy = slot.Value.Y - e.y; }
                 // tuned: a player inside the Scatter's reach and nearer than its slot is rushed, not walked past to a
                 // wall across the room. A formed wall stays a wall: its slot is nearer than the player approaching it
-                double toPlayer = Dist(edx, edy), enter = System.Math.Min(Balance.CloseRange, Dist(mdx, mdy));
-                e.rushing = Balance.Tuned && Balance.TuneRush && toPlayer < enter + (e.rushing ? Balance.BrunchRushRelease : 0);
-                if (e.rushing) { anchor = null; mdx = edx; mdy = edy; }
+                reach = System.Math.Min(Balance.CloseRange, Dist(mdx, mdy));
             }
-            else e.rushing = false;
+            if (Balance.Tuned && Balance.TuneRush) { if (Rush(e, p, edx, edy, reach, sm)) return; }
+            else if (e.rushing || e.rushWind > 0) CallOffRush(e);   // the switch turned off mid-attack
             bool reachable = Dist(mdx, mdy) <= Balance.BrunchDeadzone + e.r;
             double tx = reachable ? edx : mdx, ty = reachable ? edy : mdy, td = Dist(tx, ty);
             if (td == 0) td = 1;
@@ -325,6 +325,58 @@ namespace Depths
             if (System.Math.Abs(e.vy) < Balance.BrunchStill) e.vy = 0;
             e.x += e.vx * sm;
             e.y += e.vy * sm;
+        }
+
+        // tuned: a Brunch within `reach` of the player stops and trembles (the tell), dashes along the line it faced as the tell
+        // ended, then skids to a stop; true while it does any of that. A player who backs out of reach calls the tell off
+        static bool Rush(Enemy e, Player p, double edx, double edy, double reach, double sm)
+        {
+            edy += Balance.PlayerHitDy;   // aimed at where contact is tested (tuned: the shells' hitbox), not the hitbox's top
+            double toPlayer = Dist(edx, edy), dash = DashSpeed(e);
+            if (e.rushT > 0)
+            {
+                e.vx = e.rushDx * dash; e.vy = e.rushDy * dash;
+                e.x += e.vx * sm; e.y += e.vy * sm;
+                if (--e.rushT == 0) { e.rushing = false; e.rushRest = Balance.BrunchRushRest; }
+                return true;
+            }
+            if (e.rushRest > 0) { e.rushRest--; Brake(e, sm); return true; }
+            if (e.rushWind == 0)
+            {
+                if (toPlayer >= reach) return false;
+                e.rushWind = Balance.BrunchRushWind;
+                Brake(e, sm);
+                return true;
+            }
+            if (toPlayer >= System.Math.Max(reach * Balance.BrunchTellHold, reach + Balance.BrunchRushRelease)) { e.rushWind = 0; return false; }
+            Brake(e, sm);
+            if (--e.rushWind > 0) return true;
+            double d = toPlayer > 0 ? toPlayer : 1;
+            e.rushDx = edx / d; e.rushDy = edy / d;
+            // long enough to pass where the player will be: walking straight back is caught, a step off the line is not
+            double away = System.Math.Min(System.Math.Max(0, p.vx * e.rushDx + p.vy * e.rushDy), dash * Balance.BrunchRetreatCap);
+            double len = (toPlayer + Balance.BrunchDashOver) / (1 - away / dash);
+            e.rushT = System.Math.Max(1, System.Math.Min(Balance.BrunchDashMax, (int)System.Math.Ceiling(len / dash)));
+            e.rushing = true;
+            return true;
+        }
+
+        /// <summary>A Brunch's dash speed in px a tick: its run x the gain, each pack slot a step slower.</summary>
+        public static double DashSpeed(Enemy e) => e.runSpeed * Balance.BrunchDashGain * (1 - Balance.BrunchDashStagger * (e.packSlot % 4));
+
+        // the tell or dash ends where it is: a fresh tell is needed, after the skid's rest
+        static void CallOffRush(Enemy e)
+        {
+            e.rushWind = 0; e.rushT = 0; e.rushing = false;
+            e.rushRest = Balance.BrunchRushRest;
+        }
+
+        static void Brake(Enemy e, double sm)
+        {
+            e.vx -= e.vx * Balance.BrunchDecel; e.vy -= e.vy * Balance.BrunchDecel;
+            if (System.Math.Abs(e.vx) < Balance.BrunchStill) e.vx = 0;
+            if (System.Math.Abs(e.vy) < Balance.BrunchStill) e.vy = 0;
+            e.x += e.vx * sm; e.y += e.vy * sm;
         }
 
         /// <summary>A shooter or gunner in sight of the player: hold a standoff that shrinks as the room empties (longer while... [h:Tick-13]</summary>
@@ -425,6 +477,7 @@ namespace Depths
                     {
                         e.lungeState = "approach"; e.lungeT = 0; e.lungeLen = 0; e.lungeCd = Balance.LungeCd;
                     }
+                    if (e.rushWind > 0 || e.rushT > 0) CallOffRush(e);   // a stun breaks a Brunch's tell or dash, as it does a lunge
                     if (ranged) FireCommittedShot(run, e, roomPress);   // a finished cast still leaves, stunned or not
                     e.stun--;
                     e.anim = 0;

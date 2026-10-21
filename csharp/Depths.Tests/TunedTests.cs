@@ -197,8 +197,9 @@ namespace Depths.Tests
             var (run, s, pack) = Wall(Balance.RoomLeft + 70, Balance.RoomTop + 170);
             double before = pack.Average(b => D(b.x, b.y, TickOrder.HitboxX, TickOrder.HitboxY));
             Assert.That(before, Is.LessThan(Balance.CloseRange));
-            Step(run, Balance.Sec(0.3));
-            double after = pack.Where(b => b.hp > 0).Average(b => D(b.x, b.y, TickOrder.HitboxX, TickOrder.HitboxY));
+            Step(run, Balance.Sec(0.3) + Balance.BrunchRushWind);   // after its wind-up (ABrunchStopsAndShiversBeforeItRushes)
+            // a Brunch that reached the player spent itself on the contact: it counts as arrived
+            double after = pack.Average(b => b.hp > 0 ? D(b.x, b.y, TickOrder.HitboxX, TickOrder.HitboxY) : 0);
             Assert.That(after, Is.LessThan(before - 15), "they come at the player, not across the room to the shooter");
         }
 
@@ -377,6 +378,129 @@ namespace Depths.Tests
             double hp = b.hp;
             TickOrder.TickBodies(run);
             Assert.That(b.hp, Is.LessThan(hp), "it paid half its health for the hit, as a chasing Brunch does");
+        }
+
+        [Test]
+        public void ABrunchStopsAndShiversBeforeItRushes()
+        {
+            var (run, _, pack) = Wall(Balance.RoomLeft + 70, Balance.RoomTop + 170);
+            var b = pack[0];
+            int t = 0;
+            for (; t < Balance.Sec(1) && b.rushWind == 0 && !b.rushing; t++) Step(run);
+            Assert.That(b.rushWind, Is.EqualTo(Balance.BrunchRushWind), "it rushed with no wind-up");
+            double gap0 = D(b.x, b.y, run.player.x, run.player.y);
+            int wound = 0;
+            while (b.rushWind > 0 && wound < Balance.Sec(1)) { Step(run); wound++; }
+            Assert.That(wound, Is.EqualTo(Balance.BrunchRushWind), "the wind-up is not its full length");
+            Assert.That(b.rushing, "after the wind-up it commits");
+            Assert.That(Math.Sqrt(b.vx * b.vx + b.vy * b.vy), Is.LessThan(Balance.PerSec(60)), "it braked through the tell (the pack still jostles it a little)");
+            Assert.That(D(b.x, b.y, run.player.x, run.player.y), Is.GreaterThan(gap0 - 12), "it closed in during the tell");
+            Step(run, Balance.Sec(0.3));
+            Assert.That(D(b.x, b.y, run.player.x, run.player.y), Is.LessThan(gap0 - 40), "then it rushes");
+        }
+
+        // a lone Brunch hunting the player (no wall to hold), `gap` px east of them
+        static (RunState run, Enemy b) Chaser(double gap, int slot = 0)
+        {
+            var run = Started();
+            Place(run, Balance.MidX - 100, Balance.MidY);
+            var b = Spawn.Body(run, BodyKind.Brunch, run.player.x + gap, run.player.y + Balance.PlayerHitDy);
+            b.noticeTimer = 0; b.alerted = true; b.aggroTimer = int.MaxValue / 2; b.packSlot = slot;
+            run.enemies.Add(b);
+            return (run, b);
+        }
+
+        static void StepUntil(RunState run, Func<bool> done, double maxS = 3)
+        {
+            for (int t = 0; t < Balance.Sec(maxS) && !done(); t++) Step(run);
+        }
+
+        [Test]
+        public void AChasingBrunchWindsUpThenDashesAlongALockedLineThatASidestepBeats()
+        {
+            var (run, b) = Chaser(250);
+            StepUntil(run, () => b.rushWind > 0);
+            Assert.That(b.rushWind, Is.GreaterThan(0), "a chasing Brunch never wound up");
+            Assert.That(D(b.x, b.y, TickOrder.HitboxX, TickOrder.HitboxY), Is.LessThan(Balance.BrunchChaseCommit + 10), "it wound up from too far");
+            StepUntil(run, () => b.rushing);
+            Assert.That(b.rushing, "the wind-up never became a dash");
+            double dx = b.rushDx, dy = b.rushDy, hp = run.player.hp + run.player.regenHeart;
+            Place(run, run.player.x, run.player.y - 70);   // the player steps aside as it leaves
+            StepUntil(run, () => !b.rushing, 1);
+            Assert.That((b.rushDx, b.rushDy), Is.EqualTo((dx, dy)), "the dash turned after the player");
+            Assert.That(run.player.hp + run.player.regenHeart, Is.EqualTo(hp), "a sidestep did not beat the dash");
+            Assert.That(b.rushRest, Is.GreaterThan(0), "no skid after the dash");
+            int rest = b.rushRest;
+            Step(run, rest - 1);
+            Assert.That(b.rushWind, Is.EqualTo(0), "it wound up again before its skid ended");
+        }
+
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AStunBreaksATellOrADashAndTheNextNeedsAFreshTell(bool midDash)
+        {
+            var (run, b) = Chaser(250);
+            StepUntil(run, () => midDash ? b.rushing : b.rushWind > 0);
+            Assert.That(midDash ? b.rushing : b.rushWind > 0, "fixture: the attack never started");
+            b.stun = Balance.HookHold;   // the hook's hold, as Combat gives it
+            Step(run);
+            Assert.That(b.rushing, Is.False, "the dash carried on through a stun");
+            Assert.That(b.rushWind, Is.EqualTo(0), "the tell (and its line) stayed up through a stun");
+            StepUntil(run, () => b.stun <= 0, 2);
+            Step(run);
+            Assert.That(b.rushing, Is.False, "it resumed a stale dash after the stun");
+        }
+
+        [Test]
+        public void WalkingStraightBackFromABrunchDoesNotEscapeIt()
+        {
+            // the owner's report: backing away cancelled the tell and outran the dash, every time
+            var run = Started();
+            Place(run, Balance.RoomLeft + 150, Balance.MidY);
+            var b = Spawn.Body(run, BodyKind.Brunch, run.player.x - 100, run.player.y + Balance.PlayerHitDy);
+            b.noticeTimer = 0; b.alerted = true; b.aggroTimer = int.MaxValue / 2;
+            b.curSpeed = b.runSpeed; b.pursuit = 1e6;   // already hunting at its run, as a pack that has chased a while
+            run.enemies.Add(b);
+            double hp = run.player.hp + run.player.regenHeart;
+            bool told = false;
+            for (int t = 0; t < Balance.Sec(1.8) && run.player.hp + run.player.regenHeart == hp; t++)
+            {
+                TickOrder.TickPlayer(run, new Input(1, 0));   // straight away from it, at a run
+                TickOrder.TickProjectiles(run);
+                TickOrder.TickBodies(run);
+                told |= b.rushWind > 0;
+            }
+            Assert.That(told, "it never gave its tell");
+            Assert.That(run.player.hp + run.player.regenHeart, Is.LessThan(hp), "a straight retreat outran the dash");
+        }
+
+        [Test]
+        public void APacksDashesAreStaggeredBySlot()
+        {
+            double Speed(int slot)
+            {
+                var (run, b) = Chaser(150, slot);
+                StepUntil(run, () => b.rushing);
+                Step(run);
+                return Math.Sqrt(b.vx * b.vx + b.vy * b.vy);
+            }
+            double s0 = Speed(0), s1 = Speed(1), s3 = Speed(3);
+            Assert.That(s1, Is.EqualTo(s0 * (1 - Balance.BrunchDashStagger)).Within(1e-9));
+            Assert.That(s3, Is.EqualTo(s0 * (1 - 3 * Balance.BrunchDashStagger)).Within(1e-9));
+            Assert.That(Speed(4), Is.EqualTo(s0).Within(1e-9), "the stagger repeats every four slots");
+        }
+
+        [Test]
+        public void BackingOutOfReachCallsTheRushOff()
+        {
+            var (run, _, pack) = Wall(Balance.RoomLeft + 70, Balance.RoomTop + 170);
+            var b = pack[0];
+            for (int t = 0; t < Balance.Sec(1) && b.rushWind == 0; t++) Step(run);
+            Assert.That(b.rushWind, Is.GreaterThan(0), "fixture: it never wound up");
+            Place(run, Balance.RoomRight - 60, Balance.RoomBottom - 60);   // gone across the room mid-tell
+            Step(run, Balance.BrunchRushWind + 2);
+            Assert.That(b.rushing, Is.False, "it rushed a player who had left its reach");
+            Assert.That(b.rushWind, Is.EqualTo(0));
         }
 
         [Test]

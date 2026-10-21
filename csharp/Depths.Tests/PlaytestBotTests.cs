@@ -545,7 +545,7 @@ namespace Depths.Tests
         [Test]
         public void EachFloorIsClosedOnTheDescentAndItsHpBalances()
         {
-            var run = new Runner(1, "skilled", 7);
+            var run = new Runner(1, "novice", 7);   // it must lose the regen heart in a fight it wins: the better bots, dodging lunges, do not here
             var r = run.Play();
             Assert.That(r.floors.Count, Is.GreaterThanOrEqualTo(3), "fixture: two floors left in 7 minutes");
             Assert.That(r.floors.Skip(1).Any(f => f.dmg > 0), Is.True, "fixture: no damage after floor 1");
@@ -574,7 +574,8 @@ namespace Depths.Tests
             // the heart's total is its clock plus its refill for winning a fight, each booked under its own name
             double clear = r.healBy.TryGetValue("clear", out var c) ? c : 0;
             Assert.That(clear, Is.GreaterThan(0), "fixture: seven minutes of won fights and no refill");
-            Assert.That(r.healBy["regen"] + clear, Is.EqualTo(r.regenHealed));
+            double clock = r.healBy.TryGetValue("regen", out var g) ? g : 0;   // a heart only ever refilled by won fights books no clock
+            Assert.That(clock + clear, Is.EqualTo(r.regenHealed));
             Assert.That(clear, Is.EqualTo(r.clearHealed));
             Assert.That(r.floors.Sum(f => f.clear), Is.EqualTo(r.clearHealed));
             Assert.That(r.weapon, Is.EqualTo(Weapons.All[run.Run.player.weaponIdx].Name).And.Not.Empty);

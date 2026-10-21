@@ -3,7 +3,8 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-14, night (a typed frame cap; the bot dodges landing marks, with the numbers and the
+_Last updated: 2026-10-21 (the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
+for floors 5-12: see "Bot reads lines; middle lift"; before that, the Brunch's tell and locked dash; before that, a typed frame cap; the bot dodges landing marks, with the numbers and the
 recommended next steps under "Bot reads marks"; before that, the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
 notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
 faster eggs, momentum in the blink's blue; before that, notes batch 3 and the sweep: the Burrower steers, `Aim.Intercept`, the HUD headings
@@ -18,7 +19,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  672/672, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  685/685, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -78,7 +79,7 @@ it from another checkout or the first command spends minutes importing.
   touches `unity/` or `Depths.Core`.
 - `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 95/95. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
   checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap, `thud` just after it lands)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -101,6 +102,28 @@ it from another checkout or the first command spends minutes importing.
 
 ## Owner decisions
 
+- **Bot reads lines; middle lift (owner 2026-10-21).**
+  - Brunch: the owner found walking straight back dodged it forever (the tell cancelled at reach + 24 px and the
+    dash could not catch a retreat). Now the tell holds to 2x reach and the dash plans for the player's retreat
+    (DESIGN.md); `WalkingStraightBackFromABrunchDoesNotEscapeIt`. Old bot, v1 -> v2: Brunch 14% -> 16% of damage.
+  - The bot steps off a Lunger's or a Brunch's line after its reaction time (`BotPolicy.Lines`); a critic pass fixed
+    a blind first dash tick, an under-read eased lunge, a wall slide along the line, stale clocks across rooms, and
+    the dash aiming 10 px off the contact point (a game fix). Same Brunch: deaths 64 -> 50, Lunger 24% -> 14%.
+  - Middle lift (DESIGN.md, "Middle lift"), tuned in 4 bot rounds against a rubric frozen first (scratch
+    `rubric.py`; baseline is the same build with `--untune depth`, b9-base -> b9-lift4): damage a floor
+    10.0 / 11.6 / 14.3 / 19.6 -> 10.0 / 13.5 / 18.8 / 20.0 by area (Kiln 1.35x Shallows, Flooded 1.39x Kiln), deaths
+    46 -> 58, novice 41 -> 50 and moved into the middle (Kiln 9, Flooded 12), floor time +3% / +8%. Missed: average
+    and skilled still lose only 3 of 200 runs on 5-12, because healing matches damage on every floor (the regen
+    heart and its refill give a floor's losses back). The owner chose harder rooms, not less healing: spike rooms
+    in 5-12 come next.
+- **Brunch tell (owner 2026-10-14, late night).** Every Brunch's close attack is now a tell, a locked dash and a
+  skid (DESIGN.md, Brunch), chasers and guards alike; the owner chose the chase tell and a per-slot speed stagger. A
+  rush off entirely (`--untune rush`, b7-norush) had shown the guard's rush was only ~2 of the Brunch's 24% damage
+  share: the chase was the killer. Bot A/B against 8f9b30b (b6-dodge -> b7-dash, seeds 101-200 x 3, 60 min): Brunch
+  24% -> 14% of damage, deaths 70 -> 60 (33 saved, 23 lost, p 0.23: not yet significant). The bot still reads no
+  tell; that is the next task (lunges and rushes). The Lunger is now the top damage (24%). A stun or the hook's hold
+  calls a tell or dash off (a fresh tell after the skid). For a playtest look: the Warden's woken statues that guard
+  nothing take the 90 px chase reach, so they wind up and dash as they wake.
 - **Bot reads marks; custom frame cap (owner 2026-10-14, night).**
   - Options > Gameplay > Frame rate has **Custom**: a typed cap, 20-500 fps (`DisplaySettings.Custom`, saved;
     junk keeps the old cap). `shot customfps` shows the field.

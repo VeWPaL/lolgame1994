@@ -183,7 +183,7 @@ namespace Depths.Tests
             ["Weapons.MuzzleTicks"] = U.Sec, ["Bodies.BrunchWalk"] = U.PerSec, ["Bodies.BrunchRun"] = U.PerSec,
             ["RunState.FadeDescend"] = U.Sec,
             // C# only: the playtest tuning (Balance.Tuned) and the middle enemies (Middle.cs)
-            ["Balance.BrunchGuardSpeed"] = U.PerSec, ["Balance.BrunchGuardArrive"] = U.Sec, ["Balance.LungerDodgeCd"] = U.Sec,
+            ["Balance.BrunchGuardSpeed"] = U.PerSec, ["Balance.BrunchGuardArrive"] = U.Sec, ["Balance.BrunchRushWind"] = U.Sec, ["Balance.BrunchDashMax"] = U.Sec, ["Balance.BrunchRushRest"] = U.Sec, ["Balance.LungerDodgeCd"] = U.Sec,
             ["Balance.LungerDodgeReact"] = U.Sec, ["Balance.LungerDodgeHorizon"] = U.Sec, ["Balance.LungerStartle"] = U.Sec,
             ["Middle.SplitShardSpeed"] = U.PerSec, ["Middle.LobFlight"] = U.Sec, ["Middle.SprayWind"] = U.Sec, ["Middle.EggWind"] = U.Sec,
             ["Middle.BurrowWalk"] = U.PerSec, ["Middle.BurrowRun"] = U.PerSec, ["Middle.BurrowSurface"] = U.Sec, ["Middle.BurrowDig"] = U.Sec,

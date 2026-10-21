@@ -149,6 +149,9 @@ namespace Depths
         public int lifeT;              // ticks this body has been stepped (the room's ready freeze does not count)
         public bool startleSpent;      // a Lunger's once-a-life startled dodge is used (Balance.Tuned)
         public bool rushing;           // a guarding Brunch rushing the player instead of holding its slot (Balance.Tuned)
+        public int rushWind;           // ticks left of a Brunch's wind-up before its dash; 0 when not winding
+        public int rushT, rushRest;    // ticks left of the dash, then of the skid after it
+        public double rushDx, rushDy;  // the dash's direction, locked as the wind-up ends
         public bool buried;            // a Burrower underground: no shell, blast, field, contact or shove reaches it
         public double markX, markY;    // where it will surface
         public double heading;         // a Burrower's travel direction (Middle.Steer)

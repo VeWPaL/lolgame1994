@@ -51,6 +51,10 @@ disagree. Long code comments live in `docs/history/csharp/<File>.md` under `[h:F
   area. The next area's newcomers appear 2 floors early at weight 0.12, then 0.25 (a group kind is 1). A Gunner or a
   Brunch pack only where the floor's groups hold one; at most 2 eggs a room; no shooter on the doorstep. The dev line
   (F10) shows the run's groups.
+- **Middle lift** (`TuneDepth`, `Balance.DepthLift`): health already climbs exponentially with depth (`DepthTough`),
+  which left floors 5-12 flat and the Deep a cliff. The lift is 0 through floor 4, rises evenly to 1 at floor 8, holds
+  to 12, then 0.5 below (the Deep climbs on health). It adds pace (x1.25 at full, under the 1.34 fairness cap), 0.8
+  bodies and +0.15 Brunch-pack chance, never health, so the middle gets denser rather than longer.
 
 ## 4. Enemies
 
@@ -59,8 +63,14 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
 - **Lunger**: approaches, winds up (the line shows), lunges (an eased dash, same reach and timing as the JS). Dodges
   a bolt it sees coming (0.12-0.6 s out, 1.4 s cooldown, never inside close range or out of its own lunge); once a
   life it dodges on spawn ("startle").
-- **Brunch** (packs): walls a shooter or gunner (slots, eased in at up to 320 px/s), rushes a player inside close
-  range and nearer than its slot, spends half its health on contact. Takes 0.45x Beam damage.
+- **Brunch** (packs): walls a shooter or gunner (slots, eased in at up to 320 px/s). Its close attack (`TuneRush`,
+  `TickOrder.Rush`): within reach (a chaser: 90 px; a guard: close range and nearer than its slot) it stops and
+  trembles 0.25 s with an orange dashed line at the player (the Lunger's line), then dashes along the line it faced
+  as the tell ended, aimed at the contact point (1.4x its run; long enough to pass 60 px beyond where a retreating
+  player will be, planned for a retreat of up to 75% of its speed; at most 0.8 s; each pack slot 7% slower, so a pack
+  lands in a ripple), then skids 0.35 s. The tell holds until the player is twice its reach away. Walking straight
+  back is caught; stepping off the line is not. Spends half its health on each tick of contact (two kill it).
+  Takes 0.45x Beam damage.
 - **Shooter / Gunner**: hold a standoff band (a trait moves it), glide into and out of their walk, cast then fire at
   an intercept (`Aim.Intercept` when tuned: step-and-bisect, safe when the player outruns the shell). Gunner roots
   while casting and sidesteps bolts. Ranged bodies never shoot through their own (`ClearShot`).
@@ -98,10 +108,11 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
 - Gate: `.\verify.ps1 -Unity` (hygiene incl. the comment rule, JS suite, C# suite + count, parity and constant audits,
   Unity tests, build, player shots). C#: `dotnet test csharp/Depths.sln`.
 - Unity: `bash tools/unity.sh test|build|shot <view>|publish`. Views worth knowing: game (tick-rate check), hearts,
-  secret, rail (DEPTHS_SEED=n picks a track), leap, thud, lab, labrow, gameplay.
+  secret, rail (DEPTHS_SEED=n picks a track), leap, thud, rush, lab, labrow, gameplay.
 - The owner plays `Documents\Depths-playtest` (`tools/unity.sh publish`); snapshots via `tools/snapshot.sh DDMMYY.V.S`.
 - Bot: `dotnet run --project csharp/Depths.Playtest -c Release -- play --label X --minutes 60 --seeds 101,...` then
   `report A B`. Bot dodging is a rough stand-in for a player: it sidesteps shells and, after its reaction time,
-  runs out of Mortar and Burrower landing marks (blinking when it cannot clear one on foot); it does NOT read a
-  Lunger's wind-up or a Brunch rush, so contact damage is overstated. Confirm feel with the owner.
+  runs out of Mortar and Burrower landing marks and steps off a Lunger's or a Brunch's line (crossing it rather than
+  sliding along a wall; blinking when it cannot clear on foot). Its aim (87%) is better than a person's. Confirm feel
+  with the owner.
 - `python tools/move-comments.py` moves any comment block of 3+ lines out of C# (the gate fails otherwise).

@@ -218,6 +218,7 @@ namespace Depths
     public static double MomAccel => Tuned && TuneMomentum ? 1.0 : MomentumAccel;    // acceleration bonus at a full meter
     /// <summary>Each run rolls which kinds each area brings, the middle five among them (Pools.cs; owner 2026-10-13).</summary>
     public static bool TunePools = true;
+    public static bool TuneDepth = true;   // the middle lift: floors 5-12 climb toward the Deep instead of idling (DepthLift)
     /// <summary>The middle five's retune of 2026-10-13 (Middle.Sharp): aim, split, lead, chase, cone, ally-safe volleys.</summary>
     public static bool TuneMiddle = true;
     /// <summary>Every ranged body aims with Aim.Intercept (owner 2026-10-14: shots "completely away" from a straight walker).</summary>
@@ -235,6 +236,15 @@ namespace Depths
     public static int LungerDodgeHorizon => Sec(0.6);         // a shot arriving later than this is not a threat yet
     public static int LungerStartle => Sec(1.5);              // new to the room this long: its first dodge ignores range and reaction
     public const double BrunchRushRelease = 24;               // px of hysteresis, so a Brunch on the line does not flip every tick
+    public static int BrunchRushWind => Sec(0.25);            // a Brunch brakes and shivers this long before a dash: the tell
+    public const double BrunchChaseCommit = 90;               // px: a chasing Brunch (no wall to hold) winds up this close
+    public const double BrunchDashGain = 1.4;                 // the dash is its run speed x this, in a line locked as the tell ends
+    public const double BrunchDashOver = 60;                  // px it carries on past where the player will be
+    public const double BrunchRetreatCap = 0.75;              // a retreat along the line is planned for up to this share of the dash speed
+    public const double BrunchTellHold = 2;                   // the tell holds until the player is this x its reach away
+    public const double BrunchDashStagger = 0.07;             // each pack slot dashes this much slower (slot % 4): a pack lands in a ripple
+    public static int BrunchDashMax => Sec(0.8);              // the longest a dash runs
+    public static int BrunchRushRest => Sec(0.35);            // after a dash it skids to a stop and cannot wind up again
     public const double RoomDropChance = 0.75;                // the last kill of a fought room; nothing before it
     public const double BrunchBeamTaken = 0.45;               // Brunch take this x an Arcane Beam bolt: 2-3 bolts, not 1
     // TuneEase: each dash is a speed curve, up over the first share of it and down over the last (smoothstep ramps)
@@ -534,16 +544,23 @@ namespace Depths
         public static double Ramp(int steps, double growth, double rate) =>
             1 + growth * (System.Math.Exp(rate * steps) - 1);
 
+        // the middle lift (TuneDepth): 0 through floor 4, rising evenly to 1 at floor 10, then LiftDeep below 12 (the Deep
+        // climbs on health already). Pace, bodies and Brunch packs, never health: the middle gets denser, not longer
+        public const double LiftRate = 0.25, LiftBodies = 0.8, LiftPack = 0.15, LiftDeep = 0.5;
+        public const int LiftFull = 8;
+        public static double DepthLift(int floor) =>
+            !(Tuned && TuneDepth) ? 0 : floor > 12 ? LiftDeep : System.Math.Max(0, System.Math.Min(1, (floor - 4) / (double)(LiftFull - 4)));
+
         // All four dials carry the floor's Curve shape (identity when Curve.On is false); the rate cap binds after it.
         public static double DepthTough(int floor) => Ramp(DepthSteps(floor), DepthGrowth, DepthPow) * Curve.At(floor).Tough;
         public static double DepthRate(int floor) =>
-            System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55) * Curve.At(floor).Rate);
+            System.Math.Min(DepthRateCap, Ramp(DepthSteps(floor), DepthGrowth, DepthPow * 0.55) * Curve.At(floor).Rate * (1 + LiftRate * DepthLift(floor)));
 
         /// <summary>Density is its own exponent rather than the health one, because it is a different kind of lever: health makes... [h:Balance-75]</summary>
         public static double DepthBodies(int floor, int rolled) =>
-            System.Math.Min(DepthBodyCap, rolled + DepthBodyPow * (System.Math.Exp(DepthPow * 1.7 * DepthSteps(floor)) - 1) + Curve.At(floor).Bodies);
+            System.Math.Min(DepthBodyCap, rolled + DepthBodyPow * (System.Math.Exp(DepthPow * 1.7 * DepthSteps(floor)) - 1) + Curve.At(floor).Bodies + LiftBodies * DepthLift(floor));
 
         public static double DepthPack(int floor, double brunchChance) =>
-            System.Math.Max(0, System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor) + Curve.At(floor).Pack));
+            System.Math.Max(0, System.Math.Min(DepthPackCap, brunchChance + DepthPackStep * DepthSteps(floor) + Curve.At(floor).Pack + LiftPack * DepthLift(floor)));
     }
 }
