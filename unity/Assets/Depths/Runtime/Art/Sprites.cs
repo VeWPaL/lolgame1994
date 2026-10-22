@@ -270,6 +270,7 @@ namespace Depths.Unity.Art
             ["lucky_coin"] = ("#e0c07a", "LC"), ["steady_hand"] = ("#b8c4d4", "SH"), ["weighted_grip"] = ("#8fa6c4", "WG"),
             ["hunters_mark"] = ("#c79bff", "HM"), ["glass_wands"] = ("#9fe8ff", "GW"), ["brass_compass"] = ("#d6a44a", "BC"),
             ["lantern_friend"] = ("#f0c86a", "LF"),
+            ["hush_bell"] = ("#d9b44a", "HB"), ["time_glass"] = ("#9fd8ff", "TG"), ["ricochet_shells"] = ("#b8c4d4", "RS"), ["ember_rounds"] = ("#ff8a4a", "ER"), ["chain_spark"] = ("#c79bff", "CS"), ["glass_heart"] = ("#ff9fbf", "GH"), ["phoenix_feather"] = ("#ff7a3a", "PF"),
         };
 
         /// <summary>An item the table does not know still gets a tile: the plate's wood and its first two letters.</summary>

@@ -86,12 +86,20 @@ namespace Depths
             trans = null; readyT = 0; bossWarnT = 0; bossWarned = false;
             roomFade = 1; fadeTicks = Balance.FadeStart; fadeT = fadeTicks;
             state = "playing";
-            finalFloor = false;
+            finalFloor = false; timeSlowT = 0; phoenixSpent = false;
             Spikes.Mark(this);
         }
 
         /// <summary>This floor is the last (decided as it was built): its boss's death wins the run.</summary>
         public bool finalFloor;
+
+        /// <summary>Time Glass: ticks of slow time left; the bodies run on a share of the ticks (slowAcc), and
+        /// slowSkip says this tick was not theirs (the mortar's shells wait with them).</summary>
+        public int timeSlowT;
+        public double slowAcc;
+        public bool slowSkip;
+        /// <summary>Phoenix Feather has burned (once a run).</summary>
+        public bool phoenixSpent;
 
         /// <summary>The bodies in the room being fought, and the pickups on its floor. [h:RunState-4]</summary>
         public readonly List<Enemy> enemies = new List<Enemy>();

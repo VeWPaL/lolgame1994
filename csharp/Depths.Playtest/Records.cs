@@ -32,7 +32,7 @@ namespace Depths.Playtest
             new SortedDictionary<string, double>(StringComparer.Ordinal);
         public double healed, regenHealed, clearHealed;   // regenHealed includes clearHealed
         public SortedDictionary<string, double> healBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
-        public int hits, shots, kills, blinks, dodgeBlinks, secrets;
+        public int hits, shots, kills, blinks, dodgeBlinks, secrets, activesWorked;
         public int qPresses, actives;   // Q pressed when low; actives: presses that raised HP (the JS rule)
         public int maskedHits;          // ticks where a same-layer heal hid (part of) a hit from the HP deltas
         public double maskedHp;

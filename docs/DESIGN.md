@@ -37,7 +37,13 @@ disagree. Long code comments live in `docs/history/csharp/<File>.md` under `[h:F
 - **Guns** (1-4): Bolt (0.63 s, falls off with range), Scatter (1.1 s, 8 pellets, full damage inside 180 px - the
   game's "close range"), Arcane Beam (0.087 s stream), Voidball (0.4 s). **Right click**: the Blast (100 px AoE,
   3.6 s) or, once found in the secret room, the Hook (pulls and holds a field; a fresh click detonates it early).
-- **Q**: the active item (placeholders until the item overhaul).
+- **Q**: the active item. **Items** (`TuneItems`, design and roster in `docs/items.md`): the overhaul's roster is
+  played when tuned (the JS's stays for parity). Actives recharge by won fights (pips on the Q slot): Hush Bell
+  (clears hostile shells within 220 px, throws bodies back; 2 fights), Time Glass (2.5 s: every hostile body runs on 35% of the
+  ticks, timers and wind-ups included, and their shells fly at 35%; it ends with the room; 3), Tin Cup (a heart; 3), Hunter's Mark (2). Passives: Ricochet Shells
+  (a shot bounces once off a wall), Ember Rounds (a hit burns a point a second for 3 s), Chain Spark (half a hit
+  jumps to the nearest other body within 140 px), Glass Heart (cursed: x1.25 shot damage, half a heart less),
+  Phoenix Feather (the first death of the run leaves 2 hearts, then it burns), Brass Compass.
 
 ## 3. Rooms, floors, loot
 

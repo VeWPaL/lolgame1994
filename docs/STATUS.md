@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  703/703, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  717/717, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -103,6 +103,21 @@ it from another checkout or the first command spends minutes importing.
 
 ## Owner decisions
 
+- **Items: the overhaul, first 8 (owner 2026-10-22: design all, build 8).** `docs/items.md` (24 designed; Hush
+  Bell, Time Glass, Tin Cup, Ricochet Shells, Ember Rounds, Chain Spark, Glass Heart, Phoenix Feather built, plus
+  Hunter's Mark and Brass Compass kept). Bot rules per active (`BotPolicy.WantsActive`); the report adds "did
+  something" rows. Bot, same build with `--untune items` (b12-noitems -> b12-items, 90 min, after the critic's
+  fixes): deaths 66 -> 55 (novice 54 -> 51), floor time 3.8 -> 3.6 min, runs pressing Q where it did something
+  49% -> 100% (target: half). A cold critic found Ember Rounds never burning a body kept under fire (each hit
+  restarted its clock), Time Glass slowing steps but not timers (now the bodies run on 35% of the ticks, and it
+  ends with the room), ricochets regaining their strength flying back (the fall-off now reads the path flown),
+  Phoenix's rise booked as phantom pickups, and Hush Bell able to draw from the run stream; all fixed, each with a
+  test checked against its mutant. Per-item check by knockout (the same build with one
+  item out): Glass Heart at x1.5 for a whole heart raised deaths 60 -> 76 (p 0.048); at x1.5 for half a heart cut
+  them 60 -> 42; settled at x1.25 for half a heart: 60 -> 49 (p 0.15), the edge of the 15% target. A Tin Cup bot
+  rule pressed Q uselessly every decision (it counted the regen heart, which the cup cannot fill); fixed with a
+  test. The overhaul makes the run easier for the novice bot; the final boss (unit 4) is where the challenge
+  belongs.
 - **The run's end (owner 2026-10-22: 3 areas of 4 floors, then floor 13 and the final boss on 14; antechamber plus
   arena).** DESIGN.md, "Rooms, floors, loot". The ledger's last band is two rungs, 13 and 14; the account sheet
   adds "Escapes" (wins, quickest) with NEW; the bot report adds wins and the median minutes to a win

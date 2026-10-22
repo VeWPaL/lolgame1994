@@ -152,6 +152,7 @@ namespace Depths
         public int rushWind;           // ticks left of a Brunch's wind-up before its dash; 0 when not winding
         public int rushT, rushRest;    // ticks left of the dash, then of the skid after it
         public bool elite;             // a spike room's elite (Spikes.MakeElite): more health, quicker, drops armour
+        public int burnT, burnTick;    // Ember Rounds: ticks it still burns, and to its next point (its own phase)
         public double rushDx, rushDy;  // the dash's direction, locked as the wind-up ends
         public bool buried;            // a Burrower underground: no shell, blast, field, contact or shove reaches it
         public double markX, markY;    // where it will surface
@@ -216,6 +217,7 @@ namespace Depths
 
         /// <summary>Remaining pierce charges; decremented on each body hit.</summary>
         public int pierce;
+        public int bounce;             // Ricochet Shells: walls it may still bounce off
 
         /// <summary>Damage multiplier, multiplied down by PIERCE_FALLOFF on each body. [h:Actors-19]</summary>
         public double scale = 1;   // every bolt the game fires carries scale 1; 0 would silently do no damage

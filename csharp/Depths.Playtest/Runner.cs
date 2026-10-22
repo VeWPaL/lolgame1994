@@ -25,6 +25,7 @@ namespace Depths.Playtest
         readonly List<string> _redGone = new List<string>(), _armGone = new List<string>();
         Exception? _recordingError;
         double _hp0, _ar0, _rg0, _taken0;
+        bool _phoenix0;
         int _rgT0, _live0, _floor0, _cx0, _cy0;
         bool _cleared0;
 
@@ -143,7 +144,7 @@ namespace Depths.Playtest
             var p = Run.player;
             double hp = p.hp, armor = p.armor;
             Result.qPresses++;
-            Items.UseActive(Run);
+            if (Items.UseActive(Run)) Result.activesWorked++;
             double gain = Math.Max(0, p.hp - hp) + Math.Max(0, p.armor - armor);
             if (gain > 0) { Result.actives++; Heal("active", gain); }
         }
@@ -152,7 +153,7 @@ namespace Depths.Playtest
         void Step(Input input)
         {
             var p = Run.player;
-            _hp0 = p.hp; _ar0 = p.armor; _rg0 = p.regenHeart; _rgT0 = p.regenHeartT; _taken0 = Run.dmgTaken;
+            _hp0 = p.hp; _ar0 = p.armor; _rg0 = p.regenHeart; _rgT0 = p.regenHeartT; _taken0 = Run.dmgTaken; _phoenix0 = Run.phoenixSpent;
             _live0 = Run.enemies.Count; _floor0 = Run.floor; _cx0 = Run.curX; _cy0 = Run.curY;
             _cleared0 = Run.CurrentRoom?.Cleared ?? true;
             _pk0.Clear(); _pk0.AddRange(Run.pickups);
@@ -230,7 +231,8 @@ namespace Depths.Playtest
                 _f.dmg += dmg;
             }
             if (dRg > 0) Regen(dRg);
-            if (dHp > 0) HealLayer(dHp, _redGone, "heart", "halfheart", p.hp >= p.maxHp, "red");
+            if (dHp > 0 && Run.phoenixSpent && !_phoenix0) Heal("phoenix", dHp);   // the feather's rise, not a pickup
+            else if (dHp > 0) HealLayer(dHp, _redGone, "heart", "halfheart", p.hp >= p.maxHp, "red");
             if (dAr > 0) HealLayer(dAr, _armGone, "armor", "halfarmor", p.armor >= Balance.MaxArmor, "armour");
         }
 

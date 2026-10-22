@@ -64,6 +64,7 @@ namespace Depths
                     x = sx, y = sy, vx = c * spd, vy = s * spd, r = w.R, dmg = dmg, friendly = true, color = w.Color,
                     ox = sx, oy = sy, fNear = w.FNear, fFar = w.FFar, fMin = w.FMin,
                     pierce = w.Pierce, scale = 1, dx = c, dy = s, gun = p.weaponIdx,
+                    bounce = Items.Has(run, "ricochet_shells") ? 1 : 0,
                 });
             }
             run.shots += w.Count;

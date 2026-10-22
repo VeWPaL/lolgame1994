@@ -635,8 +635,19 @@ namespace Depths.Unity.Hud
                     var pic = _icon4.TryGetValue(held.Id, out var ir) ? ir : _item26.TryGetValue(held.Id, out var tr) ? tr : _item26["?"];
                     if (_icon4.ContainsKey(held.Id)) Spr(pic, Mathf.Round(s.center.x - pic.W / 2f), Mathf.Round(s.center.y - pic.H / 2f), QuadBatch.Alpha(1));
                     else _q.Sprite(T, pic, s.x + 7, s.y + 7, s.width - 14, s.height - 14, QuadBatch.Alpha(1));   // a lettered tile at 2x
-                    int charges = held.Charges ?? 0;
-                    if (held.Charges != int.MaxValue)
+                    int charges = held.Charges ?? 0, recharge = Items.Def(held.Id).Recharge;
+                    if (recharge > 0)
+                    {
+                        // a recharging active: a pip a won fight, inked as they fill
+                        var ink = _itemInk.TryGetValue(held.Id, out var pc) ? pc : Cream;
+                        for (int k = 0; k < recharge; k++)
+                        {
+                            float px = s.xMax - 9 - (recharge - k) * 10, py = s.yMax - 17;
+                            Rect(px - 1, py - 1, 9, 9, Hex.Rgba(8, 4, 2, 0.80f));
+                            Rect(px, py, 7, 7, k < charges ? ink : Spent);
+                        }
+                    }
+                    else if (held.Charges != int.MaxValue)
                     {
                         int n = Num(charges, "x");
                         float bw = LedgerType.Width(n, 2) + 6;
@@ -644,7 +655,7 @@ namespace Depths.Unity.Hud
                         Digits(n, s.xMax - 4 - bw, s.yMax - 7 - 16, 2, charges > 0 ? (_itemInk.TryGetValue(held.Id, out var ic) ? ic : Cream) : Spent);
                     }
                     PlateText(Items.Def(held.Id).Name, pl, (int)(capX - pl.x - 14));
-                    Art(_qCap, capX, capY, 1, charges > 0 ? 1 : 0.45f);
+                    Art(_qCap, capX, capY, 1, Items.Ready(run) ? 1 : 0.45f);
                 }
 
                 // the passive items, as their pictures in a row

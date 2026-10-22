@@ -121,7 +121,8 @@ namespace Depths.Playtest
                 int crowd = 0;
                 foreach (var e in run.enemies) if (e.hp > 0 && Hyp(e.x - pl.x, e.y - pl.y) < 150) crowd++;
                 if (crowd >= 3 && _rnd.Next() < _p.Blast) alt = true;
-                if (pl.hp + pl.regenHeart <= _p.Heal && _rnd.Next() < 0.5) useActive = true;   // JS hp: every heart
+                if (Balance.Tuned && Balance.TuneItems) useActive = WantsActive(run);   // the overhaul's actives, by their rules
+                else if (pl.hp + pl.regenHeart <= _p.Heal && _rnd.Next() < 0.5) useActive = true;   // JS hp: every heart
             }
 
             // dodging: only a shot the bot has had time to react to, heading for it
@@ -268,6 +269,38 @@ namespace Depths.Playtest
         internal (double x, double y) Move => (_mvX, _mvY);
 
         const double MarkMargin = 8, WallGap = 40, CourseS = 0.5;   // px kept from a mark; px from a wall that blocks a run; s of course looked ahead
+
+        /// <summary>The overhaul's actives, each by its plain rule (docs/items.md), and only when charged.</summary>
+        internal static bool WantsActive(RunState run)
+        {
+            if (!Items.Ready(run)) return false;
+            var pl = run.player;
+            int near(double reach)
+            {
+                int n = 0;
+                foreach (var e in run.enemies) if (e.hp > 0 && !e.buried && Hyp(e.x - pl.x, e.y - pl.y) < reach) n++;
+                return n;
+            }
+            switch (Items.ActiveItem(run)!.Id)
+            {
+                case "tin_cup": return pl.maxHp - pl.hp >= Balance.HeartHeal;   // it heals red hearts only
+                case "hush_bell":
+                {
+                    int close = 0;
+                    foreach (var s in run.projectiles)
+                    {
+                        if (s.friendly || s.lob) continue;
+                        double d = Hyp(s.x - pl.x, s.y - pl.y);
+                        if (d < 40) return true;
+                        if (d < 150) close++;
+                    }
+                    return close >= 3;
+                }
+                case "time_glass": return near(250) >= 4 || (near(double.PositiveInfinity) > 0 && pl.hp + pl.regenHeart <= (pl.maxHp + pl.regenHeartMax) / 2);
+                case "hunters_mark": return near(double.PositiveInfinity) >= 3;
+                default: return false;
+            }
+        }
 
         void Prune(List<Projectile> ps)
         {

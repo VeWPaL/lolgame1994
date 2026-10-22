@@ -447,6 +447,15 @@ namespace Depths
         {
             AssemblePacks(run);
             var list = run.enemies;
+            run.slowSkip = false;
+            if (run.timeSlowT > 0)
+            {
+                // Time Glass: the bodies run on a share of the ticks: their steps, timers, wind-ups and contact alike
+                run.timeSlowT--;
+                run.slowAcc += Items.TimeSlow;
+                if (run.slowAcc < 1) { run.slowSkip = true; return; }
+                run.slowAcc -= 1;
+            }
             Snapshot.Clear();
             Snapshot.AddRange(list);   // iterate a snapshot, as the game does (r.enemies.slice()), without a per-tick allocation
             int aggro = Balance.AggroRange(Balance.Room.Standard);
@@ -471,6 +480,16 @@ namespace Depths
                 if (e.slowT < 0) e.slowT = 0;
                 if (e.stun < 0) e.stun = 0;
                 double sm = (e.slowT > 0 ? Balance.HitSlowMult : 1) * (e.elite ? Spikes.EliteRate : 1);   // an elite moves quicker
+                if (e.burnT > 0 && !e.buried)   // Ember Rounds: a point a second on its own phase while it burns
+                {
+                    e.burnT--;
+                    if (--e.burnTick <= 0)
+                    {
+                        e.burnTick = Items.BurnEvery;
+                        e.hp -= Items.BurnDmg; e.hitFlash = Balance.HitFlash;
+                        if (e.hp <= 0) { int j = list.IndexOf(e); if (j >= 0) Kills.KillEnemy(run, j); continue; }
+                    }
+                }
                 if (e.stun > 0)
                 {
                     if (e.lungeState == "wind" || e.lungeState == "lunge" || e.lungeState == "dodge")
@@ -608,7 +627,7 @@ namespace Depths
             var p = ps[i];
             if (p.lob)   // a mortar shell: moves once a tick, touches nothing in flight, lands on its mark
             {
-                if (first && Middle.StepLob(run, p)) { ps.RemoveAt(i); return true; }
+                if (first && !run.slowSkip && Middle.StepLob(run, p)) { ps.RemoveAt(i); return true; }
                 return false;
             }
             if (p.alt)
@@ -623,8 +642,10 @@ namespace Depths
                 }
             }
             if (first) p.age++;
-            p.x += p.vx * f;
-            p.y += p.vy * f;
+            double slow = !p.friendly && run.timeSlowT > 0 ? Items.TimeSlow : 1;   // Time Glass holds the hostile shells too
+            p.x += p.vx * f * slow;
+            p.y += p.vy * f * slow;
+            if (p.bounce > 0 && Bounce(p)) p.bounce--;   // Ricochet Shells: off the wall instead of out of the room
             if (p.x < Balance.RoomLeft - 30 || p.x > Balance.RoomRight + 30
                 || p.y < Balance.RoomTop - 30 || p.y > Balance.RoomBottom + 30)
             {
@@ -651,12 +672,14 @@ namespace Depths
                 if (p.alt) { Blast.Explode(run, p.x, p.y); ps.RemoveAt(i); return true; }   // the blast goes off on the first body
                 var t = en[best];
                 double taken = Balance.Tuned && Balance.TuneBeam && t.kind == BodyKind.Brunch && p.gun == Weapons.BeamIndex ? Balance.BrunchBeamTaken : 1;   // tuned: a wall the Beam cannot erase
-                t.hp -= p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale * taken;
+                double dealt = p.dmg * Combat.FalloffMult(p) * t.Vuln * p.scale * taken * (p.alt ? 1 : Items.ShotMult(run));
+                t.hp -= dealt;
                 t.hitFlash = Balance.HitFlash;
                 run.hits++;
+                if (!p.alt) ItemsOnHit(run, t, dealt);
                 Combat.AlertEnemy(t);
                 Combat.SlowEnemy(t);
-                if (t.hp <= 0) Kills.KillEnemy(run, best);
+                if (t.hp <= 0) { int k = en.IndexOf(t); if (k >= 0) Kills.KillEnemy(run, k); }   // a chained kill may have moved it
                 if (p.pierce > 0)
                 {
                     p.pierce--;
@@ -725,6 +748,7 @@ namespace Depths
                 player.blinkRegen = System.Math.Max(player.blinkRegen, Balance.BlinkRecharge * 0.5);
                 // a won fight refills the regenerating heart (owner, 2026-10-06; C# only); not for the dead
                 if (room.Fought && player.hp > 0) { player.regenHeart = player.regenHeartMax; player.regenHeartT = 0; }
+                if (room.Fought && player.hp > 0) Items.FightWon(run);   // a recharging active gains a room
             }
 
             // The rewards, dropped once each. Two independent one-shots, because a room can hold
@@ -837,6 +861,47 @@ namespace Depths
             }
 
             return descended;
+        }
+
+        // a friendly shell off the room's wall: the side it crossed reflects it back in
+        static bool Bounce(Projectile p)
+        {
+            bool hit = false;
+            if (p.x < Balance.RoomLeft && p.vx < 0 || p.x > Balance.RoomRight && p.vx > 0)
+            {
+                double wall = p.vx < 0 ? Balance.RoomLeft : Balance.RoomRight;
+                p.vx = -p.vx; p.dx = -p.dx; p.ox = 2 * wall - p.ox; hit = true;   // mirrored: the fall-off reads the path flown
+            }
+            if (p.y < Balance.RoomTop && p.vy < 0 || p.y > Balance.RoomBottom && p.vy > 0)
+            {
+                double wall = p.vy < 0 ? Balance.RoomTop : Balance.RoomBottom;
+                p.vy = -p.vy; p.dy = -p.dy; p.oy = 2 * wall - p.oy; hit = true;
+            }
+            return hit;
+        }
+
+        // what a shot's hit does besides its damage, from what the player carries (Ember Rounds, Chain Spark)
+        static void ItemsOnHit(RunState run, Enemy t, double dealt)
+        {
+            if (Items.Has(run, "ember_rounds") && t.hp > 0)
+            {
+                if (t.burnT <= 0) t.burnTick = Items.BurnEvery;   // a fresh burn starts its phase; a hit only lengthens it
+                t.burnT = Items.BurnFor;
+            }
+            if (!Items.Has(run, "chain_spark")) return;
+            Enemy? next = null;
+            double best = Items.ChainReach;
+            foreach (var o in run.enemies)
+            {
+                if (o == t || o.hp <= 0 || o.buried) continue;
+                double d = Dist(o.x - t.x, o.y - t.y);
+                if (d < best) { best = d; next = o; }
+            }
+            if (next == null) return;
+            next.hp -= dealt * Items.ChainShare;
+            next.hitFlash = Balance.HitFlash;
+            Combat.AlertEnemy(next);
+            if (next.hp <= 0) { int j = run.enemies.IndexOf(next); if (j >= 0) Kills.KillEnemy(run, j); }
         }
 
         /// <summary>The player's lagged hitbox, published once per tick by TickPlayer and read by the gunner intercept in the... [h:Tick-23]</summary>

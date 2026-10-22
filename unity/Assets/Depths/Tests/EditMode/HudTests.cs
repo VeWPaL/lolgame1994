@@ -126,7 +126,7 @@ namespace Depths.Unity.Tests
         [Test]
         public void EveryItemHasAPictureInTheAtlas()
         {
-            foreach (var d in Items.All)
+            foreach (var d in Items.All.Concat(Items.Overhaul))   // the JS roster and the overhaul's
             {
                 Assert.That(ItemIcons.Has(d.Id), d.Id + " still shows its lettered tile");
                 var img = ItemIcons.Bake(d.Id, 2);
@@ -154,7 +154,7 @@ namespace Depths.Unity.Tests
             words.AddRange(LedgerArt.BandNames);
             words.AddRange(LedgerHud.AreaNames);
             words.AddRange(Weapons.All.Select(w => w.Name));
-            words.AddRange(Items.All.Select(i => i.Name));
+            words.AddRange(Items.All.Concat(Items.Overhaul).Select(i => i.Name));
             foreach (var w in words)
                 foreach (var ch in w) Assert.That(LedgerType.Has(ch), "the 5x7 hand has no '" + ch + "' for \"" + w + "\"");
         }

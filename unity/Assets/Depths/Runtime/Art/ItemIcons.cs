@@ -46,6 +46,27 @@ namespace Depths.Unity.Art
             ["brass_compass"] = new[] {
                 ".....kk.....", "....dddd....", "..ddmmmmdd..", ".dmllllllmd.", ".dml..r.lmd.", "dml...r..lmd",
                 "dml..kkk.lmd", "dml...l..lmd", ".dml..l.lmd.", ".dmlllllmmd.", "..ddmmmmdd..", "....dddd...." },
+            ["hush_bell"] = new[] {
+                "............", ".....kk.....", "....dmmd....", "...dmllmd...", "...dmlmmd...", "..dmlmmmmd..",
+                "..dmlmmmmd..", ".dmlmmmmmmd.", ".dmmmmmmmmd.", ".dddddddddd.", ".....kk.....", "............" },
+            ["time_glass"] = new[] {
+                "..kkkkkkkk..", "...dllllld..", "...dmmmmmd..", "....dmmmd...", ".....dmd....", "......y.....",
+                ".....dyd....", "....dyyyd...", "...dyyyyyd..", "...dyyyyyd..", "..kkkkkkkk..", "............" },
+            ["ricochet_shells"] = new[] {
+                "............", "l...........", ".l..........", "..l.......l.", "...m.....m..", "....m...m...",
+                ".....m.m....", "......m.....", "............", "kkkkkkkkkkkk", "dddddddddddd", "............" },
+            ["ember_rounds"] = new[] {
+                ".....r......", "....rr......", "....ryr.....", "...ryyr.....", "...ryyyr....", "..rryyyrr...",
+                "..dmmmmmd...", "..mllmmmm...", "..mmmmmmm...", "..dmmmmmd...", "...ddddd....", "............" },
+            ["chain_spark"] = new[] {
+                "......yy....", ".....yy.....", "....yy......", "...yyyyy....", ".....yy.....", "....yy......",
+                "...yy.......", "..yy..m.....", "......mm....", ".....mmmm...", "......mm....", "............" },
+            ["glass_heart"] = new[] {
+                "............", ".mm....mm...", "mllm..mllm..", "mlmmmmmmlm..", "mlmmmrmmmm..", "mmmmrmmmmm..",
+                ".mmmmrmmm...", "..mmrmmm....", "...mmmm.....", "....mm......", "............", "............" },
+            ["phoenix_feather"] = new[] {
+                "..........y.", ".........yy.", "........ryy.", ".......rry..", "......rry...", ".....rrm....",
+                "....rrm.....", "...rmm......", "..dmm.......", ".dd.........", "d...........", "............" },
             ["lantern_friend"] = new[] {
                 ".....kk.....", "....k..k....", "...kkkkkk...", "...kmmmmk...", "...kmyymk...", "...kyyyyk...",
                 "...kmyymk...", "...kmmmmk...", "...kkkkkk...", "....kkkk....", "............", "............" },

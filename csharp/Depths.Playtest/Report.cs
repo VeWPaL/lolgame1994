@@ -13,7 +13,7 @@ namespace Depths.Playtest
         public int n, deaths, stuck, errors, wins;
         public double minToWin;
         public double floor, minPerFloor, dmgPerFloor, healPerFloor, regenPerFloor, clearPerFloor, bossS, acc, killsPerMin;
-        public double qPerRun, activesPerRun, maskedPerRun;
+        public double qPerRun, activesPerRun, maskedPerRun, workedPerRun, workedShare;
         public Dictionary<string, double> dmgSrc = new Dictionary<string, double>();
         public Dictionary<string, double> healSrc = new Dictionary<string, double>();
 
@@ -55,6 +55,9 @@ namespace Depths.Playtest
             s.killsPerMin = runs.Sum(r => (double)r.kills) / Math.Max(1e-9, mins);
             s.qPerRun = Mean(runs.Select(r => (double)r.qPresses));
             s.activesPerRun = Mean(runs.Select(r => (double)r.actives));
+            s.workedPerRun = Mean(runs.Select(r => (double)r.activesWorked));
+            var holders = runs.Where(r => r.qPresses > 0).ToList();   // runs that held an active and pressed Q
+            s.workedShare = holders.Count == 0 ? 0 : holders.Count(r => r.activesWorked > 0) / (double)holders.Count;
             s.maskedPerRun = Mean(runs.Select(r => (double)r.maskedHits));
             return s;
         }
@@ -87,20 +90,23 @@ namespace Depths.Playtest
             ("killsPerMin", "kills per minute", s => s.killsPerMin, false),
             ("qPerRun", "Q presses when low, per run", s => s.qPerRun, false),
             ("activesPerRun", "  of which healed, per run", s => s.activesPerRun, false),
+            ("workedPerRun", "  of which did something, per run", s => s.workedPerRun, false),
+            ("workedShare", "runs pressing Q where it did something", s => s.workedShare, false),
             ("maskedPerRun", "hits hidden by a same-tick heal, per run", s => s.maskedPerRun, false),
         };
 
         // a profile a label did not play has no numbers, not zeros
         static string Fmt(string key, ProfileStats s, double v, bool isInt) =>
-            s.n == 0 || (key == "minToWin" && s.wins == 0) ? "n/a" : key == "acc" ? Pct(v) : isInt ? ((int)v).ToString(Inv) : F1(v);
+            s.n == 0 || (key == "minToWin" && s.wins == 0) ? "n/a" : key == "acc" || key == "workedShare" ? Pct(v) : isInt ? ((int)v).ToString(Inv) : F1(v);
 
         // as the JS: every non-accuracy delta in f1, "=" under the noise floor
         static string Delta(string key, ProfileStats sa, ProfileStats sb, double a, double b)
         {
             if (sa.n == 0 || sb.n == 0 || (key == "minToWin" && (sa.wins == 0 || sb.wins == 0))) return "n/a";
             double d = b - a;
-            if (Math.Abs(d) < (key == "acc" ? 0.005 : 0.05)) return "=";
-            return (d > 0 ? "+" : "") + (key == "acc" ? Math.Floor(d * 100 + 0.5).ToString("0", Inv) + "%" : F1(d));
+            bool pct = key == "acc" || key == "workedShare";
+            if (Math.Abs(d) < (pct ? 0.005 : 0.05)) return "=";
+            return (d > 0 ? "+" : "") + (pct ? Math.Floor(d * 100 + 0.5).ToString("0", Inv) + "%" : F1(d));
         }
 
         static int Hz(Batch b) => b.tickHz > 0 ? b.tickHz : 210;

@@ -83,7 +83,7 @@ namespace Depths.Playtest
     /// <summary>`--untune part,part`: parts of Balance.Tuned turned off for one play, to measure each part on its own.</summary>
     public static class Untune
     {
-        public static readonly string[] Parts = { "wall", "rush", "dodge", "loot", "beam", "warden", "ease", "damage", "momentum", "pools", "middle", "aim", "depth", "spike", "end" };
+        public static readonly string[] Parts = { "wall", "rush", "dodge", "loot", "beam", "warden", "ease", "damage", "momentum", "pools", "middle", "aim", "depth", "spike", "end", "items" };
 
         public static void Set(string part, bool on)
         {
@@ -104,6 +104,7 @@ namespace Depths.Playtest
                 case "depth": Balance.TuneDepth = on; break;
                 case "spike": Balance.TuneSpike = on; break;
                 case "end": Balance.TuneEnd = on; break;
+                case "items": Balance.TuneItems = on; break;
                 default: throw new UsageException("--untune: no part '" + part + "' (" + string.Join(", ", Parts) + ")");
             }
         }
@@ -126,6 +127,7 @@ namespace Depths.Playtest
             if (!Balance.TuneDepth) off.Add("depth");
             if (!Balance.TuneSpike) off.Add("spike");
             if (!Balance.TuneEnd) off.Add("end");
+            if (!Balance.TuneItems) off.Add("items");
             return off;
         }
     }

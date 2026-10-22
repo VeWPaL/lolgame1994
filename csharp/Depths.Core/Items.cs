@@ -29,6 +29,7 @@ namespace Depths
         public string Id = "", Name = "", Rarity = "common";
         public bool Active, Unimplemented;
         public int? Charges;                       // null for a passive; int.MaxValue for "never runs out"
+        public int Recharge;                       // an active that recharges: fought rooms cleared to a full charge (0: charges)
         public (string stat, double v)[] StatFx = new (string, double)[0];
         public (string hook, double arg)[] Hooks = new (string, double)[0];
     }
@@ -46,6 +47,33 @@ namespace Depths
             new ItemDef { Id = id, Name = name, Rarity = rarity, StatFx = stats };
         static ItemDef A(string id, string name, string rarity, int charges, (string, double)[] stats, params (string, double)[] hooks) =>
             new ItemDef { Id = id, Name = name, Rarity = rarity, Active = true, Charges = charges, StatFx = stats, Hooks = hooks };
+
+        // an active that recharges by rooms (the overhaul): it starts full, Q empties it, each won fight adds one
+        static ItemDef R(string id, string name, string rarity, int rooms, params (string, double)[] hooks) =>
+            new ItemDef { Id = id, Name = name, Rarity = rarity, Active = true, Charges = rooms, Recharge = rooms, Hooks = hooks };
+
+        /// <summary>The overhaul's roster (docs/items.md, built: 1-8 plus two kept), played when tuned.</summary>
+        public static readonly ItemDef[] Overhaul =
+        {
+            R("hush_bell", "Hush Bell", "uncommon", 2, ("hush", HushReach)),
+            R("time_glass", "Time Glass", "rare", 3, ("slow_time", 2.5)),
+            R("tin_cup", "Tin Cup", "common", 3, ("heal_self", 2)),
+            P("ricochet_shells", "Ricochet Shells", "common"),
+            P("ember_rounds", "Ember Rounds", "common"),
+            P("chain_spark", "Chain Spark", "rare"),
+            P("glass_heart", "Glass Heart", "uncommon", ("vigor", -1)),   // half a heart: a whole one cost the bot 27% more deaths
+            P("phoenix_feather", "Phoenix Feather", "legendary"),
+            R("hunters_mark", "Hunter's Mark", "rare", 2, ("reveal_room", 1)),
+            P("brass_compass", "Brass Compass", "legendary", ("luck", 1)),
+        };
+
+        public const double HushReach = 220, GlassMult = 1.25, ChainReach = 140, ChainShare = 0.5, TimeSlow = 0.35, BurnDmg = 1;
+        public static int BurnFor => Balance.Sec(3);
+        public static int BurnEvery => Balance.Sec(1);
+        public static int PhoenixGrace => Balance.Sec(1.5);
+
+        /// <summary>The roster a run plays: the overhaul when tuned, the JS's otherwise.</summary>
+        public static ItemDef[] Roster => Balance.Tuned && Balance.TuneItems ? Overhaul : All;
 
         public static readonly ItemDef[] All =
         {
@@ -66,12 +94,36 @@ namespace Depths
 
         public static ItemDef Def(string id)
         {
+            foreach (var d in Roster) if (d.Id == id) return d;
             foreach (var d in All) if (d.Id == id) return d;
+            foreach (var d in Overhaul) if (d.Id == id) return d;
             throw new System.ArgumentException("no item called " + id);
         }
 
         public static ItemSlot? Equipped(RunState run, string id) => run.loadout.Find(s => s.Id == id);
         public static ItemSlot? ActiveItem(RunState run) => run.loadout.Find(s => s.Slot == ActiveSlot && s.Charges.HasValue);
+        public static bool Has(RunState run, string id) => Equipped(run, id) != null;
+
+        /// <summary>Whether the held active can be used now: charges left, or a recharging one full.</summary>
+        public static bool Ready(RunState run)
+        {
+            var a = ActiveItem(run);
+            if (a == null || a.Charges == 0) return false;
+            var d = Def(a.Id);
+            return d.Recharge == 0 || a.Charges >= d.Recharge;
+        }
+
+        /// <summary>A won fight: a recharging active gains one room toward its charge.</summary>
+        public static void FightWon(RunState run)
+        {
+            var a = ActiveItem(run);
+            if (a == null) return;
+            int r = Def(a.Id).Recharge;
+            if (r > 0 && a.Charges < r) a.Charges++;
+        }
+
+        /// <summary>Your shots' damage multiplier from what you carry (Glass Heart).</summary>
+        public static double ShotMult(RunState run) => Has(run, "glass_heart") ? GlassMult : 1;
 
         /// <summary>Rebuild, never subtract: the stats from the whole build, then the vitals.</summary>
         public static void Rebuild(RunState run)
@@ -104,6 +156,7 @@ namespace Depths
             var d = Def(id);
             var already = Equipped(run, id);
             int? start = charges ?? d.Charges;
+            if (already != null && d.Recharge > 0) { already.Charges = d.Recharge; Rebuild(run); return (true, null, null); }   // a second one fills it
             if (already != null && already.Charges.HasValue && already.Charges != int.MaxValue)
             {
                 already.Charges += start ?? 1;
@@ -141,12 +194,13 @@ namespace Depths
         /// <summary>Q: run the active's hooks; a charge is spent only if one did something.</summary>
         public static bool UseActive(RunState run)
         {
-            var a = ActiveItem(run);
-            if (a == null || a.Charges == 0) return false;
+            if (!Ready(run)) return false;
+            var a = ActiveItem(run)!;
             var d = Def(a.Id);
             int ran = 0;
             foreach (var (hook, arg) in d.Hooks) if (RunHook(run, hook, arg)) ran++;
             if (ran == 0) return false;
+            if (d.Recharge > 0) { a.Charges = 0; return true; }   // spent; won fights fill it again
             if (a.Charges.HasValue && a.Charges != int.MaxValue) a.Charges--;
             if (a.Charges == 0) Remove(run, a.Id);
             return true;
@@ -192,8 +246,42 @@ namespace Depths
                     }
                     return n > 0;
                 }
+                case "hush":
+                {
+                    // the bell: every hostile shell within reach is gone, the bodies there are thrown back
+                    int n = 0;
+                    for (int i = run.projectiles.Count - 1; i >= 0; i--)
+                    {
+                        var s = run.projectiles[i];
+                        if (s.friendly || Near(s.x, s.y, p, arg) == null) continue;
+                        run.projectiles.RemoveAt(i); n++;
+                    }
+                    foreach (var e in run.enemies)
+                    {
+                        var d = Near(e.x, e.y, p, arg);
+                        if (e.hp <= 0 || e.buried || d == null || e.kind == BodyKind.Boss || e.packId == Balance.BossWallId) continue;
+                        double dx = e.x - p.x, dy = e.y - p.y;   // the raw offset: a unit vector can round under Knock's 1 and draw
+                        if (dx * dx + dy * dy >= 1) Movement.Knock(run, e, dx, dy, 5 * Balance.KnockGain);
+                        n++;
+                    }
+                    return n > 0;
+                }
+                case "slow_time":
+                {
+                    if (run.enemies.Count == 0) return false;   // nothing to slow: the charge is kept
+                    run.timeSlowT = Balance.Sec(arg);
+                    return true;
+                }
                 default: return false;   // spawn_companion: written down, not built, and it says so by refusing
             }
+        }
+
+        // the unit vector from the player to (x, y) if it is within reach
+        static (double x, double y)? Near(double x, double y, Player p, double reach)
+        {
+            double dx = x - p.x, dy = y - p.y, d = System.Math.Sqrt(dx * dx + dy * dy);
+            if (d > reach) return null;
+            return d < 1e-9 ? (0.0, 1.0) : (dx / d, dy / d);
         }
 
         /// <summary>rollRarity: one run draw over the weights, luck multiplying all but common.</summary>
@@ -211,7 +299,7 @@ namespace Depths
         public static List<string> Pool(Rng rng, int n, string? rarity, ICollection<string>? exclude)
         {
             var ids = new List<string>();
-            foreach (var d in All)
+            foreach (var d in Roster)
             {
                 if (rarity != null && d.Rarity != rarity) continue;
                 if (exclude != null && exclude.Contains(d.Id)) continue;

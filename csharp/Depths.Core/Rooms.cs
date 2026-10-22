@@ -136,6 +136,7 @@ namespace Depths
             r.Visited = true;
             run.projectiles.Clear();
             run.hookFields.Clear();   // clearTransient
+            run.timeSlowT = 0; run.slowAcc = 0; run.slowSkip = false;   // slow time stays in the room it was rung in
             run.player.muzzleTimer = 0;
             Load(run, r);
             Items.CompassOpens(run);
@@ -170,7 +171,7 @@ namespace Depths
                     // the item half: two of the rolled rarity (luck-weighted), topped up from any rarity
                     // without the one just chosen; nothing already carried
                     var held = new List<string>();
-                    foreach (var d in Items.All) if (Items.Equipped(run, d.Id) != null) held.Add(d.Id);
+                    foreach (var d in Items.Roster) if (Items.Equipped(run, d.Id) != null) held.Add(d.Id);
                     var ids = Items.Pool(run.rng, 2, Items.RollRarity(run.rng, run.stats.Value("luck")), held);
                     if (ids.Count < 2) { var ex = new List<string>(held); ex.AddRange(ids); ids.AddRange(Items.Pool(run.rng, 2 - ids.Count, null, ex)); }
                     for (int i = 0; i < ids.Count; i++)

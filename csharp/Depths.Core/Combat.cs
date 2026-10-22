@@ -65,6 +65,16 @@ namespace Depths
             p.regenHeartT = 0;   // any hit that lands, armour-only included, restarts the refill clock
             if (p.hp < 0 && p.hp > -1e-6) p.hp = 0;   // a float epsilon is not a death
             if (run.state == "dev" && p.hp < 1) p.hp = 1;
+            if (p.hp <= 0 && !run.phoenixSpent && Items.Has(run, "phoenix_feather"))
+            {
+                // Phoenix Feather: the first death of the run is not one; it burns away and the player rises
+                run.phoenixSpent = true;
+                Items.Remove(run, "phoenix_feather");
+                p.hp = System.Math.Min(p.maxHp, Balance.HeartHeal * 2);
+                p.iframes = System.Math.Max(Balance.Iframes, Items.PhoenixGrace);
+                p.momentum *= Balance.MomentumHitKeep;
+                return true;
+            }
             p.momentum *= Balance.MomentumHitKeep;
             if (force != 0) { p.kvx += kx * force * Balance.KnockPScale; p.kvy += ky * force * Balance.KnockPScale; }   // scaled as Knock scales a body's
             p.iframes = Balance.Iframes;
