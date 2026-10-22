@@ -77,7 +77,7 @@ namespace Depths.Playtest
             if (r == null || run.trans != null) return BotAction.None;
             var pl = run.player;
 
-            Enemy? target = null, nearest = null;
+            Enemy? target = null, nearest = null, addNear = null;
             double nd = double.PositiveInfinity;
             int live = 0;
             foreach (var e in run.enemies)
@@ -85,11 +85,12 @@ namespace Depths.Playtest
                 if (e.hp <= 0) continue;
                 live++;
                 if (target == null && Bodies.IsBoss(e.kind)) target = e;
+                if (e.kgAdd && !e.buried && Hyp(e.x - pl.x, e.y - pl.y) < AddNear) addNear = e;   // the King's recalled add, close: first
                 // a buried Burrower cannot be shot: aim at what can, and only face the mound when nothing else is up
                 double d = Hyp(e.x - pl.x, e.y - pl.y) + (e.buried ? 1e9 : 0);
                 if (d < nd) { nd = d; nearest = e; }
             }
-            return live > 0 ? Fight(run, r, t, target ?? nearest!) : Quiet(run, r);
+            return live > 0 ? Fight(run, r, t, addNear ?? target ?? nearest!) : Quiet(run, r);
         }
 
         BotAction Fight(RunState run, Room r, int t, Enemy target)
@@ -368,6 +369,7 @@ namespace Depths.Playtest
         /// <summary>The move the bot holds now (its decision, after any dodging), for the tests.</summary>
         internal (double x, double y) Move => (_mvX, _mvY);
 
+        const double AddNear = 260;   // px: a recalled add this close is shot before the King
         const double MarkMargin = 8, WallGap = 40, CourseS = 0.5;   // px kept from a mark; px from a wall that blocks a run; s of course looked ahead
 
         /// <summary>The overhaul's actives, each by its plain rule (docs/items.md), and only when charged.</summary>

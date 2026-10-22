@@ -250,6 +250,96 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void TheRecallBringsThisRunsOwnKindsOncePerPhaseAfterItsRunes()
+        {
+            // the graft from the Archivist: phase n brings area n's kinds of THIS run, on quiet ground away from the player
+            for (int phase = 1; phase <= 3; phase++)
+            {
+                var (run, e) = Arena(7);
+                e.phase = phase;
+                var p = run.player;
+                double hx = p.lagX, hy = p.lagY + Balance.PlayerHitDy;
+                FinalBoss.Begin(run, e, FinalBoss.Attack.Summon);
+                Assert.That(e.move, Is.EqualTo("summon"));
+                Assert.That(e.kgSumN, Is.EqualTo(FinalBoss.AddCap), "phase " + phase + ": not two runes");
+                var kinds = FinalBoss.Recallable(run, phase).ToList();
+                Assert.That(kinds.All(k => run.pools![phase - 1].Contains(k)), "phase " + phase + " recalls a kind its area never had");
+                for (int i = 0; i < e.kgSumN; i++)
+                {
+                    double x = e.kgSum[2 * i], y = e.kgSum[2 * i + 1];
+                    Assert.That(Math.Sqrt((x - hx) * (x - hx) + (y - hy) * (y - hy)), Is.GreaterThanOrEqualTo(FinalBoss.SummonFromPlayer), "a rune on the player");
+                    int c = FinalBoss.Ground.CellAt(x, y);
+                    Assert.That(c >= 0 && !e.ground!.Hot(c) && e.ground.warn[c] == 0, "a rune on bad ground");
+                    Assert.That(kinds, Does.Contain(e.kgSumK[i]));
+                }
+                Assert.That(run.enemies.Count(o => o.kgAdd), Is.EqualTo(0), "an add came before its runes' tell ran out");
+                for (int t = 0; t < FinalBoss.SummonTell - 1; t++) { FinalBoss.Step(run, e, 1, 1, 1000, 1); Assert.That(run.enemies.Count(o => o.kgAdd), Is.EqualTo(0)); }
+                FinalBoss.Step(run, e, 1, 1, 1000, 1);
+                var adds = run.enemies.Where(o => o.kgAdd).ToList();
+                Assert.That(adds, Has.Count.EqualTo(2));
+                Assert.That(adds.All(a => a.noticeTimer >= FinalBoss.AddWake && a.hp < a.maxHp / FinalBoss.AddHp + 1e-9));
+                Assert.That(FinalBoss.CanSummon(run, e), Is.False, "it may recall again in the same phase (or over two live adds)");
+            }
+        }
+
+        [Test]
+        public void TheAddsCrumbleAsTheKingFallsAndTheRunIsWon()
+        {
+            var (run, e) = Arena();
+            var arena = run.dungeon.AllRooms.First(r => r.Type == RoomKind.Boss);
+            run.curX = arena.X; run.curY = arena.Y;
+            FinalBoss.Begin(run, e, FinalBoss.Attack.Summon);
+            for (int t = 0; t < FinalBoss.SummonTell; t++) FinalBoss.Step(run, e, 1, 1, 1000, 1);
+            Assert.That(run.enemies.Count(o => o.kgAdd), Is.EqualTo(2), "fixture: no adds");
+            Kills.KillEnemy(run, run.enemies.IndexOf(e));
+            for (int t = 0; t < FinalBoss.DeathBeat + 5 && run.state == "playing"; t++) TickOrder.TickRoom(run);
+            Assert.That(run.enemies.Any(o => o.kgAdd), Is.False, "the adds outlived the King");
+            Assert.That(run.state, Is.EqualTo("won"), "the adds kept the run from being won");
+        }
+
+        [Test]
+        public void ADeathMidRecallStillWinsAfterTheBeatWithEveryAddGone()
+        {
+            // the critic's gap: whole ticks, two adds standing, a second recall's runes up, then the King dies
+            var (run, e) = Arena();
+            var arena = run.dungeon.AllRooms.First(r => r.Type == RoomKind.Boss);
+            run.curX = arena.X; run.curY = arena.Y;
+            FinalBoss.Begin(run, e, FinalBoss.Attack.Summon);
+            for (int t = 0; t < FinalBoss.SummonTell; t++) Step(run, Input.None);
+            Assert.That(run.enemies.Count(o => o.kgAdd), Is.EqualTo(2), "fixture: no adds");
+            e.phase = 2; e.kgSummoned = 0;
+            foreach (var o in run.enemies.Where(o => o.kgAdd).ToList()) run.enemies.Remove(o);
+            FinalBoss.Begin(run, e, FinalBoss.Attack.Summon);
+            for (int t = 0; t < FinalBoss.SummonTell / 2; t++) Step(run, Input.None);
+            Assert.That(e.move, Is.EqualTo("summon"), "fixture: not mid-recall");
+            e.hp = 0.01;
+            run.projectiles.Add(new Projectile { x = e.x, y = e.y, vx = 0.01, r = 6, dmg = 5, friendly = true, scale = 1 });
+            for (int t = 0; t < FinalBoss.DeathBeat + 10 && run.state == "playing"; t++)
+            {
+                Immortal(run);
+                Step(run, Input.None);
+                TickOrder.TickRoom(run);
+            }
+            Assert.That(run.enemies.Any(o => o.kgAdd || o.kind == BodyKind.SunkenKing), Is.False, "the King or an add survived");
+            Assert.That(run.state, Is.EqualTo("won"));
+        }
+
+        [Test]
+        public void AnAddsHitIsBookedToTheRecall()
+        {
+            var (run, e) = Arena();
+            var p = run.player;
+            var add = Spawn.Body(run, BodyKind.Lunger, p.lagX, p.lagY + Balance.PlayerHitDy);   // standing on the hitbox
+            add.kgAdd = true; add.noticeTimer = 0; add.alerted = true; add.aggroTimer = 9999;
+            run.enemies.Add(add);
+            e.stun = 1000;   // the King out of it
+            Immortal(run);
+            double before = run.finalBy[(int)FinalBoss.Source.Adds];
+            Step(run, Input.None);
+            Assert.That(run.finalBy[(int)FinalBoss.Source.Adds], Is.GreaterThan(before), "an add's contact went unbooked");
+        }
+
+        [Test]
         public void ThePhasesChangeTheKingsPostureAndTheRoom()
         {
             var (run, e) = Arena();
@@ -260,7 +350,7 @@ namespace Depths.Tests
                 Step(run, Input.None);
                 Assert.That(e.move, Is.Not.EqualTo("charge").And.Not.EqualTo("leap").And.Not.EqualTo("rift"), "phase 1 used a later attack");
             }
-            Assert.That((e.x, e.y), Is.EqualTo((FinalBoss.ThroneX, FinalBoss.ThroneY)), "it left its throne in phase 1");
+            Assert.That(Math.Abs(e.x - FinalBoss.ThroneX) + Math.Abs(e.y - FinalBoss.ThroneY), Is.LessThan(3), "it left its throne in phase 1 (its adds may jostle it a pixel; it walks back)");
             Assert.That(FinalBoss.PostureOf(e), Is.EqualTo(FinalBoss.Posture.Seated));
             var g = e.ground!;
             Assert.That(g.pit.Any(p => p), Is.False, "a pit in phase 1");
@@ -348,9 +438,9 @@ namespace Depths.Tests
                 for (int last = -1; last < FinalBoss.Attacks; last++)
                     for (int i = 0; i < 1000; i++) seen[ph].Add(FinalBoss.Pick(ph, last, i / 1000.0));
             }
-            Assert.That(seen[1], Is.EquivalentTo(new[] { FinalBoss.Attack.Fan, FinalBoss.Attack.Slam, FinalBoss.Attack.Quake }));
-            Assert.That(seen[2], Is.EquivalentTo(new[] { FinalBoss.Attack.Fan, FinalBoss.Attack.Slam, FinalBoss.Attack.Charge, FinalBoss.Attack.Rift, FinalBoss.Attack.Quake }));
-            Assert.That(seen[3], Is.EquivalentTo(new[] { FinalBoss.Attack.Fan, FinalBoss.Attack.Charge, FinalBoss.Attack.Rift, FinalBoss.Attack.Leap, FinalBoss.Attack.Nova, FinalBoss.Attack.Quake }));
+            Assert.That(seen[1], Is.EquivalentTo(new[] { FinalBoss.Attack.Fan, FinalBoss.Attack.Slam, FinalBoss.Attack.Quake, FinalBoss.Attack.Summon }));
+            Assert.That(seen[2], Is.EquivalentTo(new[] { FinalBoss.Attack.Fan, FinalBoss.Attack.Slam, FinalBoss.Attack.Charge, FinalBoss.Attack.Rift, FinalBoss.Attack.Quake, FinalBoss.Attack.Summon }));
+            Assert.That(seen[3], Is.EquivalentTo(new[] { FinalBoss.Attack.Fan, FinalBoss.Attack.Charge, FinalBoss.Attack.Rift, FinalBoss.Attack.Leap, FinalBoss.Attack.Nova, FinalBoss.Attack.Quake, FinalBoss.Attack.Summon }));
             Assert.That(seen.Skip(1).SelectMany(s => s).Where(a => a != FinalBoss.Attack.Quake).Distinct().Count(), Is.GreaterThanOrEqualTo(5), "fewer than five attacks across the fight");
         }
 
@@ -395,6 +485,7 @@ namespace Depths.Tests
                     foreach (var p in run.projectiles)
                     {
                         if (!known.Add(p)) continue;
+                        if (p.owner != null && p.owner.kgAdd) continue;   // a recalled add's shells come off its own tells (tested with its kind)
                         if (p.lob) Assert.That(p.flightMax, Is.GreaterThanOrEqualTo(min), "a lob marked too briefly");
                         else if (p.src == (int)FinalBoss.Source.Leap) Assert.That(lastLeap + 1, Is.GreaterThanOrEqualTo(min), "a landing's ring off a leap of " + lastLeap + " ticks");
                         else Assert.That(castBefore + 1, Is.GreaterThanOrEqualTo(min), "a shell off a flash of " + (castBefore + 1) + " ticks");

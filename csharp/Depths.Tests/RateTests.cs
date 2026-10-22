@@ -205,7 +205,7 @@ namespace Depths.Tests
             ["FinalBoss.DeathBeat"] = U.Sec, ["FinalBoss.FanSpeed"] = U.PerSec, ["FinalBoss.NovaSpeed"] = U.PerSec, ["FinalBoss.ChargeSpeed"] = U.PerSec,
             ["FinalBoss.Recover"] = U.Sec, ["FinalBoss.ChargeRecover"] = U.Sec, ["FinalBoss.LeapRecover"] = U.Sec, ["FinalBoss.RiftFx"] = U.Sec,
             ["FinalBoss.Walk"] = U.PerSec, ["FinalBoss.Float"] = U.PerSec, ["FinalBoss.CdMin"] = U.Sec, ["FinalBoss.CdVar"] = U.Sec,
-            ["FinalBoss.FirstCd"] = U.Sec, ["FinalBoss.LeapShellSpeed"] = U.PerSec, ["FinalBoss.AgainTell"] = U.Sec, ["FinalBoss.QuakeCast"] = U.Sec,
+            ["FinalBoss.FirstCd"] = U.Sec, ["FinalBoss.LeapShellSpeed"] = U.PerSec, ["FinalBoss.AgainTell"] = U.Sec, ["FinalBoss.QuakeCast"] = U.Sec, ["FinalBoss.SummonTell"] = U.Sec, ["FinalBoss.AddWake"] = U.Sec,
         };
 
         // the dials that live in tables and on fresh bodies rather than as static properties

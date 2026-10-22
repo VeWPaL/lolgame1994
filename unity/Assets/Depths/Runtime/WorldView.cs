@@ -610,6 +610,23 @@ namespace Depths.Unity
                     }
                 }
             }
+            if (e.move == "summon")   // the recall: a violet rune where each add will stand, its ghost rising as the tell runs
+            {
+                float t = 1 - Mathf.Clamp01(e.castT / (float)Math.Max(1, e.fbTellMax));
+                var rune = Hex.C("#c08cff");
+                for (int i = 0; i < e.kgSumN; i++)
+                {
+                    double x = e.kgSum[2 * i], y = e.kgSum[2 * i + 1];
+                    Dot(x, y + 6, 26, 12, QuadBatch.Tint(rune, 0.15f + 0.30f * t));
+                    Ring(x, y + 6, 30 - 8 * t, 2, QuadBatch.Tint(rune, 0.55f + 0.45f * t));
+                    for (int k = 0; k < 4; k++)   // four marks on the rune's rim, turning as it fills
+                    {
+                        float a = Fc * 0.05f + k * 1.5708f;
+                        Rect(x + Mathf.Cos(a) * 30 - 2, y + 6 + Mathf.Sin(a) * 14 - 2, 4, 4, QuadBatch.Tint(rune, 0.9f));
+                    }
+                    Spr(SpriteSet.BodyR(e.kgSumK[i], 1, true), x, y - 10 * t, 0.15f + 0.45f * t);   // the echo of what comes
+                }
+            }
             if (e.move == "leap")   // the leap's landing: a ring on the floor, filling as it comes down
             {
                 float t = 1 - Mathf.Clamp01(e.moveT / (float)Math.Max(1, e.fbTellMax));

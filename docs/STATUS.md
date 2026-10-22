@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  773/773, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  777/777, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -153,9 +153,10 @@ it from another checkout or the first command spends minutes importing.
   volley over a busy floor (a fan, a nova, even one light ring) took 45-76% of the fight's damage, so **the King
   waits while its floor cracks or burns**; burns last 1.0 s and cost 2 HP. Final (b13-noking -> b13-king), floor 14:
   wins novice 55%, **average 80% (target 40-70: missed)**, skilled 83%; fights 144 / 162 / 164 s; no attack over 23%
-  (fan, slam, checker 17-20%). The fight is fair and readable but soft for the bot; a person will be hit more. Not
-  grafted (the blind critic's idea, for the owner): the Archivist's recall (adds from the run's own areas) onto the
-  King. Next: the owner's playtest of the finale; the Gatekeeper follow-ups above.
+  (fan, slam, checker 17-20%). **Then the recall was grafted** (owner 2026-10-22; DESIGN.md): b13-king again, floor
+  14: wins novice 44%, **average 69% (target met)**, skilled 84%; fights 146 / 163 / 171 s; no attack over 24% (the
+  adds 5-7%: they split the player's attention, the floor and the King do the work). `shot final4` freezes it
+  mid-recall. Next: the owner's playtest of the finale; the Gatekeeper follow-ups above.
 - **The Gatekeeper, the floor boss of 1-13 (unit 3; owner 2026-10-22: a new floor boss replaces the Warden).**
   DESIGN.md, "The Gatekeeper" (`FloorBoss.cs`, `TuneFloorBoss`, `--untune floorboss`). Charge (0.6 s line), Slam (3
   lobs, 0.95 s marks), Fan (0.5 s flash), then Ring (phase 2) and Rampage (phase 3); weighted by area; it hurts only

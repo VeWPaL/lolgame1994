@@ -166,7 +166,7 @@ namespace Depths
                 return false;
             }
             p.x = p.tx; p.y = p.ty;
-            run.hitSrc = p.src;
+            run.hitSrc = p.src >= 0 ? p.src : p.owner != null && p.owner.kgAdd ? (int)FinalBoss.Source.Adds : -1;
             Strike(run, p.tx, p.ty, p.blastR, p.dmg, 2.5);
             run.hitSrc = -1;
             run.booms++;
@@ -280,7 +280,9 @@ namespace Depths
         static void Land(RunState run, Enemy e)
         {
             e.buried = false;
+            if (e.kgAdd) run.hitSrc = (int)FinalBoss.Source.Adds;   // a recalled Burrower's landing, for the King's books
             Strike(run, e.x, e.y, BurrowHitR, BurrowDmg, 6);
+            run.hitSrc = -1;
             e.move = "walk"; e.moveT = BurrowSurface; e.curSpeed = 0;
             if (!Sharp) return;
             // the landing jars it: dazed where it hit, skidding on along its flight, tumbling (the presenter's tumble and shake)

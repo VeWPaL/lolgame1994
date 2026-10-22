@@ -560,6 +560,7 @@ namespace Depths
                     bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0 && !e.rushing;   // a rushing Brunch spends itself, as a chasing one does
                     bool boss = Bodies.IsBoss(e.kind);
                     if (e.kind == BodyKind.SunkenKing) run.hitSrc = (int)FinalBoss.Source.Charge;
+                    else if (e.kgAdd) run.hitSrc = (int)FinalBoss.Source.Adds;
                     bool landed = Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, e.kind == BodyKind.Boss);
                     run.hitSrc = -1;
                     if (landed && (!brunch || holdingSlot))
@@ -732,7 +733,7 @@ namespace Depths
             {
                 double pn = Dist(p.vx, p.vy);
                 if (pn == 0) pn = 1;
-                run.hitSrc = p.src;
+                run.hitSrc = p.src >= 0 ? p.src : p.owner != null && p.owner.kgAdd ? (int)FinalBoss.Source.Adds : -1;
                 Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
                 run.hitSrc = -1;
                 hitSomething = true;
@@ -858,7 +859,9 @@ namespace Depths
             // Death wins ties: a pickup that arrives on the frame the player dies ends the run as a
             // death, and the boss check below does not run.
             if (player.hp <= 0) { run.EndRun(false); return false; }
-            else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen && run.finalFloor)
+            if (run.finaleT > 0 && run.finaleT == run.finaleMax)   // the King's death beat begins: its recalled adds crumble with it
+                for (int i = run.enemies.Count - 1; i >= 0; i--) if (run.enemies[i].kgAdd) { run.enemies[i].hp = 0; run.enemies.RemoveAt(i); }
+            if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen && run.finalFloor)
             {
                 if (run.finaleT > 0)
                 {

@@ -143,6 +143,11 @@ namespace Depths
         public int fbLeft, fbLast = -1, fbAttack, fbTellMax;
         public bool fbHot;   // it charged this tick: its body hurts
         public FinalBoss.Ground? ground;   // the Sunken King's floor (FinalBoss.cs); null on every other body
+        public bool kgAdd;                 // an add the King summoned (its recall): it crumbles when the King falls
+        public int kgSummoned;             // the phase the King last summoned in (once a phase)
+        public readonly double[] kgSum = new double[4];          // where the recall's adds will stand (x, y pairs)
+        public readonly BodyKind[] kgSumK = new BodyKind[2];     // and what they are
+        public int kgSumN;
         public int fbCharges;              // the King's charges still to come after this one
         // the hook's resistance: which field last charged this body, how many hooks it has taken, how
         // long since it was last in one, and the power the current field acts with

@@ -116,6 +116,11 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
   while the King is stunned. **While its floor cracks or burns, the floor is the attack: the King starts nothing**, and
   it never starts a tell over its own live lob marks. A rift's strip is not drawn over the pit. Its body hurts only as
   it charges (2 HP). At most 2 HP a hit; every tell at least 0.35 s (`FinalBoss.TellMin`). Fan: 9 shells.
+  **The recall** (grafted 2026-10-22 from the Archivist, the tournament's runner-up; owner's call): once a phase,
+  while fewer than 2 of its adds live, it marks two quiet cells (200 px from the player, 90 from it) with violet runes
+  for 1.0 s, a ghost of what comes rising in each, then they stand: kinds of THIS run's area for the phase (the
+  Shallows, the Kiln Works, the Galleries; never Brunch, Gunner or egg), at 70% health, waking after 0.5 s (a Lunger may still dodge). They crumble
+  as the King falls. The run comes back for you.
   - **Phase 1, seated** (full to 66%): on its throne at the top, never moving. Fan, Slam, and the **fault lines**
     (every other row cracks 0.75 s, then burns: step one row).
   - **Phase 2, standing** (66-33%): the throne breaks and **the heart of the room (4 x 2 cells) falls for good**; it

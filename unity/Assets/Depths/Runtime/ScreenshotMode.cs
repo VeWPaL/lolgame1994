@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won", "floorboss", "final1", "final2", "final3" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won", "floorboss", "final1", "final2", "final3", "final4" };
 
         void Check(bool ok, string what)
         {
@@ -65,7 +65,7 @@ namespace Depths.Unity
             else if (_view == "thud") yield return LeapView(true);
             else if (_view == "rush") yield return RushView();
             else if (_view == "floorboss") yield return FloorBossView();
-            else if (_view == "final1" || _view == "final2" || _view == "final3") yield return FinalView(_view[5] - '0');
+            else if (_view == "final1" || _view == "final2" || _view == "final3" || _view == "final4") yield return FinalView(_view[5] - '0');
             else if (_view == "spike") yield return SpikeView();
             else if (_view == "summary") yield return SummaryView();
             else if (_view == "won") yield return WonView();
@@ -379,12 +379,26 @@ namespace Depths.Unity
             view.Frozen = true;   // the view steps the game itself, tick by tick
             void Step() { TickOrder.TickPlayer(run, Depths.Input.None); TickOrder.TickProjectiles(run); TickOrder.TickBodies(run); }
             k.noticeTimer = 0; k.bossCd = 1e9;
+            bool recall = phase == 4;   // final4: the recall, in the standing phase
+            if (recall) phase = 2;
             FinalBoss.Settle(k, phase);
             if (phase >= 2) { k.x = Balance.MidX - 170; k.y = Balance.MidY - 60; }   // off the throne, beside the fallen ground
             var g = k.ground;
             int min = Balance.Sec(FinalBoss.TellMin);
             Step();
-            if (phase == 1)
+            if (recall)
+            {
+                tag = "final4: ";
+                FinalBoss.Begin(run, k, FinalBoss.Attack.Summon);
+                for (int i = 0; i < 600 && k.move == "summon" && k.castT > k.fbTellMax * 0.35f; i++) Step();
+                Check(k.move == "summon" && k.kgSumN == FinalBoss.AddCap, tag + "frozen mid-recall, two runes on the floor");
+                Check(FinalBoss.SummonTell >= min, tag + "the runes show at least 0.35 s");
+                var kinds = FinalBoss.Recallable(run, 2);
+                bool fromRun = true;
+                for (int i = 0; i < k.kgSumN; i++) fromRun &= ((System.Collections.Generic.IList<BodyKind>)kinds).Contains(k.kgSumK[i]);
+                Check(fromRun, tag + "what comes is this run's Kiln Works");
+            }
+            else if (phase == 1)
             {
                 FinalBoss.Begin(run, k, FinalBoss.Attack.Fan);
                 for (int i = 0; i < 600 && (k.move == "cast" || run.projectiles.Count == 0); i++) Step();

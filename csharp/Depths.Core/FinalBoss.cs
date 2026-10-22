@@ -6,13 +6,13 @@ namespace Depths
     {
         public const string Name = "THE SUNKEN KING";
 
-        public enum Attack { Fan, Slam, Charge, Rift, Leap, Nova, Quake }
-        public const int Attacks = 7;
+        public enum Attack { Fan, Slam, Charge, Rift, Leap, Nova, Quake, Summon }
+        public const int Attacks = 8;
 
         /// <summary>Where a hit came from, for the bookkeeping (RunState.finalBy): the six attacks, the three floor patterns, the pits.</summary>
-        public enum Source { Fan, Slam, Charge, Rift, Leap, Nova, Fault, Checker, Quadrant, Pit }
-        public const int Sources = 10;
-        public static readonly string[] SourceNames = { "fan", "slam", "charge", "rift", "leap", "nova", "fault", "checker", "quadrant", "pit" };
+        public enum Source { Fan, Slam, Charge, Rift, Leap, Nova, Fault, Checker, Quadrant, Pit, Adds }
+        public const int Sources = 11;
+        public static readonly string[] SourceNames = { "fan", "slam", "charge", "rift", "leap", "nova", "fault", "checker", "quadrant", "pit", "adds" };
 
         /// <summary>What the King's body is doing in each phase: seated on its throne, standing and walking, risen off the floor.</summary>
         public enum Posture { Seated, Standing, Risen }
@@ -78,17 +78,17 @@ namespace Depths
         /// <summary>Weights by phase for Fan, Slam, Charge, Rift, Leap, Nova, Quake; 0 is not in that phase.</summary>
         public static readonly double[][] Weights =
         {
-            new double[] { 1, 3, 0, 0, 0, 0, 3 },       // seated: shells and lobs from the throne, the fault lines
-            new double[] { 0.5, 2.5, 3, 2.5, 0, 0, 3 },     // standing: it charges, it splits the floor, the checker
-            new double[] { 0.4, 0, 2.5, 2.5, 3, 3, 3 },   // risen: it leaps, it rings, the quadrants
+            new double[] { 1, 3, 0, 0, 0, 0, 3, 3 },       // seated: shells and lobs from the throne, the fault lines, the recall
+            new double[] { 0.5, 2.5, 3, 2.5, 0, 0, 3, 3 },     // standing: it charges, it splits the floor, the checker
+            new double[] { 0.4, 0, 2.5, 2.5, 3, 3, 3, 3 },   // risen: it leaps, it rings, the quadrants
         };
         public const double RepeatWeight = 0.3;
 
         /// <summary>The attack a roll in [0,1) picks in a phase, the last attack weighed down.</summary>
-        public static Attack Pick(int phase, int last, double roll, bool shellsOnly = false)
+        public static Attack Pick(int phase, int last, double roll, bool shellsOnly = false, bool canSummon = true)
         {
             var w = Weights[System.Math.Max(1, System.Math.Min(3, phase)) - 1];
-            double W(int i) => shellsOnly && !Shells((Attack)i) ? 0 : i == last ? w[i] * RepeatWeight : w[i];
+            double W(int i) => (shellsOnly && !Shells((Attack)i)) || (i == (int)Attack.Summon && !canSummon) ? 0 : i == last ? w[i] * RepeatWeight : w[i];
             double sum = 0;
             for (int i = 0; i < Attacks; i++) sum += W(i);
             double at = roll * sum;
@@ -140,6 +140,7 @@ namespace Depths
                 case "rift": StepRift(run, e); return;
                 case "leap": StepLeap(run, e); return;
                 case "quake": if (--e.moveT <= 0) { e.move = "rest"; e.moveT = Recover; } return;
+                case "summon": StepSummon(run, e); return;
                 case "rest": if (--e.moveT <= 0) e.move = "idle"; return;
             }
             // idle: seated it holds the throne; standing it walks to its standoff; risen it drifts there quicker
@@ -159,7 +160,7 @@ namespace Depths
             // while its floor cracks or burns, the floor is the attack and the King waits for quiet ground: any volley over a
             // busy floor (a fan, a nova, even one light ring) pinned the player and took 45-76% of the fight's damage
             if (g.Cracking || g.Burning) return;
-            var a = e.fbLeft > 0 ? Attack.Quake : Pick(e.phase, e.fbLast, run.rng.Run());
+            var a = e.fbLeft > 0 ? Attack.Quake : Pick(e.phase, e.fbLast, run.rng.Run(), false, CanSummon(run, e));
             e.fbLeft = 0;
             double over = e.bossCd;
             e.bossCd = e.cdMin + run.rng.Jitter() * e.cdVar;
@@ -253,6 +254,7 @@ namespace Depths
                     break;
                 }
                 case Attack.Quake: Quake(run, e); break;
+                case Attack.Summon: Summon(run, e); break;
             }
         }
 
@@ -496,6 +498,80 @@ namespace Depths
         {
             run.finaleT = run.finaleMax = DeathBeat;
             run.finaleX = e.x; run.finaleY = e.y;
+        }
+
+        // ---- the recall (grafted from the Archivist, the tournament's runner-up): this run comes back for you, one area a phase
+        public static int SummonTell => Balance.Sec(1.0);   // a violet rune where each add will stand, the whole tell long
+        public static int AddWake => Balance.Sec(0.5);      // a recalled add stands still this long once it is there
+        public const int AddCap = 2;                        // recalled adds alive at once: the floor's tells stay readable
+        public const double AddHp = 0.7, SummonFromPlayer = 200, SummonFromBoss = 90, SummonApart = 70;
+        static readonly System.Collections.Generic.List<BodyKind> Scratch = new System.Collections.Generic.List<BodyKind>();
+        static readonly System.Collections.Generic.List<int> Cells = new System.Collections.Generic.List<int>();
+
+        /// <summary>The kinds the recall brings in a phase: this run's group for area phase-1 (the Shallows, the Kiln Works,
+        /// the Galleries), less the Brunch (a pack), the Gunner (one a room) and the turret egg; untuned pools: Lunger, Shooter.</summary>
+        public static System.Collections.Generic.IReadOnlyList<BodyKind> Recallable(RunState run, int phase)
+        {
+            Scratch.Clear();
+            int a = System.Math.Max(0, System.Math.Min(2, phase - 1));
+            if (run.pools != null) foreach (var k in run.pools[a]) if (Pools.Slot(k) && k != BodyKind.Egg) Scratch.Add(k);
+            if (Scratch.Count == 0) { Scratch.Add(BodyKind.Lunger); Scratch.Add(BodyKind.Shooter); }
+            return Scratch;
+        }
+
+        public static int AddsAlive(RunState run)
+        {
+            int n = 0;
+            foreach (var o in run.enemies) if (o.kgAdd && o.hp > 0) n++;
+            return n;
+        }
+
+        /// <summary>Once a phase, with room for an add.</summary>
+        public static bool CanSummon(RunState run, Enemy e) => e.kgSummoned != e.phase && AddsAlive(run) < AddCap;
+
+        // the recall: what comes and where it will stand, chosen now on quiet ground and marked for the whole tell
+        static void Summon(RunState run, Enemy e)
+        {
+            var kinds = Recallable(run, e.phase);
+            var g = e.ground!;
+            double hx = TickOrder.HitboxX, hy = TickOrder.HitboxY + Balance.PlayerHitDy;
+            Cells.Clear();
+            for (int i = 0; i < Ground.N; i++)
+                if (!g.Hot(i) && g.warn[i] == 0 && Far(Ground.CentreX(i), Ground.CentreY(i), hx, hy, SummonFromPlayer)
+                    && Far(Ground.CentreX(i), Ground.CentreY(i), e.x, e.y, SummonFromBoss)) Cells.Add(i);
+            int n = System.Math.Min(AddCap - AddsAlive(run), 2);
+            e.kgSumN = 0;
+            for (int k = 0; k < n && Cells.Count > 0; k++)
+            {
+                int c = Cells[(int)(run.rng.Run() * Cells.Count) % Cells.Count];
+                double x = Ground.CentreX(c), y = Ground.CentreY(c);
+                if (k > 0 && !Far(x, y, e.kgSum[0], e.kgSum[1], SummonApart)) { Cells.Remove(c); k--; continue; }
+                e.kgSum[2 * k] = x; e.kgSum[2 * k + 1] = y;
+                e.kgSumK[k] = kinds[(int)(run.rng.Run() * kinds.Count) % kinds.Count];
+                e.kgSumN++;
+                Cells.Remove(c);
+            }
+            e.kgSummoned = e.phase;
+            e.move = "summon"; e.castT = SummonTell; e.fbTellMax = SummonTell;
+        }
+
+        static bool Far(double x, double y, double ox, double oy, double r) => (x - ox) * (x - ox) + (y - oy) * (y - oy) >= r * r;
+
+        static void StepSummon(RunState run, Enemy e)
+        {
+            if (--e.castT > 0) return;
+            e.castT = 0;
+            for (int i = 0; i < e.kgSumN; i++)
+            {
+                var a = Spawn.Body(run, e.kgSumK[i], e.kgSum[2 * i], e.kgSum[2 * i + 1]);
+                a.kgAdd = true;
+                a.hp = a.maxHp = a.maxHp * AddHp;
+                a.noticeTimer = AddWake;
+                a.alerted = true;
+                run.enemies.Add(a);
+            }
+            e.kgSumN = 0;
+            e.move = "rest"; e.moveT = Recover;
         }
 
         static double Clamp(double v, double lo, double hi) => v < lo ? lo : v > hi ? hi : v;
