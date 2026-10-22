@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-22 (units 1-3 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms,
+_Last updated: 2026-10-22 (unit 4, a tournament builder: the Sunken King, see "The Sunken King"; units 1-3 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms,
 the run's end and the floor boss, see "Spike rooms", "The run's end" and "The Gatekeeper"; before that, 2026-10-21: the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
 for floors 5-12: see "Bot reads lines; middle lift"; before that, the Brunch's tell and locked dash; before that, a typed frame cap; the bot dodges landing marks, with the numbers and the
 recommended next steps under "Bot reads marks"; before that, the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  740/740, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  767/767, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -131,6 +131,16 @@ it from another checkout or the first command spends minutes importing.
   rule pressed Q uselessly every decision (it counted the regen heart, which the cup cannot fill); fixed with a
   test. The overhaul makes the run easier for the novice bot; the final boss (unit 4) is where the challenge
   belongs.
+- **The Sunken King, the final boss of floor 14 (unit 4, tournament builder "the floor changes").** DESIGN.md, "The
+  Sunken King" (`FinalBoss.cs`, `TuneFinalBoss`, `--untune finalboss`). Seated / standing / risen; the floor cracks
+  and burns in rows, a checker, then quadrants, and its heart, then its edge, fall for good; six attacks (fan, slam,
+  charge, rift, leap, nova); a 1.8 s death beat before the win. `shot final1|final2|final3`; lab specimens I-III
+  (F8 drops one into its phase's arena). Bot, same build (fin-off -> fin-on, seeds 101-200 x 3, 90 min), floor 14:
+  wins of the fights reached novice 69/71 -> 22/71 (31%), average 88/88 -> 61/88 (69%, target 40-70), skilled 96/96
+  -> 77/96 (80%, target 70-90); fight 126 / 153 / 160 s (target 120-180); damage a fight 24 / 24 / 23; top attack
+  share 26% fan (novice; target 25%, missed by 1) / 22% fan / 21% slam. Floors 1-13 unchanged (no run saved); the
+  report is `report fin-off fin-on` (playtest/ is not kept). Levers: `FinalBoss.Hp`, `CdMin`, `CrackTell`, the weights. The bot reads
+  every tell after its reaction, so a person will be hit more.
 - **The Gatekeeper, the floor boss of 1-13 (unit 3; owner 2026-10-22: a new floor boss replaces the Warden).**
   DESIGN.md, "The Gatekeeper" (`FloorBoss.cs`, `TuneFloorBoss`, `--untune floorboss`). Charge (0.6 s line), Slam (3
   lobs, 0.95 s marks), Fan (0.5 s flash), then Ring (phase 2) and Rampage (phase 3); weighted by area; it hurts only

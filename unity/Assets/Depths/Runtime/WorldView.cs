@@ -97,6 +97,7 @@ namespace Depths.Unity
             int wt = Materials.WallThick;
             _q.Sprite(wl, new Region(wl.width, wl.height, 0, 0, 1, 1), Balance.RoomLeft - wt + Origin.x, Balance.RoomTop - wt + Origin.y, wl.width, wl.height, QuadBatch.Alpha(1));
             if (room != null) DrawDoors(run, room, pal);
+            DrawKingFloor(run);
 
             // dash and charge puffs, under the bodies
             for (int i = 0; i < Fx.Count; i++)
@@ -118,6 +119,7 @@ namespace Depths.Unity
             DrawPickups(run);
             DrawBodies(run);
             DrawShells(run);
+            DrawKingDeath(run);
             for (int i = 0; i < Fx.Count; i++)
             {
                 ref var f = ref Fx[i];
@@ -258,7 +260,7 @@ namespace Depths.Unity
             // the Gatekeeper's charge: the whole locked line from the tell's first tick, the Lunger's language, wider for its body
             foreach (var e in run.enemies)
             {
-                if (e.kind != BodyKind.Gatekeeper || (e.move != "tell" && e.move != "charge")) continue;
+                if ((e.kind != BodyKind.Gatekeeper && e.kind != BodyKind.SunkenKing) || (e.move != "tell" && e.move != "charge")) continue;
                 bool wind = e.move == "tell";
                 float grow = wind ? 1 - e.moveT / (float)System.Math.Max(1, e.fbTellMax) : 1;
                 Interp.At(run, e, Alpha, out var bx, out var by);
@@ -341,7 +343,7 @@ namespace Depths.Unity
         static string CastColor(BodyKind k) => k switch
         {
             BodyKind.Gunner => "#ffb03a", BodyKind.Splitter => Middle.SplitColor, BodyKind.Mortar => Middle.LobColor,
-            BodyKind.Egg => Middle.EggColor, BodyKind.Gatekeeper => FloorBoss.ShellColor, _ => "#ff4d4d",
+            BodyKind.Egg => Middle.EggColor, BodyKind.Gatekeeper => FloorBoss.ShellColor, BodyKind.SunkenKing => FinalBoss.ShellColor, _ => "#ff4d4d",
         };
         static readonly Color32 Dirt = Hex.C("#3a2a1c"), DirtLit = Hex.C("#7a5a3a"), Crack = Hex.C("#ff8a5a");
 
@@ -441,8 +443,9 @@ namespace Depths.Unity
                     Ring(bx, by - 2, (float)e.r + 5 + beat, 1.5f, QuadBatch.Tint(Gold, 0.45f + 0.35f * beat));
                     Ring(bx, by + e.r * 0.8, (float)e.r + 2, 2, QuadBatch.Tint(Gold, 0.9f));
                 }
-                Dot(bx, by + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
-                double ey = by - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop + sink * 8;
+                double lift = e.kind == BodyKind.SunkenKing ? KingLift(e, bx, by) : 0;
+                Dot(bx, by + e.r * 0.8, (float)e.r * (lift > 0 ? 0.7f : 0.9f), (float)e.r * 0.3f, Shadow);
+                double ey = by - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop + sink * 8 - lift;
                 if (e.dazed && e.stun > 0) DrawTumble(e, frame, bx, ey);   // jarred by its own landing: tipped over, rocking back up
                 else Spr(SpriteSet.BodyR(e.kind, frame, false), bx, ey, 1 - 0.75f * sink);
                 if (e.hitFlash > 0)   // a translucent silhouette over the body, so sustained fire still shows a creature
@@ -463,8 +466,173 @@ namespace Depths.Unity
                     Rect(bx - e.r, barY, e.r * 2 * frac, 4, e.elite ? Gold : Green);
                 }
                 if (e.stun > 0) DrawStunStars(bx, ey - e.r - 6, (float)e.stun);
-                if (e.castT > 0) DrawCastFlash(bx, by, e.castT, e.kind == BodyKind.Gatekeeper ? e.fbTellMax : Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
+                if (e.castT > 0) DrawCastFlash(bx, e.kind == BodyKind.SunkenKing ? ey : by, e.castT, e.kind == BodyKind.Gatekeeper || e.kind == BodyKind.SunkenKing ? e.fbTellMax : Middle.CastTime(e.kind),
+                                               Hex.Of(CastColor(e.kind)), e.kind == BodyKind.SunkenKing ? 3 : 1);   // the King's flash at its size
             }
+        }
+
+        // ---- the Sunken King (FinalBoss.cs) ----
+        static readonly Color32 Ember = Hex.C("#ff8a3d"), Fire = Hex.C("#ff5a2a"), FireCore = Hex.C("#ffd27a"), Abyss = Hex.C("#07040a"),
+            Stone = Hex.C("#3a3040"), StoneLit = Hex.C("#5a4a60"), CrownGold = Hex.C("#e8c25a"), Spared = Hex.C("#bff6ff");
+
+        static Enemy King(RunState run)
+        {
+            foreach (var e in run.enemies) if (e.kind == BodyKind.SunkenKing && e.ground != null && e.hp > 0) return e;
+            return null;
+        }
+
+        // how far above its feet the King is drawn, and what stands behind it: the throne it sits on, the glow it rises in
+        double KingLift(Enemy e, double bx, double by)
+        {
+            var post = FinalBoss.PostureOf(e);
+            if (e.move == "quake" || (e.move == "shift"))   // arms up over the floor: an ember glow round it
+                Glow(bx, by - 10, (float)e.r + 26, Ember, 0.35f + 0.25f * Mathf.Sin(Fc * 0.3f));
+            if (e.move == "leap")
+            {
+                float t = 1 - Mathf.Clamp01(e.moveT / (float)Math.Max(1, e.fbTellMax));
+                return Mathf.Sin(t * Mathf.PI) * 70;
+            }
+            if (post == FinalBoss.Posture.Seated)
+            {
+                // the throne: a dark stone back, gold trim, the King sunk into it
+                double tx = bx, ty = by;
+                Rect(tx - 44, ty - 70, 88, 92, Stone);
+                Rect(tx - 44, ty - 70, 88, 4, CrownGold);
+                Rect(tx - 50, ty - 6, 12, 30, StoneLit); Rect(tx + 38, ty - 6, 12, 30, StoneLit);   // its arms
+                Rect(tx - 50, ty - 6, 12, 3, CrownGold); Rect(tx + 38, ty - 6, 12, 3, CrownGold);
+                for (int i = 0; i < 3; i++) Rect(tx - 30 + i * 26, ty - 82, 8, 12, CrownGold);   // the back's three spires
+                return -6;   // seated: drawn lower, into the seat
+            }
+            if (post == FinalBoss.Posture.Risen)
+            {
+                float hover = 16 + 4 * Mathf.Sin(Fc * 0.07f);
+                Glow(bx, by - hover, (float)e.r + 20, Fire, 0.45f);
+                for (int i = 0; i < 3; i++)   // the broken crown's shards, circling its head
+                {
+                    float a = Fc * 0.05f + i * 2.094f;
+                    Rect(bx + Mathf.Cos(a) * 30 - 3, by - hover - 40 + Mathf.Sin(a) * 8 - 3, 6, 6, CrownGold);
+                }
+                return hover;
+            }
+            return 0;
+        }
+
+        // the King's floor: cracking cells glow brighter and their cracks reach further as the tell runs; burning cells flame;
+        // fallen cells are the abyss; risen, the quadrant it will spare next is outlined in pale light
+        void DrawKingFloor(RunState run)
+        {
+            var e = King(run);
+            if (e == null) return;
+            var g = e.ground;
+            float cw = (float)FinalBoss.Ground.CellW, ch = (float)FinalBoss.Ground.CellH;
+            for (int i = 0; i < FinalBoss.Ground.N; i++)
+            {
+                double x = FinalBoss.Ground.Left(i), y = FinalBoss.Ground.Top(i);
+                if (g.pit[i])
+                {
+                    Rect(x, y, cw, ch, Abyss);
+                    Rect(x + 4, y + 4, cw - 8, ch - 8, Hex.Rgba(40, 10, 30, 1));
+                    Rect(x, y, cw, 2, QuadBatch.Tint(Fire, 0.45f)); Rect(x, y + ch - 2, cw, 2, QuadBatch.Tint(Fire, 0.3f));
+                    continue;
+                }
+                if (g.burn[i] > 0)
+                {
+                    float left = g.burn[i] / (float)Math.Max(1, FinalBoss.Burn), fade = left < 0.25f ? left / 0.25f : 1;
+                    float flick = 0.5f + 0.5f * Mathf.Sin(Fc * 0.6f + i * 1.7f);
+                    Rect(x + 1, y + 1, cw - 2, ch - 2, QuadBatch.Tint(Fire, (0.55f + 0.15f * flick) * fade));
+                    Rect(x + 8, y + 8, cw - 16, ch - 16, QuadBatch.Tint(FireCore, (0.35f + 0.2f * flick) * fade));
+                    for (int k = 0; k < 4; k++)   // tongues of flame rising off it
+                    {
+                        float fx = (float)x + 10 + ((i * 37 + k * 23) % 50), rise = Frac(Fc * 0.04f + k * 0.27f + i * 0.13f);
+                        Rect(fx, y + ch - 10 - rise * (ch - 14), 4, 6, QuadBatch.Tint(FireCore, (1 - rise) * fade));
+                    }
+                    continue;
+                }
+                if (g.warn[i] > 0)
+                {
+                    float p = 1 - g.warn[i] / (float)Math.Max(1, g.warnMax[i]), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * (0.25f + 0.5f * p));
+                    var crack = g.falls[i] ? Hex.C("#c070ff") : Ember;   // ground that will fall cracks violet over a darkening floor
+                    if (g.falls[i]) Rect(x, y, cw, ch, QuadBatch.Tint(Abyss, 0.15f + 0.55f * p));
+                    else Rect(x + 1, y + 1, cw - 2, ch - 2, QuadBatch.Tint(Ember, 0.10f + 0.28f * p));
+                    Frame(x + 2, y + 2, cw - 4, ch - 4, 2, QuadBatch.Tint(crack, 0.45f + 0.45f * pulse * (0.4f + 0.6f * p)));
+                    for (int k = 0; k < 3; k++)   // three cracks from a point in the cell, reaching out as the tell runs
+                    {
+                        float ox = (float)x + cw * (0.3f + 0.2f * ((i + k) % 3)), oy = (float)y + ch * (0.35f + 0.15f * ((i * 3 + k) % 3));
+                        float a = (i * 1.3f + k * 2.1f) % 6.28f, len = 6 + 22 * p;
+                        for (float s = 0; s < len; s += 3)
+                        {
+                            float jig = Mathf.Sin(s * 0.5f + i + k) * 2;
+                            Rect(ox + Mathf.Cos(a) * s - Mathf.Sin(a) * jig - 1, oy + Mathf.Sin(a) * s + Mathf.Cos(a) * jig - 1, 2, 2, QuadBatch.Tint(crack, 0.6f + 0.4f * p));
+                        }
+                    }
+                }
+            }
+            if (e.phase >= 3 && g.safe >= 0)
+            {
+                // the quadrant spared: the one now while the floor cracks, else the one the next pattern will spare
+                int q = g.Cracking && g.lastSafe >= 0 ? g.lastSafe : g.safe;
+                bool now = g.Cracking;
+                double qx = Balance.RoomLeft + cw * (q == 1 || q == 2 ? FinalBoss.Ground.Cols / 2 : 1), qy = Balance.RoomTop + ch * (q >= 2 ? FinalBoss.Ground.Rows / 2 : 1);
+                float qw = cw * (FinalBoss.Ground.Cols / 2 - 1), qh = ch * (FinalBoss.Ground.Rows / 2 - 1);
+                float beat = 0.5f + 0.5f * Mathf.Sin(Fc * 0.15f);
+                if (now) Rect(qx, qy, qw, qh, QuadBatch.Tint(Spared, 0.10f + 0.06f * beat));
+                for (float s = 0; s < qw; s += 12) { Rect(qx + s, qy, 6, 2, QuadBatch.Tint(Spared, now ? 0.9f : 0.35f + 0.2f * beat)); Rect(qx + s, qy + qh - 2, 6, 2, QuadBatch.Tint(Spared, now ? 0.9f : 0.35f + 0.2f * beat)); }
+                for (float s = 0; s < qh; s += 12) { Rect(qx, qy + s, 2, 6, QuadBatch.Tint(Spared, now ? 0.9f : 0.35f + 0.2f * beat)); Rect(qx + qw - 2, qy + s, 2, 6, QuadBatch.Tint(Spared, now ? 0.9f : 0.35f + 0.2f * beat)); }
+            }
+            // a rift: each strip filled on the floor from the King to the wall, filling as the tell runs, then the eruption
+            bool rift = e.move == "rift";
+            if (rift || g.riftFx > 0)
+            {
+                float p = rift ? 1 - e.moveT / (float)Math.Max(1, e.fbTellMax) : 1, erupt = rift ? 0 : g.riftFx / (float)Math.Max(1, FinalBoss.RiftFx);
+                var white = SpriteSet.WhiteTexel;
+                float w = (float)FinalBoss.RiftW;
+                for (int k = 0; k < g.rifts; k++)
+                {
+                    float ang = Mathf.Atan2((float)g.rdy[k], (float)g.rdx[k]), len = (float)g.rlen[k];
+                    var at = ToPanel(g.riftX, g.riftY);
+                    if (rift)
+                    {
+                        // a dark scar the whole length at once, its glowing core filling outward as the tell runs, hot edges
+                        _q.Rotated(A.Texture, white, at, 0, -w / 2, len, w, ang, QuadBatch.Tint(Hex.Of("#1a0306"), 0.55f + 0.2f * p));
+                        _q.Rotated(A.Texture, white, at, 0, -w / 2 + 6, len * Mathf.Max(0.1f, p), w - 12, ang, QuadBatch.Tint(Hex.Of(FinalBoss.RiftColor), 0.55f + 0.4f * p));
+                        _q.Rotated(A.Texture, white, at, 0, -w / 2, len, 3, ang, QuadBatch.Tint(FireCore, 0.65f + 0.35f * p));
+                        _q.Rotated(A.Texture, white, at, 0, w / 2 - 3, len, 3, ang, QuadBatch.Tint(FireCore, 0.65f + 0.35f * p));
+                    }
+                    else _q.Rotated(A.Texture, white, at, 0, -w / 2 - 4, len, w + 8, ang, QuadBatch.Tint(FireCore, 0.85f * erupt));
+                }
+            }
+            if (e.move == "leap")   // the leap's landing: a ring on the floor, filling as it comes down
+            {
+                float t = 1 - Mathf.Clamp01(e.moveT / (float)Math.Max(1, e.fbTellMax));
+                Dot(e.markX, e.markY, (float)FinalBoss.LeapR, (float)FinalBoss.LeapR * 0.6f, QuadBatch.Tint(Fire, 0.12f + 0.3f * t));
+                Ring(e.markX, e.markY, (float)FinalBoss.LeapR * (1.25f - 0.25f * t), 3, QuadBatch.Tint(Ember, 0.5f + 0.5f * t));
+            }
+        }
+
+        void Frame(double x, double y, float w, float h, float t, Color32 c)
+        {
+            Rect(x, y, w, t, c); Rect(x, y + h - t, w, t, c); Rect(x, y + t, t, h - 2 * t, c); Rect(x + w - t, y + t, t, h - 2 * t, c);
+        }
+
+        // the King's death beat: its body shakes and cracks with light, the light grows, and the room goes white as the beat ends
+        void DrawKingDeath(RunState run)
+        {
+            if (run.finaleT <= 0 || run.finaleMax <= 0) return;
+            float t = 1 - run.finaleT / (float)run.finaleMax;
+            double x = run.finaleX + Mathf.Sin(Fc * 1.9f) * 4 * (1 - t * 0.5f), y = run.finaleY - 6;
+            var white = SpriteSet.WhiteTexel;
+            for (int i = 0; i < 8; i++)   // shafts of light out of its cracks
+            {
+                float a = i * 0.785f + Fc * 0.01f, len = 30 + 260 * t;
+                _q.Rotated(A.Texture, white, ToPanel(x, y), 10, -3, len, 6, a, QuadBatch.Tint(FireCore, 0.25f + 0.5f * t));
+            }
+            var body = SpriteSet.BodyR(BodyKind.SunkenKing, 1, false);
+            if (t < 0.8f) Spr(body, x, y, 1 - t);
+            Spr(SpriteSet.BodyR(BodyKind.SunkenKing, 1, true), x, y, Mathf.Clamp01(0.3f + t));
+            Glow(x, y, 40 + 200 * t, FireCore, 0.4f + 0.5f * t);
+            if (t > 0.6f)
+                Rect(Balance.RoomLeft, Balance.RoomTop, Balance.RoomRight - Balance.RoomLeft, Balance.RoomBottom - Balance.RoomTop,
+                     Hex.Rgba(255, 245, 225, (t - 0.6f) / 0.4f * 0.85f));
         }
 
         // a dazed body tips toward the way it fell and rocks back upright as the daze runs out
@@ -491,11 +659,11 @@ namespace Depths.Unity
         }
 
         /// <summary>drawCastFlash: a ring that tightens and brightens, and a glow, as the shot comes.</summary>
-        void DrawCastFlash(double x, double y, int t, int total, Color32 col)
+        void DrawCastFlash(double x, double y, int t, int total, Color32 col, float size = 1)
         {
             float k = 1 - t / (float)Math.Max(1, total);
-            Ring(x, y, 5 + 7 * k, 1 + 1.5f * k, QuadBatch.Tint(col, 0.35f + 0.6f * k));
-            Glow(x, y, 8 + 5 * k, col, 0.5f * k);
+            Ring(x, y, (5 + 7 * k) * size, (1 + 1.5f * k) * Mathf.Sqrt(size), QuadBatch.Tint(col, 0.35f + 0.6f * k));
+            Glow(x, y, (8 + 5 * k) * size, col, 0.5f * k);
         }
 
         // ---- shells ----

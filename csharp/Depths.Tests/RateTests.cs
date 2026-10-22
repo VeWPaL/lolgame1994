@@ -198,6 +198,14 @@ namespace Depths.Tests
             ["FloorBoss.SlamWind"] = U.Sec, ["FloorBoss.SlamFlight"] = U.Sec, ["FloorBoss.ChargeSpeed"] = U.PerSec, ["FloorBoss.ChargeRecover"] = U.Sec,
             ["FloorBoss.Recover"] = U.Sec, ["FloorBoss.Walk"] = U.PerSec, ["FloorBoss.FanSpeed"] = U.PerSec, ["FloorBoss.RingSpeed"] = U.PerSec,
             ["FloorBoss.CdMin"] = U.Sec, ["FloorBoss.CdVar"] = U.Sec, ["FloorBoss.FirstCd"] = U.Sec, ["FloorBoss.PhaseCd"] = U.Sec,
+            // the Sunken King (FinalBoss.cs)
+            ["FinalBoss.FanTell"] = U.Sec, ["FinalBoss.NovaTell"] = U.Sec, ["FinalBoss.SlamWind"] = U.Sec, ["FinalBoss.SlamFlight"] = U.Sec,
+            ["FinalBoss.ChargeTell"] = U.Sec, ["FinalBoss.RiftTell"] = U.Sec, ["FinalBoss.LeapTime"] = U.Sec, ["FinalBoss.CrackTell"] = U.Sec,
+            ["FinalBoss.QuadTell"] = U.Sec, ["FinalBoss.FallTell"] = U.Sec, ["FinalBoss.Burn"] = U.Sec, ["FinalBoss.ShiftTime"] = U.Sec,
+            ["FinalBoss.DeathBeat"] = U.Sec, ["FinalBoss.FanSpeed"] = U.PerSec, ["FinalBoss.NovaSpeed"] = U.PerSec, ["FinalBoss.ChargeSpeed"] = U.PerSec,
+            ["FinalBoss.Recover"] = U.Sec, ["FinalBoss.ChargeRecover"] = U.Sec, ["FinalBoss.LeapRecover"] = U.Sec, ["FinalBoss.RiftFx"] = U.Sec,
+            ["FinalBoss.Walk"] = U.PerSec, ["FinalBoss.Float"] = U.PerSec, ["FinalBoss.CdMin"] = U.Sec, ["FinalBoss.CdVar"] = U.Sec,
+            ["FinalBoss.FirstCd"] = U.Sec, ["FinalBoss.LeapShellSpeed"] = U.PerSec, ["FinalBoss.AgainTell"] = U.Sec, ["FinalBoss.QuakeCast"] = U.Sec,
         };
 
         // the dials that live in tables and on fresh bodies rather than as static properties
@@ -247,7 +255,7 @@ namespace Depths.Tests
         {
             var off = new List<string>();
             var seen = new HashSet<string>();
-            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState), typeof(Middle), typeof(Eggs), typeof(FloorBoss) })
+            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState), typeof(Middle), typeof(Eggs), typeof(FloorBoss), typeof(FinalBoss) })
                 foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
                 {
                     if (prop.Name == nameof(Balance.TickHz) || (prop.PropertyType != typeof(int) && prop.PropertyType != typeof(double))) continue;

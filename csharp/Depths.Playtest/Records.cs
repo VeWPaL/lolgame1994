@@ -19,6 +19,8 @@ namespace Depths.Playtest
         // damage on this floor by source, as the run's; null in files from before 2026-10-06
         public SortedDictionary<string, double>? dmgBySource;
         public SortedDictionary<string, double>? healBy;   // healing on this floor by source, as the run's; null likewise
+        // the final boss's damage by attack (the game's own bookkeeping, RunState.finalBy), on the last floor only; else null
+        public SortedDictionary<string, double>? finalBy;
     }
 
     public sealed class RunResult

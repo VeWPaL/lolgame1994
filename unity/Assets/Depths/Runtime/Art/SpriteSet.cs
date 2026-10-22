@@ -107,7 +107,7 @@ namespace Depths.Unity.Art
         static string BodyName(BodyKind k) => k switch
         {
             BodyKind.Brunch => "brunch", BodyKind.Shooter => "shooter", BodyKind.Gunner => "gunner", BodyKind.Boss => "boss",
-            BodyKind.Splitter => "splitter", BodyKind.Mortar => "mortar", BodyKind.Burrower => "burrower", BodyKind.Sprayer => "sprayer", BodyKind.Egg => "egg", BodyKind.Gatekeeper => "gatekeeper",
+            BodyKind.Splitter => "splitter", BodyKind.Mortar => "mortar", BodyKind.Burrower => "burrower", BodyKind.Sprayer => "sprayer", BodyKind.Egg => "egg", BodyKind.Gatekeeper => "gatekeeper", BodyKind.SunkenKing => "sunkenking",
             _ => "lunger",
         };
 
@@ -124,11 +124,12 @@ namespace Depths.Unity.Art
             BodyKind.Sprayer => (Sprites.Frame(Sprites.SprayerUpper, f), Sprites.SprayerPal),
             BodyKind.Egg => (Sprites.EggRows, Sprites.EggPal),
             BodyKind.Gatekeeper => (Sprites.Frame(Sprites.GatekeeperUpper, f), Sprites.GatekeeperPal),
+            BodyKind.SunkenKing => (Sprites.SunkenKingFrame(f), Sprites.SunkenKingPal),
             _ => (Sprites.Frame(Sprites.LungerUpper, f), Sprites.LungerPal),
         };
 
         /// <summary>The pixel size each body is drawn at (ENEMY[...].art).</summary>
-        public static int Art(BodyKind k) => k switch { BodyKind.Brunch => 1, BodyKind.Gunner => 3, BodyKind.Boss => 4, BodyKind.Gatekeeper => 4, _ => 2 };
+        public static int Art(BodyKind k) => k switch { BodyKind.Brunch => 1, BodyKind.Gunner => 3, BodyKind.Boss => 4, BodyKind.Gatekeeper => 4, BodyKind.SunkenKing => 4, _ => 2 };
 
         static bool ItemKnown(string id) { foreach (var i in ItemArt.Ids) if (i == id) return true; return false; }
 

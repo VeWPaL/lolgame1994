@@ -278,7 +278,7 @@ namespace Depths.Unity.Hud
             }
 
             /// <summary>The name on the boss plate.</summary>
-            public static string BossName(BodyKind k) => k == BodyKind.Gatekeeper ? FloorBoss.Name : "THE WARDEN";
+            public static string BossName(BodyKind k) => k == BodyKind.SunkenKing ? FinalBoss.Name : k == BodyKind.Gatekeeper ? FloorBoss.Name : "THE WARDEN";
 
             public static Enemy LiveBoss(RunState run)
             {

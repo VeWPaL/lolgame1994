@@ -10,17 +10,20 @@ namespace Depths.Unity
     /// <summary>The lab (F2), after src/35-devlab.js: one room, a specimen of every body on two rows (frozen until F3), a... [h:LabMode-1]</summary>
     public sealed class LabMode
     {
-        public static readonly (BodyKind kind, EggForm form, string name, string blurb)[] Specimens =
+        public static readonly (BodyKind kind, EggForm form, string name, string blurb, int phase)[] Specimens =
         {
-            (BodyKind.Lunger, EggForm.Fixed, "Lunger", "the baseline body"), (BodyKind.Brunch, EggForm.Fixed, "Brunch", "cover, in numbers"),
-            (BodyKind.Shooter, EggForm.Fixed, "Shooter", "stands off and shoots"), (BodyKind.Gunner, EggForm.Fixed, "Gunner", "solves your line"),
-            (BodyKind.Boss, EggForm.Fixed, "Warden", "the whole fight"),
-            (BodyKind.Splitter, EggForm.Fixed, "Splitter", "bursts close: keep moving"), (BodyKind.Mortar, EggForm.Fixed, "Mortar", "lands where you are going"),
-            (BodyKind.Burrower, EggForm.Fixed, "Burrower", "homes underground, then leaps: step off the mark"), (BodyKind.Sprayer, EggForm.Fixed, "Sprayer", "wind-up, then a tight cone"),
-            (BodyKind.Egg, EggForm.Fixed, "Turret egg", "never moves; rings the room"),
-            (BodyKind.Egg, EggForm.Orbit, "Orbiting egg", "circles a body; a smaller, slower ring"),
-            (BodyKind.Egg, EggForm.Rail, "Rail egg", "rides a track (Kiln Works); F8 again for the next track"),
-            (BodyKind.Gatekeeper, EggForm.Fixed, "Gatekeeper", "floors 1-13: a charge, lobs, fans; a ring, then a rampage"),
+            (BodyKind.Lunger, EggForm.Fixed, "Lunger", "the baseline body", 0), (BodyKind.Brunch, EggForm.Fixed, "Brunch", "cover, in numbers", 0),
+            (BodyKind.Shooter, EggForm.Fixed, "Shooter", "stands off and shoots", 0), (BodyKind.Gunner, EggForm.Fixed, "Gunner", "solves your line", 0),
+            (BodyKind.Boss, EggForm.Fixed, "Warden", "the whole fight", 0),
+            (BodyKind.Splitter, EggForm.Fixed, "Splitter", "bursts close: keep moving", 0), (BodyKind.Mortar, EggForm.Fixed, "Mortar", "lands where you are going", 0),
+            (BodyKind.Burrower, EggForm.Fixed, "Burrower", "homes underground, then leaps: step off the mark", 0), (BodyKind.Sprayer, EggForm.Fixed, "Sprayer", "wind-up, then a tight cone", 0),
+            (BodyKind.Egg, EggForm.Fixed, "Turret egg", "never moves; rings the room", 0),
+            (BodyKind.Egg, EggForm.Orbit, "Orbiting egg", "circles a body; a smaller, slower ring", 0),
+            (BodyKind.Egg, EggForm.Rail, "Rail egg", "rides a track (Kiln Works); F8 again for the next track", 0),
+            (BodyKind.Gatekeeper, EggForm.Fixed, "Gatekeeper", "floors 1-13: a charge, lobs, fans; a ring, then a rampage", 0),
+            (BodyKind.SunkenKing, EggForm.Fixed, "Sunken King I", "floor 14, seated: fans, lobs, the floor's fault lines", 1),
+            (BodyKind.SunkenKing, EggForm.Fixed, "Sunken King II", "standing: a charge, a rift; the heart of the room falls", 2),
+            (BodyKind.SunkenKing, EggForm.Fixed, "Sunken King III", "risen: leaps, rings, three rifts; the edge falls, quadrants burn", 3),
         };
 
         public bool On { get; private set; }
@@ -48,9 +51,10 @@ namespace Depths.Unity
             _row.Clear(); _lastHp.Clear(); ClearNumbers();
             for (int i = 0; i < Specimens.Length; i++)
             {
-                double x = Balance.RoomLeft + 70 + (i % 5) * 140, y = Balance.RoomTop + 70 + (i / 5) * 110;
+                double x = Balance.RoomLeft + 70 + (i % 6) * 112, y = Balance.RoomTop + 70 + (i / 6) * 110;   // six a row: three rows hold sixteen
                 var e = Spawn.Body(run, Specimens[i].kind, x, y);
                 if (e.kind == BodyKind.Brunch) { e.packId = ++_pack; e.packSlot = 0; }
+                if (e.kind == BodyKind.SunkenKing) e.phase = Specimens[i].phase;   // on the row: its posture only, the floor left whole
                 run.enemies.Add(e);
                 Dress(run, e, Specimens[i].form);
                 if (e.eggForm == EggForm.Rail) { x = e.x; y = e.y; }   // its plinth is on its track
@@ -118,6 +122,7 @@ namespace Depths.Unity
             y = Math.Max(Balance.RoomTop + 30, Math.Min(Balance.RoomBottom - 30, y));
             var e = Spawn.Body(run, Specimens[Armed].kind, x, y);
             e.noticeTimer = 0; e.alerted = true; e.aggroTimer = Balance.AggroTime;
+            if (e.kind == BodyKind.SunkenKing) { FinalBoss.Settle(e, Specimens[Armed].phase); e.x = x; e.y = y; }   // dropped: its phase's arena too
             run.enemies.Add(e);
             Dress(run, e, Specimens[Armed].form);
             return e;

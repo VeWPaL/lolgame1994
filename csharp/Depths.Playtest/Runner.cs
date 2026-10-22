@@ -58,6 +58,9 @@ namespace Depths.Playtest
         void CloseFloor()
         {
             _f.hpOut = Hearts(Run.player); _f.armorOut = Run.player.armor;
+            if (!Run.finalFloor) return;
+            _f.finalBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
+            for (int i = 0; i < FinalBoss.Sources; i++) if (Run.finalBy[i] > 0) _f.finalBy[FinalBoss.SourceNames[i]] = Run.finalBy[i];
         }
 
         public RunResult Play()

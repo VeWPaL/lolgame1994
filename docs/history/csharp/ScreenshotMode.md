@@ -18,3 +18,10 @@ near: `IEnumerator SecretView()`
 // A full page: a fixture with every line of both ledgers written (keys, mail, a held item and
 // passives, a part-spent blink, momentum, a charted floor). The harness sets these by hand.
 // The fake wall: the frame shows its crack, then the blast opens it both ways and the room behind holds the hook.
+
+## [h:ScreenshotMode-3]
+near: `IEnumerator FinalView(int phase)`
+
+// the Sunken King, one view a phase, each frozen mid-tell over its floor: seated over the fault lines with a fan's shells
+// still flying; standing by the fallen heart of the room, a rift's strip across the burning checker; risen over the
+// fallen edge, the quadrants cracking round the one it spares, a ring's cast flash

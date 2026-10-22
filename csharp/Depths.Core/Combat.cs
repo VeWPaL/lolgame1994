@@ -50,6 +50,7 @@ namespace Depths
                 return false;
             }
             run.dmgTaken += amount;
+            if (run.hitSrc >= 0) run.finalBy[run.hitSrc] += amount;   // the final boss's bookkeeping, by attack
             double rem = amount;
             if (p.armor > 0 && Balance.JsReference) { double used = System.Math.Min(p.armor, rem); p.armor -= used; rem -= used; }
             else if (p.armor > 0)
@@ -206,6 +207,7 @@ namespace Depths
             var en = run.enemies;
             var e = en[index];
             en.RemoveAt(index);
+            if (e.kind == BodyKind.SunkenKing) FinalBoss.Fall(run, e);
             if (e.kind == BodyKind.Boss)
                 for (int i = en.Count - 1; i >= 0; i--)
                     if (en[i].packId == Balance.BossWallId) en.RemoveAt(i);

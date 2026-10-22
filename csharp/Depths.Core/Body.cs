@@ -16,5 +16,7 @@ namespace Depths
         Egg,
         // the floor boss of floors 1-13 (FloorBoss.cs; C# only); the Warden (Boss) stays the final floor's
         Gatekeeper,
+        // the final boss of floor 14 (FinalBoss.cs; C# only)
+        SunkenKing,
     }
 }

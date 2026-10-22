@@ -104,8 +104,38 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
   for 2 HP within 30 px; then dazed 0.6 s (stunned, skidding, tumbling) with a thud and screen shake. Untouchable
   under the floor and in the air. Counterplay: turn or stop once it is airborne.
 - **Warden** (boss): volleys, sweeps, a wall of Brunch statues that guard it (tuned: they wake and act), phases; a
-  phase change drops a cast in progress. Tuned, it is only the final boss on floor 14 (a stand-in until the final boss
-  is built); untuned, every floor's.
+  phase change drops a cast in progress. Tuned, it holds no floor (the Gatekeeper 1-13, the Sunken King 14); untuned
+  (or with `TuneFloorBoss` / `TuneFinalBoss` off) it is the boss of the floors they leave.
+- **The Sunken King** (placeholder final boss of floor 14, `TuneFinalBoss`, `FinalBoss.cs`; Nuclear Throne's Throne
+  and Gungeon's Lich were the reference: a finale that changes the room). A crowned, horned king in a robe split by
+  molten seams (16 px wide at art 4, radius 34), 640 x 1.35 HP x `DepthTough`. Its arena mechanic is **the floor**:
+  the room is a 10 x 6 grid of cells; a pattern's cells crack (an ember outline, cracks reaching further as the tell
+  runs) and then burn for 1.5 s (1 HP a second, the i-frames' rate, while the hitbox stands on one); ground that will
+  fall for good cracks violet over a darkening cell for 2 s, then is the abyss (1 HP likewise). The King never starts
+  a tell over a cracking floor except a shell attack (fan, ring, slam), and never over its own live lob marks. Its
+  body hurts only as it charges (2 HP). At most 2 HP a hit; every tell at least 0.35 s (`FinalBoss.TellMin`).
+  - **Phase 1, seated** (full to 66%): on its throne at the top, never moving. Fan, Slam, and the **fault lines**
+    (every other row cracks 0.75 s, then burns: step one row).
+  - **Phase 2, standing** (66-33%): the throne breaks and **the heart of the room (4 x 2 cells) falls for good**; it
+    stands and walks (85 px/s) to a 190 px standoff. Adds Charge and Rift; its pattern is the **checker** (every other
+    cell: the safe one is always beside you); its Slam becomes a cross of 5.
+  - **Phase 3, risen** (33-0%): the pit closes and **the edge of the room falls instead**; it floats (115 px/s) with
+    its broken crown circling. Adds Leap and Nova, drops Slam; Rift becomes three strips, Charge twice; its pattern is
+    the **quadrants**: three of the inner floor's four crack 1.2 s and burn, the spared one turns clockwise each time
+    and is outlined in pale light ahead of time.
+  - Each phase opens with its pattern; a phase change (2.4 s, the collapse's crack) calls off the move in hand.
+  - **Fan**: 0.55 s cast flash, 9 shells across +-0.6 rad at 420 px/s, 1 HP. **Nova**: 0.75 s flash, two rings of 18
+    (240 and 168 px/s, offset half a gap), 1 HP. **Slam**: 0.4 s flash, lobs whose 58 px landing marks fill for
+    0.85 s, 2 HP. **Charge**: 0.55 s orange dashed line, 660 px/s (risen: a second one off its own 0.45 s line).
+    **Rift**: 0.6 s, a 48 px strip filled on the floor from the King to the wall (three, 0.55 rad apart, risen), then
+    it erupts once, 2 HP. **Leap**: its 70 px landing ring is on the floor for the whole 0.95 s flight; 2 HP inside it,
+    then 10 slow shells out from the landing.
+  - **Death**: its body shakes and cracks with light for 1.8 s (`DeathBeat`, the shells cleared), the room flashes
+    white, then the run is won (`run.finaleT`; TickRoom waits for it). Gaps between attacks 0.16-0.46 s, not scaled.
+  - The bot reads it all after its reaction time: the strips and lines (`BotPolicy.Lines`), the leap's ring and the
+    floor (`Marks`: off a cell that burns, has fallen, or has cracked long enough to be seen, toward the nearest good
+    cell, leading its trailing hitbox), and it will not walk or blink onto such a cell (`FloorGuard`).
+    `RunState.finalBy` books the fight's damage by attack (the report's "final floor" table).
 - **The Gatekeeper** (placeholder floor boss of floors 1-13, `TuneFloorBoss`, `FloorBoss.cs`; Gungeon's first bosses
   were the reference: one readable gimmick, three patterns, a short fight). A horned iron guard with a brass-barred
   chest (art 4, radius 28), 345 x 1.35 HP x `DepthTough`; the gaps between attacks (1.0 s + up to 0.7 s) and its

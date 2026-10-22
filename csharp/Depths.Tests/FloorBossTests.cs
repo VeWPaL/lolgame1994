@@ -73,7 +73,7 @@ namespace Depths.Tests
         static bool Telling(Enemy e) => e.move == "tell" || e.castT > 0;
 
         [Test]
-        public void TheGatekeeperHoldsFloorsOneToThirteenAndTheWardenTheLast()
+        public void TheGatekeeperHoldsFloorsOneToThirteenAndTheKingTheLast()
         {
             for (uint seed = 1; seed <= 3; seed++)
             {
@@ -83,7 +83,7 @@ namespace Depths.Tests
                     if (f > 1) run.Descend();
                     var copy = OnFloor(seed, f);
                     var kind = BossOf(copy).kind;
-                    Assert.That(kind, Is.EqualTo(f < Balance.FinalFloor ? BodyKind.Gatekeeper : BodyKind.Boss), "seed " + seed + " floor " + f);
+                    Assert.That(kind, Is.EqualTo(f < Balance.FinalFloor ? BodyKind.Gatekeeper : BodyKind.SunkenKing), "seed " + seed + " floor " + f);
                 }
             }
         }
@@ -106,7 +106,7 @@ namespace Depths.Tests
         public void ItIsTheFloorsBossToEveryoneThatAsks()
         {
             Assert.That(Bodies.IsBoss(BodyKind.Gatekeeper) && Bodies.IsBoss(BodyKind.Boss));
-            Assert.That(Enum.GetValues(typeof(BodyKind)).Cast<BodyKind>().Count(Bodies.IsBoss), Is.EqualTo(2));
+            Assert.That(Enum.GetValues(typeof(BodyKind)).Cast<BodyKind>().Count(Bodies.IsBoss), Is.EqualTo(3));
             Assert.That(Spikes.CanBeElite(BodyKind.Gatekeeper), Is.False, "a spike room's elite");
             var (run, e) = Arena();
             Assert.That(e.aggroTimer, Is.EqualTo(9999), "a boss starts committed");

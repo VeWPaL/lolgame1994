@@ -66,7 +66,8 @@ namespace Depths.Unity
             int i = Array.IndexOf(args, "-depthsView");
             _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss" || args[i + 1] == "summary" || args[i + 1] == "pause" || args[i + 1] == "won");
             _floorBossView = i >= 0 && i + 1 < args.Length && args[i + 1] == "floorboss";   // the Gatekeeper's arena, the player still
-            _bossRoom = _floorBossView || (i >= 0 && i + 1 < args.Length && args[i + 1] == "boss");
+            _finalView = i >= 0 && i + 1 < args.Length && args[i + 1].StartsWith("final", StringComparison.Ordinal);   // the King's arena, a view a phase
+            _bossRoom = _floorBossView || _finalView || (i >= 0 && i + 1 < args.Length && args[i + 1] == "boss");
             _sandbox = i >= 0 && i + 1 < args.Length && args[i + 1] == "sandbox";
             bool labRow = i >= 0 && i + 1 < args.Length && args[i + 1] == "labrow";   // the row, frozen and unshot: every sprite
             _inLab = labRow || (i >= 0 && i + 1 < args.Length && args[i + 1] == "lab");
@@ -110,7 +111,7 @@ namespace Depths.Unity
             Depths.Unity.Audio.MusicEngine.SetFight(false);   // back to the menu: the calm layer only
         }
 
-        bool _floorBossView;
+        bool _floorBossView, _finalView;
         bool _bossRoom, _sandbox, _inLab, _secretView, _railView, _leapView, _rushView, _wonSounded;
         uint? _fixedSeed;   // -depthsSeed: the screenshot checks pick their dungeon
         readonly LabMode _lab = new LabMode();
@@ -148,7 +149,7 @@ namespace Depths.Unity
             if (_bossRoom)
             {
                 // the Warden (or the Gatekeeper, for its view), spawned the way the game spawns it (its own draws, its kit)
-                var w = Spawn.Body(_run, _floorBossView ? BodyKind.Gatekeeper : BodyKind.Boss, Balance.MidX, Balance.RoomTop + 120);
+                var w = Spawn.Body(_run, _finalView ? BodyKind.SunkenKing : _floorBossView ? BodyKind.Gatekeeper : BodyKind.Boss, Balance.MidX, Balance.RoomTop + 120);
                 w.noticeTimer = Balance.Sec(0.43);
                 _run.enemies.Add(w);
                 return;

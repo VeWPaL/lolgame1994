@@ -522,6 +522,7 @@ namespace Depths
                 if (dist == 0) dist = 1;
                 if (e.kind == BodyKind.Boss) StepBoss(run, e);
                 else if (e.kind == BodyKind.Gatekeeper) FloorBoss.Step(run, e, edx, edy, dist, sm);
+                else if (e.kind == BodyKind.SunkenKing) FinalBoss.Step(run, e, edx, edy, dist, sm);
                 else if (e.kind == BodyKind.Egg) Middle.StepEgg(run, e, roomPress);
                 else if (e.kind == BodyKind.Burrower) Middle.StepBurrower(run, e, edx, edy, dist, sm);
                 else if (!ranged)
@@ -550,13 +551,17 @@ namespace Depths
                     touching = System.Math.Sqrt(qx * qx + qy * qy) < e.r + Balance.PlayerHitR;
                 }
                 if (touching && e.kind == BodyKind.Gatekeeper && !FloorBoss.Hurts(e)) touching = false;   // it hurts only as it charges
+                if (touching && e.kind == BodyKind.SunkenKing && !FinalBoss.Hurts(e)) touching = false;   // the King likewise
                 if (touching)
                 {
                     // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
                     bool brunch = e.kind == BodyKind.Brunch;
                     bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0 && !e.rushing;   // a rushing Brunch spends itself, as a chasing one does
                     bool boss = Bodies.IsBoss(e.kind);
-                    if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, e.kind == BodyKind.Boss) && (!brunch || holdingSlot))
+                    if (e.kind == BodyKind.SunkenKing) run.hitSrc = (int)FinalBoss.Source.Charge;
+                    bool landed = Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, e.kind == BodyKind.Boss);
+                    run.hitSrc = -1;
+                    if (landed && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
                     if (brunch)
                     {
@@ -726,7 +731,9 @@ namespace Depths
             {
                 double pn = Dist(p.vx, p.vy);
                 if (pn == 0) pn = 1;
+                run.hitSrc = p.src;
                 Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
+                run.hitSrc = -1;
                 hitSomething = true;
             }
             if (hitSomething) ps.RemoveAt(i);
@@ -852,8 +859,16 @@ namespace Depths
             if (player.hp <= 0) { run.EndRun(false); return false; }
             else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen && run.finalFloor)
             {
-                room.ExitOpen = true;   // the final boss is down: the run is won, there is no way further down
-                run.EndRun(true);
+                if (run.finaleT > 0)
+                {
+                    run.finaleT--;   // the King's body is still breaking: the win waits for its death beat, its shells go with it
+                    run.projectiles.RemoveAll(q => !q.friendly);
+                }
+                else
+                {
+                    room.ExitOpen = true;   // the final boss is down: the run is won, there is no way further down
+                    run.EndRun(true);
+                }
             }
             else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen)
             {

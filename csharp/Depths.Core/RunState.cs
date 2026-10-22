@@ -87,11 +87,18 @@ namespace Depths
             roomFade = 1; fadeTicks = Balance.FadeStart; fadeT = fadeTicks;
             state = "playing";
             finalFloor = false; timeSlowT = 0; phoenixSpent = false;
+            hitSrc = -1; finaleT = finaleMax = 0; System.Array.Clear(finalBy, 0, finalBy.Length);
             Spikes.Mark(this);
         }
 
         /// <summary>This floor is the last (decided as it was built): its boss's death wins the run.</summary>
         public bool finalFloor;
+        /// <summary>The final boss's attack whose hit is being dealt (FinalBoss.Source), or -1; and the damage each has dealt this run.</summary>
+        public int hitSrc = -1;
+        public readonly double[] finalBy = new double[FinalBoss.Sources];
+        /// <summary>The Sunken King's death beat: ticks left of its body breaking (the win waits), its length, and where it fell.</summary>
+        public int finaleT, finaleMax;
+        public double finaleX, finaleY;
 
         /// <summary>Time Glass: ticks of slow time left; the bodies run on a share of the ticks (slowAcc), and
         /// slowSkip says this tick was not theirs (the mortar's shells wait with them).</summary>

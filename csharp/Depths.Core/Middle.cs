@@ -166,7 +166,9 @@ namespace Depths
                 return false;
             }
             p.x = p.tx; p.y = p.ty;
+            run.hitSrc = p.src;
             Strike(run, p.tx, p.ty, p.blastR, p.dmg, 2.5);
+            run.hitSrc = -1;
             run.booms++;
             return true;
         }

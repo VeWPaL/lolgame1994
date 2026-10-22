@@ -155,6 +155,35 @@ namespace Depths.Playtest
             }
         }
 
+        /// <summary>The last floor's fight, per label and profile: runs that reached it, wins, the fight's seconds and damage,
+        /// and each final-boss attack's share of the damage it dealt (FloorRecord.finalBy).</summary>
+        public static void FinalFloor(StringBuilder sb, IReadOnlyList<Batch> sets, List<string> profiles)
+        {
+            int last = Balance.FinalFloor;
+            if (!sets.Any(s => s.runs.Any(r => r.floors.Any(f => f.floor == last)))) return;
+            sb.Append("\n## The final floor (").Append(last).Append(")\n\n")
+              .Append("| label | profile | reached | won there | won share | fight s | dmg per fight | top attack share | attack shares |\n")
+              .Append("|---|---|---:|---:|---:|---:|---:|---:|---|\n");
+            foreach (var s in sets)
+                foreach (var p in profiles)
+                {
+                    var fl = s.runs.Where(r => r.profile == p).Select(r => (run: r, f: r.floors.FirstOrDefault(f => f.floor == last)))
+                                   .Where(x => x.f != null && x.f.bossTicks > 0).ToList();
+                    int won = fl.Count(x => x.run.end == "won");
+                    var by = new Dictionary<string, double>();
+                    foreach (var x in fl)
+                        if (x.f!.finalBy != null) foreach (var kv in x.f.finalBy) by[kv.Key] = by.GetValueOrDefault(kv.Key) + kv.Value;
+                    double tot = by.Values.Sum();
+                    var shares = by.OrderByDescending(kv => kv.Value).Select(kv => kv.Key + " " + Pct(kv.Value / tot)).ToList();
+                    sb.Append("| ").Append(s.label).Append(" | ").Append(p).Append(" | ").Append(fl.Count).Append(" | ").Append(won)
+                      .Append(" | ").Append(fl.Count == 0 ? "n/a" : Pct(won / (double)fl.Count))
+                      .Append(" | ").Append(fl.Count == 0 ? "n/a" : F1(fl.Average(x => x.f!.bossTicks / (double)Hz(s))))
+                      .Append(" | ").Append(fl.Count == 0 ? "n/a" : F1(fl.Average(x => x.f!.bossDmg)))
+                      .Append(" | ").Append(tot > 0 ? Pct(by.Values.Max() / tot) : "n/a")
+                      .Append(" | ").Append(string.Join(", ", shares)).Append(" |\n");
+                }
+        }
+
         /// <summary>What makes two labels not like for like, one line each; empty when they match.</summary>
         public static List<string> Mismatches(Batch a, Batch b)
         {
@@ -221,6 +250,8 @@ namespace Depths.Playtest
             }
 
             if (ab) Paired(sb, sets[0], sets[1], groups);
+
+            FinalFloor(sb, sets, profiles);
 
             sb.Append("\n## Where the damage comes from\n");
             foreach (var s in sets) Sources(sb, s, profiles, true);

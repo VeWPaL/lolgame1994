@@ -145,6 +145,8 @@ namespace Depths.Playtest
                 }
             }
             Marks(run, r, t, sidestep, ref blink);
+            FloorGuard(run);
+            if (blink && BlinksOntoFire(run)) blink = false;   // a player does not blink into a burning or cracking floor
 
             double a = Math.Atan2(target.y - pl.y, target.x - pl.x) + _aimJ;
             double td = Hyp(target.x - pl.x, target.y - pl.y);
@@ -170,6 +172,13 @@ namespace Depths.Playtest
                 if (e.hp <= 0 || e.kind != BodyKind.Burrower || e.move != "leap") continue;
                 if (Middle.BurrowLeap - e.moveT < _react) continue;   // airborne for less than a reaction: not seen yet
                 Threat(e.markX, e.markY, Middle.BurrowHitR, e.moveT);
+            }
+            foreach (var e in run.enemies)
+            {
+                if (e.hp <= 0 || e.kind != BodyKind.SunkenKing) continue;
+                // the King's leap: its landing ring, once it has been in the air a reaction time; then its floor
+                if (e.move == "leap" && e.fbTellMax - e.moveT >= _react) Threat(e.markX, e.markY, FinalBoss.LeapR, e.moveT);
+                if (e.ground != null) Floor(e.ground);
             }
             Lines(run, t, Line);
             if (soonest == int.MaxValue) return false;
@@ -213,6 +222,33 @@ namespace Depths.Playtest
                 lineSoonest = Math.Min(lineSoonest, ticksLeft);
             }
 
+            // the hitbox (or where it is heading: it trails the body) on a cell that burns, has fallen, or has cracked for a
+            // reaction time: to the nearest point well inside a cell that does none
+            void Floor(FinalBoss.Ground g)
+            {
+                double fx = pl.x, fy = pl.y + Balance.PlayerHitDy;
+                int c = FinalBoss.Ground.CellAt(hx, hy), f = FinalBoss.Ground.CellAt(fx, fy);
+                int bad = f >= 0 && Bad(g, f) ? f : c >= 0 && Bad(g, c) ? c : -1;
+                if (bad < 0) return;
+                if (c >= 0 && Bad(g, c)) { fx = hx; fy = hy; }   // the hitbox itself is on it: lead it off, not just the body
+                double bx = 0, by = 0, bd = double.PositiveInfinity;
+                for (int j = 0; j < FinalBoss.Ground.N; j++)
+                {
+                    if (Bad(g, j)) continue;
+                    double l = FinalBoss.Ground.Left(j) + FloorIn, tp = FinalBoss.Ground.Top(j) + FloorIn;
+                    double qx = Math.Max(l, Math.Min(l + FinalBoss.Ground.CellW - 2 * FloorIn, fx));
+                    double qy = Math.Max(tp, Math.Min(tp + FinalBoss.Ground.CellH - 2 * FloorIn, fy));
+                    double d = Hyp(qx - fx, qy - fy);
+                    if (d < bd) { bd = d; bx = qx; by = qy; }
+                }
+                if (double.IsInfinity(bd) || bd < 1) return;   // the body is on good ground already: the hitbox follows it there
+                int left = g.warn[bad] > 0 ? g.warn[bad] : 1;
+                double w = FloorPull * Balance.Sec(1) / (left + Balance.Sec(0.1));
+                ex += (bx - fx) / bd * w; ey += (by - fy) / bd * w;
+                need = Math.Max(need, bd);
+                soonest = Math.Min(soonest, left);
+            }
+
             void Threat(double mx, double my, double r, int ticksLeft)
             {
                 double reach = r + Balance.PlayerHitR + MarkMargin;
@@ -236,10 +272,22 @@ namespace Depths.Playtest
                 bool lunger = e.kind == BodyKind.Lunger && (e.lungeState == "wind" || e.lungeState == "lunge");
                 bool brunch = e.kind == BodyKind.Brunch && (e.rushWind > 0 || e.rushing);
                 bool keeper = e.kind == BodyKind.Gatekeeper && (e.move == "tell" || e.move == "charge");
-                if (e.hp <= 0 || !(lunger || brunch || keeper)) { _tell.Remove(e); continue; }
+                bool king = e.kind == BodyKind.SunkenKing && (e.move == "tell" || e.move == "charge" || e.move == "rift");
+                if (e.hp <= 0 || !(lunger || brunch || keeper || king)) { _tell.Remove(e); continue; }
                 if (!_tell.TryGetValue(e, out var seen)) _tell[e] = seen = t;
                 if (t - seen < _react) continue;
-                if (keeper)
+                if (king && e.move == "rift")
+                {
+                    // the King's rift: its strips are the whole tell, and they erupt all at once as the tell runs out
+                    var g = e.ground!;
+                    for (int k = 0; k < g.rifts; k++) line(g.riftX, g.riftY, g.rdx[k], g.rdy[k], g.rlen[k], FinalBoss.RiftW / 2, 1e9, e.moveT);
+                }
+                else if (king)
+                {
+                    bool tell = e.move == "tell";
+                    line(e.x, e.y, e.fbDx, e.fbDy, e.fbLen - (tell ? 0 : e.fbGone), e.r, FinalBoss.ChargeSpeed, tell ? e.moveT : 0);
+                }
+                else if (keeper)
                 {
                     // the Gatekeeper's line is locked as its tell begins and drawn whole: the ground it has left to cover
                     bool tell = e.move == "tell";
@@ -271,6 +319,44 @@ namespace Depths.Playtest
             foreach (var e in _tell.Keys) if (!run.enemies.Contains(e)) _pruneTell.Add(e);
             foreach (var e in _pruneTell) _tell.Remove(e);
         }
+
+        /// <summary>A floor cell the bot keeps off: fallen, burning, or cracking for at least its reaction time (a crack it has
+        /// not had time to see is ground like any other).</summary>
+        internal bool Bad(FinalBoss.Ground g, int i) => g.pit[i] || g.burn[i] > 0 || (g.warn[i] > 0 && g.warnMax[i] - g.warn[i] >= _react);
+
+        // its move, held off a cell it would walk into that burns, has fallen or has cracked: one axis if the other is clear
+        void FloorGuard(RunState run)
+        {
+            FinalBoss.Ground? g = null;
+            foreach (var e in run.enemies) if (e.hp > 0 && e.ground != null) g = e.ground;
+            if (g == null) return;
+            var pl = run.player;
+            double hx = pl.x, hy = pl.y + Balance.PlayerHitDy;   // the body, which the trailing hitbox follows
+            int c = FinalBoss.Ground.CellAt(hx, hy);
+            if (c >= 0 && Bad(g, c)) return;   // already on bad ground: Marks is walking it off
+            int sx = Axis(_mvX, 0.3), sy = Axis(_mvY, 0.3);
+            if (sx == 0 && sy == 0) return;
+            bool Into(int ax, int ay) { int k = FinalBoss.Ground.CellAt(hx + ax * FloorLook, hy + ay * FloorLook); return k >= 0 && Bad(g, k); }
+            if (!Into(sx, sy)) return;
+            if (sx != 0 && sy != 0 && !Into(sx, 0)) { _mvY = 0; return; }
+            if (sx != 0 && sy != 0 && !Into(0, sy)) { _mvX = 0; return; }
+            _mvX = 0; _mvY = 0;
+        }
+
+        // where a blink along the held move would land (the game's own rule, Tick.DoBlink, for a held direction) is bad ground
+        bool BlinksOntoFire(RunState run)
+        {
+            FinalBoss.Ground? g = null;
+            foreach (var e in run.enemies) if (e.hp > 0 && e.ground != null) g = e.ground;
+            int sx = Axis(_mvX, 0.3), sy = Axis(_mvY, 0.3);
+            if (g == null || (sx == 0 && sy == 0)) return false;
+            var pl = run.player;
+            double n = Hyp(sx, sy);
+            int k = FinalBoss.Ground.CellAt(pl.x + sx / n * Balance.BlinkDist, pl.y + Balance.PlayerHitDy + sy / n * Balance.BlinkDist);
+            return k >= 0 && Bad(g, k);
+        }
+
+        const double FloorIn = 26, FloorLook = 26, FloorPull = 400;   // px kept inside a safe cell; px looked ahead; the floor's pull
 
         /// <summary>The move the bot holds now (its decision, after any dodging), for the tests.</summary>
         internal (double x, double y) Move => (_mvX, _mvY);

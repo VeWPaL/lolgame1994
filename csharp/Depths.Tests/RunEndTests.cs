@@ -87,14 +87,21 @@ namespace Depths.Tests
         [Test]
         public void TheBotWinsAWholeFinalFloorAndBooksTheFight()
         {
-            // a skilled bot set down on floor 14: it walks the antechamber, fights the stand-in finale, and wins
-            var r = new Runner(5, "skilled", 6);
-            for (int f = 1; f < Balance.FinalFloor; f++) r.Run.Descend();
-            var res = r.Play();
-            Assert.That(res.end, Is.EqualTo("won"), "the bot did not win the last floor");
-            var last = res.floors[res.floors.Count - 1];
-            Assert.That(last.bossKilled, "a won floor is booked as left without its boss beaten");
-            Assert.That(last.bossTicks, Is.GreaterThan(0));
+            // a skilled bot set down on floor 14 with a fresh run's kit: it walks the antechamber, fights the Warden (the final
+            // boss switched off: a fresh kit is no match for the King; FinalBossTests fights it with a deep run's hearts), and wins
+            bool was = Balance.TuneFinalBoss;
+            try
+            {
+                Balance.TuneFinalBoss = false;
+                var r = new Runner(5, "skilled", 6);
+                for (int f = 1; f < Balance.FinalFloor; f++) r.Run.Descend();
+                var res = r.Play();
+                Assert.That(res.end, Is.EqualTo("won"), "the bot did not win the last floor");
+                var last = res.floors[res.floors.Count - 1];
+                Assert.That(last.bossKilled, "a won floor is booked as left without its boss beaten");
+                Assert.That(last.bossTicks, Is.GreaterThan(0));
+            }
+            finally { Balance.TuneFinalBoss = was; }
         }
 
         [Test]

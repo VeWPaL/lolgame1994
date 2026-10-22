@@ -39,6 +39,7 @@ the test assembly turns off, so the JS rows stay exact while the game plays the 
 | `Pools.cs` | each run's kinds per area, the next area's newcomers previewed two floors early | `Balance.TunePools`; untuned, `RunState.pools` is null and `PlanWave` plays the JS plan draw for draw |
 | `Interp.cs` | each body's, shell's and the player's place at the last tick, for the presenter's blend | Nothing in the simulation reads it (`InterpTests.SnappingNeverChangesTheGame`) |
 | `Spikes.cs` | spike rooms on floors 5-12: an elite or a crowded wave, a sure drop, a skull on the map | `Balance.TuneSpike`; marked from its own stream (`SpikeTests.MarkingDrawsNothingFromTheRunStreamAndIsTheSameEveryTime`), so untuned and tuned floors are the same |
+| `FinalBoss.cs` | the Sunken King, the final boss of floor 14: three phases (seated, standing, risen), six attacks, and a floor of cracking, burning and falling cells; its death beat before the win | `Balance.TuneFinalBoss`; untuned or switched off, floor 14 spawns the Warden as before (`FinalBossTests.UntunedOrSwitchedOffFloorFourteenKeepsTheWarden`) |
 | `FloorBoss.cs` | the Gatekeeper, the floor boss of floors 1-13: charge, slam, fan, then ring and rampage by phase, weighted by area | `Balance.TuneFloorBoss`; untuned (and on floor 14) the boss room spawns the Warden as before (`FloorBossTests.UntunedOrSwitchedOffEveryFloorKeepsTheWarden`) |
 
 ## Not ported from the JS

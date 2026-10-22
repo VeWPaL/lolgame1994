@@ -142,6 +142,8 @@ namespace Depths
         public double fbDx, fbDy, fbLen, fbGone;
         public int fbLeft, fbLast = -1, fbAttack, fbTellMax;
         public bool fbHot;   // it charged this tick: its body hurts
+        public FinalBoss.Ground? ground;   // the Sunken King's floor (FinalBoss.cs); null on every other body
+        public int fbCharges;              // the King's charges still to come after this one
         // the hook's resistance: which field last charged this body, how many hooks it has taken, how
         // long since it was last in one, and the power the current field acts with
         public int hookMark, hookStacks, hookCalm;
@@ -199,6 +201,7 @@ namespace Depths
         public int snap;
         public double r, dmg;
         public bool friendly, heavy;
+        public int src = -1;   // the final boss's attack that threw it (FinalBoss.Source), for the bookkeeping; -1 for any other
 
         // --- read by the projectile pass (src/60-tick.js:592-741)
         /// <summary>Ticks since the shell was spawned. Read by the pass.</summary>

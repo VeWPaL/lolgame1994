@@ -46,6 +46,24 @@ namespace Depths.Unity.Art
         public static readonly Dictionary<char, Color32> SprayerPal = Pal(('n', "#c9ffd0"), ('k', "#2f6b3a"), ('e', "#ff4d4d"), ('m', "#4c9a5a"), ('t', "#357a45"), ('s', "#9cf0a8"), ('b', "#183a20"));
         // the Gatekeeper, the floor boss of 1-13: horns, a visor lit in its shells' blue, a brass-barred gate for a chest
         public static readonly string[] GatekeeperUpper = Mirror("h.....", "hh....", ".hkkkk", ".kkkkk", ".kteee", ".kkttt", "mmkkkk", "mgmgmg", "mgmgmg", "mgmgmg", ".ttttt", "..tttt");
+        // the Sunken King, the final boss: a gold crown with a burning gem, horns, ember eyes, a robe split by molten seams;
+        // sixteen wide, so it stands a head over the Gatekeeper, and a robe's hem that sways instead of legs
+        public static readonly string[] SunkenKingUpper = Mirror("...g..g.", "...ggyyg", "...ggggg", "..hkkkkk", ".hhkeekk", ".h.kkkkk", "....kmmk", "rrrrkkkk",
+                                                                  "rrcrrkkk", "rrrcrrrr", ".rrrcrrr", ".rrrrcrr", "..rrrrcr", "..rrrrrr", "..crrrrr", "...rrrrr");
+        public static readonly string[][] SunkenKingHems =
+        {
+            Mirror("...rr.rr", "...r...r"), Mirror("...rrrrr", "....r.r."), Mirror("..rr.rr.", "..r...r."), Mirror("...rrrrr", "....r.r."),
+        };
+        public static readonly Dictionary<char, Color32> SunkenKingPal = Pal(('g', "#e8c25a"), ('y', "#ff5a2a"), ('h', "#d8cfc0"), ('k', "#2a2233"),
+                                                                             ('e', "#ff9a3d"), ('m', "#5a1a1a"), ('r', "#4a1f3a"), ('c', "#ff6a2a"));
+        /// <summary>The King's rows for a sway frame: its body over the hem of that frame.</summary>
+        public static string[] SunkenKingFrame(int f)
+        {
+            var r = new string[SunkenKingUpper.Length + 2];
+            Array.Copy(SunkenKingUpper, r, SunkenKingUpper.Length);
+            r[SunkenKingUpper.Length] = SunkenKingHems[f][0]; r[SunkenKingUpper.Length + 1] = SunkenKingHems[f][1];
+            return r;
+        }
         public static readonly Dictionary<char, Color32> GatekeeperPal = Pal(('h', "#e8dcc0"), ('k', "#4a5566"), ('t', "#2e3644"), ('e', "#7fe0ff"), ('m', "#7a8aa0"), ('g', "#c9a24a"), ('b', "#1c2028"));
         /// <summary>The egg has no legs: every frame is the same shell on its base.</summary>
         /// <summary>The blink's colour (the ledger's blink well, the blink puffs); momentum wears it too.</summary>

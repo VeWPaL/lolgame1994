@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won", "floorboss" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won", "floorboss", "final1", "final2", "final3" };
 
         void Check(bool ok, string what)
         {
@@ -65,6 +65,7 @@ namespace Depths.Unity
             else if (_view == "thud") yield return LeapView(true);
             else if (_view == "rush") yield return RushView();
             else if (_view == "floorboss") yield return FloorBossView();
+            else if (_view == "final1" || _view == "final2" || _view == "final3") yield return FinalView(_view[5] - '0');
             else if (_view == "spike") yield return SpikeView();
             else if (_view == "summary") yield return SummaryView();
             else if (_view == "won") yield return WonView();
@@ -359,6 +360,75 @@ namespace Depths.Unity
             Check(shown == g && LedgerHud.BossName(shown.kind) == FloorBoss.Name, "floorboss: the bar above the room is the Gatekeeper's, named " + FloorBoss.Name);
             for (int i = 0; i < 10; i++) yield return null;
         }
+
+        // the Sunken King, one view a phase, each frozen mid-tell over its floor: seated over the fault lines with a... [h:ScreenshotMode-3]
+        IEnumerator FinalView(int phase)
+        {
+            GameView view = null;
+            while (view == null || view.Run == null) { yield return null; view = FindAnyObjectByType<GameView>(); }
+            var run = view.Run;
+            Enemy k = null;
+            for (int i = 0; i < 600 && k == null; i++)
+            {
+                foreach (var e in run.enemies) if (e.kind == BodyKind.SunkenKing) k = e;
+                if (k == null) yield return null;
+            }
+            string tag = "final" + phase + ": ";
+            Check(k != null, tag + "the Sunken King is in the arena");
+            if (k == null) yield break;
+            view.Frozen = true;   // the view steps the game itself, tick by tick
+            void Step() { TickOrder.TickPlayer(run, Depths.Input.None); TickOrder.TickProjectiles(run); TickOrder.TickBodies(run); }
+            k.noticeTimer = 0; k.bossCd = 1e9;
+            FinalBoss.Settle(k, phase);
+            if (phase >= 2) { k.x = Balance.MidX - 170; k.y = Balance.MidY - 60; }   // off the throne, beside the fallen ground
+            var g = k.ground;
+            int min = Balance.Sec(FinalBoss.TellMin);
+            Step();
+            if (phase == 1)
+            {
+                FinalBoss.Begin(run, k, FinalBoss.Attack.Fan);
+                for (int i = 0; i < 600 && (k.move == "cast" || run.projectiles.Count == 0); i++) Step();
+                for (int i = 0; i < 8; i++) Step();
+                FinalBoss.Begin(run, k, FinalBoss.Attack.Quake);
+                for (int i = 0; i < 600 && FirstWarn(g) > FinalBoss.CrackTell * 0.4f; i++) Step();
+                Check(g.Cracking && Lit(g, FinalBoss.Source.Fault) == 30, tag + "the fault lines (every other row) are cracking");
+                Check(run.projectiles.Exists(p => !p.friendly), tag + "a fan's shells are in the air");
+                Check(FinalBoss.CrackTell >= min && FinalBoss.FanTell >= min, tag + "the crack and the fan's flash last at least 0.35 s");
+                Check(FinalBoss.PostureOf(k) == FinalBoss.Posture.Seated && k.x == FinalBoss.ThroneX, tag + "seated on its throne");
+            }
+            else if (phase == 2)
+            {
+                FinalBoss.Begin(run, k, FinalBoss.Attack.Quake);
+                for (int i = 0; i < 600 && g.Cracking; i++) Step();
+                for (int i = 0; i < 6; i++) Step();
+                FinalBoss.Begin(run, k, FinalBoss.Attack.Rift);
+                for (int i = 0; i < 600 && k.move == "rift" && k.moveT > k.fbTellMax * 0.4f; i++) Step();
+                Check(k.move == "rift", tag + "frozen mid-rift (" + k.move + ")");
+                Check(Burning(g) > 10, tag + "the checker is burning");
+                Check(Pits(g) == 8, tag + "the heart of the room has fallen");
+                Check(FinalBoss.RiftTell >= min, tag + "the rift's strip shows at least 0.35 s");
+                Check(FinalBoss.PostureOf(k) == FinalBoss.Posture.Standing, tag + "standing");
+            }
+            else
+            {
+                FinalBoss.Begin(run, k, FinalBoss.Attack.Quake);
+                for (int i = 0; i < 600 && k.move == "quake"; i++) Step();
+                FinalBoss.Begin(run, k, FinalBoss.Attack.Nova);
+                for (int i = 0; i < 600 && k.castT > k.fbTellMax * 0.4f; i++) Step();
+                Check(k.castT > 0 && g.Cracking, tag + "frozen mid-cast over a cracking floor");
+                Check(Lit(g, FinalBoss.Source.Quadrant) == 24 && Pits(g) == 28, tag + "three quadrants crack inside the fallen edge");
+                Check(FinalBoss.QuadTell >= min && FinalBoss.NovaTell >= min, tag + "the quadrants' crack and the ring's flash last at least 0.35 s");
+                Check(FinalBoss.PostureOf(k) == FinalBoss.Posture.Risen, tag + "risen");
+            }
+            var shown = LedgerHud.BossShown(run);
+            Check(shown == k && LedgerHud.BossName(shown.kind) == FinalBoss.Name && shown.phase == phase, tag + "the bar above the room is the King's, named " + FinalBoss.Name + ", phase " + phase);
+            for (int i = 0; i < 10; i++) yield return null;
+        }
+
+        static int FirstWarn(FinalBoss.Ground g) { int m = int.MaxValue; for (int i = 0; i < FinalBoss.Ground.N; i++) if (g.warn[i] > 0) m = Math.Min(m, g.warn[i]); return m; }
+        static int Lit(FinalBoss.Ground g, FinalBoss.Source s) { int n = 0; for (int i = 0; i < FinalBoss.Ground.N; i++) if (g.warn[i] > 0 && g.src[i] == s) n++; return n; }
+        static int Burning(FinalBoss.Ground g) { int n = 0; for (int i = 0; i < FinalBoss.Ground.N; i++) if (g.burn[i] > 0) n++; return n; }
+        static int Pits(FinalBoss.Ground g) { int n = 0; for (int i = 0; i < FinalBoss.Ground.N; i++) if (g.pit[i]) n++; return n; }
 
         // down to a floor with a spike room, walked in beside it, into it: its elite's glow, and the skull on the map
         IEnumerator SpikeView()
