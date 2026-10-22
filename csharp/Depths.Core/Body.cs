@@ -14,5 +14,7 @@ namespace Depths
         Burrower,
         Sprayer,
         Egg,
+        // the floor boss of floors 1-13 (FloorBoss.cs; C# only); the Warden (Boss) stays the final floor's
+        Gatekeeper,
     }
 }

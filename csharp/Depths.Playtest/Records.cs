@@ -8,6 +8,7 @@ namespace Depths.Playtest
     public sealed class FloorRecord
     {
         public int floor, ticks, rooms, cleared, bossTicks;
+        public double bossDmg;              // damage taken in the boss room (the fight)
         public double dmg, healed, regen;   // regen: HP the regenerating heart refilled on this floor (clock + clear)
         public double clear;                // of which its refill for winning a fight
         public bool bossKilled;        // set on the actual descent (the JS set it while walking to the exit)

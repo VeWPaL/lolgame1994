@@ -137,6 +137,11 @@ namespace Depths
         public bool sweepDone;
         public List<Enemy>? wallBodies;
         public int? wallAge;   // a called statue's age; null until its first sweep tick
+        // The Gatekeeper (FloorBoss.cs): a charge's line (way, length, ground covered), charges left in a rampage, the
+        // attack in hand and the last one, and the length of the tell it is showing
+        public double fbDx, fbDy, fbLen, fbGone;
+        public int fbLeft, fbLast = -1, fbAttack, fbTellMax;
+        public bool fbHot;   // it charged this tick: its body hurts
         // the hook's resistance: which field last charged this body, how many hooks it has taken, how
         // long since it was last in one, and the power the current field acts with
         public int hookMark, hookStacks, hookCalm;
@@ -179,7 +184,7 @@ namespace Depths
                                speed = (row.Base ?? 0) * Balance.TempoRate, cdMin = (row.CdMin ?? 0) / Balance.TempoRate,
                                cdVar = (row.CdVar ?? 0) / Balance.TempoRate, pspd = row.PShotSpeed ?? 0, pr = row.PShotRadius ?? 0,
                                dmg = (row.Dmg ?? 0) * (Balance.JsReference ? Balance.JsShotDmg / Bodies.ShotDmg : 1), kind = kind, x = x, y = y, r = row.Radius, armour = row.Armour, mass = row.Mass,
-                               hp = row.Hp, maxHp = row.Hp, walkSpeed = row.Walk ?? 0, runSpeed = row.Run ?? 0, curSpeed = row.Walk ?? 0, aggroTimer = kind == BodyKind.Boss ? 9999 : 0 };   // measured: every body has one; the boss starts committed
+                               hp = row.Hp, maxHp = row.Hp, walkSpeed = row.Walk ?? 0, runSpeed = row.Run ?? 0, curSpeed = row.Walk ?? 0, aggroTimer = Bodies.IsBoss(kind) ? 9999 : 0 };   // measured: every body has one; the boss starts committed
         }
 }
 

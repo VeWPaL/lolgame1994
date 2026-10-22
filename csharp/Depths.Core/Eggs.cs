@@ -36,7 +36,7 @@ namespace Depths
             foreach (var o in run.enemies) if (CanHost(o) && pick-- == 0) { Orbit(e, o, run.rng.Run() * 2 * System.Math.PI); return; }
         }
 
-        static bool CanHost(Enemy o) => o.kind != BodyKind.Egg && o.kind != BodyKind.Boss && o.kind != BodyKind.Brunch && o.hp > 0;
+        static bool CanHost(Enemy o) => o.kind != BodyKind.Egg && !Bodies.IsBoss(o.kind) && o.kind != BodyKind.Brunch && o.hp > 0;
 
         public static void Orbit(Enemy e, Enemy host, double angle)
         {

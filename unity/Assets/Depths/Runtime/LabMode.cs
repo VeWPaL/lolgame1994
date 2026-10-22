@@ -20,6 +20,7 @@ namespace Depths.Unity
             (BodyKind.Egg, EggForm.Fixed, "Turret egg", "never moves; rings the room"),
             (BodyKind.Egg, EggForm.Orbit, "Orbiting egg", "circles a body; a smaller, slower ring"),
             (BodyKind.Egg, EggForm.Rail, "Rail egg", "rides a track (Kiln Works); F8 again for the next track"),
+            (BodyKind.Gatekeeper, EggForm.Fixed, "Gatekeeper", "floors 1-13: a charge, lobs, fans; a ring, then a rampage"),
         };
 
         public bool On { get; private set; }
@@ -133,7 +134,7 @@ namespace Depths.Unity
             double best = double.MaxValue;
             foreach (var o in run.enemies)
             {
-                if (o == e || o.kind == BodyKind.Egg || o.kind == BodyKind.Boss || o.hp <= 0) continue;
+                if (o == e || o.kind == BodyKind.Egg || Bodies.IsBoss(o.kind) || o.hp <= 0) continue;
                 double d = (o.x - e.x) * (o.x - e.x) + (o.y - e.y) * (o.y - e.y);
                 if (d < best) { best = d; host = o; }
             }
@@ -145,7 +146,7 @@ namespace Depths.Unity
         {
             var p = run.player;
             double cx = Balance.MidX - (p.x - Balance.MidX) * 0.6, cy = Balance.MidY - (p.y - Balance.MidY) * 0.6;
-            int pack = ++_pack, n = Specimens[Armed].kind == BodyKind.Boss ? 1 : 12;
+            int pack = ++_pack, n = Bodies.IsBoss(Specimens[Armed].kind) ? 1 : 12;
             for (int i = 0; i < n; i++)
             {
                 double a = i * Math.PI * 2 / n;

@@ -229,6 +229,7 @@ namespace Depths.Playtest
                 var fs = _f.dmgBySource!;
                 fs[src] = fs.TryGetValue(src, out var w) ? w + dmg : dmg;
                 _f.dmg += dmg;
+                if (room != null && room.Type == RoomKind.Boss) _f.bossDmg += dmg;   // taken in the boss fight
             }
             if (dRg > 0) Regen(dRg);
             if (dHp > 0 && Run.phoenixSpent && !_phoenix0) Heal("phoenix", dHp);   // the feather's rise, not a pickup

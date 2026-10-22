@@ -193,6 +193,11 @@ namespace Depths.Tests
             ["Middle.BurrowTurnWalk"] = U.PerSec, ["Middle.BurrowWeave"] = U.PerSec, ["Middle.BurrowWalkEase"] = U.Ease,
             ["Middle.BurrowRoot"] = U.Ease, ["Middle.BurrowMinUnder"] = U.Sec, ["Middle.BurrowCrack"] = U.Sec, ["Middle.BurrowLeap"] = U.Sec, ["Middle.BurrowDaze"] = U.Sec,
             ["Balance.MomStallDecay"] = U.PerSec,
+            // the Gatekeeper (FloorBoss.cs)
+            ["FloorBoss.ChargeTell"] = U.Sec, ["FloorBoss.RampageTell"] = U.Sec, ["FloorBoss.FanTell"] = U.Sec, ["FloorBoss.RingTell"] = U.Sec,
+            ["FloorBoss.SlamWind"] = U.Sec, ["FloorBoss.SlamFlight"] = U.Sec, ["FloorBoss.ChargeSpeed"] = U.PerSec, ["FloorBoss.ChargeRecover"] = U.Sec,
+            ["FloorBoss.Recover"] = U.Sec, ["FloorBoss.Walk"] = U.PerSec, ["FloorBoss.FanSpeed"] = U.PerSec, ["FloorBoss.RingSpeed"] = U.PerSec,
+            ["FloorBoss.CdMin"] = U.Sec, ["FloorBoss.CdVar"] = U.Sec, ["FloorBoss.FirstCd"] = U.Sec, ["FloorBoss.PhaseCd"] = U.Sec,
         };
 
         // the dials that live in tables and on fresh bodies rather than as static properties
@@ -242,7 +247,7 @@ namespace Depths.Tests
         {
             var off = new List<string>();
             var seen = new HashSet<string>();
-            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState), typeof(Middle), typeof(Eggs) })
+            foreach (var t in new[] { typeof(Balance), typeof(Weapons), typeof(Bodies), typeof(RunState), typeof(Middle), typeof(Eggs), typeof(FloorBoss) })
                 foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
                 {
                     if (prop.Name == nameof(Balance.TickHz) || (prop.PropertyType != typeof(int) && prop.PropertyType != typeof(double))) continue;

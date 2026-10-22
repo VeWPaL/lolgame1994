@@ -17,6 +17,7 @@ namespace Depths
             e.noticeTimer = (int)(run.rng.Jitter() * Balance.NoticeWindow);
             e.speed *= rate;
             if (kind == BodyKind.Boss) { BossInit(e); e.aggroTimer = 9999; return e; }
+            if (kind == BodyKind.Gatekeeper) { FloorBoss.Init(e, rate); return e; }
             if (kind == BodyKind.Lunger || kind == BodyKind.Brunch)
             {
                 e.flank = run.flankCursor;

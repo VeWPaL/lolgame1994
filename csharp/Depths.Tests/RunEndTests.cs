@@ -48,7 +48,7 @@ namespace Depths.Tests
             run.bossUnlocked = true;
             Rooms.EnterRoom(run, arena.X, arena.Y, Dir.S);
             run.readyT = 0; run.fadeT = 0; run.trans = null; run.state = "playing";
-            Assert.That(run.enemies.Any(e => e.kind == BodyKind.Boss), "fixture: no boss in the arena");
+            Assert.That(run.enemies.Any(e => Bodies.IsBoss(e.kind)), "fixture: no boss in the arena");
             run.enemies.Clear();   // the boss (and its wall) down
             run.pickups.Clear();
             return run;

@@ -44,6 +44,9 @@ namespace Depths.Unity.Art
         public static readonly Dictionary<char, Color32> BurrowerPal = Pal(('h', "#5a4636"), ('e', "#0d0907"), ('y', "#e8a0a0"), ('c', "#e8d8b0"), ('b', "#2a1f18"));
         public static readonly string[] SprayerUpper = Mirror("...nn.", "...nn.", "..kkkk", ".kkeek", ".kkkkk", ".mmttt", "mmtttt", "mstttt", ".ttttt", ".ttttt", "tttttt");
         public static readonly Dictionary<char, Color32> SprayerPal = Pal(('n', "#c9ffd0"), ('k', "#2f6b3a"), ('e', "#ff4d4d"), ('m', "#4c9a5a"), ('t', "#357a45"), ('s', "#9cf0a8"), ('b', "#183a20"));
+        // the Gatekeeper, the floor boss of 1-13: horns, a visor lit in its shells' blue, a brass-barred gate for a chest
+        public static readonly string[] GatekeeperUpper = Mirror("h.....", "hh....", ".hkkkk", ".kkkkk", ".kteee", ".kkttt", "mmkkkk", "mgmgmg", "mgmgmg", "mgmgmg", ".ttttt", "..tttt");
+        public static readonly Dictionary<char, Color32> GatekeeperPal = Pal(('h', "#e8dcc0"), ('k', "#4a5566"), ('t', "#2e3644"), ('e', "#7fe0ff"), ('m', "#7a8aa0"), ('g', "#c9a24a"), ('b', "#1c2028"));
         /// <summary>The egg has no legs: every frame is the same shell on its base.</summary>
         /// <summary>The blink's colour (the ledger's blink well, the blink puffs); momentum wears it too.</summary>
         public static readonly Color32 BlinkBlue = new Color32(0x7f, 0xc4, 0xff, 255), BlinkDeep = new Color32(0x2f, 0x5c, 0x9e, 255);

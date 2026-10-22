@@ -38,7 +38,7 @@ namespace Depths
 
         /// <summary>A body that may be made the elite: not an egg, a Brunch (it spends itself), a Burrower (its homing is
         /// tuned to just outpace a run) or a boss.</summary>
-        public static bool CanBeElite(BodyKind k) => k != BodyKind.Egg && k != BodyKind.Brunch && k != BodyKind.Burrower && k != BodyKind.Boss;
+        public static bool CanBeElite(BodyKind k) => k != BodyKind.Egg && k != BodyKind.Brunch && k != BodyKind.Burrower && !Bodies.IsBoss(k);
 
         /// <summary>The wave's strongest body (most health) becomes the elite: 3x health, its cadence x1.2 (its pace in Tick).</summary>
         public static Enemy? MakeElite(RunState run)

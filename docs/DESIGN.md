@@ -21,7 +21,7 @@ disagree. Long code comments live in `docs/history/csharp/<File>.md` under `[h:F
   lagged hitbox (`HitboxX/Y`, it trails after a blink) is what enemies aim at and what shells hit.
 - **Switches**: `Balance.Tuned` (on in the game and the bot, off in tests) gates every C#-only change to ported
   behaviour; each part has its own switch (`Tune*`), and the bot can turn any off: `--untune wall,rush,dodge,loot,
-  beam,warden,ease,damage,momentum,pools,middle,aim`. `Curve.On` (Options) is the difficulty curve, off by default.
+  beam,warden,ease,damage,momentum,pools,middle,aim,depth,spike,end,floorboss`. `Curve.On` (Options) is the difficulty curve, off by default.
 
 ## 2. The player
 
@@ -103,8 +103,25 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
   player's velocity takes them over the 0.45 s flight (decided at takeoff, <= 220 px, marked on the floor), landing
   for 2 HP within 30 px; then dazed 0.6 s (stunned, skidding, tumbling) with a thud and screen shake. Untouchable
   under the floor and in the air. Counterplay: turn or stop once it is airborne.
-- **Warden** (boss, floor 13+): volleys, sweeps, a wall of Brunch statues that guard it (tuned: they wake and act),
-  phases; a phase change drops a cast in progress.
+- **Warden** (boss): volleys, sweeps, a wall of Brunch statues that guard it (tuned: they wake and act), phases; a
+  phase change drops a cast in progress. Tuned, it is only the final boss on floor 14 (a stand-in until the final boss
+  is built); untuned, every floor's.
+- **The Gatekeeper** (placeholder floor boss of floors 1-13, `TuneFloorBoss`, `FloorBoss.cs`; Gungeon's first bosses
+  were the reference: one readable gimmick, three patterns, a short fight). A horned iron guard with a brass-barred
+  chest (art 4, radius 28), 345 x 1.35 HP x `DepthTough`; the gaps between attacks (1.0 s + up to 0.7 s) and its
+  80 px/s walk to a 170 px standoff scale with `DepthRate`; the tells never shorten. Its body hurts only on a tick it
+  charges (2 HP); touching it otherwise is safe. Five attacks, each told for at least 0.3 s in the game's language:
+  - **Charge**: 0.6 s orange dashed line (the Lunger's), locked at the player as the tell starts and running 110 px
+    past them (220-430 px, cut at the wall), then 640 px/s along it; 0.9 s winded after (the window to punish it).
+  - **Slam**: a 0.3 s cast flash, then 3 lobs (the Mortar's): one on the player, two 95 px either side across the
+    line from the boss; each landing mark fills for 0.95 s, 2 HP inside 50 px. A step along the line is safe.
+  - **Fan**: 0.5 s cast flash, then 5 shells at the player across +-0.42 rad, 330 px/s, 1 HP.
+  - **Ring** (from phase 2): 0.7 s cast flash, 16 shells all round at 190 px/s, 1 HP; walk through a gap.
+  - **Rampage** (from phase 3): three charges in a row, each re-aimed with its own 0.4 s line.
+  Phases at the Warden's 0.66 / 0.33 (the notches on the bar); a phase change calls the move in hand off. Attacks
+  are weighted by area (Charge, Slam, Fan, Ring, Rampage): Shallows 4/1/2/2/2, Kiln Works 1/4/2/2/2, Flooded
+  Galleries 1/1/4/3/2, the Deep 2 each; the one just used weighs 0.35x. The bar above the room names it. The bot
+  steps off its line like a Lunger's and reads its lobs' marks as the Mortar's.
 
 ## 5. Feel and presentation
 

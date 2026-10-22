@@ -259,7 +259,7 @@ namespace Depths
                     foreach (var e in run.enemies)
                     {
                         var d = Near(e.x, e.y, p, arg);
-                        if (e.hp <= 0 || e.buried || d == null || e.kind == BodyKind.Boss || e.packId == Balance.BossWallId) continue;
+                        if (e.hp <= 0 || e.buried || d == null || Bodies.IsBoss(e.kind) || e.packId == Balance.BossWallId) continue;
                         double dx = e.x - p.x, dy = e.y - p.y;   // the raw offset: a unit vector can round under Knock's 1 and draw
                         if (dx * dx + dy * dy >= 1) Movement.Knock(run, e, dx, dy, 5 * Balance.KnockGain);
                         n++;
