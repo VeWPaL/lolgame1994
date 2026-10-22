@@ -12,6 +12,10 @@ namespace Depths.Unity.Hud
         public static readonly string[] AreaNames = { "The Shallows", "The Kiln Works", "The Flooded Galleries", "The Warden's Deep" };
 
         readonly InkLayer _ink;
+
+        /// <summary>The boss whose bar the band shows (null: no bar), and the name on its plate.</summary>
+        public static Enemy BossShown(RunState run) => InkLayer.LiveBoss(run);
+        public static string BossName(BodyKind k) => InkLayer.BossName(k);
         readonly VisualElement _bossPlate, _seedTag;
         readonly Label _dev;
         readonly List<Texture2D> _owned = new List<Texture2D>();
@@ -273,10 +277,13 @@ namespace Depths.Unity.Hud
                 return max <= 0 ? 1 : Mathf.Clamp01((float)(1 - p.altCooldown / max));
             }
 
+            /// <summary>The name on the boss plate.</summary>
+            public static string BossName(BodyKind k) => k == BodyKind.Gatekeeper ? FloorBoss.Name : "THE WARDEN";
+
             public static Enemy LiveBoss(RunState run)
             {
                 for (int i = 0; i < run.enemies.Count; i++)
-                    if (run.enemies[i].kind == BodyKind.Boss && run.enemies[i].hp > 0) return run.enemies[i];
+                    if (Bodies.IsBoss(run.enemies[i].kind) && run.enemies[i].hp > 0) return run.enemies[i];
                 return null;
             }
 
@@ -692,8 +699,9 @@ namespace Depths.Unity.Hud
                 Notch(w, Balance.BossPhase1); Notch(w, Balance.BossPhase2);
                 var plate = HudLayout.BossPlate;
                 int ph = Mathf.Clamp(e.phase, 1, 3);
-                Text("THE WARDEN", plate.x + 15, plate.y + 13, 2, Soot);
-                Text("THE WARDEN", plate.x + 14, plate.y + 12, 2, PhaseInk[ph]);
+                string name = BossName(e.kind);
+                Text(name, plate.x + 15, plate.y + 13, 2, Soot);
+                Text(name, plate.x + 14, plate.y + 12, 2, PhaseInk[ph]);
                 int n = Num(ph, "PHASE ");
                 float px = plate.xMax - 14 - LedgerType.Width(n, 2);
                 Digits(n, px + 1, plate.y + 13, 2, Soot);

@@ -228,6 +228,7 @@ namespace Depths.Playtest
                 var fs = _f.dmgBySource!;
                 fs[src] = fs.TryGetValue(src, out var w) ? w + dmg : dmg;
                 _f.dmg += dmg;
+                if (room != null && room.Type == RoomKind.Boss) _f.bossDmg += dmg;   // taken in the boss fight
             }
             if (dRg > 0) Regen(dRg);
             if (dHp > 0) HealLayer(dHp, _redGone, "heart", "halfheart", p.hp >= p.maxHp, "red");

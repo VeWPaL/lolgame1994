@@ -86,9 +86,14 @@ namespace Depths
             new BodyRow { Mass = 40, Radius = 14, Art = 2, Bar = 26, Hp = 12 * Tough, Armour = Armour,
                       Base = 0, Sense = 100000, CdMin = Balance.Sec(2.6), CdVar = Balance.Sec(0.8), Dmg = 1,
                       PShotSpeed = Balance.PerSec(190), PShotRadius = 5 },
+            // the Gatekeeper, the floor boss of 1-13 (FloorBoss.cs): the Warden's frame; its moves live in FloorBoss
+            new BodyRow { Mass = 4, Radius = 28, Art = 4, Bar = 40, Hp = FloorBoss.Hp * Tough, Armour = Armour },
         };
 
         public static BodyRow Of(BodyKind kind) => Rows[(int)kind];
+
+        /// <summary>Whether this kind is a floor's boss: the Warden or the Gatekeeper.</summary>
+        public static bool IsBoss(BodyKind kind) => kind == BodyKind.Boss || kind == BodyKind.Gatekeeper;
 
         // ------------------------------------------------------------- the Brunch pack
 

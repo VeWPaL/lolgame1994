@@ -255,6 +255,17 @@ namespace Depths.Unity
                 Dashes(ex, ey, tx, ty, 1 + 2 * grow, QuadBatch.Tint(col, 0.20f + 0.55f * grow));
                 Ring(tx, ty, 5 + 3 * grow, 1 + 2 * grow, QuadBatch.Tint(col, 0.30f + 0.50f * grow));
             }
+            // the Gatekeeper's charge: the whole locked line from the tell's first tick, the Lunger's language, wider for its body
+            foreach (var e in run.enemies)
+            {
+                if (e.kind != BodyKind.Gatekeeper || (e.move != "tell" && e.move != "charge")) continue;
+                bool wind = e.move == "tell";
+                float grow = wind ? 1 - e.moveT / (float)System.Math.Max(1, e.fbTellMax) : 1;
+                Interp.At(run, e, Alpha, out var bx, out var by);
+                double left = e.fbLen - (wind ? 0 : e.fbGone), tx = bx + e.fbDx * left, ty = by + e.fbDy * left;
+                Dashes(bx, by, tx, ty, 2 + 3 * grow, QuadBatch.Tint(col, 0.35f + 0.55f * grow));
+                Ring(tx, ty, 8 + 5 * grow, 2 + 2 * grow, QuadBatch.Tint(col, 0.40f + 0.50f * grow));
+            }
             // a Brunch winding up to rush: the same committed line, growing from it toward the player
             var pl = run.player;
             foreach (var e in run.enemies)
@@ -330,7 +341,7 @@ namespace Depths.Unity
         static string CastColor(BodyKind k) => k switch
         {
             BodyKind.Gunner => "#ffb03a", BodyKind.Splitter => Middle.SplitColor, BodyKind.Mortar => Middle.LobColor,
-            BodyKind.Egg => Middle.EggColor, _ => "#ff4d4d",
+            BodyKind.Egg => Middle.EggColor, BodyKind.Gatekeeper => FloorBoss.ShellColor, _ => "#ff4d4d",
         };
         static readonly Color32 Dirt = Hex.C("#3a2a1c"), DirtLit = Hex.C("#7a5a3a"), Crack = Hex.C("#ff8a5a");
 
@@ -415,7 +426,7 @@ namespace Depths.Unity
             foreach (var e in run.enemies)
             {
                 int fr = e.anim > 0 ? (int)Math.Floor(e.anim) % 4 : -1, frame = fr < 0 ? 1 : fr;
-                bool boss = e.kind == BodyKind.Boss;
+                bool boss = Bodies.IsBoss(e.kind);
                 float bob = fr == 1 || fr == 3 ? -2 : 0;
                 float hop = run.readyT > 0 ? -Mathf.Abs(Mathf.Sin(readyProg * Mathf.PI * 2)) * 6 : 0;
                 Interp.At(run, e, Alpha, out var bx, out var by);   // between the last two ticks: smooth at any frame rate
@@ -452,7 +463,7 @@ namespace Depths.Unity
                     Rect(bx - e.r, barY, e.r * 2 * frac, 4, e.elite ? Gold : Green);
                 }
                 if (e.stun > 0) DrawStunStars(bx, ey - e.r - 6, (float)e.stun);
-                if (e.castT > 0) DrawCastFlash(bx, by, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
+                if (e.castT > 0) DrawCastFlash(bx, by, e.castT, e.kind == BodyKind.Gatekeeper ? e.fbTellMax : Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));
             }
         }
 

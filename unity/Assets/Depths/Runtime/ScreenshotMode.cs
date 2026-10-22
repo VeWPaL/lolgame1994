@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won", "floorboss" };
 
         void Check(bool ok, string what)
         {
@@ -64,6 +64,7 @@ namespace Depths.Unity
             else if (_view == "leap") yield return LeapView(false);
             else if (_view == "thud") yield return LeapView(true);
             else if (_view == "rush") yield return RushView();
+            else if (_view == "floorboss") yield return FloorBossView();
             else if (_view == "spike") yield return SpikeView();
             else if (_view == "summary") yield return SummaryView();
             else if (_view == "won") yield return WonView();
@@ -326,6 +327,34 @@ namespace Depths.Unity
             }
             view.Frozen = true;
             Check(w != null, "a Brunch is winding up its rush");
+            for (int i = 0; i < 10; i++) yield return null;
+        }
+
+        // the Gatekeeper mid-tell: its lobs' marks on the floor, then a charge line locked at the player, frozen two thirds in
+        IEnumerator FloorBossView()
+        {
+            GameView view = null;
+            while (view == null || view.Run == null) { yield return null; view = FindAnyObjectByType<GameView>(); }
+            var run = view.Run;
+            Enemy g = null;
+            for (int i = 0; i < 600 && g == null; i++)
+            {
+                foreach (var e in run.enemies) if (e.kind == BodyKind.Gatekeeper && e.noticeTimer <= 0) g = e;
+                if (g == null) yield return null;
+            }
+            Check(g != null, "floorboss: the Gatekeeper is in the arena");
+            if (g == null) yield break;
+            g.bossCd = 1e9;   // the view picks its moves: the lobs, then the charge
+            FloorBoss.Begin(run, g, FloorBoss.Attack.Slam);
+            for (int i = 0; i < 600 && !run.projectiles.Exists(p => p.lob && p.flight > p.flightMax / 3); i++) yield return null;
+            FloorBoss.Begin(run, g, FloorBoss.Attack.Charge);
+            Check(FloorBoss.ChargeTell >= Balance.Sec(FloorBoss.TellMin) && FloorBoss.SlamFlight >= Balance.Sec(FloorBoss.TellMin), "floorboss: the charge's tell and the lobs' marks last at least 0.3 s");
+            for (int i = 0; i < 600 && !(g.move == "tell" && g.moveT <= g.fbTellMax / 3); i++) yield return null;
+            view.Frozen = true;
+            Check(g.move == "tell", "floorboss: frozen mid-tell (" + g.move + ")");
+            Check(run.projectiles.Exists(p => p.lob), "floorboss: the slam's landing marks are on the floor");
+            var shown = LedgerHud.BossShown(run);
+            Check(shown == g && LedgerHud.BossName(shown.kind) == FloorBoss.Name, "floorboss: the bar above the room is the Gatekeeper's, named " + FloorBoss.Name);
             for (int i = 0; i < 10; i++) yield return null;
         }
 

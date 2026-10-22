@@ -502,6 +502,7 @@ namespace Depths
                 double edx = HitboxX - e.x, edy = HitboxY - e.y, dist = System.Math.Sqrt(edx * edx + edy * edy);
                 if (dist == 0) dist = 1;
                 if (e.kind == BodyKind.Boss) StepBoss(run, e);
+                else if (e.kind == BodyKind.Gatekeeper) FloorBoss.Step(run, e, edx, edy, dist, sm);
                 else if (e.kind == BodyKind.Egg) Middle.StepEgg(run, e, roomPress);
                 else if (e.kind == BodyKind.Burrower) Middle.StepBurrower(run, e, edx, edy, dist, sm);
                 else if (!ranged)
@@ -529,13 +530,14 @@ namespace Depths
                     double qx = HitboxX - (ox + (e.x - ox) * k / sub), qy = HitboxY - hitDy - (oy + (e.y - oy) * k / sub);
                     touching = System.Math.Sqrt(qx * qx + qy * qy) < e.r + Balance.PlayerHitR;
                 }
+                if (touching && e.kind == BodyKind.Gatekeeper && !FloorBoss.Hurts(e)) touching = false;   // it hurts only as it charges
                 if (touching)
                 {
                     // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
                     bool brunch = e.kind == BodyKind.Brunch;
                     bool holdingSlot = e.shieldTarget != null && e.shieldTarget.hp > 0 && !e.rushing;   // a rushing Brunch spends itself, as a chasing one does
-                    bool boss = e.kind == BodyKind.Boss;
-                    if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, boss) && (!brunch || holdingSlot))
+                    bool boss = Bodies.IsBoss(e.kind);
+                    if (Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, e.kind == BodyKind.Boss) && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
                     if (brunch)
                     {
@@ -1070,7 +1072,7 @@ namespace Depths
 
         /// <summary>The three body kinds that shoot from range, and therefore the three worth shielding. [h:Tick-42]</summary>
         public static bool IsRanged(BodyKind k) =>
-            k == BodyKind.Shooter || k == BodyKind.Gunner || k == BodyKind.Boss;
+            k == BodyKind.Shooter || k == BodyKind.Gunner || Bodies.IsBoss(k);
 
 
         /// <summary>A point in the world, returned by the arc geometry. [h:Tick-43]</summary>

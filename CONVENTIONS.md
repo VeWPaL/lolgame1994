@@ -117,9 +117,9 @@ guard: can it actually be null? 7. Tests that compare a value with itself — ve
 ## Current state
 
 - JS suite (`depths.html?test`, frozen reference): **246 checks**.
-- C# `Depths.Tests` has **703 checks**, parity-verified against the JavaScript except the 326 in
+- C# `Depths.Tests` has **725 checks**, parity-verified against the JavaScript except the 348 in
   `PlaceholderItemTests`, `HeartTests`, `RegenHeartTests`, `ExitPickupTests`, `PlaytestBotTests`,
-  `PlaytestToolTests`, `RateTests`, `CurveTests`, `MiddleTests`, `TunedTests`, `PoolTests`, `InterpTests`, `AimTests`, `SpikeTests`, `RunEndTests` and `AllocationTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
+  `PlaytestToolTests`, `RateTests`, `CurveTests`, `MiddleTests`, `TunedTests`, `PoolTests`, `InterpTests`, `AimTests`, `SpikeTests`, `RunEndTests`, `FloorBossTests` and `AllocationTests` (C#-only, after `js-final`; their fixtures carry `Category("csharp-only")`, which
   `verify.ps1` skips when it counts parity rows). Parity tests whose recordings take player damage run
   with `Balance.JsReference = true` (the JS damage rules); the whole suite runs at 210 Hz and with the difficulty curve off (assembly `[CurveOn(false)]`; `CurveTests` turns it on) and with the playtest tuning off (assembly `[TunedOn(false)]`; `TunedTests` turns it on).
 - `verify.ps1` asserts both numbers above; keep them current.

@@ -3,8 +3,8 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-22 (units 1-2 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms and
-the run's end, see "Spike rooms" and "The run's end"; before that, 2026-10-21: the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
+_Last updated: 2026-10-22 (units 1-3 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms,
+the run's end and the floor boss, see "Spike rooms", "The run's end" and "The Gatekeeper"; before that, 2026-10-21: the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
 for floors 5-12: see "Bot reads lines; middle lift"; before that, the Brunch's tell and locked dash; before that, a typed frame cap; the bot dodges landing marks, with the numbers and the
 recommended next steps under "Bot reads marks"; before that, the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
 notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  703/703, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  725/725, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -80,7 +80,7 @@ it from another checkout or the first command spends minutes importing.
   touches `unity/` or `Depths.Core`.
 - `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 96/96. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|spike|won|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|spike|won|floorboss|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
   checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap, `thud` just after it lands)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -102,6 +102,18 @@ it from another checkout or the first command spends minutes importing.
 | 6 | New sound engine: event-based, sample assets, mixer | Medium | done 2026-10-07: the game had no AudioListener and was silent until then; now one listener on `SoundEngine` with the JS master compressor (`Compressor`, `MasterBus`), sample overrides (`Resources/Sounds/<voice>.wav` replaces a synth voice), procedural music per area (`Score`, `MusicEngine`: calm + fight layers, 76 bpm, 8-bar seamless loops). Player check: the mix is audible, the area plays, the fight layer rises |
 
 ## Owner decisions
+
+- **The Gatekeeper, the floor boss of 1-13 (unit 3; owner 2026-10-22: a new floor boss replaces the Warden).**
+  DESIGN.md, "The Gatekeeper" (`FloorBoss.cs`, `TuneFloorBoss`, `--untune floorboss`). Charge (0.6 s line), Slam (3
+  lobs, 0.95 s marks), Fan (0.5 s flash), then Ring (phase 2) and Rampage (phase 3); weighted by area; it hurts only
+  as it charges; 2 HP at most a hit. The Warden stays as floor 14's stand-in and every floor's untuned. `shot
+  floorboss` freezes it mid-tell with the lobs' marks down; the lab (F2) has it as its last specimen. Bot, same build
+  (fb-off -> fb-on, seeds 101-200 x 3, 90 min): average boss fight 50 s on 1-4, 54 on 5-8, 64 on 9-12, 72 on 13
+  (Warden 53 / 60 / 69 / 76); damage a fight average 2.0 / 2.8 / 4.5 / 4.5, skilled 1.7 on 1-4 (target under 4);
+  novice lost 1 of 743 fights on 1-8 (target at most 25%); deaths 66 -> 54 (p 0.16), wins 234 -> 246. It is gentler
+  than the Warden per fight; the bot reads every tell, so a person will be hit more. Levers: `FloorBoss.Hp` (fight
+  length), the gaps (`CdMin`/`CdVar`), shell counts. Not done: the boss warning ("SOMETHING HEAVY IS DOWN THERE") is
+  drawn in Unity but nothing in the C# port sets `bossWarnT` (the JS's tickRoom did); older than this unit.
 
 - **The run's end (owner 2026-10-22: 3 areas of 4 floors, then floor 13 and the final boss on 14; antechamber plus
   arena).** DESIGN.md, "Rooms, floors, loot". The ledger's last band is two rungs, 13 and 14; the account sheet

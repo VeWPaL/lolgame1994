@@ -157,7 +157,7 @@ namespace Depths
                         Spikes.Crown(run, plan.Slots.Count > 0 ? plan.Slots[0].X : Balance.MidX, plan.Slots.Count > 0 ? plan.Slots[0].Y : Balance.MidY);
                     foreach (var e in run.enemies) if (e.kind == BodyKind.Egg) Eggs.Dress(run, e);   // once the wave is in: an orbit needs its host
                 }
-                else if (r.Type == RoomKind.Boss) run.enemies.Add(Spawn.BodyAnywhere(run, BodyKind.Boss));
+                else if (r.Type == RoomKind.Boss) run.enemies.Add(Spawn.BodyAnywhere(run, FloorBoss.KindFor(run)));
                 else if (r.Type == RoomKind.Secret) run.pickups.Add(Pickup.Of("hook", Balance.MidX, Balance.MidY, 16));
                 else if (r.Type == RoomKind.Item)
                 {

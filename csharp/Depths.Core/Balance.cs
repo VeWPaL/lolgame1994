@@ -221,6 +221,7 @@ namespace Depths
     public static bool TuneDepth = true;   // the middle lift: floors 5-12 climb toward the Deep instead of idling (DepthLift)
     public static bool TuneSpike = true;   // spike rooms on floors 5-12 (Spikes.cs); they need TuneLoot, which pays them
     public static bool TuneEnd = true;     // the run ends: floor 14 is an antechamber and the final boss, whose death wins
+    public static bool TuneFloorBoss = true;   // floors 1-13 end in the Gatekeeper (FloorBoss.cs), not the Warden
     public const int FinalFloor = 14;
     /// <summary>Whether this run can be won (tuned): untuned, the JS's endless descent.</summary>
     public static bool RunEnds => Tuned && TuneEnd;

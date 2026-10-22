@@ -83,7 +83,7 @@ namespace Depths.Playtest
             {
                 if (e.hp <= 0) continue;
                 live++;
-                if (target == null && e.kind == BodyKind.Boss) target = e;
+                if (target == null && Bodies.IsBoss(e.kind)) target = e;
                 // a buried Burrower cannot be shot: aim at what can, and only face the mound when nothing else is up
                 double d = Hyp(e.x - pl.x, e.y - pl.y) + (e.buried ? 1e9 : 0);
                 if (d < nd) { nd = d; nearest = e; }
@@ -234,10 +234,17 @@ namespace Depths.Playtest
             {
                 bool lunger = e.kind == BodyKind.Lunger && (e.lungeState == "wind" || e.lungeState == "lunge");
                 bool brunch = e.kind == BodyKind.Brunch && (e.rushWind > 0 || e.rushing);
-                if (e.hp <= 0 || !(lunger || brunch)) { _tell.Remove(e); continue; }
+                bool keeper = e.kind == BodyKind.Gatekeeper && (e.move == "tell" || e.move == "charge");
+                if (e.hp <= 0 || !(lunger || brunch || keeper)) { _tell.Remove(e); continue; }
                 if (!_tell.TryGetValue(e, out var seen)) _tell[e] = seen = t;
                 if (t - seen < _react) continue;
-                if (lunger)
+                if (keeper)
+                {
+                    // the Gatekeeper's line is locked as its tell begins and drawn whole: the ground it has left to cover
+                    bool tell = e.move == "tell";
+                    line(e.x, e.y, e.fbDx, e.fbDy, e.fbLen - (tell ? 0 : e.fbGone), e.r, FloorBoss.ChargeSpeed, tell ? e.moveT : 0);
+                }
+                else if (lunger)
                 {
                     // the whole lunge, rounded up to its last full step; mid-lunge the same length from here (never short of
                     // what is left: an eased lunge starts slow)
