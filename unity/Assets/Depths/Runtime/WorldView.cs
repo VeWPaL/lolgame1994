@@ -423,6 +423,13 @@ namespace Depths.Unity
                 if (e.kind == BodyKind.Burrower && DrawBurrow(e, frame, bx, by)) continue;
                 // a digging Burrower sinks and fades into the floor, still hittable, so still flashing
                 float sink = e.kind == BodyKind.Burrower && e.move == "dig" ? 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig) : 0;
+                if (e.elite)   // a spike room's elite: a slow gold glow, and a gold ring at its feet
+                {
+                    float beat = 0.5f + 0.5f * Mathf.Sin(Fc * 0.08f);
+                    Glow(bx, by, (float)e.r + 18 + 4 * beat, Gold, 0.55f + 0.25f * beat);
+                    Ring(bx, by - 2, (float)e.r + 5 + beat, 1.5f, QuadBatch.Tint(Gold, 0.45f + 0.35f * beat));
+                    Ring(bx, by + e.r * 0.8, (float)e.r + 2, 2, QuadBatch.Tint(Gold, 0.9f));
+                }
                 Dot(bx, by + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
                 double ey = by - (boss ? 6 : 2) + bob * (boss ? 2 : 1) + hop + sink * 8;
                 if (e.dazed && e.stun > 0) DrawTumble(e, frame, bx, ey);   // jarred by its own landing: tipped over, rocking back up
@@ -442,7 +449,7 @@ namespace Depths.Unity
                 {
                     float barY = (float)(by - BarHeight(e.kind)), frac = (float)Math.Max(0, Math.Min(1, e.hp / Math.Max(1e-9, e.maxHp)));
                     Rect(bx - e.r, barY, e.r * 2, 4, BarBack);
-                    Rect(bx - e.r, barY, e.r * 2 * frac, 4, Green);
+                    Rect(bx - e.r, barY, e.r * 2 * frac, 4, e.elite ? Gold : Green);
                 }
                 if (e.stun > 0) DrawStunStars(bx, ey - e.r - 6, (float)e.stun);
                 if (e.castT > 0) DrawCastFlash(bx, by, e.castT, Middle.CastTime(e.kind), Hex.Of(CastColor(e.kind)));

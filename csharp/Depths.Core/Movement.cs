@@ -81,8 +81,9 @@ namespace Depths
                 case "lunge":
                     {
                         double step = e.dashN > 0 ? DashStep(e, Balance.LungeRampIn, Balance.LungeRampOut) : Balance.LungeSpeed;
-                        e.x += e.lungeDx * step * sm;
-                        e.y += e.lungeDy * step * sm;
+                        double held = System.Math.Min(1, sm);   // never past its drawn line (an elite's pace is for the approach)
+                        e.x += e.lungeDx * step * held;
+                        e.y += e.lungeDy * step * held;
                     }
                     e.lungeT--;
                     // two lungers on one line meet mid-charge and both come off worse
@@ -279,8 +280,8 @@ namespace Depths
         public static void StepDodge(Enemy e, double sm)
         {
             double step = e.dashN > 0 ? DashStep(e, Balance.DodgeRampIn, Balance.DodgeRampOut) : Balance.LungeSpeed;
-            e.x += e.lungeDx * step * sm;
-            e.y += e.lungeDy * step * sm;
+            e.x += e.lungeDx * step * System.Math.Min(1, sm);
+            e.y += e.lungeDy * step * System.Math.Min(1, sm);
             if (--e.lungeT <= 0) { e.lungeState = "approach"; e.lungeT = 0; e.dashN = 0; }
         }
 

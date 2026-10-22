@@ -86,6 +86,7 @@ namespace Depths
             trans = null; readyT = 0; bossWarnT = 0; bossWarned = false;
             roomFade = 1; fadeTicks = Balance.FadeStart; fadeT = fadeTicks;
             state = "playing";
+            Spikes.Mark(this);
         }
 
         /// <summary>The bodies in the room being fought, and the pickups on its floor. [h:RunState-4]</summary>
@@ -155,6 +156,7 @@ namespace Depths
             enemies.Clear(); pickups.Clear();
             rng.Set(Rng.FloorSeed(rootSeed, floor));
             dungeon = Dungeon.FromSeed(rng);
+            Spikes.Mark(this);
             bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;
 
             curX = Map.Start;

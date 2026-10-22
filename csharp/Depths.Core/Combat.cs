@@ -204,8 +204,10 @@ namespace Depths
             {
                 // tuned: still one draw a kill, but only the room's last kill can drop, and only one thing -
                 // a Brunch pack no longer rolls the room's whole loot pool
+                if (e.elite) run.pickups.Add(Pickup.Of("armor", e.x, e.y, 10));   // a spike room's elite pays armour
+                bool spike = run.CurrentRoom != null && run.CurrentRoom.Spike != SpikeKind.None;
                 double roll = run.rng.Run();
-                var last = en.Count == 0 ? Loot.RoomDrop(roll, e.x, e.y, Curve.At(run.floor).Drops) : null;
+                var last = en.Count == 0 ? Loot.RoomDrop(roll, e.x, e.y, spike ? Spikes.SureDrop : Curve.At(run.floor).Drops) : null;
                 if (last != null) run.pickups.Add(last);
                 return;
             }

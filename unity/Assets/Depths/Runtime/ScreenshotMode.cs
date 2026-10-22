@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike" };
 
         void Check(bool ok, string what)
         {
@@ -64,6 +64,7 @@ namespace Depths.Unity
             else if (_view == "leap") yield return LeapView(false);
             else if (_view == "thud") yield return LeapView(true);
             else if (_view == "rush") yield return RushView();
+            else if (_view == "spike") yield return SpikeView();
             else if (_view == "summary") yield return SummaryView();
             else if (_view == "pause") yield return PauseView();
             else if (_view == "banner") yield return BannerView();
@@ -304,6 +305,33 @@ namespace Depths.Unity
             }
             view.Frozen = true;
             Check(w != null, "a Brunch is winding up its rush");
+            for (int i = 0; i < 10; i++) yield return null;
+        }
+
+        // down to a floor with a spike room, walked in beside it, into it: its elite's glow, and the skull on the map
+        IEnumerator SpikeView()
+        {
+            GameView view = null;
+            while (view == null || view.Run == null) { yield return null; view = FindAnyObjectByType<GameView>(); }
+            var run = view.Run;
+            Room spike = null;
+            for (int f = 0; f < 12 && spike == null; f++)
+            {
+                if (run.floor < Spikes.FirstFloor) { run.Descend(); continue; }
+                foreach (var r in run.dungeon.AllRooms) if (r.Spike == SpikeKind.Elite && spike == null) spike = r;
+                if (spike == null) run.Descend();
+            }
+            Check(spike != null, "a floor with an elite spike room");
+            if (spike == null) yield break;
+            foreach (var r in run.dungeon.AllRooms)   // its neighbours walked, so the map knows it
+                if (System.Math.Abs(r.X - spike.X) + System.Math.Abs(r.Y - spike.Y) == 1) { r.Visited = true; r.Spawned = true; r.Cleared = true; }
+            Rooms.EnterRoom(run, spike.X, spike.Y, Dir.S);
+            run.readyT = 0; run.trans = null;
+            bool elite = false;
+            foreach (var e in run.enemies) elite |= e.elite;
+            Check(elite, "the spike room's elite is in it");
+            for (int i = 0; i < 30; i++) yield return null;
+            view.Frozen = true;
             for (int i = 0; i < 10; i++) yield return null;
         }
 

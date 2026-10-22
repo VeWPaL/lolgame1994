@@ -55,6 +55,13 @@ disagree. Long code comments live in `docs/history/csharp/<File>.md` under `[h:F
   which left floors 5-12 flat and the Deep a cliff. The lift is 0 through floor 4, rises evenly to 1 at floor 8, holds
   to 12, then 0.5 below (the Deep climbs on health). It adds pace (x1.25 at full, under the 1.34 fairness cap), 0.8
   bodies and +0.15 Brunch-pack chance, never health, so the middle gets denser rather than longer.
+- **Spike rooms** (`TuneSpike`, `Spikes.cs`, owner 2026-10-22): on floors 5-12 a normal room is a spike 20% of the
+  time on floor 5, rising to 33% on 12 (at most 2 a floor, never beside the start; rolled on the floor's own stream,
+  so no other roll moves; off when `TuneLoot` is, which pays them). Half are **Elite**: the wave's strongest body
+  (never an egg, a Brunch, a Burrower or a boss; if none qualifies, the floor's likeliest kind that can joins the wave
+  as one) has 3x health, approaches 1.2x quicker (a lunge or a dodge never runs past its drawn line), fires 1.2x
+  quicker if ranged, glows gold with a gold bar, and drops armour. Half are **Crowded**: 1.8x the bodies and one more Brunch pack (where the floor's groups hold the Brunch).
+  Clearing one always drops. A red skull marks it on the ledger map once its door is seen.
 
 ## 4. Enemies
 
@@ -108,7 +115,7 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
 - Gate: `.\verify.ps1 -Unity` (hygiene incl. the comment rule, JS suite, C# suite + count, parity and constant audits,
   Unity tests, build, player shots). C#: `dotnet test csharp/Depths.sln`.
 - Unity: `bash tools/unity.sh test|build|shot <view>|publish`. Views worth knowing: game (tick-rate check), hearts,
-  secret, rail (DEPTHS_SEED=n picks a track), leap, thud, rush, lab, labrow, gameplay.
+  secret, rail (DEPTHS_SEED=n picks a track), leap, thud, rush, spike, lab, labrow, gameplay.
 - The owner plays `Documents\Depths-playtest` (`tools/unity.sh publish`); snapshots via `tools/snapshot.sh DDMMYY.V.S`.
 - Bot: `dotnet run --project csharp/Depths.Playtest -c Release -- play --label X --minutes 60 --seeds 101,...` then
   `report A B`. Bot dodging is a rough stand-in for a player: it sidesteps shells and, after its reaction time,

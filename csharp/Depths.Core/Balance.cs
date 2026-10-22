@@ -219,6 +219,7 @@ namespace Depths
     /// <summary>Each run rolls which kinds each area brings, the middle five among them (Pools.cs; owner 2026-10-13).</summary>
     public static bool TunePools = true;
     public static bool TuneDepth = true;   // the middle lift: floors 5-12 climb toward the Deep instead of idling (DepthLift)
+    public static bool TuneSpike = true;   // spike rooms on floors 5-12 (Spikes.cs); they need TuneLoot, which pays them
     /// <summary>The middle five's retune of 2026-10-13 (Middle.Sharp): aim, split, lead, chase, cone, ally-safe volleys.</summary>
     public static bool TuneMiddle = true;
     /// <summary>Every ranged body aims with Aim.Intercept (owner 2026-10-14: shots "completely away" from a straight walker).</summary>

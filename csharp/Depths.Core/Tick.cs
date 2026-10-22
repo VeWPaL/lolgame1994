@@ -470,7 +470,7 @@ namespace Depths
                 if (e.markT > 0) e.markT--;
                 if (e.slowT < 0) e.slowT = 0;
                 if (e.stun < 0) e.stun = 0;
-                double sm = e.slowT > 0 ? Balance.HitSlowMult : 1;
+                double sm = (e.slowT > 0 ? Balance.HitSlowMult : 1) * (e.elite ? Spikes.EliteRate : 1);   // an elite moves quicker
                 if (e.stun > 0)
                 {
                     if (e.lungeState == "wind" || e.lungeState == "lunge" || e.lungeState == "dodge")

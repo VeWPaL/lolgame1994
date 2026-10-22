@@ -38,6 +38,7 @@ the test assembly turns off, so the JS rows stay exact while the game plays the 
 | `Eggs.cs` | the turret egg's forms: fixed, orbiting a body, riding a rail in the Kiln Works (eight tracks) | `Eggs.Dress` runs only on a pooled (tuned) wave and in the lab |
 | `Pools.cs` | each run's kinds per area, the next area's newcomers previewed two floors early | `Balance.TunePools`; untuned, `RunState.pools` is null and `PlanWave` plays the JS plan draw for draw |
 | `Interp.cs` | each body's, shell's and the player's place at the last tick, for the presenter's blend | Nothing in the simulation reads it (`InterpTests.SnappingNeverChangesTheGame`) |
+| `Spikes.cs` | spike rooms on floors 5-12: an elite or a crowded wave, a sure drop, a skull on the map | `Balance.TuneSpike`; marked from its own stream (`SpikeTests.MarkingDrawsNothingFromTheRunStreamAndIsTheSameEveryTime`), so untuned and tuned floors are the same |
 
 ## Not ported from the JS
 

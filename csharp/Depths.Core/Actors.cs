@@ -151,6 +151,7 @@ namespace Depths
         public bool rushing;           // a guarding Brunch rushing the player instead of holding its slot (Balance.Tuned)
         public int rushWind;           // ticks left of a Brunch's wind-up before its dash; 0 when not winding
         public int rushT, rushRest;    // ticks left of the dash, then of the skid after it
+        public bool elite;             // a spike room's elite (Spikes.MakeElite): more health, quicker, drops armour
         public double rushDx, rushDy;  // the dash's direction, locked as the wind-up ends
         public bool buried;            // a Burrower underground: no shell, blast, field, contact or shove reaches it
         public double markX, markY;    // where it will surface

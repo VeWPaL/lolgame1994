@@ -170,12 +170,12 @@ namespace Depths
         }
 
         /// <summary>Plans a whole wave for a room the player enters from fromDir. [h:SpawnPlan-7]</summary>
-        public WavePlan PlanWave(int floor, Dir fromDir, Area area = Area.Area1, int weaponIdx = 0, BodyKind[][]? pools = null)
+        public WavePlan PlanWave(int floor, Dir fromDir, Area area = Area.Area1, int weaponIdx = 0, BodyKind[][]? pools = null, double crowd = 1)
         {
-            if (pools != null) return PlanPooled(floor, fromDir, area, weaponIdx, pools);
+            if (pools != null) return PlanPooled(floor, fromDir, area, weaponIdx, pools, crowd);
             var mix = Bodies.MixFor(area);
             var rolled = 2 + (int)(_rng.Run() * (2 + Balance.PressureRate));
-            var n = Math.Max(2, (int)Math.Floor(rolled + Balance.DepthBodies(floor, 0)));
+            var n = Math.Max(2, (int)Math.Floor((rolled + Balance.DepthBodies(floor, 0)) * crowd));
 
             var pts = Plan(n, fromDir);
 
@@ -210,16 +210,24 @@ namespace Depths
                 victim.Kind = BodyKind.Brunch;
                 victim.Pack = pack;
             }
+            if (crowd > 1) ExtraPack(slots);
 
             return Fill(plan, weaponIdx);
         }
 
+        // a crowded spike room's second Brunch pack, on a slot that is not the gunner's or a pack already
+        void ExtraPack(List<SpawnSlot> slots)
+        {
+            for (int i = 1; i < slots.Count; i++)
+                if (slots[i].Kind != BodyKind.Brunch && slots[i].Kind != BodyKind.Gunner) { slots[i].Kind = BodyKind.Brunch; slots[i].Pack = RollPack(); return; }
+        }
+
         /// <summary>The wave from the run's area groups (Pools, Balance.TunePools): the same count, the same spots, the same... [h:SpawnPlan-10]</summary>
-        WavePlan PlanPooled(int floor, Dir fromDir, Area area, int weaponIdx, BodyKind[][] pools)
+        WavePlan PlanPooled(int floor, Dir fromDir, Area area, int weaponIdx, BodyKind[][] pools, double crowd)
         {
             var mix = Bodies.MixFor(area);
             var rolled = 2 + (int)(_rng.Run() * (2 + Balance.PressureRate));
-            var n = Math.Max(2, (int)Math.Floor(rolled + Balance.DepthBodies(floor, 0)));
+            var n = Math.Max(2, (int)Math.Floor((rolled + Balance.DepthBodies(floor, 0)) * crowd));
             var pts = Plan(n, fromDir);
             double wGunner = Pools.Weight(pools, floor, BodyKind.Gunner), wBrunch = Pools.Weight(pools, floor, BodyKind.Brunch);
             var heavy = n >= 3 && wGunner > 0 && _rng.Run() < (mix.Heavy + Curve.At(floor).Heavy) * wGunner;
@@ -258,6 +266,7 @@ namespace Depths
                 victim.Kind = BodyKind.Brunch;
                 victim.Pack = pack;
             }
+            if (crowd > 1 && wBrunch > 0) ExtraPack(slots);   // only where the floor's groups hold the Brunch
             return Fill(plan, weaponIdx);
         }
 

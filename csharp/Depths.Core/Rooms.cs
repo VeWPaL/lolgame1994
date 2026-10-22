@@ -145,13 +145,16 @@ namespace Depths
                 if (r.Type == RoomKind.Normal)
                 {
                     var plan = run.planner.PlanWave(run.floor, from, AreaRules.AreaForFloor(run.floor), run.player.weaponIdx,
-                                                     Balance.Tuned && Balance.TunePools ? run.pools : null);
+                                                     Balance.Tuned && Balance.TunePools ? run.pools : null,
+                                                     r.Spike == SpikeKind.Crowded ? Spikes.Crowd : 1);
                     foreach (var b in plan.Bodies)
                     {
                         var e = Spawn.Body(run, b.Kind, b.X, b.Y, b.Trait);
                         if (b.Kind == BodyKind.Brunch && b.PackId > 0) { e.packId = b.PackId; e.packSlot = b.PackSlot; }
                         run.enemies.Add(e);
                     }
+                    if (r.Spike == SpikeKind.Elite)   // near the slot farthest from the door, if a body must join to be the elite
+                        Spikes.Crown(run, plan.Slots.Count > 0 ? plan.Slots[0].X : Balance.MidX, plan.Slots.Count > 0 ? plan.Slots[0].Y : Balance.MidY);
                     foreach (var e in run.enemies) if (e.kind == BodyKind.Egg) Eggs.Dress(run, e);   // once the wave is in: an orbit needs its host
                 }
                 else if (r.Type == RoomKind.Boss) run.enemies.Add(Spawn.BodyAnywhere(run, BodyKind.Boss));

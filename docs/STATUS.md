@@ -3,7 +3,8 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-21 (the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
+_Last updated: 2026-10-22 (unit 1 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms, see
+"Spike rooms"; before that, 2026-10-21: the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
 for floors 5-12: see "Bot reads lines; middle lift"; before that, the Brunch's tell and locked dash; before that, a typed frame cap; the bot dodges landing marks, with the numbers and the
 recommended next steps under "Bot reads marks"; before that, the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
 notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
@@ -19,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  685/685, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  695/695, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -79,7 +80,7 @@ it from another checkout or the first command spends minutes importing.
   touches `unity/` or `Depths.Core`.
 - `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 95/95. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|spike|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
   checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap, `thud` just after it lands)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -102,6 +103,19 @@ it from another checkout or the first command spends minutes importing.
 
 ## Owner decisions
 
+- **Spike rooms (owner 2026-10-22: Elite and Crowded, a sure drop, marked on the map).** DESIGN.md, "Spike
+  rooms". Bot, same build with `--untune spike` (b10-nospike -> b10-spike4, seeds 101-200 x 3, 60 min): deaths
+  58 -> 76, damage a floor Kiln 13.5 -> 14.9 and Flooded 18.8 -> 20.5 (Shallows and the Deep unchanged), floor time
+  +4% / +4%, novice 50 -> 60. **Missed target:** average and skilled deaths on floors 5-12 reached 7 (target
+  10-25, base 3). Three rounds (spike chance 0.20/0.33 vs 0.25/0.40; elite 2.5x vs 3x; crowd 1.5x vs 1.8x) read
+  4, 9, 7: at single digits that is noise, so tuning stopped (stall rule) on the round-2 values. The competent
+  bots aim at 87% and heal a floor's losses back; a person will feel these rooms more than the bot does.
+  Flooded (20.5 a floor) now edges past the Deep (19.4): unit 2 makes the Deep floors 13-14 only. A cold critic
+  found an elite Lunger lunging 20% past its drawn line (a committed lunge or dodge now never runs long), spikes
+  without their pay under `--untune loot`, a joining elite outside the floor's kinds and on top of another body,
+  and the elite Burrower too fast to outrun; all fixed, each with a test checked against its mutant.
+  A mutation run found the restore trap: a file moved back from its backup keeps the backup's older time and
+  MSBuild keeps the mutant's DLL; the mutation scripts now touch restored files and rebuild.
 - **Bot reads lines; middle lift (owner 2026-10-21).**
   - Brunch: the owner found walking straight back dodged it forever (the tell cancelled at reach + 24 px and the
     dash could not catch a retreat). Now the tell holds to 2x reach and the dash plans for the player's retreat

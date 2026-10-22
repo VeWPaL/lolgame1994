@@ -167,7 +167,7 @@ namespace Depths.Unity.Hud
                 for (int i = 0; i < rooms.Count; i++)
                 {
                     var r = rooms[i];
-                    h = Mix(h, (r.Visited ? 1 : 0) | (r.Cleared ? 2 : 0));
+                    h = Mix(h, (r.Visited ? 1 : 0) | (r.Cleared ? 2 : 0) | (r.Spike != SpikeKind.None ? 4 : 0));
                     if (r.Visited) h = Mix(h, InkLayer.MapPickup(run, r));
                     bossOpen |= r.Visited && r.Type == RoomKind.Boss && !r.Cleared;
                 }
@@ -198,7 +198,7 @@ namespace Depths.Unity.Hud
             readonly Region[] _pick = new Region[5];
             readonly Dictionary<string, Color32> _itemInk = new Dictionary<string, Color32>();
             readonly Atlas _hudArt;
-            readonly Region _gItem, _gBoss, _gLockGold, _gLockSilver, _qCap;
+            readonly Region _gItem, _gBoss, _gSpike, _gLockGold, _gLockSilver, _qCap;
 
             public InkLayer(LedgerHud hud)
             {
@@ -223,6 +223,7 @@ namespace Depths.Unity.Hud
                 {
                     ("item", Sprites.Glyph(Sprites.MiniGlyph["item"], LedgerArt.GoldInk, 2)),
                     ("boss", Sprites.Glyph(HornedSkull, LedgerArt.RedInk, 2)),
+                    ("spike", Sprites.Glyph(SpikeSkull, LedgerArt.RedInk, 2)),
                     ("lockgold", Sprites.Bake(Lock, new Dictionary<char, Color32> { ['#'] = Hex.C("#ffd23d") }, 1)),
                     ("locksilver", Sprites.Bake(Lock, new Dictionary<char, Color32> { ['#'] = Hex.C("#d8dee9") }, 1)),
                     ("pick1", Sprites.Bake(PickHeart, new Dictionary<char, Color32> { ['#'] = Hex.C("#e8395a") }, 1)),
@@ -235,7 +236,7 @@ namespace Depths.Unity.Hud
                 for (int k = 0; k < 3; k++)
                     for (int f = 0; f < 3; f++) list.Add(("heart" + k + f, LedgerArt.Heart(schemes[k], f, HudLayout.HeartPx)));
                 _hudArt = Atlas.Build(list);
-                _gItem = _hudArt["item"]; _gBoss = _hudArt["boss"]; _gLockGold = _hudArt["lockgold"]; _gLockSilver = _hudArt["locksilver"];
+                _gItem = _hudArt["item"]; _gBoss = _hudArt["boss"]; _gSpike = _hudArt["spike"]; _gLockGold = _hudArt["lockgold"]; _gLockSilver = _hudArt["locksilver"];
                 _qCap = _hudArt["qcap"];
                 for (int k = 1; k <= 4; k++) _pick[k] = _hudArt["pick" + k];
                 for (int k = 0; k < 3; k++) for (int f = 0; f < 3; f++) _hearts[k, f] = _hudArt["heart" + k + f];
@@ -243,6 +244,7 @@ namespace Depths.Unity.Hud
             }
 
             // the map's own marks: the Warden's horned skull, a padlock and the pickups as 7px pictures
+            static readonly string[] SpikeSkull = { ".###.", "#####", "#.#.#", "#####", ".#.#." };   // a spike room: no horns
             static readonly string[] HornedSkull = { "#.....#", "##...##", ".#####.", "#######", "#..#..#", "#######", ".#.#.#." };
             static readonly string[] Lock = { ".###.", "#...#", "#...#", "#####", "##.##", "#####" };
             static readonly string[] PickHeart = { ".##.##.", "#######", "#######", ".#####.", "..###..", "...#..." };
@@ -583,6 +585,7 @@ namespace Depths.Unity.Hud
             // that opens it (silver for an item room, gold for the Warden's) beside the mark until the door is open
             void RoomMark(RunState run, Room r, float x, float y, int box, bool walked)
             {
+                if (r.Spike != SpikeKind.None) Art(_gSpike, x + 2, y + 2);   // a spike room, once its door is seen
                 if (r.Type != RoomKind.Boss && r.Type != RoomKind.Item) return;
                 bool boss = r.Type == RoomKind.Boss;
                 bool sealedRoom = boss ? !run.bossUnlocked : !run.itemUnlocked;
