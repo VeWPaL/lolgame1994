@@ -109,3 +109,9 @@ fewer than 4, the rest stays designed) rather than squeezing the next.
 2. Final boss identity: the tournament proposes.
 3. Items: design and build the first 8 (the tournaments shrink to pay for it).
 4. Floor 14: antechamber plus arena.
+
+## Outcome (2026-10-22)
+
+Units 1, 2, 3 and 5 done in the 6 h; unit 4 (the final boss tournament) ran after it, on the owner's go-ahead:
+the Sunken King won the blind comparison against the Archivist and is merged. Missed targets, with the reasons, in
+docs/STATUS.md: unit 1's competent mid-run deaths, unit 4's average-bot win rate (80% against 40-70%).

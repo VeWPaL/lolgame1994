@@ -40,6 +40,7 @@ namespace Depths.Playtest
         // when the bot first SAW each body's tell (a Lunger's wind-up, a Brunch's tremble): the same reaction clock
         readonly Dictionary<Enemy, int> _tell = new Dictionary<Enemy, int>(ReferenceEqualityComparer.Instance);
         readonly List<Enemy> _pruneTell = new List<Enemy>();
+        readonly Dictionary<Enemy, string> _kingMove = new Dictionary<Enemy, string>(ReferenceEqualityComparer.Instance);
         Room? _tellRoom;
         Pickup? _itemGoal;   // the item last steered at, so a take is seen even when one tick's step skips the 2px band
         Room? _itemGoalIn;
@@ -273,7 +274,13 @@ namespace Depths.Playtest
                 bool brunch = e.kind == BodyKind.Brunch && (e.rushWind > 0 || e.rushing);
                 bool keeper = e.kind == BodyKind.Gatekeeper && (e.move == "tell" || e.move == "charge");
                 bool king = e.kind == BodyKind.SunkenKing && (e.move == "tell" || e.move == "charge" || e.move == "rift");
-                if (e.hp <= 0 || !(lunger || brunch || keeper || king)) { _tell.Remove(e); continue; }
+                if (e.hp <= 0 || !(lunger || brunch || keeper || king)) { _tell.Remove(e); _kingMove.Remove(e); continue; }
+                if (king)
+                {
+                    // the risen King's second line is a new tell: its reaction time starts again
+                    if (_kingMove.TryGetValue(e, out var was) && was == "charge" && e.move == "tell") _tell.Remove(e);
+                    _kingMove[e] = e.move;
+                }
                 if (!_tell.TryGetValue(e, out var seen)) _tell[e] = seen = t;
                 if (t - seen < _react) continue;
                 if (king && e.move == "rift")

@@ -492,6 +492,7 @@ namespace Depths
                 }
                 if (e.stun > 0)
                 {
+                    if (e.kind == BodyKind.SunkenKing) FinalBoss.StepFloor(run, e);   // the floor burns on, the King stunned or not
                     if (e.lungeState == "wind" || e.lungeState == "lunge" || e.lungeState == "dodge")
                     {
                         e.lungeState = "approach"; e.lungeT = 0; e.lungeLen = 0; e.lungeCd = Balance.LungeCd;

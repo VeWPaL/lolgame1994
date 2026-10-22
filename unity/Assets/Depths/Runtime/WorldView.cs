@@ -531,8 +531,10 @@ namespace Depths.Unity
                 if (g.pit[i])
                 {
                     Rect(x, y, cw, ch, Abyss);
-                    Rect(x + 4, y + 4, cw - 8, ch - 8, Hex.Rgba(40, 10, 30, 1));
-                    Rect(x, y, cw, 2, QuadBatch.Tint(Fire, 0.45f)); Rect(x, y + ch - 2, cw, 2, QuadBatch.Tint(Fire, 0.3f));
+                    Rect(x + 4, y + 8, cw - 8, ch - 10, Hex.Rgba(14, 4, 12, 1));            // the throat, black below the lip
+                    Rect(x, y, cw, 5, Hex.Rgba(120, 96, 110, 1));                            // the broken lip, lit stone
+                    for (int k = 0; k < cw; k += 9) Rect(x + k, y + 5, 5, 3 + (k * 7 + i) % 4, Hex.Rgba(70, 52, 64, 1));   // its jagged underside
+                    Rect(x, y + 8, cw, 4, Hex.Rgba(0, 0, 0, 0.55f));                          // the shadow it throws into the hole
                     continue;
                 }
                 if (g.burn[i] > 0)
@@ -552,8 +554,7 @@ namespace Depths.Unity
                 {
                     float p = 1 - g.warn[i] / (float)Math.Max(1, g.warnMax[i]), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * (0.25f + 0.5f * p));
                     var crack = g.falls[i] ? Hex.C("#c070ff") : Ember;   // ground that will fall cracks violet over a darkening floor
-                    if (g.falls[i]) Rect(x, y, cw, ch, QuadBatch.Tint(Abyss, 0.15f + 0.55f * p));
-                    else Rect(x + 1, y + 1, cw - 2, ch - 2, QuadBatch.Tint(Ember, 0.10f + 0.28f * p));
+                    if (g.falls[i]) Rect(x, y, cw, ch, QuadBatch.Tint(Abyss, 0.15f + 0.55f * p));   // ground that falls darkens; a crack has no fill
                     Frame(x + 2, y + 2, cw - 4, ch - 4, 2, QuadBatch.Tint(crack, 0.45f + 0.45f * pulse * (0.4f + 0.6f * p)));
                     for (int k = 0; k < 3; k++)   // three cracks from a point in the cell, reaching out as the tell runs
                     {
@@ -570,7 +571,7 @@ namespace Depths.Unity
             if (e.phase >= 3 && g.safe >= 0)
             {
                 // the quadrant spared: the one now while the floor cracks, else the one the next pattern will spare
-                int q = g.Cracking && g.lastSafe >= 0 ? g.lastSafe : g.safe;
+                int q = g.Cracking && g.lastSafe >= 0 ? g.lastSafe : FinalBoss.NextSpared(e);   // the spare as it will fall
                 bool now = g.Cracking;
                 double qx = Balance.RoomLeft + cw * (q == 1 || q == 2 ? FinalBoss.Ground.Cols / 2 : 1), qy = Balance.RoomTop + ch * (q >= 2 ? FinalBoss.Ground.Rows / 2 : 1);
                 float qw = cw * (FinalBoss.Ground.Cols / 2 - 1), qh = ch * (FinalBoss.Ground.Rows / 2 - 1);
@@ -590,15 +591,23 @@ namespace Depths.Unity
                 {
                     float ang = Mathf.Atan2((float)g.rdy[k], (float)g.rdx[k]), len = (float)g.rlen[k];
                     var at = ToPanel(g.riftX, g.riftY);
-                    if (rift)
+                    float fill = len * Mathf.Max(0.1f, p);
+                    // drawn in short lengths, none over the fallen ground: a strip never reads as lying across the pit
+                    for (float s = 0; s < len; s += RiftSeg)
                     {
-                        // a dark scar the whole length at once, its glowing core filling outward as the tell runs, hot edges
-                        _q.Rotated(A.Texture, white, at, 0, -w / 2, len, w, ang, QuadBatch.Tint(Hex.Of("#1a0306"), 0.55f + 0.2f * p));
-                        _q.Rotated(A.Texture, white, at, 0, -w / 2 + 6, len * Mathf.Max(0.1f, p), w - 12, ang, QuadBatch.Tint(Hex.Of(FinalBoss.RiftColor), 0.55f + 0.4f * p));
-                        _q.Rotated(A.Texture, white, at, 0, -w / 2, len, 3, ang, QuadBatch.Tint(FireCore, 0.65f + 0.35f * p));
-                        _q.Rotated(A.Texture, white, at, 0, w / 2 - 3, len, 3, ang, QuadBatch.Tint(FireCore, 0.65f + 0.35f * p));
+                        float l = Mathf.Min(RiftSeg, len - s), mid = s + l / 2;
+                        int cell = FinalBoss.Ground.CellAt(g.riftX + g.rdx[k] * mid, g.riftY + g.rdy[k] * mid);
+                        if (cell >= 0 && g.pit[cell]) continue;
+                        if (rift)
+                        {
+                            // a dark scar the whole length at once, its glowing core filling outward as the tell runs, hot edges
+                            _q.Rotated(A.Texture, white, at, s, -w / 2, l, w, ang, QuadBatch.Tint(Hex.Of("#1a0306"), 0.55f + 0.2f * p));
+                            if (s < fill) _q.Rotated(A.Texture, white, at, s, -w / 2 + 6, Mathf.Min(l, fill - s), w - 12, ang, QuadBatch.Tint(Hex.Of(FinalBoss.RiftColor), 0.55f + 0.4f * p));
+                            _q.Rotated(A.Texture, white, at, s, -w / 2, l, 3, ang, QuadBatch.Tint(FireCore, 0.65f + 0.35f * p));
+                            _q.Rotated(A.Texture, white, at, s, w / 2 - 3, l, 3, ang, QuadBatch.Tint(FireCore, 0.65f + 0.35f * p));
+                        }
+                        else _q.Rotated(A.Texture, white, at, s, -w / 2 - 4, l, w + 8, ang, QuadBatch.Tint(FireCore, 0.85f * erupt));
                     }
-                    else _q.Rotated(A.Texture, white, at, 0, -w / 2 - 4, len, w + 8, ang, QuadBatch.Tint(FireCore, 0.85f * erupt));
                 }
             }
             if (e.move == "leap")   // the leap's landing: a ring on the floor, filling as it comes down
@@ -608,6 +617,8 @@ namespace Depths.Unity
                 Ring(e.markX, e.markY, (float)FinalBoss.LeapR * (1.25f - 0.25f * t), 3, QuadBatch.Tint(Ember, 0.5f + 0.5f * t));
             }
         }
+
+        const float RiftSeg = 8;   // px: the length a rift's strip is drawn in, so it can skip the pit
 
         void Frame(double x, double y, float w, float h, float t, Color32 c)
         {

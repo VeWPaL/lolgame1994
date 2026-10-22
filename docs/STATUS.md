@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  767/767, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  773/773, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -141,6 +141,21 @@ it from another checkout or the first command spends minutes importing.
   share 26% fan (novice; target 25%, missed by 1) / 22% fan / 21% slam. Floors 1-13 unchanged (no run saved); the
   report is `report fin-off fin-on` (playtest/ is not kept). Levers: `FinalBoss.Hp`, `CdMin`, `CrackTell`, the weights. The bot reads
   every tell after its reaction, so a person will be hit more.
+  **Tournament (2026-10-22): the Sunken King beat the Archivist** (builder 2: summons from the run's own pools, a
+  drifting lit circle) in a blind comparison from three phase screenshots each, both kits and the bot numbers: B,
+  "it changes the room; ship it, with conditions". The Archivist missed two targets (skilled 65% wins, adds 26%) and
+  drew an add's charge line out of the arena. Done from the critics (blind, then a cold code critic): cracking cells
+  carry no fill (only burning ones do), the pit reads as a hole, no rift drawn over it; the risen King never spares
+  the quadrant it floats in and the drawn spare is always the one spared (`FinalBoss.NextSpared`); the floor keeps
+  burning while the King is stunned (a hooked King had frozen it); the floor throws the player toward good ground,
+  not deeper in; the slam is not a shells-only attack; a seated King shoved off its throne walks back; the bot's
+  reaction clock restarts for the risen King's second charge. Tuning (6 rounds, seeds 101-200 x 3, 90 min): any
+  volley over a busy floor (a fan, a nova, even one light ring) took 45-76% of the fight's damage, so **the King
+  waits while its floor cracks or burns**; burns last 1.0 s and cost 2 HP. Final (b13-noking -> b13-king), floor 14:
+  wins novice 55%, **average 80% (target 40-70: missed)**, skilled 83%; fights 144 / 162 / 164 s; no attack over 23%
+  (fan, slam, checker 17-20%). The fight is fair and readable but soft for the bot; a person will be hit more. Not
+  grafted (the blind critic's idea, for the owner): the Archivist's recall (adds from the run's own areas) onto the
+  King. Next: the owner's playtest of the finale; the Gatekeeper follow-ups above.
 - **The Gatekeeper, the floor boss of 1-13 (unit 3; owner 2026-10-22: a new floor boss replaces the Warden).**
   DESIGN.md, "The Gatekeeper" (`FloorBoss.cs`, `TuneFloorBoss`, `--untune floorboss`). Charge (0.6 s line), Slam (3
   lobs, 0.95 s marks), Fan (0.5 s flash), then Ring (phase 2) and Rampage (phase 3); weighted by area; it hurts only

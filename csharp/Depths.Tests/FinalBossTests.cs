@@ -166,6 +166,90 @@ namespace Depths.Tests
         }
 
         [Test]
+        public void TheRisenKingNeverSparesTheQuadrantItFloatsIn()
+        {
+            // the blind critic's case: the only safe ground beside the King's own body is a trap, not a puzzle
+            var (run, e) = Arena();
+            e.phase = 3;
+            var g = e.ground!;
+            int cell = 2 * FinalBoss.Ground.Cols + 7;   // an inner cell of the top-right quadrant
+            Assert.That(FinalBoss.Ground.Quadrant(cell), Is.EqualTo(1), "fixture: not the quadrant meant");
+            e.x = FinalBoss.Ground.CentreX(cell); e.y = FinalBoss.Ground.CentreY(cell);
+            g.safe = 1;
+            int shown = FinalBoss.NextSpared(e);   // what the floor shows as spared, the King standing where it does
+            Assert.That(shown, Is.Not.EqualTo(1), "the quadrant shown as spared is the one the King floats in");
+            FinalBoss.Begin(run, e, FinalBoss.Attack.Quake);
+            Assert.That(g.lastSafe, Is.EqualTo(shown), "the quadrant spared is not the one that was shown");
+            Assert.That(g.lastSafe, Is.Not.EqualTo(1), "it spared the quadrant it stands in");
+            Assert.That(Enumerable.Range(0, FinalBoss.Ground.N).Count(i => !FinalBoss.Ground.Edge(i) && FinalBoss.Ground.Quadrant(i) == g.lastSafe && g.warn[i] == 0),
+                Is.GreaterThan(0), "the quadrant it spared instead has no quiet ground");
+        }
+
+        [Test]
+        public void OverABurningFloorTheKingWaits()
+        {
+            // the blind critic's case: a rift laid across a burning checker left nowhere to stand
+            var (run, e) = Arena();
+            e.phase = 2; e.x = Balance.MidX; e.y = Balance.RoomTop + 120;
+            var g = e.ground!;
+            var begun = new System.Collections.Generic.List<FinalBoss.Attack>();
+            for (int k = 0; k < 300; k++)
+            {
+                g.burn[0] = FinalBoss.Burn;   // a cell burning in a corner, far from everything
+                e.move = "idle"; e.bossCd = 0; e.fbLeft = 0; e.castT = 0;
+                run.projectiles.Clear();
+                TickOrder.TickBodies(run);
+                if (e.move != "idle") begun.Add((FinalBoss.Attack)e.fbAttack);
+            }
+            Assert.That(begun, Is.Empty, "it attacked over a burning floor: the floor is the attack");
+        }
+
+        [Test]
+        public void AStunnedKingsFloorBurnsOn()
+        {
+            // the critic's case: a hooked or blasted King froze the floor, so fire under the player did nothing
+            var (run, e) = Arena();
+            var g = e.ground!;
+            FinalBoss.Begin(run, e, FinalBoss.Attack.Quake);
+            int lit = Enumerable.Range(0, FinalBoss.Ground.N).Count(i => g.warn[i] > 0);
+            Assert.That(lit, Is.GreaterThan(0), "fixture: nothing cracked");
+            for (int t = 0; t < FinalBoss.CrackTell + 5; t++) { e.stun = 100; Step(run, Input.None); }
+            Assert.That(g.Burning, "the cracks never burned while the King was stunned");
+        }
+
+        [Test]
+        public void TheFloorThrowsThePlayerTowardGoodGround()
+        {
+            // the critic's case: thrown away from the cell's centre, a player between it and the wall went deeper in
+            var (run, e) = Arena();
+            var g = e.ground!;
+            int cell = 2 * FinalBoss.Ground.Cols;   // the west edge, the third row
+            g.pit[cell] = true;
+            var p = run.player;
+            p.x = p.lagX = FinalBoss.Ground.CentreX(cell) - 15; p.y = p.lagY = FinalBoss.Ground.CentreY(cell) - Balance.PlayerHitDy;
+            p.kvx = p.kvy = 0; p.iframes = 0; run.blinkGrace = 0;
+            FinalBoss.StepFloor(run, e);
+            Assert.That(p.kvx, Is.GreaterThan(0), "thrown into the wall, deeper into the pit, not toward the good ground east");
+        }
+
+        [Test]
+        public void TheSlamIsNotAShellsOnlyAttack()
+        {
+            Assert.That(FinalBoss.Shells(FinalBoss.Attack.Slam), Is.False, "its landing marks are on the floor");
+            Assert.That(FinalBoss.Shells(FinalBoss.Attack.Fan) && FinalBoss.Shells(FinalBoss.Attack.Nova));
+        }
+
+        [Test]
+        public void ASeatedKingShovedOffItsThroneWalksBack()
+        {
+            var (run, e) = Arena();
+            e.phase = 1; e.move = "rest"; e.moveT = 1; e.bossCd = 1e9; e.fbLeft = 0;
+            e.x = FinalBoss.ThroneX + 60; e.y = FinalBoss.ThroneY + 30;
+            for (int t = 0; t < Balance.Sec(3); t++) Step(run, Input.None);
+            Assert.That(Math.Abs(e.x - FinalBoss.ThroneX) + Math.Abs(e.y - FinalBoss.ThroneY), Is.LessThan(2), "it sat down off its throne");
+        }
+
+        [Test]
         public void ThePhasesChangeTheKingsPostureAndTheRoom()
         {
             var (run, e) = Arena();
@@ -193,7 +277,7 @@ namespace Depths.Tests
             Assert.That(centre.All(i => g.pit[i]), "the centre did not fall");
             Assert.That(Enumerable.Range(0, FinalBoss.Ground.N).Count(i => g.pit[i]), Is.EqualTo(8));
             double x0 = e.x, y0 = e.y;
-            for (int t = 0; t < Balance.Sec(6); t++) { Immortal(run); Step(run, Input.None); }
+            for (int t = 0; t < Balance.Sec(10); t++) { Immortal(run); Step(run, Input.None); }   // its opener burns first: it waits, then charges
             Assert.That(Math.Abs(e.x - x0) + Math.Abs(e.y - y0), Is.GreaterThan(30), "standing, it never moved");
             Assert.That(centre.All(i => g.pit[i]), "the pit closed in phase 2");
 

@@ -401,10 +401,12 @@ namespace Depths.Unity
                 FinalBoss.Begin(run, k, FinalBoss.Attack.Quake);
                 for (int i = 0; i < 600 && g.Cracking; i++) Step();
                 for (int i = 0; i < 6; i++) Step();
+                Check(Burning(g) > 10, tag + "the checker is burning");
+                for (int i = 0; i < 600 && (g.Cracking || g.Burning); i++) Step();   // the game lays no rift over a burning floor
                 FinalBoss.Begin(run, k, FinalBoss.Attack.Rift);
                 for (int i = 0; i < 600 && k.move == "rift" && k.moveT > k.fbTellMax * 0.4f; i++) Step();
                 Check(k.move == "rift", tag + "frozen mid-rift (" + k.move + ")");
-                Check(Burning(g) > 10, tag + "the checker is burning");
+                Check(!g.Burning && !g.Cracking, tag + "the rift is laid on quiet ground, the checker burned out");
                 Check(Pits(g) == 8, tag + "the heart of the room has fallen");
                 Check(FinalBoss.RiftTell >= min, tag + "the rift's strip shows at least 0.35 s");
                 Check(FinalBoss.PostureOf(k) == FinalBoss.Posture.Standing, tag + "standing");
@@ -413,11 +415,10 @@ namespace Depths.Unity
             {
                 FinalBoss.Begin(run, k, FinalBoss.Attack.Quake);
                 for (int i = 0; i < 600 && k.move == "quake"; i++) Step();
-                FinalBoss.Begin(run, k, FinalBoss.Attack.Nova);
-                for (int i = 0; i < 600 && k.castT > k.fbTellMax * 0.4f; i++) Step();
-                Check(k.castT > 0 && g.Cracking, tag + "frozen mid-cast over a cracking floor");
+                for (int i = 0; i < 600 && g.Cracking && FirstWarn(g) > FinalBoss.QuadTell * 0.4f; i++) Step();
+                Check(g.Cracking && k.castT <= 0 && k.move != "tell" && k.move != "rift" && k.move != "leap", tag + "the quadrants crack and the King waits on them (the floor is the attack)");
                 Check(Lit(g, FinalBoss.Source.Quadrant) == 24 && Pits(g) == 28, tag + "three quadrants crack inside the fallen edge");
-                Check(FinalBoss.QuadTell >= min && FinalBoss.NovaTell >= min, tag + "the quadrants' crack and the ring's flash last at least 0.35 s");
+                Check(FinalBoss.QuadTell >= min, tag + "the quadrants' crack lasts at least 0.35 s");
                 Check(FinalBoss.PostureOf(k) == FinalBoss.Posture.Risen, tag + "risen");
             }
             var shown = LedgerHud.BossShown(run);

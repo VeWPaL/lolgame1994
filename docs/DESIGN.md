@@ -110,10 +110,12 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
   and Gungeon's Lich were the reference: a finale that changes the room). A crowned, horned king in a robe split by
   molten seams (16 px wide at art 4, radius 34), 640 x 1.35 HP x `DepthTough`. Its arena mechanic is **the floor**:
   the room is a 10 x 6 grid of cells; a pattern's cells crack (an ember outline, cracks reaching further as the tell
-  runs) and then burn for 1.5 s (1 HP a second, the i-frames' rate, while the hitbox stands on one); ground that will
-  fall for good cracks violet over a darkening cell for 2 s, then is the abyss (1 HP likewise). The King never starts
-  a tell over a cracking floor except a shell attack (fan, ring, slam), and never over its own live lob marks. Its
-  body hurts only as it charges (2 HP). At most 2 HP a hit; every tell at least 0.35 s (`FinalBoss.TellMin`).
+  runs; no fill) and then burn for 1.0 s (a solid flickering fill; 2 HP a second, the i-frames' rate, while the hitbox
+  stands on one); ground that will fall for good cracks violet over a darkening cell for 2 s, then is the abyss (a hole
+  with a lit lip; 2 HP likewise). The floor throws a player on it toward the nearest good ground, and it keeps burning
+  while the King is stunned. **While its floor cracks or burns, the floor is the attack: the King starts nothing**, and
+  it never starts a tell over its own live lob marks. A rift's strip is not drawn over the pit. Its body hurts only as
+  it charges (2 HP). At most 2 HP a hit; every tell at least 0.35 s (`FinalBoss.TellMin`). Fan: 9 shells.
   - **Phase 1, seated** (full to 66%): on its throne at the top, never moving. Fan, Slam, and the **fault lines**
     (every other row cracks 0.75 s, then burns: step one row).
   - **Phase 2, standing** (66-33%): the throne breaks and **the heart of the room (4 x 2 cells) falls for good**; it

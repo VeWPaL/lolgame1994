@@ -34,7 +34,7 @@ namespace Depths
         public static int CrackTell => Balance.Sec(0.75);     // a floor pattern's cells crack and glow this long before they burn
         public static int QuadTell => Balance.Sec(1.2);      // phase 3's quadrants: a longer read, a longer walk
         public static int FallTell => Balance.Sec(2.0);      // ground that collapses for good cracks this long first
-        public static int Burn => Balance.Sec(1.5);          // a pattern's cells burn this long, then go cold
+        public static int Burn => Balance.Sec(1.0);          // a pattern's cells burn this long, then go cold
         public static int ShiftTime => Balance.Sec(2.4);
         public static int QuakeCast => Balance.Sec(0.5);     // its arms up as a pattern cracks; then it fights on over the crack     // a phase change: the King's new posture and the floor's collapse
         public static int DeathBeat => Balance.Sec(1.8);     // its body breaking, then the flash, then the win
@@ -56,7 +56,7 @@ namespace Depths
         public const double LeapR = 70, LeapDmg = 2;
         public const int LeapShells = 10;
         public static double LeapShellSpeed => Balance.PerSec(200);
-        public const double FloorDmg = 1;
+        public const double FloorDmg = 2;   // a misread floor costs a heart (it was 1: the floor was the gentlest part of the fight)
         public static int Recover => Balance.Sec(0.3);
         public static int ChargeRecover => Balance.Sec(0.9);
         public static int LeapRecover => Balance.Sec(0.9);
@@ -106,7 +106,7 @@ namespace Depths
 
         /// <summary>The attacks that only throw shells (no line, strip or landing on the floor): the ones it may use while the
         /// floor is cracking, so the walk off a crack is made under fire but never across a second floor tell.</summary>
-        public static bool Shells(Attack a) => a == Attack.Fan || a == Attack.Nova || a == Attack.Slam;
+        public static bool Shells(Attack a) => a == Attack.Fan || a == Attack.Nova;   // not the slam: its marks are on the floor
 
         public static void Init(Enemy e)
         {
@@ -143,6 +143,12 @@ namespace Depths
                 case "rest": if (--e.moveT <= 0) e.move = "idle"; return;
             }
             // idle: seated it holds the throne; standing it walks to its standoff; risen it drifts there quicker
+            double tx = ThroneX - e.x, ty = ThroneY - e.y, td = System.Math.Sqrt(tx * tx + ty * ty);
+            if (e.phase == 1 && td > 1)   // seated: shoved off its throne, it walks back
+            {
+                double v = System.Math.Min(td, Walk * sm);
+                e.x += tx / td * v; e.y += ty / td * v;
+            }
             if (e.phase >= 2 && dist > Standoff)
             {
                 double v = (e.phase >= 3 ? Float : Walk) * sm;
@@ -150,9 +156,10 @@ namespace Depths
             }
             if (LobsLive(run, e)) return;   // never a new tell over its own live marks
             if ((e.bossCd -= 1) > 0) return;
-            bool cracking = g.Cracking;   // over a cracking floor: shells only, never a second thing on the ground
-            if (cracking && e.fbLeft > 0) return;
-            var a = e.fbLeft > 0 ? Attack.Quake : Pick(e.phase, e.fbLast, run.rng.Run(), cracking);
+            // while its floor cracks or burns, the floor is the attack and the King waits for quiet ground: any volley over a
+            // busy floor (a fan, a nova, even one light ring) pinned the player and took 45-76% of the fight's damage
+            if (g.Cracking || g.Burning) return;
+            var a = e.fbLeft > 0 ? Attack.Quake : Pick(e.phase, e.fbLast, run.rng.Run());
             e.fbLeft = 0;
             double over = e.bossCd;
             e.bossCd = e.cdMin + run.rng.Jitter() * e.cdVar;
@@ -268,6 +275,7 @@ namespace Depths
             {
                 tell = QuadTell;   // the quadrants: three burn, the one it spares turns clockwise each time and is shown ahead
                 if (g.safe < 0) g.safe = 0;
+                g.safe = NextSpared(e);   // the quadrant shown now: never the one the King floats in
                 for (int i = 0; i < Ground.N; i++) if (!Ground.Edge(i) && Ground.Quadrant(i) != g.safe && !g.pit[i]) g.Warn(i, tell, false, Source.Quadrant);
                 g.lastSafe = g.safe;
                 g.safe = (g.safe + 1) % 4;
@@ -435,6 +443,18 @@ namespace Depths
 
         // the floor's clocks: a crack runs out into a burn (or a pit, for ground that falls), a burn runs out cold; then the
         // cell under the player's hitbox hurts if it burns or has fallen
+        /// <summary>The quadrant the next pattern spares, as drawn: the next one clockwise, passed over while the King floats
+        /// in it (so what the player sees is always what is spared).</summary>
+        public static int NextSpared(Enemy e)
+        {
+            var g = e.ground!;
+            int q = g.safe < 0 ? 0 : g.safe, here = Ground.CellAt(e.x, e.y);
+            return here >= 0 && Ground.Quadrant(here) == q ? (q + 1) % 4 : q;
+        }
+
+        /// <summary>The floor alone: its clocks and burns run on while the King is stunned (Tick's stun branch).</summary>
+        public static void StepFloor(RunState run, Enemy e) { if (e.ground != null) StepGround(run, e.ground); }
+
         static void StepGround(RunState run, Ground g)
         {
             if (g.riftFx > 0) g.riftFx--;
@@ -452,7 +472,23 @@ namespace Depths
             double px = pl.lagX, py = pl.lagY + Balance.PlayerHitDy;
             int c = Ground.CellAt(px, py);
             if (c < 0 || !g.Hot(c)) return;
-            Hurt(run, g.pit[c] ? Source.Pit : g.src[c], FloorDmg, px - Ground.CentreX(c), py - Ground.CentreY(c), 2);
+            int to = NearestCold(g, px, py);   // thrown toward good ground, never deeper into the pit or the fire
+            double kx = to >= 0 ? Ground.CentreX(to) - px : px - Ground.CentreX(c), ky = to >= 0 ? Ground.CentreY(to) - py : py - Ground.CentreY(c);
+            Hurt(run, g.pit[c] ? Source.Pit : g.src[c], FloorDmg, kx, ky, 2);
+        }
+
+        /// <summary>The nearest cell that is neither burning nor fallen nor cracking, or -1.</summary>
+        public static int NearestCold(Ground g, double x, double y)
+        {
+            int best = -1;
+            double bd = double.PositiveInfinity;
+            for (int i = 0; i < Ground.N; i++)
+            {
+                if (g.Hot(i) || g.warn[i] > 0) continue;
+                double dx = Ground.CentreX(i) - x, dy = Ground.CentreY(i) - y, d = dx * dx + dy * dy;
+                if (d < bd) { bd = d; best = i; }
+            }
+            return best;
         }
 
         /// <summary>The King is down: its body breaks for DeathBeat (the room's win waits for it), its shells and marks go with it (TickRoom).</summary>
@@ -506,6 +542,15 @@ namespace Depths
             }
 
             public bool Hot(int i) => pit[i] || burn[i] > 0;
+            /// <summary>A pattern is burning: its standing room is already taken, so nothing is laid over it.</summary>
+            public bool Burning
+            {
+                get
+                {
+                    for (int i = 0; i < N; i++) if (burn[i] > 0 && !pit[i]) return true;
+                    return false;
+                }
+            }
             /// <summary>A pattern or a collapse is cracking: the King starts nothing new over it.</summary>
             public bool Cracking
             {
