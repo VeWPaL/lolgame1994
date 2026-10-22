@@ -220,6 +220,10 @@ namespace Depths
     public static bool TunePools = true;
     public static bool TuneDepth = true;   // the middle lift: floors 5-12 climb toward the Deep instead of idling (DepthLift)
     public static bool TuneSpike = true;   // spike rooms on floors 5-12 (Spikes.cs); they need TuneLoot, which pays them
+    public static bool TuneEnd = true;     // the run ends: floor 14 is an antechamber and the final boss, whose death wins
+    public const int FinalFloor = 14;
+    /// <summary>Whether this run can be won (tuned): untuned, the JS's endless descent.</summary>
+    public static bool RunEnds => Tuned && TuneEnd;
     /// <summary>The middle five's retune of 2026-10-13 (Middle.Sharp): aim, split, lead, chase, cone, ally-safe volleys.</summary>
     public static bool TuneMiddle = true;
     /// <summary>Every ranged body aims with Aim.Intercept (owner 2026-10-14: shots "completely away" from a straight walker).</summary>

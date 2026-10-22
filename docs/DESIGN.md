@@ -42,7 +42,10 @@ disagree. Long code comments live in `docs/history/csharp/<File>.md` under `[h:F
 ## 3. Rooms, floors, loot
 
 - A floor is a generated map (`World.cs`, parity with the JS). Areas: Shallows 1-4, Kiln Works 5-8, Flooded Galleries
-  9-12, Warden's Deep 13+ (the boss). Depth scales every body: health (`DepthTough`), speed and cadence (`DepthRate`).
+  9-12, Warden's Deep 13-14. **The run ends** (`TuneEnd`, owner 2026-10-22): floor 13 is an ordinary floor; floor 14
+  (`Dungeon.FinalFloor`) is an antechamber (a heart to take) with the final boss's arena north of it, its door open.
+  The final boss's death wins the run ("THE DEPTHS ARE QUIET"); the records keep wins and the quickest. Untuned, the
+  JS's endless descent. Depth scales every body: health (`DepthTough`), speed and cadence (`DepthRate`).
 - **Secret room**: a fake wall in a room beside it, shown by a scorched crack; a blast near it opens it; the hook is
   inside. `shot secret` checks the whole chain.
 - **Loot** (`TuneLoot`): only a room's last kill can drop, 75% of rooms, one pickup.

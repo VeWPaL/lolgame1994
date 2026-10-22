@@ -86,8 +86,12 @@ namespace Depths
             trans = null; readyT = 0; bossWarnT = 0; bossWarned = false;
             roomFade = 1; fadeTicks = Balance.FadeStart; fadeT = fadeTicks;
             state = "playing";
+            finalFloor = false;
             Spikes.Mark(this);
         }
+
+        /// <summary>This floor is the last (decided as it was built): its boss's death wins the run.</summary>
+        public bool finalFloor;
 
         /// <summary>The bodies in the room being fought, and the pickups on its floor. [h:RunState-4]</summary>
         public readonly List<Enemy> enemies = new List<Enemy>();
@@ -155,7 +159,8 @@ namespace Depths
             if (oldRoom != null) { oldRoom.Enemies.Clear(); oldRoom.Enemies.AddRange(enemies); oldRoom.Pickups.Clear(); oldRoom.Pickups.AddRange(pickups); }
             enemies.Clear(); pickups.Clear();
             rng.Set(Rng.FloorSeed(rootSeed, floor));
-            dungeon = Dungeon.FromSeed(rng);
+            bool last = finalFloor = Balance.RunEnds && floor >= Balance.FinalFloor;
+            dungeon = last ? Dungeon.FinalFloor(rng) : Dungeon.FromSeed(rng);
             Spikes.Mark(this);
             bossUnlocked = itemUnlocked = false; unlockDir = null; unlockRoom = null; unlockT = 0;
 
@@ -192,6 +197,11 @@ namespace Depths
             descendT = FadeDescend;
 
             state = "playing";
+            if (last)
+            {
+                bossUnlocked = true;   // the arena's door stands open: there is no key to find down here
+                pickups.Add(Pickup.Of("heart", Balance.MidX, Balance.MidY - 90, 16));   // a breath before the end
+            }
         }
 
         /// <summary>Whether the boss has been announced on the map yet. [h:RunState-12]</summary>

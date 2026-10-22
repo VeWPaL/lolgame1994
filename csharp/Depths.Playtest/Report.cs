@@ -10,7 +10,8 @@ namespace Depths.Playtest
     /// <summary>One row of numbers per (label, profile); definitions are tools/playtest-report.js's.</summary>
     public sealed class ProfileStats
     {
-        public int n, deaths, stuck, errors;
+        public int n, deaths, stuck, errors, wins;
+        public double minToWin;
         public double floor, minPerFloor, dmgPerFloor, healPerFloor, regenPerFloor, clearPerFloor, bossS, acc, killsPerMin;
         public double qPerRun, activesPerRun, maskedPerRun;
         public Dictionary<string, double> dmgSrc = new Dictionary<string, double>();
@@ -40,6 +41,8 @@ namespace Depths.Playtest
             s.n = runs.Count;
             s.floor = Median(runs.Select(r => (double)r.floor));
             s.deaths = runs.Count(r => r.end == "death");
+            s.wins = runs.Count(r => r.end == "won");
+            s.minToWin = Median(runs.Where(r => r.end == "won").Select(r => (double)r.ticks / hz / 60));
             s.stuck = runs.Count(r => r.end == "stuck");
             s.errors = runs.Count(r => r.errors.Count > 0);
             s.minPerFloor = Mean(done.Select(f => (double)f.ticks / hz / 60));
@@ -70,6 +73,8 @@ namespace Depths.Playtest
         {
             ("floor", "median floor reached", s => s.floor, false),
             ("deaths", "deaths", s => s.deaths, true),
+            ("wins", "wins (the final boss beaten)", s => s.wins, true),
+            ("minToWin", "  median minutes to a win", s => s.minToWin, false),
             ("stuck", "stuck runs (bot or softlock)", s => s.stuck, true),
             ("errors", "runs with errors", s => s.errors, true),
             ("minPerFloor", "minutes per cleared floor", s => s.minPerFloor, false),
@@ -87,12 +92,12 @@ namespace Depths.Playtest
 
         // a profile a label did not play has no numbers, not zeros
         static string Fmt(string key, ProfileStats s, double v, bool isInt) =>
-            s.n == 0 ? "n/a" : key == "acc" ? Pct(v) : isInt ? ((int)v).ToString(Inv) : F1(v);
+            s.n == 0 || (key == "minToWin" && s.wins == 0) ? "n/a" : key == "acc" ? Pct(v) : isInt ? ((int)v).ToString(Inv) : F1(v);
 
         // as the JS: every non-accuracy delta in f1, "=" under the noise floor
         static string Delta(string key, ProfileStats sa, ProfileStats sb, double a, double b)
         {
-            if (sa.n == 0 || sb.n == 0) return "n/a";
+            if (sa.n == 0 || sb.n == 0 || (key == "minToWin" && (sa.wins == 0 || sb.wins == 0))) return "n/a";
             double d = b - a;
             if (Math.Abs(d) < (key == "acc" ? 0.005 : 0.05)) return "=";
             return (d > 0 ? "+" : "") + (key == "acc" ? Math.Floor(d * 100 + 0.5).ToString("0", Inv) + "%" : F1(d));

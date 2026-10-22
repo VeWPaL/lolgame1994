@@ -64,7 +64,7 @@ namespace Depths.Unity
             map.Enable();
             var args = Environment.GetCommandLineArgs();
             int i = Array.IndexOf(args, "-depthsView");
-            _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss" || args[i + 1] == "summary" || args[i + 1] == "pause");
+            _demo = i >= 0 && i + 1 < args.Length && (args[i + 1] == "game" || args[i + 1] == "boss" || args[i + 1] == "summary" || args[i + 1] == "pause" || args[i + 1] == "won");
             _bossRoom = i >= 0 && i + 1 < args.Length && args[i + 1] == "boss";
             _sandbox = i >= 0 && i + 1 < args.Length && args[i + 1] == "sandbox";
             bool labRow = i >= 0 && i + 1 < args.Length && args[i + 1] == "labrow";   // the row, frozen and unshot: every sprite
@@ -109,7 +109,7 @@ namespace Depths.Unity
             Depths.Unity.Audio.MusicEngine.SetFight(false);   // back to the menu: the calm layer only
         }
 
-        bool _bossRoom, _sandbox, _inLab, _secretView, _railView, _leapView, _rushView;
+        bool _bossRoom, _sandbox, _inLab, _secretView, _railView, _leapView, _rushView, _wonSounded;
         uint? _fixedSeed;   // -depthsSeed: the screenshot checks pick their dungeon
         readonly LabMode _lab = new LabMode();
         bool RealRun => !_sandbox && !_bossRoom && !_inLab;
@@ -121,7 +121,7 @@ namespace Depths.Unity
             new GameplaySettings(new PlayerPrefsStore()).Apply();   // the curve is chosen per run, in Options
             _recorded = false;
             _paused = false; _bannerS = 0; _lastFloor = 1; _respawnT = 0;   // the view starts with the run
-            _lastPicked = 0; _lastWarned = false; _lastWinding = 0; _lastThuds = 0; _lastBooms = 0;
+            _lastPicked = 0; _lastWarned = false; _wonSounded = false; _lastWinding = 0; _lastThuds = 0; _lastBooms = 0;
             _shake.Clear(); _shake.Level = new GameplaySettings(new PlayerPrefsStore()).Shake;
             uint seed = _fixedSeed ?? (uint)UnityEngine.Random.Range(int.MinValue, int.MaxValue);
             if (RealRun)
@@ -364,10 +364,10 @@ namespace Depths.Unity
             // the screenshot mode plays fixtures: it must never write into the player's real records
             bool shot = Array.IndexOf(Environment.GetCommandLineArgs(), "-depthsShot") >= 0;
             var records = new RunRecords(shot ? (ISettingsStore)new MemorySettingsStore() : new PlayerPrefsStore());
-            if (!RealRun) return new RunRecords.Result(records.DeepestFloor, records.BestRooms, false, false);
+            if (!RealRun) return new RunRecords.Result(records.DeepestFloor, records.BestRooms, false, false, records.Wins, records.BestWin, false);
             int visited = 0;
             for (int i = 0; i < _run.dungeon.AllRooms.Count; i++) if (_run.dungeon.AllRooms[i].Visited) visited++;
-            return records.Record(_run.floor, visited);
+            return records.Record(_run.floor, visited, _run.state == "won", (float)(_run.ticks / (double)Balance.TickHz));
         }
 
         const float BannerS = 3;
@@ -403,6 +403,7 @@ namespace Depths.Unity
             // dmgTaken grows on every landed hit, so a hit is heard even on the tick the regen heart refills
             if (_run.dmgTaken > _lastDmg) Depths.Unity.Audio.SoundEngine.Play("hurt");
             if (_run.state != "playing" && _lastHp > 0 && p.hp <= 0) Depths.Unity.Audio.SoundEngine.Play("over");
+            if (_run.state == "won" && !_wonSounded) { _wonSounded = true; Depths.Unity.Audio.SoundEngine.Play("door"); Depths.Unity.Audio.SoundEngine.Play("pickup", 0, 0.8f); }
             if (_run.picked > _lastPicked) Depths.Unity.Audio.SoundEngine.Play("pickup");
             if (_run.thuds > _lastThuds) { Depths.Unity.Audio.SoundEngine.Play("door", 0, 0.7f); _shake.Add(ScreenShake.Kick.Thud, _run.thuds - _lastThuds); }
             if (_run.booms > _lastBooms) _shake.Add(ScreenShake.Kick.Boom, _run.booms - _lastBooms);

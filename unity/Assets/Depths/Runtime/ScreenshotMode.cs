@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won" };
 
         void Check(bool ok, string what)
         {
@@ -66,6 +66,7 @@ namespace Depths.Unity
             else if (_view == "rush") yield return RushView();
             else if (_view == "spike") yield return SpikeView();
             else if (_view == "summary") yield return SummaryView();
+            else if (_view == "won") yield return WonView();
             else if (_view == "pause") yield return PauseView();
             else if (_view == "banner") yield return BannerView();
             else if (_view == "warning") yield return WarningView();
@@ -199,6 +200,26 @@ namespace Depths.Unity
             Check(v.Hud.Overlays.SummaryShown, "summary: the run's account opens on a death");
             Check(v.Hud.Overlays.SummaryValue(0) == v.Run.floor.ToString(), "summary: floor reached reads " + v.Hud.Overlays.SummaryValue(0));
             Check(v.Hud.Overlays.SummaryValue(4) == v.Run.kills.ToString(), "summary: enemies defeated reads " + v.Hud.Overlays.SummaryValue(4) + " for " + v.Run.kills);
+        }
+
+        // the whole descent at once: down to floor 14, into the arena, the final boss down, the run's account as a win
+        IEnumerator WonView()
+        {
+            GameView v = null;
+            while (v == null || v.Run == null || v.Hud == null) { yield return null; v = Game(); }
+            var run = v.Run;
+            while (run.floor < Balance.FinalFloor) run.Descend();
+            Check(run.dungeon.AllRooms.Count == 2, "floor 14 is the antechamber and the arena");
+            Room arena = null;
+            foreach (var r in run.dungeon.AllRooms) if (r.Type == RoomKind.Boss) arena = r;
+            Rooms.EnterRoom(run, arena.X, arena.Y, Dir.S);
+            run.readyT = 0; run.trans = null;
+            run.enemies.Clear();
+            for (int i = 0; i < 30; i++) yield return null;
+            Check(run.state == "won", "the final boss's death wins the run (state " + run.state + ")");
+            Check(v.Hud.Overlays.SummaryShown, "won: the run's account opens");
+            Check(v.Hud.Overlays.SummaryValue(0) == "14", "won: floor reached reads " + v.Hud.Overlays.SummaryValue(0));
+            Check(v.Hud.Overlays.RecordValue(2) != "none yet", "won: the escape is recorded (" + v.Hud.Overlays.RecordValue(2) + ")");
         }
 
         IEnumerator PauseView()

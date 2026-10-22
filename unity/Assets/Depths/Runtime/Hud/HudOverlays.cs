@@ -11,8 +11,8 @@ namespace Depths.Unity.Hud
     {
         public const int SheetW = 500, SheetH = 560, PauseW = 420, PauseH = 300, RowY = 92, RowStep = 30, RecordsY = RowY + RowStep * 9 + 14;
         readonly VisualElement _dim, _pause, _summary, _banner, _warning;
-        readonly Label _pauseLine, _summaryHead, _newFloor, _newRooms;
-        readonly Label[] _records = new Label[2];
+        readonly Label _pauseLine, _summaryHead, _newFloor, _newRooms, _newWin;
+        readonly Label[] _records = new Label[3];
         readonly VisualElement _pauseSeed;
         Texture2D _pauseSeedTex;
         uint _pauseSeedOf; bool _pauseSeeded;
@@ -97,8 +97,8 @@ namespace Depths.Unity.Hud
             var recHead = LedgerFonts.Ink("Records", 17, (Color)LedgerArt.InkSoft, LedgerFonts.Italic);
             Put(recHead, 40, RecordsY - 2, 90, 22);
             _summary.Add(recHead);
-            string[] recs = { "Deepest floor", "Best rooms explored" };
-            for (int i = 0; i < 2; i++)
+            string[] recs = { "Deepest floor", "Best rooms explored", "Escapes" };
+            for (int i = 0; i < recs.Length; i++)
             {
                 var k = LedgerFonts.Ink(recs[i], 16, (Color)LedgerArt.InkSoft, LedgerFonts.Regular);
                 Put(k, 40, RecordsY + 22 + i * RowStep, 240, 26);
@@ -109,6 +109,7 @@ namespace Depths.Unity.Hud
             }
             _newFloor = NewTag(_summary, RowY + 0 * RowStep);
             _newRooms = NewTag(_summary, RowY + 3 * RowStep);
+            _newWin = NewTag(_summary, RowY + 2 * RowStep);   // beside the run's time: the quickest escape yet
             Line(_summary, "R", "a new run", SheetH - 62, 120);
             Line(_summary, "M", "the menu", SheetH - 62, 290);
 
@@ -208,6 +209,7 @@ namespace Depths.Unity.Hud
 
         public bool NewFloorShown => _newFloor.style.display == DisplayStyle.Flex;
         public bool NewRoomsShown => _newRooms.style.display == DisplayStyle.Flex;
+        public bool NewWinShown => _newWin.style.display == DisplayStyle.Flex;
         public string RecordValue(int row) => _records[row].text;
 
         public void SetSummary(bool on, RunState run) => SetSummary(on, run, default);
@@ -249,6 +251,8 @@ namespace Depths.Unity.Hud
             _records[1].text = records.BestRooms.ToString();
             _newFloor.style.display = records.NewFloor ? DisplayStyle.Flex : DisplayStyle.None;
             _newRooms.style.display = records.NewRooms ? DisplayStyle.Flex : DisplayStyle.None;
+            _records[2].text = records.Wins == 0 ? "none yet" : records.Wins + "  (best " + Clock(records.BestWin) + ")";
+            _newWin.style.display = records.NewBestWin ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         /// <summary>The floor heading over the room: FLOOR N struck in the area's accent, the area named beneath.</summary>

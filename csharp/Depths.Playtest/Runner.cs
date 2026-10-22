@@ -69,7 +69,12 @@ namespace Depths.Playtest
             double lastHpSum = 0;
             for (int t = 0; t < _cap; t++)
             {
-                if (Run.state != "playing") { o.end = Run.state == "gameover" ? "death" : Run.state; break; }
+                if (Run.state != "playing")
+                {
+                    o.end = Run.state == "gameover" ? "death" : Run.state;
+                    if (Run.state == "won") _f.bossKilled = true;   // the final floor is left by winning, not by its stairs
+                    break;
+                }
                 int floorBefore = Run.floor;
                 string where = "bot";   // who threw: the bot (bookkeeping, decision, recording) or the game
                 try

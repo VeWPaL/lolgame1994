@@ -473,6 +473,21 @@ namespace Depths
             return At(x, y);
         }
 
+        /// <summary>The last floor (Balance.FinalFloor): an antechamber to start in, the final boss's arena north of it. No
+        /// keys, items or secrets, and nothing drawn from the stream.</summary>
+        public static Dungeon FinalFloor(Rng rng)
+        {
+            var d = new Dungeon(rng);
+            var ante = NewRoom(Map.Start, Map.Start, RoomKind.Start);
+            var arena = NewRoom(Map.Start, Map.Start - 1, RoomKind.Boss);
+            ante.Doors.Add(Dir.N); arena.Doors.Add(Dir.S);
+            ante.Visited = true; ante.Spawned = true;   // as the generator's start room: walked, and never fought in
+            d._rooms[Cell(ante.X, ante.Y)] = ante; d._rooms[Cell(arena.X, arena.Y)] = arena;
+            d._all.Add(arena); d._all.Add(ante);   // the generator's order: by x, then y
+            d._bossFront[Cell(ante.X, ante.Y)] = ante;
+            return d;
+        }
+
         /// <summary>Builds a floor from the generator's own stream, reseeding first.</summary>
         public static Dungeon FromSeed(Rng rng)
         {

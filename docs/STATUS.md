@@ -3,8 +3,8 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-22 (unit 1 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms, see
-"Spike rooms"; before that, 2026-10-21: the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
+_Last updated: 2026-10-22 (units 1-2 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms and
+the run's end, see "Spike rooms" and "The run's end"; before that, 2026-10-21: the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
 for floors 5-12: see "Bot reads lines; middle lift"; before that, the Brunch's tell and locked dash; before that, a typed frame cap; the bot dodges landing marks, with the numbers and the
 recommended next steps under "Bot reads marks"; before that, the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
 notes batch 4: the Burrower follows a circling player, smaller placed egg tracks,
@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  695/695, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  703/703, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -43,7 +43,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
   `RunRecords` in PlayerPrefs) are paper sheets. `Runtime/Hud/`: `HudLayout` is the one geometry
   table, `LedgerArt` the bakes, `LedgerHud` retained + zero-alloc, `HudOverlays`. F10 shows the dev
   line. Menus are an open ledger on a desk (`MainMenu.uxml/uss`, textures baked in the controller,
-  Georgia read from the OS via `LedgerFonts`). EditMode 95/95 (`HudTests`: layout never on the room,
+  Georgia read from the OS via `LedgerFonts`). EditMode 96/96 (`HudTests`: layout never on the room,
   hearts one row at 2x, half hearts exact, 0 bytes per 100 updates, repaint only on change, records).
 - **Playtest bot (C#)**: `csharp/Depths.Playtest` plays the real core at 60 Hz (6 seeds x 3 profiles x
   20 min in about 2 s; 4.8 s at `--hz 210`) and writes `playtest/<label>.json` (header `tickHz`):
@@ -78,9 +78,9 @@ it from another checkout or the first command spends minutes importing.
 - **`.\verify.ps1 -Unity`** runs the whole gate plus the Unity lane below (test, build, menu/game/hearts
   shots; a few minutes; the editor must not have the project open). Use it before any commit that
   touches `unity/` or `Depths.Core`.
-- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 95/95. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
+- `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 96/96. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|spike|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|spike|won|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
   checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap, `thud` just after it lands)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -103,6 +103,18 @@ it from another checkout or the first command spends minutes importing.
 
 ## Owner decisions
 
+- **The run's end (owner 2026-10-22: 3 areas of 4 floors, then floor 13 and the final boss on 14; antechamber plus
+  arena).** DESIGN.md, "Rooms, floors, loot". The ledger's last band is two rungs, 13 and 14; the account sheet
+  adds "Escapes" (wins, quickest) with NEW; the bot report adds wins and the median minutes to a win
+  (`--untune end` restores the endless descent). The final boss is the Warden at floor-14 strength until unit 4.
+  Bot (b11-end, seeds 101-200 x 3, 90 min): 234 wins of 300 (novice 46, average 93, skilled 95), 66 deaths, median
+  53.8 minutes to a win (target 45-60 for the average bot: 53.7, met). Of 236 runs that reached floor 14, 234 won:
+  the stand-in finale is no test, which is unit 4's job. The first batch had every floor-14 run stuck: the
+  antechamber was not marked walked, so the bot's router (and the map) took it for unexplored; fixed with a test.
+  A cold critic then found the bot's report never booking the final fight (a win leaves no floor), "minutes to a
+  win" reading 0 with no wins (now n/a), and no win sound; fixed, with an end-to-end bot win test. The final floor
+  is decided once, as it is built (`run.finalFloor`). Known: "Best rooms explored" counts the last floor only, so a
+  win records 2 (older than this unit).
 - **Spike rooms (owner 2026-10-22: Elite and Crowded, a sure drop, marked on the map).** DESIGN.md, "Spike
   rooms". Bot, same build with `--untune spike` (b10-nospike -> b10-spike4, seeds 101-200 x 3, 60 min): deaths
   58 -> 76, damage a floor Kiln 13.5 -> 14.9 and Flooded 18.8 -> 20.5 (Shallows and the Deep unchanged), floor time

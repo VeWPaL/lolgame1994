@@ -76,6 +76,9 @@ namespace Depths.Unity.Tests
             Assert.That(HudLayout.DepthSeal.yMax, Is.LessThan(HudLayout.LadderY));
             Assert.That(HudLayout.Rung(3, 0).yMax, Is.LessThan(HudLayout.Rule3));
             Assert.That(HudLayout.Rung(2, 3).xMax, Is.LessThanOrEqualTo(HudLayout.Ink0(true) + HudLayout.InkW));
+            Assert.That(HudLayout.Rungs(3), Is.EqualTo(2), "the Deep is floors 13 and 14");
+            Assert.That(HudLayout.Rung(3, 1).xMax, Is.LessThanOrEqualTo(HudLayout.Ink0(true) + HudLayout.InkW), "floor 14's rung runs off the paper");
+            Assert.That(HudLayout.Rung(3, 0).xMax, Is.LessThan(HudLayout.Rung(3, 1).xMin), "13 and 14 overlap");
             Assert.That(HudLayout.SeedTag.yMax, Is.LessThan(HudLayout.PaperBottom));
             Assert.That(HudLayout.PaperBottom - HudLayout.SeedTag.yMax, Is.LessThan(48), "no dead paper band under the footer");
             Assert.That(HudLayout.Map.yMax, Is.LessThan(HudLayout.KitY), "the map and the kit");
@@ -223,6 +226,22 @@ namespace Depths.Unity.Tests
             Assert.That(deeper.DeepestFloor, Is.EqualTo(4)); Assert.That(deeper.BestRooms, Is.EqualTo(5), "a worse count does not lower the best");
             Assert.That(new RunRecords(store).DeepestFloor, Is.EqualTo(4), "the record did not survive a restart");
         }
+
+        [Test]
+        public void AWinIsCountedAndTheQuickestIsKept()
+        {
+            var store = new MemoryStore();
+            var none = new RunRecords(store).Record(6, 20);
+            Assert.That(none.Wins, Is.EqualTo(0)); Assert.That(none.NewBestWin, Is.False, "a death set a winning time");
+            var first = new RunRecords(store).Record(14, 30, true, 2700);
+            Assert.That(first.Wins, Is.EqualTo(1)); Assert.That(first.NewBestWin && first.BestWin == 2700, "a first win is the best yet");
+            var slower = new RunRecords(store).Record(14, 30, true, 3000);
+            Assert.That(slower.Wins, Is.EqualTo(2)); Assert.That(slower.NewBestWin, Is.False); Assert.That(slower.BestWin, Is.EqualTo(2700));
+            var quicker = new RunRecords(store).Record(14, 30, true, 2400);
+            Assert.That(quicker.NewBestWin && quicker.BestWin == 2400 && quicker.Wins == 3);
+            Assert.That(new RunRecords(store).Wins, Is.EqualTo(3), "the wins did not survive a restart");
+            Assert.That(new RunRecords(store).BestWin, Is.EqualTo(2400));
+        }
     }
 
     public class LedgerHudTests
@@ -352,6 +371,14 @@ namespace Depths.Unity.Tests
             run.floor = 3; run.kills = 37; run.dmgTaken = 9; run.shots = 120; run.hits = 88;
             run.ticks = Balance.TickHz * 75 + Balance.TickHz / 2; run.floorTicks = Balance.TickHz * 4;
             var o = new HudOverlays();
+            o.Fill(run, new RunRecords.Result(3, 9, true, false));
+            Assert.That(o.RecordValue(2), Is.EqualTo("none yet"), "no escapes yet");
+            Assert.That(o.NewWinShown, Is.False);
+            run.state = "won";
+            o.Fill(run, new RunRecords.Result(14, 30, true, true, 2, 2465.5f, true));
+            Assert.That(o.RecordValue(2), Is.EqualTo("2  (best 41:05.5)"));
+            Assert.That(o.NewWinShown, "a quickest escape is not marked NEW");
+            run.state = "playing";
             o.Fill(run, new RunRecords.Result(3, 9, true, false));
             Assert.That(HudOverlays.SummaryRows, Is.EqualTo(new[] { "Floor reached", "Time on this floor", "Time", "Rooms explored", "Enemies defeated", "Damage taken", "Accuracy", "Weapon", "Seed" }));
             Assert.That(o.SummaryValue(0), Is.EqualTo("3"));

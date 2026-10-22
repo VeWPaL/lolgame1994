@@ -824,6 +824,11 @@ namespace Depths
             // Death wins ties: a pickup that arrives on the frame the player dies ends the run as a
             // death, and the boss check below does not run.
             if (player.hp <= 0) { run.EndRun(false); return false; }
+            else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen && run.finalFloor)
+            {
+                room.ExitOpen = true;   // the final boss is down: the run is won, there is no way further down
+                run.EndRun(true);
+            }
             else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen)
             {
                 // The way down opens when the boss dies and is walked into, rather than the run ending on the kill. [h:Tick-22]

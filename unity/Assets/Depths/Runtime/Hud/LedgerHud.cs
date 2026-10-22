@@ -485,17 +485,16 @@ namespace Depths.Unity.Hud
             {
                 for (int band = 0; band < 4; band++)
                 {
-                    int rungs = band == 3 ? 1 : 4;
-                    for (int i = 0; i < rungs; i++)
+                    for (int i = 0; i < HudLayout.Rungs(band); i++)
                     {
                         var r = HudLayout.Rung(band, i);
                         int f = band * 4 + i + 1;
-                        bool here = band == 3 ? floor >= 13 : floor == f, passed = band < 3 && floor > f;
+                        bool here = floor == f || (band == 3 && i == 1 && floor > f), passed = floor > f && !here;
                         if (here)
                         {
                             Rect(r.x + 1, r.y + 1, r.width - 2, r.height - 2, Accent[band]);
                             Frame(r.x, r.y, r.width, r.height, 2, LedgerArt.Ink);
-                            int n = Num(floor, band == 3 ? "FLOOR " : null);
+                            int n = Num(floor, null);
                             Digits(n, Mathf.Round(r.center.x - LedgerType.Width(n, 2) / 2f), r.y + 5, 2, LedgerArt.Ink);
                         }
                         else if (passed)

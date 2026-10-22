@@ -52,7 +52,11 @@ namespace Depths.Unity.Hud
         public const int AreaX = LeftX + PaperPad + 10 + 88, AreaY = Rule2 + 16;
         /// <summary>The descent: each area a band of four floors, passed floors struck through, this one inked.</summary>
         public const int LadderY = Rule2 + 86, BandStep = 68, RungW = 50, RungH = 24, RungStep = 56;
-        public static Rect Rung(int band, int i) => new Rect(Ink0(true) + i * RungStep, LadderY + band * BandStep + 20, band == 3 ? InkW : RungW, RungH);
+        public static Rect Rung(int band, int i) => band == 3
+            ? new Rect(Ink0(true) + i * (DeepW + (RungStep - RungW)), LadderY + band * BandStep + 20, DeepW, RungH)   // 13 and 14, wider
+            : new Rect(Ink0(true) + i * RungStep, LadderY + band * BandStep + 20, RungW, RungH);
+        public static int Rungs(int band) => band == 3 ? 2 : 4;
+        static int DeepW => (InkW - (RungStep - RungW)) / 2;
         public static int BandLabelY(int band) => LadderY + band * BandStep;
         public const int Rule3 = LadderY + BandStep * 4 + 4;
         /// <summary>The footer: what has been slain, and the seed on its tag.</summary>

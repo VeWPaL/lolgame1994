@@ -156,15 +156,14 @@ namespace Depths.Unity.Hud
             for (int band = 0; band < 4; band++)
             {
                 Label(g, BandNames[band], x0, HudLayout.BandLabelY(band) + oy, InkSoft);
-                int rungs = band == 3 ? 1 : 4;
-                for (int i = 0; i < rungs; i++)
+                for (int i = 0; i < HudLayout.Rungs(band); i++)
                 {
                     var r = HudLayout.Rung(band, i);
                     int rx = (int)r.x + ox, ry = (int)r.y + oy, rw = (int)r.width, rh = (int)r.height;
                     g.Fill(rx + 1, ry + rh, rw - 1, 2, Hex.Rgba(40, 24, 10, 0.25f));
                     g.Fill(rx, ry, rw, rh, Hex.Rgba(255, 250, 235, 0.35f));
                     g.Fill(rx, ry, rw, 1, InkSoft); g.Fill(rx, ry + rh - 1, rw, 1, InkSoft); g.Fill(rx, ry, 1, rh, InkSoft); g.Fill(rx + rw - 1, ry, 1, rh, InkSoft);
-                    string n = band == 3 ? "13 AND DOWN" : (band * 4 + i + 1).ToString();
+                    string n = (band * 4 + i + 1).ToString();
                     LedgerType.Stamp(g, n, rx + rw / 2 - LedgerType.Width(n, 2) / 2, ry + 5, 2, InkFaint);
                 }
             }
