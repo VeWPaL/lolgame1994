@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  777/777, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  778/778, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key

@@ -464,6 +464,11 @@ namespace Depths.Tests
         {
             Assert.That(Cli.Parse(new[] { "play" }).Curve, Is.True, "the curve is standard: the bot plays it unless told --curve off");
             Assert.That(Cli.Parse(new[] { "play", "--curve", "on" }).Curve, Is.True);
+            Assert.That(Cli.Parse(new[] { "play" }).Floor, Is.EqualTo(1));
+            Assert.That(Cli.Parse(new[] { "play", "--floor", "14" }).Floor, Is.EqualTo(14));
+            Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--floor", "0" }));
+            Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--floor", "15" }));
+            Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--floor", "x" }));
             Assert.That(Cli.Parse(new[] { "play", "--curve", "off" }).Curve, Is.False);
             Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--curve", "maybe" }));
             string dir = Path.Combine(Path.GetTempPath(), "depths-curve-" + Guid.NewGuid().ToString("N"));

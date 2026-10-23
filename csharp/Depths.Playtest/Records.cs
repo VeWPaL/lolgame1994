@@ -53,6 +53,7 @@ namespace Depths.Playtest
         public bool? tuned;   // Balance.Tuned when played; null in files from before the 2026-10-13 tuning (they played the JS rules)
         public List<string>? untune;   // parts of the tuning turned off (--untune); null when none
         public List<string>? dials;   // --dial overrides of the curve when played; null when none
+        public int? floor;   // --floor: the floor every run started on with the starting kit; null for floor 1
         public int tickHz;
         public double minutes;
         public List<uint> seeds = new List<uint>();

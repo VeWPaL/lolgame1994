@@ -145,5 +145,16 @@ namespace Depths.Tests
             Assert.That(s.deaths, Is.EqualTo(1));
             Assert.That(s.minToWin, Is.EqualTo(44).Within(1e-9), "the median of the winning runs' minutes");
         }
+
+        [Test]
+        public void TheBotsFloorFlagStartsEveryRunThereWithTheStartingKit()
+        {
+            var b = Matrix.Play("f", new uint[] { 5 }, new[] { "average" }, 0.2, null, Balance.FinalFloor);
+            Assert.That(b.floor, Is.EqualTo(Balance.FinalFloor), "the batch does not record its start floor");
+            var first = b.runs[0].floors[0];
+            Assert.That(first.floor, Is.EqualTo(Balance.FinalFloor), "the run did not start on the floor asked for");
+            Assert.That(first.hpIn, Is.EqualTo(8), "the run did not start with the starting kit's 8 HP");
+            Assert.That(Matrix.Play("g", new uint[] { 5 }, new[] { "average" }, 0.05).floor, Is.Null, "floor 1 is recorded");
+        }
     }
 }

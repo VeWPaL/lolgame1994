@@ -200,6 +200,7 @@ namespace Depths.Playtest
             Cmp("playtest tuning", Tune(a.tuned), Tune(b.tuned));
             Cmp("tuning parts off", a.untune == null ? "none" : string.Join(",", a.untune), b.untune == null ? "none" : string.Join(",", b.untune));
             Cmp("curve dials", a.dials == null ? "none" : string.Join(",", a.dials), b.dials == null ? "none" : string.Join(",", b.dials));
+            Cmp("start floors", (a.floor ?? 1).ToString(Inv), (b.floor ?? 1).ToString(Inv));
             return w;
         }
 
@@ -216,6 +217,7 @@ namespace Depths.Playtest
                   .Append(string.Join(", ", s.seeds)).Append(", up to ").Append(s.minutes.ToString(Inv))
                   .Append(" sim-min each at ").Append(Hz(s)).Append(" Hz, Brunch ").Append(s.brunch)
                   .Append(s.dials != null ? ", curve dialled " + string.Join(",", s.dials) : "")
+                  .Append(s.floor != null ? ", starting on floor " + s.floor + " with the starting kit" : "")
                   .Append(", built from ").Append(s.commit ?? "an unknown commit").Append('\n');
             if (ab)
                 foreach (var m in Mismatches(sets[0], sets[1]))

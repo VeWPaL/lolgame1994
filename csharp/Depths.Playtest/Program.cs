@@ -56,15 +56,17 @@ namespace Depths.Playtest
     public static class Matrix
     {
         public static Batch Play(string label, IReadOnlyList<uint> seeds, IReadOnlyList<string> profiles,
-                                 double minutes, Action<RunResult>? each = null)
+                                 double minutes, Action<RunResult>? each = null, int floor = 1)
         {
             var b = new Batch { label = label, commit = BuildInfo.Commit, brunch = Balance.BrunchVariant,
                                 tickHz = Balance.TickHz, curve = Depths.Curve.On, tuned = Balance.Tuned, untune = Untune.Off().Count > 0 ? Untune.Off() : null, dials = CurveDials.Applied.Count > 0 ? CurveDials.Applied.ToList() : null, minutes = minutes, seeds = seeds.ToList(),
-                                profiles = profiles.ToList() };
+                                profiles = profiles.ToList(), floor = floor > 1 ? floor : (int?)null };
             foreach (var p in profiles)
                 foreach (var s in seeds)
                 {
-                    var r = new Runner(s, p, minutes).Play();
+                    var run = new Runner(s, p, minutes);
+                    for (int f = 1; f < floor; f++) run.Run.Descend();   // --floor: the F3 path, the starting kit
+                    var r = run.Play();
                     b.runs.Add(r);
                     each?.Invoke(r);
                 }
@@ -193,12 +195,13 @@ namespace Depths.Playtest
         public List<string> Dials = new List<string>();
         public Depths.Curve.MiddleRule? MidRule;   // curve --mid-rule: which rubric-5 MIDDLE reading to check   // --dial stage.Field=value, a retune without a rebuild
         public int? Hz;   // the sim's tick rate; the game's own when not given
+        public int Floor = 1;   // --floor N: every run starts on floor N with the starting kit (the dev key F3's path)
         public List<string> Labels = new List<string>();
 
-        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial", "tuned", "untune" };
+        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial", "tuned", "untune", "floor" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden,ease,damage,momentum,pools,middle,aim] [--dial middle.Drops=0.15,end.Tough=1.2] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]  |  constants";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden,ease,damage,momentum,pools,middle,aim] [--dial middle.Drops=0.15,end.Tough=1.2] [--floor 14] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]  |  constants";
 
         static string Name(string s, string what)
         {
@@ -269,6 +272,10 @@ namespace Depths.Playtest
                     case "curve":
                         if (v != "on" && v != "off") throw new UsageException("--curve is on or off");
                         c.Curve = v == "on";
+                        break;
+                    case "floor":
+                        if (!int.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out c.Floor) || c.Floor < 1 || c.Floor > Balance.FinalFloor)
+                            throw new UsageException("--floor: '" + v + "' must be a floor from 1 to " + Balance.FinalFloor);
                         break;
                     case "tuned":
                         if (v != "on" && v != "off") throw new UsageException("--tuned is on or off");
@@ -360,7 +367,7 @@ namespace Depths.Playtest
                 Console.WriteLine($"{r.profile,-8} seed {r.seed,-6} floor {r.floor,-3} {r.end,-7} " +
                                   $"{Report.F1(r.ticks / (double)Balance.TickHz / 60)}min  " +
                                   $"dmg {Json.Text(r.dmgBySource)}" +
-                                  (r.errors.Count > 0 ? "  ERRORS " + r.errors[0] : "")));
+                                  (r.errors.Count > 0 ? "  ERRORS " + r.errors[0] : "")), c.Floor);
             }
             finally { CurveDials.Reset(); }
             string file = Path.Combine(dir, c.Label + ".json");
