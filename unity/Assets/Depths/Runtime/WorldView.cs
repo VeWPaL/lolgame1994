@@ -114,6 +114,7 @@ namespace Depths.Unity
                 Glow(f.X, f.Y, 14, c, 0.35f * f.Life / f.Max);
             }
 
+            DrawMud(run);
             DrawRides(run);
             DrawLungeLines(run);
             DrawPickups(run);
@@ -343,7 +344,7 @@ namespace Depths.Unity
         static string CastColor(BodyKind k) => k switch
         {
             BodyKind.Gunner => "#ffb03a", BodyKind.Splitter => Middle.SplitColor, BodyKind.Mortar => Middle.LobColor,
-            BodyKind.Egg => Middle.EggColor, BodyKind.Gatekeeper => FloorBoss.ShellColor, BodyKind.SunkenKing => FinalBoss.ShellColor, _ => "#ff4d4d",
+            BodyKind.Egg => Middle.EggColor, BodyKind.Gatekeeper => FloorBoss.ShellColor, BodyKind.SunkenKing => FinalBoss.ShellColor, BodyKind.Mudmouth => Mudmouth.ShellColor, _ => "#ff4d4d",
         };
         static readonly Color32 Dirt = Hex.C("#3a2a1c"), DirtLit = Hex.C("#7a5a3a"), Crack = Hex.C("#ff8a5a");
 
@@ -380,6 +381,81 @@ namespace Depths.Unity
             for (int i = 0; i < 4; i++)
                 Rect(ex - 8 + i * 5, ey + 1 + Mathf.Sin(Fc * 0.4f + i) * 2, 3, 2, QuadBatch.Tint(DirtLit, 0.9f));
             return true;
+        }
+
+        // ---- Old Mudmouth (Mudmouth.cs) ----
+        static readonly Color32 WetMud = Hex.C("#1e140c"), WetSheen = Hex.C("#5a4a3a"), MudCrack = Hex.C("#ffb060");
+
+        // its soft mud: a darker wet patch per live piece, fading as it dries, a faint sheen on top (never fire, never a cell)
+        void DrawMud(RunState run)
+        {
+            foreach (var e in run.enemies)
+            {
+                if (e.mud == null || e.hp <= 0) continue;
+                var m = e.mud;
+                for (int i = 0; i < Mudmouth.Mud.Max; i++)
+                {
+                    if (m.life[i] <= 0) continue;
+                    float k = Mathf.Clamp01(m.life[i] / (float)Mudmouth.MudLife), fade = Mathf.Min(1, k * 4);
+                    Dot(m.x[i], m.y[i], (float)Mudmouth.MudR, (float)Mudmouth.MudR * 0.62f, QuadBatch.Tint(WetMud, 0.55f * fade));
+                    Dot(m.x[i] - 6, m.y[i] - 4, (float)Mudmouth.MudR * 0.35f, (float)Mudmouth.MudR * 0.14f, QuadBatch.Tint(WetSheen, 0.35f * fade));
+                }
+            }
+        }
+
+        /// <summary>Old Mudmouth when it is not a body you can hit: a great mound under the floor, the crack that is the blast's
+        /// window, its landing mark in the air, its tunnel's raised dirt line. False when it stands to be drawn as a body.</summary>
+        bool DrawMudmouth(Enemy e, int frame, double ex, double ey)
+        {
+            if (e.move == "dirt" || e.move == "tunnel")
+            {
+                // the raised dirt line, the line family in earth: a ridge from where it dug through to where it bursts out
+                bool dirt = e.move == "dirt";
+                float grow = dirt ? 1 - e.moveT / (float)Math.Max(1, e.fbTellMax) : 1;
+                double sx = e.leapX, sy = e.leapY, tx = e.leapX + e.fbDx * e.fbLen, ty = e.leapY + e.fbDy * e.fbLen;
+                float w = (float)Mudmouth.TunnelR * 2;
+                var white = SpriteSet.WhiteTexel;
+                float ang = Mathf.Atan2((float)(ty - sy), (float)(tx - sx)), len = Mathf.Sqrt((float)((tx - sx) * (tx - sx) + (ty - sy) * (ty - sy)));
+                _q.Rotated(A.Texture, white, ToPanel(sx, sy), 0, -w / 2, len, w, ang, QuadBatch.Tint(Dirt, 0.35f + 0.3f * grow));
+                Dashes(sx, sy, tx, ty, 2 + 3 * grow, QuadBatch.Tint(MudCrack, 0.35f + 0.55f * grow));
+                Ring(tx, ty, (float)Mudmouth.TunnelR * (1.2f - 0.2f * grow), 2 + 2 * grow, QuadBatch.Tint(MudCrack, 0.4f + 0.5f * grow));
+                if (!dirt) Mound(ex, ey, 1.6f);
+                return true;
+            }
+            if (!e.buried) return false;
+            float big = (float)e.r / (float)Middle.BurrowHitR;
+            if (e.move == "leap")   // in the air: its landing marked on the floor (filling as it comes), the body arcing over
+            {
+                float t = 1 - Mathf.Clamp01(e.moveT / (float)Math.Max(1, e.fbTellMax));
+                Dot(e.markX, e.markY, (float)Mudmouth.LeapR, (float)Mudmouth.LeapR * 0.55f, QuadBatch.Tint(Crack, 0.12f + 0.25f * t));
+                Ring(e.markX, e.markY, (float)Mudmouth.LeapR * (1.3f - 0.3f * t), 3, QuadBatch.Tint(Crack, 0.45f + 0.5f * t));
+                Dot(ex, ey + e.r * 0.8, (float)e.r * 0.9f, (float)e.r * 0.3f, Shadow);
+                double arc = ey - 6 - Mathf.Sin(t * Mathf.PI) * 80;
+                Spr(SpriteSet.BodyR(e.kind, frame, false), ex, arc);
+                return true;
+            }
+            if (e.move == "crack")   // the floor breaking over it: the blast's window, brighter as it comes
+            {
+                float p = 1 - Mathf.Clamp01(e.moveT / (float)Mudmouth.CrackTell), pulse = 0.5f + 0.5f * Mathf.Sin(Fc * 0.5f);
+                float r = (float)e.r + 12;
+                Dot(ex, ey, r, r * 0.5f, QuadBatch.Tint(Dirt, 0.4f + 0.4f * p));
+                Ring(ex, ey, r, 3, QuadBatch.Tint(MudCrack, 0.45f + 0.4f * p * pulse + 0.15f));
+                for (int i = 0; i < 9; i++)
+                {
+                    float a = i * 0.698f + 0.2f, len = 10 + 34 * p;
+                    for (float s = 6; s < len; s += 2) Rect(ex + Mathf.Cos(a) * s - 1, ey + Mathf.Sin(a) * s * 0.55f - 1, 3, 3, QuadBatch.Tint(MudCrack, 0.55f + 0.4f * p));
+                }
+                return true;
+            }
+            Mound(ex, ey, big);   // under: a great mound of earth heaving along the floor
+            return true;
+        }
+
+        void Mound(double ex, double ey, float big)
+        {
+            Dot(ex, ey + 4, 13 * big, 6 * big, QuadBatch.Tint(Dirt, 0.9f));
+            for (int i = 0; i < 6; i++)
+                Rect(ex - 13 * big + i * 5 * big, ey + 1 + Mathf.Sin(Fc * 0.4f + i) * 3, 4, 3, QuadBatch.Tint(DirtLit, 0.9f));
         }
 
         // ---- the eggs' rides: a rail's track under everything, an orbit's path faintly round its host ----
@@ -434,6 +510,7 @@ namespace Depths.Unity
                 Interp.At(run, e, Alpha, out var bx, out var by);   // between the last two ticks: smooth at any frame rate
                 if (e.rushWind > 0) bx += RushShiver(e) * Mathf.Sin(Fc * 2.3f);   // a Brunch about to rush trembles where it stands
                 if (e.kind == BodyKind.Burrower && DrawBurrow(e, frame, bx, by)) continue;
+                if (e.kind == BodyKind.Mudmouth && DrawMudmouth(e, frame, bx, by)) continue;
                 // a digging Burrower sinks and fades into the floor, still hittable, so still flashing
                 float sink = e.kind == BodyKind.Burrower && e.move == "dig" ? 1 - Mathf.Clamp01(e.moveT / (float)Middle.BurrowDig) : 0;
                 if (e.elite)   // a spike room's elite: a slow gold glow, and a gold ring at its feet
@@ -466,7 +543,8 @@ namespace Depths.Unity
                     Rect(bx - e.r, barY, e.r * 2 * frac, 4, e.elite ? Gold : Green);
                 }
                 if (e.stun > 0) DrawStunStars(bx, ey - e.r - 6, (float)e.stun);
-                if (e.castT > 0) DrawCastFlash(bx, e.kind == BodyKind.SunkenKing ? ey : by, e.castT, e.kind == BodyKind.Gatekeeper || e.kind == BodyKind.SunkenKing ? e.fbTellMax : Middle.CastTime(e.kind),
+                else if (e.kind == BodyKind.Mudmouth && e.move == "stunned") DrawStunStars(bx, ey - e.r - 6, Balance.HookHold);   // unearthed
+                if (e.castT > 0) DrawCastFlash(bx, e.kind == BodyKind.SunkenKing ? ey : by, e.castT, e.kind == BodyKind.Gatekeeper || e.kind == BodyKind.SunkenKing || e.kind == BodyKind.Mudmouth ? e.fbTellMax : Middle.CastTime(e.kind),
                                                Hex.Of(CastColor(e.kind)), e.kind == BodyKind.SunkenKing ? 3 : 1);   // the King's flash at its size
             }
         }
@@ -652,13 +730,14 @@ namespace Depths.Unity
             for (int i = 0; i < 8; i++)   // shafts of light out of its cracks
             {
                 float a = i * 0.785f + Fc * 0.01f, len = 30 + 260 * t;
-                _q.Rotated(A.Texture, white, ToPanel(x, y), 10, -3, len, 6, a, QuadBatch.Tint(FireCore, 0.25f + 0.5f * t));
+                _q.Rotated(A.Texture, white, ToPanel(x, y), 10, -3, run.finaleKind == BodyKind.SunkenKing ? len : len * 0.4f, 6, a, QuadBatch.Tint(run.finaleKind == BodyKind.SunkenKing ? FireCore : MudCrack, 0.25f + 0.5f * t));
             }
-            var body = SpriteSet.BodyR(BodyKind.SunkenKing, 1, false);
+            bool king = run.finaleKind == BodyKind.SunkenKing;   // a region boss breaks the same way, in its own light, and no white
+            var body = SpriteSet.BodyR(run.finaleKind, 1, false);
             if (t < 0.8f) Spr(body, x, y, 1 - t);
-            Spr(SpriteSet.BodyR(BodyKind.SunkenKing, 1, true), x, y, Mathf.Clamp01(0.3f + t));
-            Glow(x, y, 40 + 200 * t, FireCore, 0.4f + 0.5f * t);
-            if (t > 0.6f)
+            Spr(SpriteSet.BodyR(run.finaleKind, 1, true), x, y, Mathf.Clamp01(0.3f + t));
+            Glow(x, y, 40 + (king ? 200 : 90) * t, king ? FireCore : MudCrack, 0.4f + 0.5f * t);
+            if (king && t > 0.6f)
                 Rect(Balance.RoomLeft, Balance.RoomTop, Balance.RoomRight - Balance.RoomLeft, Balance.RoomBottom - Balance.RoomTop,
                      Hex.Rgba(255, 245, 225, (t - 0.6f) / 0.4f * 0.85f));
         }

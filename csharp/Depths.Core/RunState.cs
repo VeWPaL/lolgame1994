@@ -88,6 +88,7 @@ namespace Depths
             state = "playing";
             finalFloor = false; timeSlowT = 0; phoenixSpent = false;
             hitSrc = -1; finaleT = finaleMax = 0; System.Array.Clear(finalBy, 0, finalBy.Length);
+            hitBook = null; bossBy.Clear(); bosses = Bosses.Draw(root);
             Spikes.Mark(this);
         }
 
@@ -96,9 +97,15 @@ namespace Depths
         /// <summary>The final boss's attack whose hit is being dealt (FinalBoss.Source), or -1; and the damage each has dealt this run.</summary>
         public int hitSrc = -1;
         public readonly double[] finalBy = new double[FinalBoss.Sources];
+        /// <summary>The region boss's attack whose hit is being dealt ("mudmouth:leap"), or null; and each one's damage this run.</summary>
+        public string? hitBook;
+        public readonly Dictionary<string, double> bossBy = new Dictionary<string, double>();
+        /// <summary>This run's region bosses by floor (Bosses.Draw, its own stream); index 1-13.</summary>
+        public string?[]? bosses;
         /// <summary>The Sunken King's death beat: ticks left of its body breaking (the win waits), its length, and where it fell.</summary>
         public int finaleT, finaleMax;
         public double finaleX, finaleY;
+        public BodyKind finaleKind = BodyKind.SunkenKing;   // whose death beat it is (the presenter draws that body breaking)
 
         /// <summary>Time Glass: ticks of slow time left; the bodies run on a share of the ticks (slowAcc), and
         /// slowSkip says this tick was not theirs (the mortar's shells wait with them).</summary>

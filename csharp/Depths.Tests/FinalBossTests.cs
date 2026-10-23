@@ -62,7 +62,11 @@ namespace Depths.Tests
         {
             for (uint seed = 1; seed <= 3; seed++)
                 for (int f = 1; f <= Balance.FinalFloor; f++)
-                    Assert.That(BossOf(OnFloor(seed, f)).kind, Is.EqualTo(f < Balance.FinalFloor ? BodyKind.Gatekeeper : BodyKind.SunkenKing), "seed " + seed + " floor " + f);
+                {
+                    var run = OnFloor(seed, f);
+                    var region = f < Balance.FinalFloor && run.bosses![f] == "mudmouth" ? BodyKind.Mudmouth : BodyKind.Gatekeeper;   // a drawn boss not built yet is the Gatekeeper
+                    Assert.That(BossOf(run).kind, Is.EqualTo(f < Balance.FinalFloor ? region : BodyKind.SunkenKing), "seed " + seed + " floor " + f);
+                }
         }
 
         [TestCase(false, true)]

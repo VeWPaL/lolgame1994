@@ -19,6 +19,7 @@ namespace Depths
             if (kind == BodyKind.Boss) { BossInit(e); e.aggroTimer = 9999; return e; }
             if (kind == BodyKind.Gatekeeper) { FloorBoss.Init(e, rate); return e; }
             if (kind == BodyKind.SunkenKing) { FinalBoss.Init(e); return e; }
+            if (kind == BodyKind.Mudmouth) { Mudmouth.Init(run, e, rate); return e; }
             if (kind == BodyKind.Lunger || kind == BodyKind.Brunch)
             {
                 e.flank = run.flankCursor;

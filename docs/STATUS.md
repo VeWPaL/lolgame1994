@@ -3,7 +3,7 @@
 The handoff file. Any session (including an unattended or scheduled one) starts here and updates
 it before finishing. Keep it under a page; history goes in `docs/history/`.
 
-_Last updated: 2026-10-22 (unit 4, a tournament builder: the Sunken King, see "The Sunken King"; units 1-3 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms,
+_Last updated: 2026-10-23 (the region-boss kit and the first region boss, Old Mudmouth: see "Region bosses"; before that, 2026-10-22, unit 4, a tournament builder: the Sunken King, see "The Sunken King"; units 1-3 of the autonomous plan `docs/plan-2026-10-22-autonomous.md`: spike rooms,
 the run's end and the floor boss, see "Spike rooms", "The run's end" and "The Gatekeeper"; before that, 2026-10-21: the Brunch dash catches a retreat, the bot reads every telegraphed line, the middle lift
 for floors 5-12: see "Bot reads lines; middle lift"; before that, the Brunch's tell and locked dash; before that, a typed frame cap; the bot dodges landing marks, with the numbers and the
 recommended next steps under "Bot reads marks"; before that, the Burrower redesigned: it homes and leaps, see Middle enemies; before that,
@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  791/791, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  819/819, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -177,6 +177,17 @@ it from another checkout or the first command spends minutes importing.
   242 s; a run's kit 69%, 163 s), the rubric, health per area (1750 / 2100 / 2150), 6 bosses per region (4 rolled a
   run) and 3 floor 13 minibosses. **Waiting on the owner:** Decision 1 (King lethality on 13 bosses compounds to a 0.5%
   run win; B, each boss ~97% survivable for the average bot, keeps ~41%, recommended) and Decision 2 (runs grow ~51 -> ~73 min). F3 skips a floor (dev line).
+- **Region bosses: the kit and S5 Old Mudmouth (2026-10-23, one builder in an isolated worktree).** `Bosses.cs`: the
+  draw (4 of 6 a Shallows/Kiln/Galleries floor, 1 of 3 on 13, own stream), flat health per area, per-attack books
+  (`RunState.bossBy`, the report's "Region bosses" table), the death beat; unbuilt draws are the Gatekeeper.
+  `Mudmouth.cs`: DESIGN.md "Old Mudmouth". Bot `--boss mudmouth` forces every Shallows draw, `--untune bosses`
+  turns the kit off. Measured (seeds 101-200 x 3, 30 min, forced): average 398 fights, 100% survived, median 175 s,
+  6.7 HP a fight, top attack double leap 24.9%; novice 88%, 250 s, 19.8 HP, top 28%; skilled 100%, 135 s, 2.3 HP,
+  spit 35%. Tuning moves: health 1.35 x 1750 (the stun's double damage shortens it), the crack 0.72 s (0.6 killed
+  the novice, 0.85 let every crack be blasted). Full runs, kit off vs on (101-200 x 3, 60 min): deaths 155 / 155,
+  wins 145 / 145, a win 1.6 min longer. Unity: `tools/unity.sh test` 96/96, `shot mudmouth` all checks pass (the crack's
+  ring sampled on screen). Not done: the lab (F2) has no Mudmouth specimen; the ledger map's boss sigil and the
+  dev line's draw list (bosses.md section 3) are not built. Next: K1 The Foreman, G5 the Choir, D1 the Warden Returned.
 - **The Gatekeeper, the floor boss of 1-13 (unit 3; owner 2026-10-22: a new floor boss replaces the Warden).**
   DESIGN.md, "The Gatekeeper" (`FloorBoss.cs`, `TuneFloorBoss`, `--untune floorboss`). Charge (0.6 s line), Slam (3
   lobs, 0.95 s marks), Fan (0.5 s flash), then Ring (phase 2) and Rampage (phase 3); weighted by area; it hurts only

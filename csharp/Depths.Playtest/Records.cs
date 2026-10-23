@@ -21,6 +21,10 @@ namespace Depths.Playtest
         public SortedDictionary<string, double>? healBy;   // healing on this floor by source, as the run's; null likewise
         // the final boss's damage by attack (the game's own bookkeeping, RunState.finalBy), on the last floor only; else null
         public SortedDictionary<string, double>? finalBy;
+        // the floor's region boss (Bosses.IdOf) and its damage by attack (RunState.bossBy, this floor's share); else null
+        public string? boss;
+        public SortedDictionary<string, double>? bossBy;
+        public int unearthed;   // times a blast knocked the region boss out of the ground (Mudmouth's signature)
     }
 
     public sealed class RunResult
@@ -54,6 +58,7 @@ namespace Depths.Playtest
         public List<string>? untune;   // parts of the tuning turned off (--untune); null when none
         public List<string>? dials;   // --dial overrides of the curve when played; null when none
         public int? floor;   // --floor: the floor every run started on with the starting kit; null for floor 1
+        public string? boss;   // --boss: the region boss every draw of its area was forced to; null when none
         public int tickHz;
         public double minutes;
         public List<uint> seeds = new List<uint>();

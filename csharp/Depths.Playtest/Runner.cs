@@ -58,9 +58,29 @@ namespace Depths.Playtest
         void CloseFloor()
         {
             _f.hpOut = Hearts(Run.player); _f.armorOut = Run.player.armor;
+            BookRegion();
             if (!Run.finalFloor) return;
             _f.finalBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
             for (int i = 0; i < FinalBoss.Sources; i++) if (Run.finalBy[i] > 0) _f.finalBy[FinalBoss.SourceNames[i]] = Run.finalBy[i];
+        }
+
+        // what the run's books gained on this floor (RunState.bossBy is per run; a forced boss repeats), and whose they are
+        readonly Dictionary<string, double> _bossBy0 = new Dictionary<string, double>(StringComparer.Ordinal);
+        BodyKind? _bossKind;
+
+        void BookRegion()
+        {
+            var id = _bossKind is BodyKind k ? Bosses.IdOf(k) : null;
+            _bossKind = null;
+            if (id == null) { foreach (var kv in Run.bossBy) _bossBy0[kv.Key] = kv.Value; return; }
+            _f.boss = id;
+            _f.bossBy = new SortedDictionary<string, double>(StringComparer.Ordinal);
+            foreach (var kv in Run.bossBy)
+            {
+                double d = kv.Value - _bossBy0.GetValueOrDefault(kv.Key);
+                if (d > 0 && kv.Key.StartsWith(id + ":", StringComparison.Ordinal)) _f.bossBy[kv.Key.Substring(id.Length + 1)] = d;
+                _bossBy0[kv.Key] = kv.Value;
+            }
         }
 
         public RunResult Play()
@@ -85,7 +105,11 @@ namespace Depths.Playtest
                 {
                     var r = Run.CurrentRoom!;
                     o.ticks++; _f.ticks++;
-                    if (r.Type == RoomKind.Boss && Run.enemies.Count > 0) _f.bossTicks++;
+                    if (r.Type == RoomKind.Boss && Run.enemies.Count > 0)
+                    {
+                        _f.bossTicks++;
+                        foreach (var e in Run.enemies) if (Bosses.IsRegion(e.kind)) { _bossKind = e.kind; _f.unearthed = Math.Max(_f.unearthed, e.unearthed); }
+                    }
                     if (Run.curX != lastX || Run.curY != lastY || Run.floor != lastFloor)
                     {
                         lastX = Run.curX; lastY = Run.curY; lastFloor = Run.floor;

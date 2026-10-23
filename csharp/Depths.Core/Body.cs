@@ -18,5 +18,7 @@ namespace Depths
         Gatekeeper,
         // the final boss of floor 14 (FinalBoss.cs; C# only)
         SunkenKing,
+        // the region bosses (Bosses.cs; C# only): Old Mudmouth (Mudmouth.cs)
+        Mudmouth,
     }
 }

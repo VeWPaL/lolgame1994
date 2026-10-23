@@ -90,12 +90,14 @@ namespace Depths
             new BodyRow { Mass = 4, Radius = 28, Art = 4, Bar = 40, Hp = FloorBoss.Hp * Tough, Armour = Armour },
             // the Sunken King, the final boss (FinalBoss.cs): bigger and heavier than either; its moves live in FinalBoss
             new BodyRow { Mass = 6, Radius = 34, Art = 4, Bar = 50, Hp = FinalBoss.Hp * Tough, Armour = Armour },
+            // Old Mudmouth, a region boss (Mudmouth.cs): a giant Burrower; its health is flat per area (Mudmouth.Init)
+            new BodyRow { Mass = 6, Radius = 30, Art = 4, Bar = 46, Hp = 1000, Armour = Armour },
         };
 
         public static BodyRow Of(BodyKind kind) => Rows[(int)kind];
 
-        /// <summary>Whether this kind is a floor's boss: the Warden, the Gatekeeper or the Sunken King.</summary>
-        public static bool IsBoss(BodyKind kind) => kind == BodyKind.Boss || kind == BodyKind.Gatekeeper || kind == BodyKind.SunkenKing;
+        /// <summary>Whether this kind is a floor's boss: the Warden, the Gatekeeper, the Sunken King or a region boss.</summary>
+        public static bool IsBoss(BodyKind kind) => kind == BodyKind.Boss || kind == BodyKind.Gatekeeper || kind == BodyKind.SunkenKing || Bosses.IsRegion(kind);
 
         // ------------------------------------------------------------- the Brunch pack
 

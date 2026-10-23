@@ -224,6 +224,7 @@ namespace Depths
     public static bool TuneItems = true;   // the item overhaul (docs/items.md): the new roster, actives that recharge by rooms
     public static bool TuneFloorBoss = true;   // floors 1-13 end in the Gatekeeper (FloorBoss.cs), not the Warden
     public static bool TuneFinalBoss = true;   // floor 14 ends in the Sunken King (FinalBoss.cs), not the Warden
+    public static bool TuneBosses = true;   // floors 1-13 hold the run's drawn region bosses (Bosses.cs); off: the Gatekeeper
     public const int FinalFloor = 14;
     /// <summary>Whether this run can be won (tuned): untuned, the JS's endless descent.</summary>
     public static bool RunEnds => Tuned && TuneEnd;

@@ -72,7 +72,7 @@ namespace Depths.Tests
 
         static bool Telling(Enemy e) => e.move == "tell" || e.castT > 0;
 
-        [Test]
+        [Test, TunedBosses(false)]
         public void TheGatekeeperHoldsFloorsOneToThirteenAndTheKingTheLast()
         {
             for (uint seed = 1; seed <= 3; seed++)
@@ -106,7 +106,7 @@ namespace Depths.Tests
         public void ItIsTheFloorsBossToEveryoneThatAsks()
         {
             Assert.That(Bodies.IsBoss(BodyKind.Gatekeeper) && Bodies.IsBoss(BodyKind.Boss));
-            Assert.That(Enum.GetValues(typeof(BodyKind)).Cast<BodyKind>().Count(Bodies.IsBoss), Is.EqualTo(3));
+            Assert.That(Enum.GetValues(typeof(BodyKind)).Cast<BodyKind>().Count(Bodies.IsBoss), Is.EqualTo(4), "the Warden, the Gatekeeper, the King, Old Mudmouth");
             Assert.That(Spikes.CanBeElite(BodyKind.Gatekeeper), Is.False, "a spike room's elite");
             var (run, e) = Arena();
             Assert.That(e.aggroTimer, Is.EqualTo(9999), "a boss starts committed");
@@ -116,7 +116,7 @@ namespace Depths.Tests
             Assert.That(bot.Decide(run, 0).Input.aimY, Is.LessThan(run.player.y - 100), "the bot shot the nearer body, not the boss");
         }
 
-        [Test]
+        [Test, TunedBosses(false)]
         public void ItsDeathOpensTheWayDown()
         {
             var run = OnFloor(9, 3);

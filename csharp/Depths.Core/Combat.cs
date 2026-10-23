@@ -51,6 +51,7 @@ namespace Depths
             }
             run.dmgTaken += amount;
             if (run.hitSrc >= 0) run.finalBy[run.hitSrc] += amount;   // the final boss's bookkeeping, by attack
+            Bosses.Book(run, amount);                                 // a region boss's, likewise
             double rem = amount;
             if (p.armor > 0 && Balance.JsReference) { double used = System.Math.Min(p.armor, rem); p.armor -= used; rem -= used; }
             else if (p.armor > 0)
@@ -101,6 +102,7 @@ namespace Depths
             bool hook = mode == "hook";
             double aoe = hook ? Balance.HookAoe : Balance.AltAoe, pool = hook ? 0 : Balance.AltPool;
             var en = run.enemies;
+            if (!hook) Mudmouth.Blasted(run, x, y);   // a blast on its crack knocks it out of the ground, into this blast
             Caught.Clear();
             foreach (var e in en)
                 if (!e.buried && System.Math.Sqrt((x - e.x) * (x - e.x) + (y - e.y) * (y - e.y)) < aoe + e.r) Caught.Add(e);
@@ -208,6 +210,7 @@ namespace Depths
             var e = en[index];
             en.RemoveAt(index);
             if (e.kind == BodyKind.SunkenKing) FinalBoss.Fall(run, e);
+            if (e.kind == BodyKind.Mudmouth) Bosses.Fall(run, e, Mudmouth.DeathBeat);
             if (e.kind == BodyKind.Boss)
                 for (int i = en.Count - 1; i >= 0; i--)
                     if (en[i].packId == Balance.BossWallId) en.RemoveAt(i);

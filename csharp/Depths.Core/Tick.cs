@@ -493,6 +493,7 @@ namespace Depths
                 if (e.stun > 0)
                 {
                     if (e.kind == BodyKind.SunkenKing) FinalBoss.StepFloor(run, e);   // the floor burns on, the King stunned or not
+                    if (e.kind == BodyKind.Mudmouth) Mudmouth.StepGround(e);          // and Mudmouth's mud dries on
                     if (e.lungeState == "wind" || e.lungeState == "lunge" || e.lungeState == "dodge")
                     {
                         e.lungeState = "approach"; e.lungeT = 0; e.lungeLen = 0; e.lungeCd = Balance.LungeCd;
@@ -524,6 +525,7 @@ namespace Depths
                 if (e.kind == BodyKind.Boss) StepBoss(run, e);
                 else if (e.kind == BodyKind.Gatekeeper) FloorBoss.Step(run, e, edx, edy, dist, sm);
                 else if (e.kind == BodyKind.SunkenKing) FinalBoss.Step(run, e, edx, edy, dist, sm);
+                else if (e.kind == BodyKind.Mudmouth) Mudmouth.Step(run, e, edx, edy, dist, sm);
                 else if (e.kind == BodyKind.Egg) Middle.StepEgg(run, e, roomPress);
                 else if (e.kind == BodyKind.Burrower) Middle.StepBurrower(run, e, edx, edy, dist, sm);
                 else if (!ranged)
@@ -553,6 +555,7 @@ namespace Depths
                 }
                 if (touching && e.kind == BodyKind.Gatekeeper && !FloorBoss.Hurts(e)) touching = false;   // it hurts only as it charges
                 if (touching && e.kind == BodyKind.SunkenKing && !FinalBoss.Hurts(e)) touching = false;   // the King likewise
+                if (touching && e.kind == BodyKind.Mudmouth) touching = false;   // its landings, shells and tunnel hurt, never its resting body
                 if (touching)
                 {
                     // a Brunch that reaches you is not pushed back unless it holds a slot; it spends itself
@@ -561,8 +564,9 @@ namespace Depths
                     bool boss = Bodies.IsBoss(e.kind);
                     if (e.kind == BodyKind.SunkenKing) run.hitSrc = (int)FinalBoss.Source.Charge;
                     else if (e.kgAdd) run.hitSrc = (int)FinalBoss.Source.Adds;
+                    run.hitBook = e.book;
                     bool landed = Combat.DamagePlayer(run, boss ? 2 : 1, edx / dist, edy / dist, (boss ? 8 : 5.5) * Balance.KnockPGain, e.kind == BodyKind.Boss);
-                    run.hitSrc = -1;
+                    run.hitSrc = -1; run.hitBook = null;
                     if (landed && (!brunch || holdingSlot))
                         Movement.Knock(run, e, -edx, -edy, 4 * Balance.KnockGain);
                     if (brunch)
@@ -734,8 +738,9 @@ namespace Depths
                 double pn = Dist(p.vx, p.vy);
                 if (pn == 0) pn = 1;
                 run.hitSrc = p.src >= 0 ? p.src : p.owner != null && p.owner.kgAdd ? (int)FinalBoss.Source.Adds : -1;
+                run.hitBook = p.book;
                 Combat.DamagePlayer(run, p.dmg, p.vx / pn, p.vy / pn, 1.5 * Balance.KnockPGain, p.owner != null && p.owner.kind == BodyKind.Boss);
-                run.hitSrc = -1;
+                run.hitSrc = -1; run.hitBook = null;
                 hitSomething = true;
             }
             if (hitSomething) ps.RemoveAt(i);
@@ -859,8 +864,8 @@ namespace Depths
             // Death wins ties: a pickup that arrives on the frame the player dies ends the run as a
             // death, and the boss check below does not run.
             if (player.hp <= 0) { run.EndRun(false); return false; }
-            if (run.finaleT > 0 && run.finaleT == run.finaleMax)   // the King's death beat begins: its recalled adds crumble with it
-                for (int i = run.enemies.Count - 1; i >= 0; i--) if (run.enemies[i].kgAdd) { run.enemies[i].hp = 0; run.enemies.RemoveAt(i); }
+            if (run.finaleT > 0 && run.finaleT == run.finaleMax)   // a boss's death beat begins: its recalled adds (or brood) crumble with it
+                for (int i = run.enemies.Count - 1; i >= 0; i--) if (run.enemies[i].kgAdd || run.enemies[i].rbAdd) { run.enemies[i].hp = 0; run.enemies.RemoveAt(i); }
             if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen && run.finalFloor)
             {
                 if (run.finaleT > 0)
@@ -873,6 +878,11 @@ namespace Depths
                     room.ExitOpen = true;   // the final boss is down: the run is won, there is no way further down
                     run.EndRun(true);
                 }
+            }
+            else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen && run.finaleT > 0)
+            {
+                run.finaleT--;   // a region boss's death beat: the way down waits for it, its shells go with it
+                run.projectiles.RemoveAll(q => !q.friendly);
             }
             else if (room.Type == RoomKind.Boss && run.enemies.Count == 0 && !room.ExitOpen)
             {
@@ -955,7 +965,7 @@ namespace Depths
                nothing), and Momentum's share is added here, as moveSpeedBonus() adds it in the game. */
             // moveSpeedBonus() in the game: the speed STAT plus the Momentum meter's share, capped. [h:Tick-25]
             double bonus = System.Math.Min(Balance.MomCap, System.Math.Min(Balance.MoveSpeedHardCap, moveSpeedBonus ?? run.stats.Value("speed")) + p.momentum * Balance.MomSpeed);
-            double spd = p.speed * p.slowMult * (1 + bonus) * boostMult;
+            double spd = p.speed * p.slowMult * (1 + bonus) * boostMult * Mudmouth.SlowAt(run);   // Mudmouth's soft mud
             double targetVx = len != 0 ? (dx / len) * spd : 0;
             double targetVy = len != 0 ? (dy / len) * spd : 0;
 
