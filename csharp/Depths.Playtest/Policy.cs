@@ -67,6 +67,10 @@ namespace Depths.Playtest
             _rnd = new BotRng(seed, profile.Name);
             _react = profile.ReactTicks;
             _decide = Math.Max(2, Balance.Sec(profile.DecideS > 0 ? profile.DecideS : profile.ReactS));
+            if (profile.Expert && !(profile.AimRate > 0 && profile.AimRate <= 25))
+                throw new ArgumentException("an expert profile needs a mouse turn cap, 0 to 25 rad/s exclusive of 0: " + profile.AimRate);
+            if (profile.Expert && profile.DecideS < 1.0 / MaxPerSecond)
+                throw new ArgumentException("an expert profile decides at most " + MaxPerSecond + " times a second: " + profile.DecideS);
             _strafe = _rnd.Next() < 0.5 ? 1 : -1;
         }
 

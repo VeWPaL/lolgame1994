@@ -27,7 +27,7 @@ namespace Depths.Playtest
             new Profile { Name = "skilled", ReactS = 0.114, AimErr = 0.03, Dodge = 0.9,
                           BandMin = 170, BandMax = 280, Blast = 0.85, Heal = 2 },
             new Profile { Name = "expert", ReactS = 0.15, AimErr = 0.03, Dodge = 1,
-                          BandMin = 140, BandMax = 260, Blast = 0.85, Heal = 2, Expert = true, DecideS = 0.2, AimRate = 20 },
+                          BandMin = 140, BandMax = 260, Blast = 0.85, Heal = 2, Expert = true, DecideS = 0.125, AimRate = 20 },
         };
 
         /// <summary>The profile names, for the CLI's messages.</summary>

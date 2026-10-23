@@ -34,9 +34,7 @@ namespace Depths.Playtest
         internal double AimNoise => _aimJ;   // this decision's aim error, radians
         internal int Threatened => _discs.Count;   // the threats the last plan weighed
         internal double LastCost;
-        readonly Queue<int> _recent = new Queue<int>();   // the ticks of the last second's decisions
-        int _lastDecision = int.MinValue / 2;
-        internal const int MaxPerSecond = 8, MinHold = 2;   // a hand's limits: decisions a second; ticks an input is held
+        internal const int MaxPerSecond = 8;   // a hand's limit: decisions a second (the beat is never faster)
 
         const int MaxH = 63, Forever = 1 << 20;
         const double FloorAfterS = 1.0;
@@ -53,16 +51,10 @@ namespace Depths.Playtest
             bool alt = false, useActive = false, blink = false;
             int key = 0;
             Lines(run, t, NoLine);   // only notes when each tell was first seen: its reaction clock runs from then
-            int seen = Matured(run, t);
-            bool fresh = seen > 0;
-            while (_recent.Count > 0 && t - _recent.Peek() >= Balance.TickHz) _recent.Dequeue();
-            bool may = t - _lastDecision >= MinHold && _recent.Count < MaxPerSecond;
-            if (may && (t >= _decideT || fresh))
+            if (t >= _decideT)
             {
-                // a decision on the beat, or the moment something new has been seen for a reaction time, if the hand has one left
+                // a fixed beat: a threat waits for the first beat after it has been in sight a reaction time (0.15-0.28 s)
                 _decideT = t + _decide;
-                _lastDecision = t;
-                _recent.Enqueue(t);
                 Decisions++;
                 Look(run, t);
                 _aimJ = _rnd.Gauss() * _p.AimErr;
@@ -88,7 +80,7 @@ namespace Depths.Playtest
             px += _tvx * fly; py += _tvy * fly;
             double goal = Math.Atan2(py - pl.y, px - pl.x) + _aimJ;
             if (double.IsNaN(_aim)) _aim = _aimX.HasValue ? Math.Atan2(_aimY!.Value - pl.y, _aimX.Value - pl.x) : goal;
-            double step = _p.AimRate > 0 ? _p.AimRate / Balance.TickHz : Math.PI;
+            double step = _p.AimRate / Balance.TickHz;   // the profile is refused without a cap (the constructor)
             _aim += Math.Max(-step, Math.Min(step, Wrap(goal - _aim)));
             _aim = Wrap(_aim);
             double reach = Math.Max(80, Hyp(px - pl.x, py - pl.y));
@@ -98,25 +90,6 @@ namespace Depths.Playtest
         }
 
         static readonly Action<double, double, double, double, double, double, double, int> NoLine = (a, b, c, d, e, f, g, h) => { };
-
-        // how many threats have been in sight for exactly a reaction time on this tick: each is a reason to decide now
-        int Matured(RunState run, int t)
-        {
-            int n = 0;
-            foreach (var p in run.projectiles) if (!p.friendly && _born.TryGetValue(p, out var b) && t - b == _react) n++;
-            foreach (var kv in _tell) if (t - kv.Value == _react) n++;
-            foreach (var e in run.enemies)
-            {
-                if (e.hp <= 0) continue;
-                if (e.kind == BodyKind.Burrower && e.move == "leap" && Middle.BurrowLeap - e.moveT == _react) n++;
-                if (e.kind == BodyKind.SunkenKing && e.move == "leap" && e.fbTellMax - e.moveT == _react) n++;
-                if (e.kind == BodyKind.SunkenKing && e.castT > 0 && e.fbTellMax - e.castT == _react) n++;
-                var g = e.ground;
-                if (g != null) for (int i = 0; i < FinalBoss.Ground.N; i++) if (g.warn[i] > 0 && g.warnMax[i] - g.warn[i] == _react) { n++; break; }
-                if (_look.TryGetValue(e, out var lk) && t - lk.first == _react) n++;
-            }
-            return n;
-        }
 
         static double Wrap(double a)
         {
@@ -175,13 +148,12 @@ namespace Depths.Playtest
             return (w.Dmg * w.Count + strength) * fall * hit * taken / w.CooldownS;
         }
 
-        // the range the held gun wants, kept off bodies that hurt to touch, closer on a winded boss
+        // the range the held gun wants; farther from a boss while its cast flash or charge line is drawn
         double Range(Enemy target, int gun)
         {
             double r = Weapons.All[gun].FNear ?? 150;
             r = Math.Min(r, 170) - 10;
             bool boss = target.kind == BodyKind.SunkenKing || target.kind == BodyKind.Gatekeeper;
-            if (boss && target.move == "rest") return Math.Max(target.r + 50, r - 60);   // the window to punish
             if (boss && (target.move == "cast" || target.move == "tell")) r += 50;   // a cast flash: room to read what comes
             if (target.kind != BodyKind.SunkenKing) r = Math.Max(r, FieldRange);   // a room of shooters: far enough to read their shots
             return r;

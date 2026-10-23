@@ -82,10 +82,44 @@ namespace Depths.Tests
                 Assert.That(bot.Threatened, Is.EqualTo(0), $"tick {t}: it weighed a shell it had not seen for a reaction time");
                 Assert.That((a.Input.dx, a.Input.dy, a.Input.blink), Is.EqualTo((b.Input.dx, b.Input.dy, b.Input.blink)), $"tick {t}: it answered the shell early");
             }
-            int before = bot.Decisions;
-            bot.Decide(run, react);
-            Assert.That(bot.Decisions, Is.EqualTo(before + 1), "it did not decide the moment the shell had been seen for its reaction time");
+            for (int t = react; t < react + Balance.Sec(0.2) && bot.Threatened == 0; t++) bot.Decide(run, t);
             Assert.That(bot.Threatened, Is.EqualTo(1), "it never weighed the shell");
+        }
+
+        // limit 1, the spread: a shell seen at a different moment of the beat is answered after a different time
+        [Test]
+        public void ItsReactionsVaryAboveTheFloor()
+        {
+            int react = Expert.ReactTicks;
+            var took = new List<int>();
+            for (int at = 0; at < 12; at++)
+            {
+                var (run, e) = Arena();
+                var bot = new BotPolicy(Expert, 1);
+                int seen = -1;
+                for (int t = 0; t < Balance.Sec(1) && seen < 0; t++)
+                {
+                    if (t == at) run.projectiles.Add(ShellAt(run, run.player.x - 150, run.player.lagY + Balance.PlayerHitDy));
+                    bot.Decide(run, t);
+                    if (t >= at && bot.Threatened > 0) seen = t - at;
+                }
+                took.Add(seen);
+            }
+            Assert.That(took.Min(), Is.GreaterThanOrEqualTo(react), "a shell answered before its reaction time");
+            Assert.That(took.Distinct().Count(), Is.GreaterThan(3), "every reaction took the same time: " + string.Join(",", took));
+            Assert.That(took.Max(), Is.LessThanOrEqualTo(react + Balance.Sec(Expert.DecideS)), "a shell waited longer than a beat past its reaction time");
+        }
+
+        // limit 2 needs a cap: a profile without one would snap
+        [TestCase(0.0)]
+        [TestCase(-3.0)]
+        [TestCase(40.0)]
+        public void AnExpertWithoutAMouseCapIsRefused(double rate)
+        {
+            var p = new Profile { Name = "x", ReactS = 0.15, AimErr = 0.03, Expert = true, DecideS = 0.125, AimRate = rate };
+            Assert.Throws<ArgumentException>(() => new BotPolicy(p, 1));
+            var fast = new Profile { Name = "x", ReactS = 0.15, AimErr = 0.03, Expert = true, DecideS = 0.05, AimRate = 20 };
+            Assert.Throws<ArgumentException>(() => new BotPolicy(fast, 1), "a beat faster than 8 a second");
         }
 
         // limit 2: the aim has noise, and the mouse turns at a wrist's rate, never a snap
@@ -136,13 +170,14 @@ namespace Depths.Tests
             {
                 var a = seen.Decide(run, t);
                 var keep = run.rng;
-                var timers = run.enemies.Select(x => (x.bossCd, x.cdMin, x.cdVar, x.shootCd, x.cdCarry)).ToList();
+                var timers = run.enemies.Select(x => (x.bossCd, x.cdMin, x.cdVar, x.shootCd, x.cdCarry, x.move)).ToList();
                 run.rng = other;
-                foreach (var x in run.enemies) { x.bossCd = 1 + (t * 7) % 50; x.cdMin = 3; x.cdVar = 77; x.shootCd = (t * 3) % 40; x.cdCarry = 2; }
+                foreach (var x in run.enemies) { x.bossCd = 1 + (t * 7) % 50; x.cdMin = 3; x.cdVar = 77; x.shootCd = (t * 3) % 40; x.cdCarry = 2;
+                    x.move = x.move == "rest" ? "idle" : x.move == "idle" ? "rest" : x.move; }   // a resting body is drawn as an idle one
                 var b = blind.Decide(run, t);
                 run.rng = keep;
                 for (int i = 0; i < run.enemies.Count; i++)
-                    (run.enemies[i].bossCd, run.enemies[i].cdMin, run.enemies[i].cdVar, run.enemies[i].shootCd, run.enemies[i].cdCarry) = timers[i];
+                    (run.enemies[i].bossCd, run.enemies[i].cdMin, run.enemies[i].cdVar, run.enemies[i].shootCd, run.enemies[i].cdCarry, run.enemies[i].move) = timers[i];
                 if ((a.Input.dx, a.Input.dy, a.Input.fire, a.Input.blink, a.Input.aimX, a.Input.aimY, a.WeaponKey, a.UseActive)
                     != (b.Input.dx, b.Input.dy, b.Input.fire, b.Input.blink, b.Input.aimX, b.Input.aimY, b.WeaponKey, b.UseActive)) differ = t;
                 Play(run, a);
