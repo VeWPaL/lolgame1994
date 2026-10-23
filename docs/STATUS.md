@@ -308,6 +308,11 @@ it from another checkout or the first command spends minutes importing.
     13 and the King's floor x1.10. **The King is 2379 HP with the curve (2163 without, which the owner played).**
     MenuTests: no subtext classes, no line of prose over 24 characters, no curve toggle, plain shake names, an old
     saved choice ignored.
+  - **The baseline with the curve standard (plan unit 2; b14-off vs b14-on, seeds 101-200 x 3, 90 min).** Run wins
+    173 -> 145 of 300 (58% -> 48%); minutes to a win 50.7 -> 47.8; damage a floor 13.6 -> 12.3; Gatekeeper fights
+    62.5 -> 55.6 s. Floor 14 reached by novice 71 -> 44 (the curve's hard start and end); the King (2379 HP now):
+    wins there novice 43%, average 64%, skilled 77%, fights 161 / 170 / 180 s. The bot's `--floor N` starts every run
+    on floor N with the starting kit (the F3 path), for the owner's test of the King.
   - Gate: the constant audit reads the C# values from `Depths.Playtest constants` (the regex lost 11 of 42) and fails
     on a missing one; step 5 now fails when CONVENTIONS' C# count is wrong; C# comment blocks of 3+ lines fail the
     hygiene step (`tools/move-comments.py` moved 498, comment lines 19% -> 7% of the code).
