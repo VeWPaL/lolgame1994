@@ -290,6 +290,9 @@ namespace Depths.Unity
                 // the sandbox and the Warden arena are developer views: only with the dev line up (F10)
                 if (_devOn && kb.f1Key.wasPressedThisFrame) { _sandbox = !_sandbox; _bossRoom = false; LeaveLab(); NewRun(); }
                 if (_devOn && kb.bKey.wasPressedThisFrame) { _bossRoom = !_bossRoom; _sandbox = false; LeaveLab(); NewRun(); }
+                // F3 skips a floor in a real run (in the lab it freezes the row); never past the last floor
+                if (_devOn && RealRun && !_paused && _run.state == "playing" && kb.f3Key.wasPressedThisFrame
+                    && !(Balance.RunEnds && _run.floor >= Balance.FinalFloor)) _run.Descend();
                 if (kb.f2Key.wasPressedThisFrame) { bool enter = !_inLab; _sandbox = _bossRoom = false; LeaveLab(); _inLab = enter; NewRun(); }
             }
 
@@ -391,7 +394,7 @@ namespace Depths.Unity
                                       : _inLab ? "The lab: every body and every egg form" : _bossRoom ? "Warden arena" : "Sandbox: every enemy, respawning";
                 string pools = RealRun && _run.pools != null ? "\n" + Pools.Describe(_run.pools) : "";
                 text = mode + "   seed " + Rng.Encode(_run.rootSeed) + "   curve " + (Curve.On ? "on" : "off") + pools +
-                       "\n1-4 guns   right-click blast   " + _binds.Display("Blink") + " blink   " + _binds.Display("Active") + " item   R new run   F1 sandbox   F2 lab   B Warden arena   " + _binds.Display("Pause") + " pause   F10 this line";
+                       "\n1-4 guns   right-click blast   " + _binds.Display("Blink") + " blink   " + _binds.Display("Active") + " item   R new run   F3 skip floor   F1 sandbox   F2 lab   B Warden arena   " + _binds.Display("Pause") + " pause   F10 this line";
             }
             _hud.SetDev(true, text);
         }

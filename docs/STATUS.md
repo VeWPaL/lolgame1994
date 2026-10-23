@@ -156,7 +156,11 @@ it from another checkout or the first command spends minutes importing.
   (fan, slam, checker 17-20%). **Then the recall was grafted** (owner 2026-10-22; DESIGN.md): b13-king again, floor
   14: wins novice 44%, **average 69% (target met)**, skilled 84%; fights 146 / 163 / 171 s; no attack over 24% (the
   adds 5-7%: they split the player's attention, the floor and the King do the work). `shot final4` freezes it
-  mid-recall. Next: the owner's playtest of the finale; the Gatekeeper follow-ups above.
+  mid-recall. **Owner's playtest (2026-10-22): "great"; soloed with the starting kit, "somewhat difficult"; make it
+  the standard for the region bosses.** `docs/bosses.md`: the standard measured (starting kit: average bot 34% wins,
+  242 s; a run's kit 69%, 163 s), the rubric, health per area (1750 / 2100 / 2150), 6 bosses per region (4 rolled a
+  run) and 3 floor 13 minibosses. **Waiting on the owner:** Decision 1 (King lethality on 13 bosses compounds to a 0.5%
+  run win; B, each boss ~97% survivable for the average bot, keeps ~41%, recommended) and Decision 2 (runs grow ~51 -> ~73 min). F3 skips a floor (dev line).
 - **The Gatekeeper, the floor boss of 1-13 (unit 3; owner 2026-10-22: a new floor boss replaces the Warden).**
   DESIGN.md, "The Gatekeeper" (`FloorBoss.cs`, `TuneFloorBoss`, `--untune floorboss`). Charge (0.6 s line), Slam (3
   lobs, 0.95 s marks), Fan (0.5 s flash), then Ring (phase 2) and Rampage (phase 3); weighted by area; it hurts only
@@ -294,6 +298,7 @@ it from another checkout or the first command spends minutes importing.
     - a ninth heart drawn over the momentum bar;
     - the `pickup`, `boss` and `tell` sounds never played.
     F1 (sandbox) and B (Warden arena) now need the dev line (F10).
+    F3 (with the dev line up) skips a floor in a real run, up to floor 14 (2026-10-22).
   - Gate: the constant audit reads the C# values from `Depths.Playtest constants` (the regex lost 11 of 42) and fails
     on a missing one; step 5 now fails when CONVENTIONS' C# count is wrong; C# comment blocks of 3+ lines fail the
     hygiene step (`tools/move-comments.py` moved 498, comment lines 19% -> 7% of the code).
