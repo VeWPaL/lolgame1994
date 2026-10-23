@@ -101,39 +101,36 @@ namespace Depths.Unity.Tests
     public class GameplaySettingsTests
     {
         [Test]
-        public void TheCurveIsOffUntilChosenAndAChoiceIsSavedAndApplied()
+        public void TheCurveIsStandardAndAnOldSavedChoiceIsIgnored()
         {
             bool saved = Depths.Curve.On;
             try
             {
                 var store = new MemoryStore();
-                var g = new GameplaySettings(store);
-                Depths.Curve.On = true;   // a stale in-process value must not leak into the default
-                Assert.That(g.Curve, Is.False, "a fresh install plays the curve");
-                g.Apply();
-                Assert.That(Depths.Curve.On, Is.False);
-
-                g.Curve = true;
-                Assert.That(store.S[GameplaySettings.CurveKey], Is.EqualTo("on"));
-                Assert.That(store.Saves, Is.EqualTo(1), "the choice is not written to disk");
-                Assert.That(new GameplaySettings(store).Curve, Is.True, "the choice does not survive a restart");
-                g.Apply();
-                Assert.That(Depths.Curve.On, Is.True);
-
-                store.S[GameplaySettings.CurveKey] = "garbage";
-                Assert.That(g.Curve, Is.False, "an unreadable value turns the curve on");
+                store.S["depths.gameplay.curve"] = "off";   // what an older build saved for a player who turned it off
+                Depths.Curve.On = false;
+                new GameplaySettings(store).Apply();
+                Assert.That(Depths.Curve.On, Is.True, "a run started without the curve");
+                Assert.That(store.Saves, Is.EqualTo(0), "starting a run wrote a setting");
             }
             finally { Depths.Curve.On = saved; }
         }
 
         [Test]
-        public void TheOptionsHaveAGameplayPageWithTheCurveToggle()
+        public void TheMenuHasNoSubtextNoCurveToggleAndPlainShakeNames()
         {
             var tree = AssetDatabase.LoadAssetAtPath<UnityEngine.UIElements.VisualTreeAsset>("Assets/Depths/UI/MainMenu.uxml");
             var root = tree.Instantiate();
             Assert.That(root.Q<UnityEngine.UIElements.Button>("tabGameplay"), Is.Not.Null);
             Assert.That(root.Q("gameplayPage"), Is.Not.Null);
-            Assert.That(root.Q<UnityEngine.UIElements.Toggle>("curve"), Is.Not.Null, "the menu reads a toggle named curve");
+            Assert.That(root.Q<UnityEngine.UIElements.Toggle>("curve"), Is.Null, "the curve toggle is back");
+            foreach (var cls in new[] { "subtitle", "caption", "entry-note", "foot", "hint" })
+                Assert.That(root.Query(className: cls).ToList(), Is.Empty, "a subtext label (." + cls + ") is back");
+            var texts = root.Query<UnityEngine.UIElements.Label>().ToList().Select(l => l.text ?? "").ToList();
+            Assert.That(texts.Where(t => t.Length > 24), Is.Empty, "a line of prose is on the menu: " + string.Join(" | ", texts.Where(t => t.Length > 24)));
+            Assert.That(MainMenuController.ShakeNames, Is.EqualTo(new[] { "Off", "Medium", "High", "Insanity" }));
+            Assert.That(MainMenuController.ShakeNames.Length, Is.EqualTo(System.Enum.GetValues(typeof(ShakeLevel)).Length), "a shake level without a name");
+            Assert.That(MainMenuController.EvidenceViews, Does.Not.Contain("gameplayon"));
         }
 
         [Test]

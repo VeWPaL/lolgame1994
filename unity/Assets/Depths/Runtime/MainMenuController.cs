@@ -33,15 +33,13 @@ namespace Depths.Unity
         Label _pageTitle;
         ScrollView _bindList;
         DropdownField _preset;
-        Label _presetHint;
-        Toggle _curve;
         Bindings _bindings;
         VolumeSettings _volume;
         GameplaySettings _gameplay;
         DisplaySettings _display;
         InputActionRebindingExtensions.RebindingOperation _rebind;
         readonly List<Texture2D> _owned = new List<Texture2D>();
-        Texture2D _cap, _capLit, _boxOn, _boxOff;
+        Texture2D _cap, _capLit;
 
         // A few frames after the menu shows, bake what the game's first frame would otherwise stall on (the
         // sprite atlas and the HUD's boards and sheets, about a second): the player is reading the menu meanwhile.
@@ -74,7 +72,6 @@ namespace Depths.Unity
             _pageTitle = root.Q<Label>("pageTitle");
             _bindList = root.Q<ScrollView>("bindList");
             _preset = root.Q<DropdownField>("preset");
-            _presetHint = root.Q<Label>("presetHint");
             Skin(root);
 
             root.Q<Button>("start").clicked += () => { SoundEngine.Play("door"); SceneManager.LoadScene(gameScene); };
@@ -86,14 +83,10 @@ namespace Depths.Unity
             _tabGameplay.clicked += () => { SoundEngine.Play("pickup", 0, 0.6f); ShowView("gameplay"); };
             // Esc (the UI's cancel) closes the options, as the back entry does
             root.RegisterCallback<NavigationCancelEvent>(_ => { if (_rebind == null && _main.ClassListContains("hidden")) ShowView("menu"); });
-            _curve = root.Q<Toggle>("curve");
-            _curve.SetValueWithoutNotify(_gameplay.Curve);
-            _curve.RegisterValueChangedCallback(e => { _gameplay.Curve = e.newValue; Tick(); SoundEngine.Play("blink", 0, 0.6f); });
             var shake = root.Q<DropdownField>("shake");
-            shake.choices = new List<string> { "Off", "Medium (Isaac)", "High (Gungeon)", "Insanity (Nuclear Throne)" };
+            shake.choices = new List<string>(ShakeNames);
             shake.index = (int)_gameplay.Shake;
             shake.RegisterValueChangedCallback(_ => { _gameplay.Shake = (ShakeLevel)shake.index; SoundEngine.Play("blink", 0, 0.6f); });
-            Tick();
             root.Q<Button>("resetBinds").clicked += () => { _bindings.ApplyPreset(_bindings.Preset); RefreshBinds(); };
 
             var frames = root.Q<DropdownField>("frameRate");
@@ -160,8 +153,6 @@ namespace Depths.Unity
             root.Query(className: "italic").ForEach(e => LedgerFonts.Use(e, LedgerFonts.Italic));
             _cap = Tex(LedgerArt.KeyCap(KeyCapW, KeyCapH, false), "keycap");
             _capLit = Tex(LedgerArt.KeyCap(KeyCapW, KeyCapH, true), "keycap-lit");
-            _boxOn = Tex(LedgerArt.TickBox(26, true), "tick-on");
-            _boxOff = Tex(LedgerArt.TickBox(26, false), "tick-off");
             var knob = Tex(LedgerArt.Knob(16, 26), "knob");
             root.Query(className: "unity-base-slider__dragger").ForEach(d => d.style.backgroundImage = new StyleBackground(knob));
             // the slider rides in a groove cut in a plank; the dropdown is a framed paper slip with a brass arrow
@@ -186,26 +177,6 @@ namespace Depths.Unity
             e.style.width = img.W; e.style.height = img.H;
         }
 
-
-        // the tick box, and On or Off written beside it so the state never rests on the tick alone
-        void Tick() => Tick(_curve);
-
-        // the ledger's checkbox and its "On"/"Off" in the book's hand, beside the box
-        void Tick(Toggle t)
-        {
-            var mark = t.Q(className: "unity-toggle__checkmark");
-            if (mark != null) mark.style.backgroundImage = new StyleBackground(t.value ? _boxOn : _boxOff);
-            var state = t.Q<Label>(t.name + "State");
-            if (state == null)
-            {
-                state = new Label { name = t.name + "State" };
-                state.AddToClassList("toggle-state");
-                LedgerFonts.Use(state, LedgerFonts.Italic);
-                (t.Q(className: "unity-toggle__input") ?? t).Add(state);
-            }
-            state.text = t.value ? "On" : "Off";
-            state.EnableInClassList("on", t.value);
-        }
 
         // Dragging a slider plays the level you are setting, at most a few times a second.
         float _lastPreview;
@@ -241,8 +212,11 @@ namespace Depths.Unity
         }
 
         /// <summary>The menu views the screenshot mode can show besides the pages: keyboard focus on a key cap or a
-        /// slider, the dropdown's list open, the mouse over an entry, the curve ticked, the custom cap. None of them saves a setting.</summary>
-        public static readonly string[] EvidenceViews = { "focuskey", "focusslider", "dropdown", "hover", "gameplayon", "customfps" };
+        /// slider, the dropdown's list open, the mouse over an entry, the custom cap. None of them saves a setting.</summary>
+        public static readonly string[] EvidenceViews = { "focuskey", "focusslider", "dropdown", "hover", "customfps" };
+
+        /// <summary>The screen shake choices, in ShakeLevel order: plain names, no game references.</summary>
+        public static readonly string[] ShakeNames = { "Off", "Medium", "High", "Insanity" };
 
         public void Evidence(string view)
         {
@@ -251,7 +225,6 @@ namespace Depths.Unity
             {
                 case "focuskey": ShowView("controls"); root.Q(className: "bind-key")?.Focus(); break;
                 case "focusslider": ShowView("audio"); root.Q<Slider>("vol-Music")?.Focus(); break;
-                case "gameplayon": ShowView("gameplay"); _curve.SetValueWithoutNotify(true); Tick(); break;
                 case "customfps":
                     ShowView("gameplay");
                     root.Q<DropdownField>("frameRate").SetValueWithoutNotify(DisplaySettings.CustomChoice);
@@ -288,9 +261,6 @@ namespace Depths.Unity
 
         void RefreshBinds()
         {
-            _presetHint.text = _bindings.Preset == KeyPreset.Auto || _bindings.Preset == KeyPreset.Dvorak
-                ? "Keys follow their position on the keyboard, so movement sits under the left hand on any layout."
-                : "Keys follow the letter printed on them. Choose Auto if your keyboard is not this layout.";
             _bindList.Clear();
             foreach (var (slot, label) in Rows)
             {

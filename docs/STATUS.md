@@ -80,7 +80,7 @@ it from another checkout or the first command spends minutes importing.
   touches `unity/` or `Depths.Core`.
 - `bash tools/unity.sh test`: EditMode tests (`-runTests -testPlatform EditMode`), prints the totals and each failure with its message. 96/96. Views also `lab` (the row live) and `labrow` (frozen, every sprite).
 - `bash tools/unity.sh build`: `-executeMethod Depths.Unity.EditorTools.BuildTools.BuildWindows` -> `unity/Build/Depths.exe`
-- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|gameplayon|customfps|rush|spike|won|floorboss|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
+- `bash tools/unity.sh shot menu|controls|audio|gameplay|game|hearts|boss|sandbox|summary|pause|banner|warning|lowhp|ledger|focuskey|focusslider|dropdown|hover|customfps|rush|spike|won|floorboss|lab|labrow|secret|rail|leap|thud`: the player at 1280x720 with
   (`DEPTHS_SEED=n` passes `-depthsSeed n`: `secret` defaults to seed 1, whose fake wall is room (4,2) N as in the JS, and
   checks the blast opens it and the hook is behind; `rail` shows egg track n % 8; `leap` freezes a Burrower mid-leap, `thud` just after it lands)
   `-depthsShot out.png -depthsView <view>`. `game` measures the tick rate against the wall clock
@@ -299,6 +299,15 @@ it from another checkout or the first command spends minutes importing.
     - the `pickup`, `boss` and `tell` sounds never played.
     F1 (sandbox) and B (Warden arena) now need the dev line (F10).
     F3 (with the dev line up) skips a floor in a real run, up to floor 14 (2026-10-22).
+  - **Menu cleanup and the curve made standard (owner 2026-10-22, plan unit 1).** The book's red margin rules are gone;
+    every subtext on the menu and the options pages is gone (the flavour lines, the entry notes, the controls line,
+    the layout, audio, curve and frame rate hints); screen shake reads Off / Medium / High / Insanity. The curve
+    toggle is gone and the curve always plays (`Curve.On` true; an old saved "off" is ignored; the bot plays it unless
+    `--curve off`; tests keep `[CurveOn(false)]` for the parity rows). What it does to the run's boss health
+    (`DepthTough` x the stage's Tough): floors 1-2 x0.85-0.90 (and no drops), 3-10 x0.70-0.80, 11-12 x1.05-1.10,
+    13 and the King's floor x1.10. **The King is 2379 HP with the curve (2163 without, which the owner played).**
+    MenuTests: no subtext classes, no line of prose over 24 characters, no curve toggle, plain shake names, an old
+    saved choice ignored.
   - Gate: the constant audit reads the C# values from `Depths.Playtest constants` (the regex lost 11 of 42) and fails
     on a missing one; step 5 now fails when CONVENTIONS' C# count is wrong; C# comment blocks of 3+ lines fail the
     hygiene step (`tools/move-comments.py` moved 498, comment lines 19% -> 7% of the code).

@@ -188,7 +188,7 @@ namespace Depths.Playtest
         public List<string> Profiles = new List<string> { "novice", "average", "skilled" };
         public double Minutes = 20;
         public string? Brunch, Out;
-        public bool Curve = false;   // the difficulty curve, off by default until signed off; on to play it
+        public bool Curve = true;   // the difficulty curve, standard (owner 2026-10-22); --curve off for an A/B
         public bool Tuned = true;    // the playtest tuning (Balance.Tuned), on as in the game; off plays the JS rules
         public List<string> Dials = new List<string>();
         public Depths.Curve.MiddleRule? MidRule;   // curve --mid-rule: which rubric-5 MIDDLE reading to check   // --dial stage.Field=value, a retune without a rebuild
@@ -328,7 +328,7 @@ namespace Depths.Playtest
         /// as JSON, for tools/constant-audit.js to compare with the running game by value.</summary>
         static int Constants()
         {
-            Balance.TickHz = Balance.JsHz; Balance.Tuned = false; Depths.Curve.On = false;
+            Balance.TickHz = Balance.JsHz; Balance.Tuned = false; Depths.Curve.On = false;   // the JS's values: no curve
             var vals = new SortedDictionary<string, double>(StringComparer.Ordinal);
             const BindingFlags F = BindingFlags.Public | BindingFlags.Static;
             foreach (var f in typeof(Balance).GetFields(F))

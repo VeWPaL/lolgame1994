@@ -5,7 +5,7 @@ namespace Depths
     {
         /// <summary>Whether the shape applies. The game: always. Tests default it off (assembly [CurveOn]) so the
         /// parity rows keep the JS ladder.</summary>
-        public static bool On = false;   // off until the owner signs the tune off (STATUS); --curve on to play it
+        public static bool On = true;   // standard (owner 2026-10-22); the bot's --curve off and the tests' [CurveOn(false)] turn it off
 
         /// <summary>One stage of the shape, from floor First until the next stage's First. [h:Curve-2]</summary>
         public sealed class Stage

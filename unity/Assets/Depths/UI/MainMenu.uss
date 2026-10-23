@@ -14,9 +14,7 @@
 
 /* the left page of the contents */
 .title-stamp { align-self: center; margin-top: 30px; margin-left: -72px; margin-right: -40px; }
-.subtitle { margin: 20px 0 0 -32px; font-size: 18px; color: rgb(90, 70, 48); -unity-text-align: middle-center; }
-.portrait { align-self: center; margin-top: 34px; margin-left: -32px; }
-.caption { margin: 26px 10px 0 -22px; font-size: 15px; color: rgb(90, 70, 48); white-space: normal; -unity-text-align: middle-center; }
+.portrait { align-self: center; margin-top: 110px; margin-left: -32px; }
 
 /* an entry: a written line with its number in the margin; the ribbon marks the one you are on */
 .entry { flex-direction: row; align-items: center; height: 54px; margin: 0; padding: 0 10px 0 10px;
@@ -26,7 +24,6 @@
 .entry:focus { border-left-width: 7px; border-left-color: rgb(140, 42, 42); border-bottom-color: rgb(163, 40, 31); }
 .entry-num { position: absolute; left: -66px; width: 48px; font-size: 18px; color: rgb(90, 70, 48); -unity-text-align: middle-right; margin: 0; padding: 0; }
 .entry-text { font-size: 25px; color: rgb(43, 29, 18); margin: 0; padding: 0; }
-.entry-note { flex-grow: 1; font-size: 14px; color: rgb(120, 98, 72); -unity-text-align: middle-right; margin: 0; padding: 0; }
 .entry:hover .entry-text, .entry:focus .entry-text { color: rgb(163, 40, 31); }
 .entry:hover .entry-num, .entry:focus .entry-num { color: rgb(163, 40, 31); }
 /* the open section is marked differently from keyboard focus: an underline and a bookmark tab on the
@@ -36,11 +33,10 @@
 .tab.selected .entry-num { color: rgb(140, 42, 42); }
 .back { position: absolute; left: 72px; right: 40px; bottom: 26px; border-top-width: 1px; }
 .back .entry-text { font-size: 20px; }
-.foot { position: absolute; left: 72px; right: 40px; bottom: 24px; font-size: 13px; color: rgb(120, 98, 72); -unity-text-align: middle-center; }
 
 /* the options pages */
 .opt-page { flex-grow: 1; padding-top: 14px; }
-.hint { font-size: 13px; color: rgb(90, 70, 48); white-space: normal; margin: 6px 0 10px 0; }
+.opt-page .ledger-dropdown { margin-bottom: 14px; }
 Label, .unity-base-field__label { color: rgb(43, 29, 18); }
 .unity-base-field__label { font-size: 17px; min-width: 150px; }
 
@@ -74,14 +70,6 @@ Label, .unity-base-field__label { color: rgb(43, 29, 18); }
 .ledger-slider:focus .unity-base-slider__tracker, .ledger-slider:hover .unity-base-slider__tracker { -unity-background-image-tint-color: rgb(255, 222, 196); }
 .ledger-slider:focus .unity-base-field__label, .ledger-slider:hover .unity-base-field__label { color: rgb(163, 40, 31); }
 
-.ledger-toggle { margin: 18px 0 6px 0; height: 30px; align-items: center; }
-.ledger-toggle .unity-toggle__input { align-items: center; }
-.ledger-toggle .unity-toggle__checkmark { width: 26px; height: 26px; background-color: rgba(0, 0, 0, 0); border-width: 0; -unity-background-image-tint-color: rgb(255, 255, 255); }
-.ledger-toggle:hover .unity-toggle__checkmark, .ledger-toggle:focus .unity-toggle__checkmark { -unity-background-image-tint-color: rgb(255, 214, 200); }
-
 .unity-scroller { background-color: rgba(43, 29, 18, 0.08); border-width: 0; }
 .unity-scroller .unity-base-slider__dragger { background-color: rgba(43, 29, 18, 0.5); border-width: 0; }
 .unity-scroller .unity-repeat-button { background-color: rgba(0, 0, 0, 0); border-width: 0; }
-.toggle-state { margin-left: 10px; font-size: 17px; color: rgb(90, 70, 48); }
-.toggle-state.on { color: rgb(163, 40, 31); }
-.ledger-toggle:focus .unity-base-field__label, .ledger-toggle:hover .unity-base-field__label { color: rgb(163, 40, 31); }

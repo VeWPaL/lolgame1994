@@ -37,17 +37,9 @@ namespace Depths.Unity
     /// <summary>Gameplay options, saved like the volume. [h:Settings-1]</summary>
     public sealed class GameplaySettings
     {
-        public const string CurveKey = "depths.gameplay.curve";
         readonly ISettingsStore _store;
 
         public GameplaySettings(ISettingsStore store) { _store = store; }
-
-        /// <summary>Off until the player turns it on (the curve is not signed off yet; STATUS).</summary>
-        public bool Curve
-        {
-            get => _store.GetString(CurveKey, "off") == "on";
-            set { _store.SetString(CurveKey, value ? "on" : "off"); _store.Save(); }
-        }
 
         public const string ShakeKey = "depths.gameplay.shake";
 
@@ -58,8 +50,9 @@ namespace Depths.Unity
             set { _store.SetString(ShakeKey, ScreenShake.Name(value)); _store.Save(); }
         }
 
-        /// <summary>Call at the start of a run.</summary>
-        public void Apply() => Depths.Curve.On = Curve;
+        /// <summary>Call at the start of a run. The difficulty curve is standard (owner 2026-10-22): no switch, and a
+        /// choice saved by an older build ("depths.gameplay.curve") is ignored.</summary>
+        public void Apply() => Depths.Curve.On = true;
     }
 
     /// <summary>The frame rate, apart from the game's speed: the simulation always steps at Balance.TickHz and the screen... [h:Settings-2]</summary>

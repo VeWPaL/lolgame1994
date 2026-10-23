@@ -462,7 +462,7 @@ namespace Depths.Tests
         [Test]
         public void PlayRecordsTheCurveAndTheDials()
         {
-            Assert.That(Cli.Parse(new[] { "play" }).Curve, Is.False, "the curve is off until the owner signs it off");
+            Assert.That(Cli.Parse(new[] { "play" }).Curve, Is.True, "the curve is standard: the bot plays it unless told --curve off");
             Assert.That(Cli.Parse(new[] { "play", "--curve", "on" }).Curve, Is.True);
             Assert.That(Cli.Parse(new[] { "play", "--curve", "off" }).Curve, Is.False);
             Assert.Throws<UsageException>(() => Cli.Parse(new[] { "play", "--curve", "maybe" }));

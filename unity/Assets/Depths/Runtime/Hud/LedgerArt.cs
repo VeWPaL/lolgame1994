@@ -324,11 +324,9 @@ namespace Depths.Unity.Hud
                 g.Fill(gut + x, m, 1, h - m * 2, Hex.Rgba(70, 40, 16, 0.42f * t * t * t));
             }
             g.Fill(gut - 1, m, 2, h - m * 2, Hex.Rgba(40, 22, 8, 0.55f));
-            // red margins and a header rule on each page
+            // a header rule on each page (no red margins: the owner, 2026-10-22)
             foreach (int px in new[] { m, gut })
             {
-                g.Fill(px + 54, m + 12, 1, h - m * 2 - 24, Margin);
-                g.Fill(px + 57, m + 12, 1, h - m * 2 - 24, Margin);
                 g.Fill(px + 24, m + 96, gut - m - 48, 1, InkFaint);
                 g.Fill(px + 24, m + 99, gut - m - 48, 2, InkFaint);
             }
@@ -358,25 +356,6 @@ namespace Depths.Unity.Hud
             g.Fill(2, 2, w - 4, 2, Hex.C("#fff1c4"));
             g.Fill(2, h - 5, w - 4, 3, Hex.C("#b8954c"));
             for (int i = 0; i < 3; i++) g.Fill(w / 2 - 3, 7 + i * 3, 6, 1, BrassDark);   // a grip
-            return g;
-        }
-
-        /// <summary>A ledger box to tick: an inked square, and the tick when it is set.</summary>
-        public static Img TickBox(int s, bool ticked)
-        {
-            var g = new Img(s, s);
-            // a little wooden frame with a paper square let into it; the tick is inked in red across it
-            g.Draw(Materials.WoodPlate(s, s, false), 0, 0);
-            Materials.Inset(g, 4, 4, s - 8, s - 8, null);
-            g.Draw(AgedPaper(s - 12, s - 12, 0x71Cu, 0.04f), 6, 6);
-            if (ticked)
-                for (int i = 0; i <= 16; i++)
-                {
-                    // a pen tick: down-right for a third, then a long stroke up-right past the frame
-                    float t = i / 16f;
-                    float x = 6 + t * (s - 8), y = t < 0.33f ? s * 0.5f + t * s * 0.6f : s * 0.70f - (t - 0.33f) * s * 0.95f;
-                    g.Fill(Mathf.RoundToInt(x) - 1, Mathf.RoundToInt(y) - 1, 3, 3, RedInk);
-                }
             return g;
         }
 

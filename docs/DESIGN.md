@@ -21,7 +21,8 @@ disagree. Long code comments live in `docs/history/csharp/<File>.md` under `[h:F
   lagged hitbox (`HitboxX/Y`, it trails after a blink) is what enemies aim at and what shells hit.
 - **Switches**: `Balance.Tuned` (on in the game and the bot, off in tests) gates every C#-only change to ported
   behaviour; each part has its own switch (`Tune*`), and the bot can turn any off: `--untune wall,rush,dodge,loot,
-  beam,warden,ease,damage,momentum,pools,middle,aim,depth,spike,end,floorboss`. `Curve.On` (Options) is the difficulty curve, off by default.
+  beam,warden,ease,damage,momentum,pools,middle,aim,depth,spike,end,floorboss`. `Curve.On` is the difficulty curve (`Curve.Stages`), **standard since 2026-10-22** (owner): no option; the bot's
+  `--curve off` and the tests' `[CurveOn(false)]` (the parity rows were recorded without it) turn it off.
 
 ## 2. The player
 
