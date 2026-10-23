@@ -669,7 +669,7 @@ namespace Depths.Tests
         public void TheBotsReactionsAreTheJsBotsInSeconds()
         {
             // 55 / 38 / 24 JS ticks at 210 Hz, the same time at 60
-            var (r60, r210) = Both(() => Profile.All.Select(p => Seconds(p.ReactTicks)).ToList());
+            var (r60, r210) = Both(() => Profile.All.Where(p => !p.Expert).Select(p => Seconds(p.ReactTicks)).ToList());
             Assert.That(r210, Is.EqualTo(new[] { 55 / 210.0, 38 / 210.0, 24 / 210.0 }));
             for (int i = 0; i < r60.Count; i++) Assert.That(r60[i], Is.EqualTo(r210[i]).Within(Tick60 / 2 + 0.001));
         }

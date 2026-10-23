@@ -200,7 +200,7 @@ namespace Depths.Playtest
 
         static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial", "tuned", "untune", "floor" };
 
-        public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
+        public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled,expert] " +
             "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden,ease,damage,momentum,pools,middle,aim] [--dial middle.Drops=0.15,end.Tough=1.2] [--floor 14] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]  |  constants";
 
         static string Name(string s, string what)
@@ -250,7 +250,7 @@ namespace Depths.Playtest
                         c.Profiles = v.Split(',').ToList();
                         foreach (var p in c.Profiles)
                             if (Profile.All.All(x => x.Name != p))
-                                throw new UsageException("--profiles: no profile '" + p + "' (novice, average, skilled)");
+                                throw new UsageException("--profiles: no profile '" + p + "' (" + Profile.Names + ")");
                         break;
                     case "minutes":
                         if (!double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out c.Minutes)
