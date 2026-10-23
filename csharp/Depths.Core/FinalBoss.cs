@@ -497,7 +497,7 @@ namespace Depths
         public static void Fall(RunState run, Enemy e)
         {
             run.finaleT = run.finaleMax = DeathBeat;
-            run.finaleX = e.x; run.finaleY = e.y;
+            run.finaleX = e.x; run.finaleY = e.y; run.finaleKind = e.kind;
         }
 
         // ---- the recall (grafted from the Archivist, the tournament's runner-up): this run comes back for you, one area a phase

@@ -34,7 +34,7 @@ namespace Depths.Unity
         }
 
         /// <summary>Views that open the Game scene; the rest are menu pages.</summary>
-        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won", "floorboss", "final1", "final2", "final3", "final4" };
+        public static readonly string[] GameViews = { "game", "boss", "sandbox", "hearts", "summary", "pause", "banner", "warning", "lowhp", "ledger", "lab", "labrow", "secret", "rail", "leap", "thud", "rush", "spike", "won", "floorboss", "mudmouth", "final1", "final2", "final3", "final4" };
 
         void Check(bool ok, string what)
         {
@@ -65,6 +65,7 @@ namespace Depths.Unity
             else if (_view == "thud") yield return LeapView(true);
             else if (_view == "rush") yield return RushView();
             else if (_view == "floorboss") yield return FloorBossView();
+            else if (_view == "mudmouth") yield return MudmouthView();
             else if (_view == "final1" || _view == "final2" || _view == "final3" || _view == "final4") yield return FinalView(_view[5] - '0');
             else if (_view == "spike") yield return SpikeView();
             else if (_view == "summary") yield return SummaryView();
@@ -358,6 +359,58 @@ namespace Depths.Unity
             Check(run.projectiles.Exists(p => p.lob), "floorboss: the slam's landing marks are on the floor");
             var shown = LedgerHud.BossShown(run);
             Check(shown == g && LedgerHud.BossName(shown.kind) == FloorBoss.Name, "floorboss: the bar above the room is the Gatekeeper's, named " + FloorBoss.Name);
+            for (int i = 0; i < 10; i++) yield return null;
+        }
+
+        // Old Mudmouth in phase 2: its spit's marks on the floor, soft mud behind it, then frozen mid-crack under the player's
+        // blast reach; the crack's ring is sampled on the screen, not only in the data
+        IEnumerator MudmouthView()
+        {
+            GameView view = null;
+            while (view == null || view.Run == null) { yield return null; view = FindAnyObjectByType<GameView>(); }
+            var run = view.Run;
+            Enemy m = null;
+            for (int i = 0; i < 600 && m == null; i++)
+            {
+                foreach (var e in run.enemies) if (e.kind == BodyKind.Mudmouth && e.noticeTimer <= 0) m = e;
+                if (m == null) yield return null;
+            }
+            Check(m != null, "mudmouth: Old Mudmouth is in the arena");
+            if (m == null) yield break;
+            m.bossCd = 1e9;   // the view picks its moves: the spit, then a leap's crack
+            m.phase = 2; m.hp = m.maxHp * 0.5;
+            view.Frozen = true;
+            void Step() { TickOrder.TickPlayer(run, Depths.Input.None); TickOrder.TickProjectiles(run); TickOrder.TickBodies(run); }
+            Mudmouth.Begin(run, m, Mudmouth.Attack.Leap);   // its run under the floor lays the soft mud
+            for (int i = 0; i < 900 && m.move != "crack"; i++) Step();
+            double cx = m.x, cy = m.y;
+            Mudmouth.Begin(run, m, Mudmouth.Attack.Spit);
+            m.buried = false;
+            for (int i = 0; i < 600 && !run.projectiles.Exists(p => p.lob && p.flight > p.flightMax / 3); i++) Step();
+            // then the crack where it was, half run (set as the leap view sets the Burrower's): the spit's marks still down
+            m.x = cx; m.y = cy; m.buried = true; m.fbAttack = (int)Mudmouth.Attack.Leap; m.move = "crack"; m.moveT = m.fbTellMax = Mudmouth.CrackTell / 2;
+            Check(m.move == "crack" && m.buried, "mudmouth: frozen mid-crack, underground (" + m.move + ")");
+            Check(Mudmouth.CrackTell >= Balance.Sec(Mudmouth.TellMin) && Mudmouth.SpitFlight >= Balance.Sec(Mudmouth.TellMin), "mudmouth: the crack and the marks last at least 0.35 s");
+            Check(run.projectiles.Exists(p => p.lob && p.owner == m), "mudmouth: the spit's landing marks are on the floor");
+            int soft = 0;
+            for (int i = 0; i < Mudmouth.Mud.Max; i++) if (m.mud.life[i] > 0) soft++;
+            Check(soft > 0, "mudmouth: phase 2 leaves soft mud (" + soft + " patches)");
+            var shown = LedgerHud.BossShown(run);
+            Check(shown == m && LedgerHud.BossName(shown.kind) == Mudmouth.Name, "mudmouth: the bar above the room is named " + Mudmouth.Name);
+            for (int i = 0; i < 5; i++) yield return null;
+            yield return new WaitForEndOfFrame();
+            var tex = ScreenCapture.CaptureScreenshotAsTexture();
+            float scale = tex.width / 1280f;
+            // the crack's ring (r + 12 px round it), orange on the dark earth: any pixel near its east edge
+            var at = WorldView.ToPanel(m.x + m.r + 12, m.y);
+            bool lit = false;
+            for (int dx = -3; dx <= 3 && !lit; dx++)
+                for (int dy = -3; dy <= 3 && !lit; dy++)
+                {
+                    var c = Sample(tex, at + new Vector2(dx, dy), scale);
+                    lit = c.r > 0.45f && c.r > c.b + 0.2f;
+                }
+            Check(lit, "mudmouth: the crack's ring is drawn on the screen");
             for (int i = 0; i < 10; i++) yield return null;
         }
 

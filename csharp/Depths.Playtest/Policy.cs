@@ -85,7 +85,7 @@ namespace Depths.Playtest
                 if (e.hp <= 0) continue;
                 live++;
                 if (target == null && Bodies.IsBoss(e.kind)) target = e;
-                if (e.kgAdd && !e.buried && Hyp(e.x - pl.x, e.y - pl.y) < AddNear) addNear = e;   // the King's recalled add, close: first
+                if ((e.kgAdd || e.rbAdd) && !e.buried && Hyp(e.x - pl.x, e.y - pl.y) < AddNear) addNear = e;   // a boss's add (the King's recall, Mudmouth's brood), close: first
                 // a buried Burrower cannot be shot: aim at what can, and only face the mound when nothing else is up
                 double d = Hyp(e.x - pl.x, e.y - pl.y) + (e.buried ? 1e9 : 0);
                 if (d < nd) { nd = d; nearest = e; }
@@ -146,12 +146,16 @@ namespace Depths.Playtest
                     break;
                 }
             }
-            Marks(run, r, t, sidestep, ref blink);
+            bool marked = Marks(run, r, t, sidestep, ref blink);
             FloorGuard(run);
+            if (!marked && !sidestep) MudGuard(run);   // soft mud is avoided when nothing worse is coming
+            var crack = SeenCrack(run, t);
+            if (crack != null) alt = true;   // a seen crack and a ready blast: knock it out of the ground
             if (blink && BlinksOntoFire(run)) blink = false;   // a player does not blink into a burning or cracking floor
 
-            double a = Math.Atan2(target.y - pl.y, target.x - pl.x) + _aimJ;
-            double td = Hyp(target.x - pl.x, target.y - pl.y);
+            var at = crack ?? target;
+            double a = Math.Atan2(at.y - pl.y, at.x - pl.x) + (crack != null ? _aimJ * 0.5 : _aimJ);
+            double td = Hyp(at.x - pl.x, at.y - pl.y);
             _aimX = pl.x + Math.Cos(a) * td; _aimY = pl.y + Math.Sin(a) * td;
             var input = new Input(Axis(_mvX, 0.3), Axis(_mvY, 0.3), _fire, alt, blink, _aimX.Value, _aimY.Value);
             return new BotAction(input, useActive);
@@ -174,6 +178,11 @@ namespace Depths.Playtest
                 if (e.hp <= 0 || e.kind != BodyKind.Burrower || e.move != "leap") continue;
                 if (Middle.BurrowLeap - e.moveT < _react) continue;   // airborne for less than a reaction: not seen yet
                 Threat(e.markX, e.markY, Middle.BurrowHitR, e.moveT);
+            }
+            foreach (var e in run.enemies)
+            {
+                // Old Mudmouth's leap: its landing mark, once it has been in the air a reaction time
+                if (e.hp > 0 && e.kind == BodyKind.Mudmouth && e.move == "leap" && e.fbTellMax - e.moveT >= _react) Threat(e.markX, e.markY, Mudmouth.LeapR, e.moveT);
             }
             foreach (var e in run.enemies)
             {
@@ -275,7 +284,8 @@ namespace Depths.Playtest
                 bool brunch = e.kind == BodyKind.Brunch && (e.rushWind > 0 || e.rushing);
                 bool keeper = e.kind == BodyKind.Gatekeeper && (e.move == "tell" || e.move == "charge");
                 bool king = e.kind == BodyKind.SunkenKing && (e.move == "tell" || e.move == "charge" || e.move == "rift");
-                if (e.hp <= 0 || !(lunger || brunch || keeper || king)) { _tell.Remove(e); _kingMove.Remove(e); continue; }
+                bool mud = e.kind == BodyKind.Mudmouth && (e.move == "dirt" || e.move == "tunnel");
+                if (e.hp <= 0 || !(lunger || brunch || keeper || king || mud)) { _tell.Remove(e); _kingMove.Remove(e); continue; }
                 if (king)
                 {
                     // the risen King's second line is a new tell: its reaction time starts again
@@ -284,7 +294,13 @@ namespace Depths.Playtest
                 }
                 if (!_tell.TryGetValue(e, out var seen)) _tell[e] = seen = t;
                 if (t - seen < _react) continue;
-                if (king && e.move == "rift")
+                if (mud)
+                {
+                    // Old Mudmouth's tunnel: the raised dirt line from where it dug, then its head running along it
+                    bool dirt = e.move == "dirt";
+                    line(e.x, e.y, e.fbDx, e.fbDy, e.fbLen - (dirt ? 0 : e.fbGone), Mudmouth.TunnelR, Mudmouth.TunnelSpeed, dirt ? e.moveT : 0);
+                }
+                else if (king && e.move == "rift")
                 {
                     // the King's rift: its strips are the whole tell, and they erupt all at once as the tell runs out
                     var g = e.ground!;
@@ -365,6 +381,62 @@ namespace Depths.Playtest
         }
 
         const double FloorIn = 26, FloorLook = 26, FloorPull = 400;   // px kept inside a safe cell; px looked ahead; the floor's pull
+
+        // when the bot first SAW each Mudmouth crack: the blast goes once it has had a reaction time to see it
+        readonly Dictionary<Enemy, (int at, bool go)> _crack = new Dictionary<Enemy, (int, bool)>(ReferenceEqualityComparer.Instance);
+
+        /// <summary>A cracking Old Mudmouth seen for a reaction time, in the blast's reach, with the blast ready; else null.</summary>
+        internal Enemy? SeenCrack(RunState run, int t)
+        {
+            var pl = run.player;
+            Enemy? seen = null;
+            foreach (var e in run.enemies)
+            {
+                if (e.kind != BodyKind.Mudmouth) continue;
+                if (e.hp <= 0 || e.move != "crack") { _crack.Remove(e); continue; }
+                // whether this crack is gone for is rolled once, on the profile's blast willingness (a person misses some)
+                if (!_crack.TryGetValue(e, out var c)) _crack[e] = c = (t, _rnd.Next() < _p.Blast);
+                var (at, go) = c;
+                if (!go) continue;
+                // the blast flies at AltSpeed: it must land while the crack is still open
+                double fly = Hyp(e.x - pl.x, e.y - pl.y) / Balance.AltSpeed;
+                if (t - at >= _react && fly < e.moveT && pl.altCooldown <= 0 && pl.altMode == "blast") seen = e;
+            }
+            return seen;
+        }
+
+        // its move, held off soft mud it would walk into (one axis if the other is clear); off a patch it stands in
+        void MudGuard(RunState run)
+        {
+            Mudmouth.Mud? m = null;
+            foreach (var e in run.enemies) if (e.hp > 0 && e.mud != null) m = e.mud;
+            if (m == null) return;
+            var pl = run.player;
+            double hx = pl.x, hy = pl.y + Balance.PlayerHitDy;
+            if (m.At(hx, hy))
+            {
+                // the nearest way off: away from the patches it stands in
+                double ax = 0, ay = 0;
+                for (int i = 0; i < Mudmouth.Mud.Max; i++)
+                {
+                    if (m.life[i] <= 0) continue;
+                    double dx = hx - m.x[i], dy = hy - m.y[i], d = Hyp(dx, dy);
+                    if (d <= Mudmouth.MudR && d > 1e-9) { ax += dx / d; ay += dy / d; }
+                }
+                if (Hyp(ax, ay) > 1e-9) { _mvX = ax; _mvY = ay; }
+                return;
+            }
+            int sx = Axis(_mvX, 0.3), sy = Axis(_mvY, 0.3);
+            if (sx == 0 && sy == 0) return;
+            bool Into(int ax, int ay) => m.At(hx + ax * MudLook, hy + ay * MudLook);
+            if (!Into(sx, sy)) return;
+            if (sx != 0 && sy != 0 && !Into(sx, 0)) { _mvY = 0; return; }
+            if (sx != 0 && sy != 0 && !Into(0, sy)) { _mvX = 0; return; }
+            if (sx != 0 && !Into(0, 1)) { _mvX = 0; _mvY = 1; return; }
+            if (sy != 0 && !Into(1, 0)) { _mvY = 0; _mvX = 1; return; }
+        }
+
+        const double MudLook = 30;   // px looked ahead for soft mud
 
         /// <summary>The move the bot holds now (its decision, after any dodging), for the tests.</summary>
         internal (double x, double y) Move => (_mvX, _mvY);

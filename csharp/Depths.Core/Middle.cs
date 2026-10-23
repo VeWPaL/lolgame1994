@@ -167,8 +167,9 @@ namespace Depths
             }
             p.x = p.tx; p.y = p.ty;
             run.hitSrc = p.src >= 0 ? p.src : p.owner != null && p.owner.kgAdd ? (int)FinalBoss.Source.Adds : -1;
+            run.hitBook = p.book;
             Strike(run, p.tx, p.ty, p.blastR, p.dmg, 2.5);
-            run.hitSrc = -1;
+            run.hitSrc = -1; run.hitBook = null;
             run.booms++;
             return true;
         }
@@ -281,8 +282,9 @@ namespace Depths
         {
             e.buried = false;
             if (e.kgAdd) run.hitSrc = (int)FinalBoss.Source.Adds;   // a recalled Burrower's landing, for the King's books
+            run.hitBook = e.book;   // a brood Burrower's landing, for its boss's books
             Strike(run, e.x, e.y, BurrowHitR, BurrowDmg, 6);
-            run.hitSrc = -1;
+            run.hitSrc = -1; run.hitBook = null;
             e.move = "walk"; e.moveT = BurrowSurface; e.curSpeed = 0;
             if (!Sharp) return;
             // the landing jars it: dazed where it hit, skidding on along its flight, tumbling (the presenter's tumble and shake)

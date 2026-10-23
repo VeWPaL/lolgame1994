@@ -42,6 +42,8 @@ namespace Depths.Unity.Art
         public static readonly Dictionary<char, Color32> MortarPal = Pal(('p', "#3b2a1a"), ('k', "#6b4a2a"), ('e', "#ffe08a"), ('d', "#1a1008"), ('m', "#b8742e"), ('t', "#8a5420"), ('b', "#2a1a0c"));
         public static readonly string[] BurrowerUpper = Mirror("...hhh", "..hhhh", ".hhhhh", ".hheyh", ".hhhyy", "chhhhh", "cchhhh", ".chhhh", "..hhhh", "...hhh");
         public static readonly Dictionary<char, Color32> BurrowerPal = Pal(('h', "#5a4636"), ('e', "#0d0907"), ('y', "#e8a0a0"), ('c', "#e8d8b0"), ('b', "#2a1f18"));
+        // Old Mudmouth: the Burrower grown old in the mud, darker and wetter, its eye a sick amber, its teeth yellowed
+        public static readonly Dictionary<char, Color32> MudmouthPal = Pal(('h', "#3b2c20"), ('e', "#e0a020"), ('y', "#a86a5a"), ('c', "#c9b47a"), ('b', "#1a120c"));
         public static readonly string[] SprayerUpper = Mirror("...nn.", "...nn.", "..kkkk", ".kkeek", ".kkkkk", ".mmttt", "mmtttt", "mstttt", ".ttttt", ".ttttt", "tttttt");
         public static readonly Dictionary<char, Color32> SprayerPal = Pal(('n', "#c9ffd0"), ('k', "#2f6b3a"), ('e', "#ff4d4d"), ('m', "#4c9a5a"), ('t', "#357a45"), ('s', "#9cf0a8"), ('b', "#183a20"));
         // the Gatekeeper, the floor boss of 1-13: horns, a visor lit in its shells' blue, a brass-barred gate for a chest

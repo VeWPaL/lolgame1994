@@ -19,7 +19,7 @@ namespace Depths.Playtest
 
         static double Mean(IEnumerable<double> a) { var l = a.ToList(); return l.Count > 0 ? l.Average() : 0; }
 
-        static double Median(IEnumerable<double> a)
+        internal static double Median(IEnumerable<double> a)
         {
             var b = a.OrderBy(x => x).ToList();
             if (b.Count == 0) return 0;
@@ -184,6 +184,38 @@ namespace Depths.Playtest
                 }
         }
 
+        /// <summary>The region bosses' fights, per label, boss and profile: fights, the share won, the median fight's seconds, its
+        /// damage, and each attack's share of the damage it dealt (FloorRecord.bossBy).</summary>
+        public static void RegionBosses(StringBuilder sb, IReadOnlyList<Batch> sets, List<string> profiles)
+        {
+            var ids = sets.SelectMany(s => s.runs).SelectMany(r => r.floors).Where(f => f.boss != null).Select(f => f.boss!).Distinct().OrderBy(x => x, StringComparer.Ordinal).ToList();
+            if (ids.Count == 0) return;
+            sb.Append("\n## Region bosses\n\n")
+              .Append("| label | boss | profile | fights | survived | median fight s | dmg per fight | top attack share | unearthed per fight | attack shares |\n")
+              .Append("|---|---|---|---:|---:|---:|---:|---:|---:|---|\n");
+            foreach (var s in sets)
+                foreach (var id in ids)
+                    foreach (var p in profiles)
+                    {
+                        // a fight the run's clock cut short (its last floor, ended by the time cap or as stuck) is no fight
+                        var fl = s.runs.Where(r => r.profile == p).SelectMany(r => r.floors.Where(f => f.boss == id && f.bossTicks > 0
+                                     && (f.bossKilled || f != r.floors[r.floors.Count - 1] || r.end == "death"))).ToList();
+                        if (fl.Count == 0) continue;
+                        int won = fl.Count(f => f.bossKilled);
+                        var by = new Dictionary<string, double>();
+                        foreach (var f in fl) if (f.bossBy != null) foreach (var kv in f.bossBy) by[kv.Key] = by.GetValueOrDefault(kv.Key) + kv.Value;
+                        double tot = by.Values.Sum();
+                        var shares = by.OrderByDescending(kv => kv.Value).Select(kv => kv.Key + " " + Pct(kv.Value / tot)).ToList();
+                        sb.Append("| ").Append(s.label).Append(" | ").Append(id).Append(" | ").Append(p).Append(" | ").Append(fl.Count)
+                          .Append(" | ").Append(Pct(won / (double)fl.Count))
+                          .Append(" | ").Append(F1(ProfileStats.Median(fl.Select(f => f.bossTicks / (double)Hz(s)))))
+                          .Append(" | ").Append(F1(fl.Average(f => f.bossDmg)))
+                          .Append(" | ").Append(tot > 0 ? Pct(by.Values.Max() / tot) : "n/a")
+                          .Append(" | ").Append(F1(fl.Average(f => f.unearthed)))
+                          .Append(" | ").Append(string.Join(", ", shares)).Append(" |\n");
+                    }
+        }
+
         /// <summary>What makes two labels not like for like, one line each; empty when they match.</summary>
         public static List<string> Mismatches(Batch a, Batch b)
         {
@@ -254,6 +286,7 @@ namespace Depths.Playtest
             if (ab) Paired(sb, sets[0], sets[1], groups);
 
             FinalFloor(sb, sets, profiles);
+            RegionBosses(sb, sets, profiles);
 
             sb.Append("\n## Where the damage comes from\n");
             foreach (var s in sets) Sources(sb, s, profiles, true);

@@ -12,8 +12,8 @@ namespace Depths
         /// <summary>Whether this floor's boss room holds the Gatekeeper: tuned, and not the final floor.</summary>
         public static bool Spawns(RunState run) => Balance.Tuned && Balance.TuneFloorBoss && !run.finalFloor;
 
-        /// <summary>The kind a boss room on this floor spawns: the Gatekeeper on 1-13 and the Sunken King on 14 (tuned), else the Warden.</summary>
-        public static BodyKind KindFor(RunState run) => FinalBoss.Spawns(run) ? BodyKind.SunkenKing : Spawns(run) ? BodyKind.Gatekeeper : BodyKind.Boss;
+        /// <summary>The kind a boss room spawns: the King on 14, the drawn region boss (else the Gatekeeper) on 1-13 (tuned), else the Warden.</summary>
+        public static BodyKind KindFor(RunState run) => FinalBoss.Spawns(run) ? BodyKind.SunkenKing : Bosses.KindFor(run) ?? (Spawns(run) ? BodyKind.Gatekeeper : BodyKind.Boss);
 
         // ---- tells: every one at least 0.3 s, fixed at every depth (the pace scales the gaps between them, never a tell)
         public static int ChargeTell => Balance.Sec(0.6);    // an orange dashed line along the charge

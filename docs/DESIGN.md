@@ -144,7 +144,7 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
     floor (`Marks`: off a cell that burns, has fallen, or has cracked long enough to be seen, toward the nearest good
     cell, leading its trailing hitbox), and it will not walk or blink onto such a cell (`FloorGuard`).
     `RunState.finalBy` books the fight's damage by attack (the report's "final floor" table).
-- **The Gatekeeper** (placeholder floor boss of floors 1-13, `TuneFloorBoss`, `FloorBoss.cs`; Gungeon's first bosses
+- **The Gatekeeper** (placeholder floor boss of floors 1-13, now the fallback for a region boss not built yet, `TuneFloorBoss`, `FloorBoss.cs`; Gungeon's first bosses
   were the reference: one readable gimmick, three patterns, a short fight). A horned iron guard with a brass-barred
   chest (art 4, radius 28), 345 x 1.35 HP x `DepthTough`; the gaps between attacks (1.0 s + up to 0.7 s) and its
   80 px/s walk to a 170 px standoff scale with `DepthRate`; the tells never shorten. Its body hurts only on a tick it
@@ -160,6 +160,27 @@ Untuned, only the JS four and the Warden spawn. Tuned, everything below.
   are weighted by area (Charge, Slam, Fan, Ring, Rampage): Shallows 4/1/2/2/2, Kiln Works 1/4/2/2/2, Flooded
   Galleries 1/1/4/3/2, the Deep 2 each; the one just used weighs 0.35x. The bar above the room names it. The bot
   steps off its line like a Lunger's and reads its lobs' marks as the Mortar's.
+- **Region bosses** (`Bosses.cs`, `Balance.TuneBosses`, `--untune bosses`; docs/bosses.md is the spec and rubric). Each
+  run draws, on its own stream from the root seed (no other roll moves), 4 of each area's 6 bosses for its 4 floors
+  (shuffled, never twice) and 1 of 3 for floor 13; a boss not built yet is the Gatekeeper. Health is flat per area
+  (1750 / 2100 / 2150 / 1150, times the boss's own scale), not `DepthTough`; walk and gaps divide by `DepthRate`,
+  tells never shorten. Every hit a region boss lands books to `"boss:attack"` (`RunState.bossBy`); its death beat
+  holds the stairs and clears its shells and adds. The bot's `--boss ID` forces every draw of that boss's area.
+- **Old Mudmouth** (S5, `Mudmouth.cs`, the Shallows): a giant Burrower (its rows at art 4, a darker wet palette, radius
+  30), 1.35 x 1750 HP. Untouchable underground and in the air; its resting body never hurts. Before every leap and
+  ring the floor cracks over it for 0.72 s: **a blast (100 px) landing on the crack unearths it**, stunned 2 s on the
+  surface at double damage taken (a knock's stun does not lengthen that). Gaps 0.16-0.46 s at floor 1.
+  - Leap: dig 0.45 s, it homes under the floor (230 px/s) to within 300 px, cracks, then leaps at the player plus
+    half their run over the 0.6 s flight (a 58 px mark filling the whole flight, 2 HP), throwing 10 shells (1 HP) as
+    it lands; 1.0 s on the surface after. Spit: 0.45 s cast flash, 3 lobs (0.9 s, 46 px marks, 2 HP; phase 2+ a cross
+    of 5). Ring: it cracks within 170 px and bursts up throwing 12 shells (200 px/s; phase 3 a slower second ring).
+  - Phase 2 (66%): Double leap (the second marked from the first's landing); **the mud it passes under stays soft for
+    3 s** (a wet patch, 30 px; the player moves at 0.6x on it; a ground state, never a burning cell).
+  - Phase 3 (33%): Tunnel (a raised dirt line, 0.7 s, from where it dug through the player, then its head runs it at
+    620 px/s, 2 HP) and Brood (0.7 s cast flash, two Burrowers of its own, while none lives; they crumble when it falls).
+  - A phase change (2.4 s) surfaces it and calls off the move in hand; it waits while it lies unearthed. Death beat
+    1.5 s. The bot reads its mark, line and lobs, steps off soft mud, and blasts a seen crack (after its reaction,
+    when the blast can land in time) on its profile's blast willingness. `shot mudmouth` freezes it mid-crack.
 
 ## 5. Feel and presentation
 

@@ -60,7 +60,7 @@ namespace Depths.Playtest
         {
             var b = new Batch { label = label, commit = BuildInfo.Commit, brunch = Balance.BrunchVariant,
                                 tickHz = Balance.TickHz, curve = Depths.Curve.On, tuned = Balance.Tuned, untune = Untune.Off().Count > 0 ? Untune.Off() : null, dials = CurveDials.Applied.Count > 0 ? CurveDials.Applied.ToList() : null, minutes = minutes, seeds = seeds.ToList(),
-                                profiles = profiles.ToList(), floor = floor > 1 ? floor : (int?)null };
+                                profiles = profiles.ToList(), floor = floor > 1 ? floor : (int?)null, boss = Bosses.Force };
             foreach (var p in profiles)
                 foreach (var s in seeds)
                 {
@@ -85,7 +85,7 @@ namespace Depths.Playtest
     /// <summary>`--untune part,part`: parts of Balance.Tuned turned off for one play, to measure each part on its own.</summary>
     public static class Untune
     {
-        public static readonly string[] Parts = { "wall", "rush", "dodge", "loot", "beam", "warden", "ease", "damage", "momentum", "pools", "middle", "aim", "depth", "spike", "end", "items", "floorboss", "finalboss" };
+        public static readonly string[] Parts = { "wall", "rush", "dodge", "loot", "beam", "warden", "ease", "damage", "momentum", "pools", "middle", "aim", "depth", "spike", "end", "items", "floorboss", "finalboss", "bosses" };
 
         public static void Set(string part, bool on)
         {
@@ -109,6 +109,7 @@ namespace Depths.Playtest
                 case "items": Balance.TuneItems = on; break;
                 case "floorboss": Balance.TuneFloorBoss = on; break;
                 case "finalboss": Balance.TuneFinalBoss = on; break;
+                case "bosses": Balance.TuneBosses = on; break;
                 default: throw new UsageException("--untune: no part '" + part + "' (" + string.Join(", ", Parts) + ")");
             }
         }
@@ -134,6 +135,7 @@ namespace Depths.Playtest
             if (!Balance.TuneItems) off.Add("items");
             if (!Balance.TuneFloorBoss) off.Add("floorboss");
             if (!Balance.TuneFinalBoss) off.Add("finalboss");
+            if (!Balance.TuneBosses) off.Add("bosses");
             return off;
         }
     }
@@ -198,10 +200,10 @@ namespace Depths.Playtest
         public int Floor = 1;   // --floor N: every run starts on floor N with the starting kit (the dev key F3's path)
         public List<string> Labels = new List<string>();
 
-        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial", "tuned", "untune", "floor" };
+        static readonly string[] PlayOpts = { "label", "seeds", "profiles", "minutes", "brunch", "out", "hz", "curve", "dial", "tuned", "untune", "floor", "boss" };
 
         public const string Usage = "usage: play [--label X] [--seeds 1,7,42] [--profiles novice,average,skilled] " +
-            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden,ease,damage,momentum,pools,middle,aim] [--dial middle.Drops=0.15,end.Tough=1.2] [--floor 14] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]  |  constants";
+            "[--minutes 20] [--brunch A+] [--hz 60] [--curve on|off] [--tuned on|off] [--untune wall,rush,dodge,loot,beam,warden,ease,damage,momentum,pools,middle,aim] [--dial middle.Drops=0.15,end.Tough=1.2] [--floor 14] [--boss mudmouth] [--out DIR]  |  report A [B] [--out DIR]  |  curve A [--mid-rule original|recovery|pickups] [--out DIR]  |  constants";
 
         static string Name(string s, string what)
         {
@@ -280,6 +282,10 @@ namespace Depths.Playtest
                     case "tuned":
                         if (v != "on" && v != "off") throw new UsageException("--tuned is on or off");
                         c.Tuned = v == "on";
+                        break;
+                    case "boss":
+                        if (!Bosses.Built.ContainsKey(v)) throw new UsageException("--boss: no built boss '" + v + "' (" + string.Join(", ", Bosses.Built.Keys) + ")");
+                        Bosses.Force = v;   // every draw of its area becomes it
                         break;
                     case "untune":
                         foreach (var part in v.Split(',')) Untune.Set(part.Trim(), false);

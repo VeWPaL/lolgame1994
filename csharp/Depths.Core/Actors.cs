@@ -149,13 +149,18 @@ namespace Depths
         public readonly BodyKind[] kgSumK = new BodyKind[2];     // and what they are
         public int kgSumN;
         public int fbCharges;              // the King's charges still to come after this one
+        public Mudmouth.Mud? mud;          // Old Mudmouth's soft mud (Mudmouth.cs); null on every other body
+        public double takenMult = 1;       // what a player hit is multiplied by besides armour (an unearthed Mudmouth: 2)
+        public int unearthed;              // times a blast knocked it out of the ground
+        public bool rbAdd;                 // a region boss's add (Mudmouth's brood): it crumbles when its boss falls
+        public string? book;               // the region-boss attack its hits book to (RunState.bossBy), or null
         // the hook's resistance: which field last charged this body, how many hooks it has taken, how
         // long since it was last in one, and the power the current field acts with
         public int hookMark, hookStacks, hookCalm;
         /// <summary>Hunter's Mark (placeholder, C# only): ticks left marked; a marked body takes MarkVuln x damage.</summary>
         public int markT;
         /// <summary>What a player hit is multiplied by: armour, the mark while it lasts, and the tuned damage cut (Balance.PlayerDmg).</summary>
-        public double Vuln => (markT > 0 ? armour * Balance.MarkVuln : armour) * Balance.PlayerDmg;
+        public double Vuln => (markT > 0 ? armour * Balance.MarkVuln : armour) * Balance.PlayerDmg * takenMult;
         public double hookPower;
         public int trait;      // 0, or the band trait a ranged spawn rolled (TRAIT_HOLD 1, TRAIT_CLOSE 2)
         public int lifeT;              // ticks this body has been stepped (the room's ready freeze does not count)
@@ -207,6 +212,7 @@ namespace Depths
         public double r, dmg;
         public bool friendly, heavy;
         public int src = -1;   // the final boss's attack that threw it (FinalBoss.Source), for the bookkeeping; -1 for any other
+        public string? book;   // a region boss's attack that threw it ("mudmouth:spit"), for RunState.bossBy; null for any other
 
         // --- read by the projectile pass (src/60-tick.js:592-741)
         /// <summary>Ticks since the shell was spawned. Read by the pass.</summary>
