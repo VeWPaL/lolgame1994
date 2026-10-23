@@ -168,8 +168,9 @@ it from another checkout or the first command spends minutes importing.
   turns the kit off. Measured (seeds 101-200 x 3, 30 min, forced): average 398 fights, 100% survived, median 175 s,
   6.7 HP a fight, top attack double leap 24.9%; novice 88%, 250 s, 19.8 HP, top 28%; skilled 100%, 135 s, 2.3 HP,
   spit 35%. Tuning moves: health 1.35 x 1750 (the stun's double damage shortens it), the crack 0.72 s (0.6 killed
-  the novice, 0.85 let every crack be blasted). Not done: the Unity lane (`tools/unity.sh test`, `shot mudmouth`)
-  was not run in the builder's worktree; the lab (F2) has no Mudmouth specimen; the ledger map's boss sigil and the
+  the novice, 0.85 let every crack be blasted). Full runs, kit off vs on (101-200 x 3, 60 min): deaths 155 / 155,
+  wins 145 / 145, a win 1.6 min longer. Unity: `tools/unity.sh test` 96/96, `shot mudmouth` all checks pass (the crack's
+  ring sampled on screen). Not done: the lab (F2) has no Mudmouth specimen; the ledger map's boss sigil and the
   dev line's draw list (bosses.md section 3) are not built. Next: K1 The Foreman, G5 the Choir, D1 the Warden Returned.
 - **The Gatekeeper, the floor boss of 1-13 (unit 3; owner 2026-10-22: a new floor boss replaces the Warden).**
   DESIGN.md, "The Gatekeeper" (`FloorBoss.cs`, `TuneFloorBoss`, `--untune floorboss`). Charge (0.6 s line), Slam (3
