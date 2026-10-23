@@ -8,8 +8,9 @@ namespace Depths.Playtest
     {
         public readonly Input Input;
         public readonly bool UseActive;
+        public readonly int WeaponKey;   // a number key pressed this tick: 1-4 holds that gun (GameView's keys); 0 is none
 
-        public BotAction(Input input, bool useActive = false) { Input = input; UseActive = useActive; }
+        public BotAction(Input input, bool useActive = false, int weaponKey = 0) { Input = input; UseActive = useActive; WeaponKey = weaponKey; }
 
         public static BotAction None => new BotAction(Input.None);
     }
@@ -23,7 +24,7 @@ namespace Depths.Playtest
 
     /// <summary>The JS bot's player (tools/playtest.js playOne): circle and keep a band, dodge shots it
     /// has seen for a reaction time, then take what is worth having and route on.</summary>
-    public sealed class BotPolicy : IPolicy
+    public sealed partial class BotPolicy : IPolicy
     {
         static readonly Dir[] Dirs = { Dir.N, Dir.S, Dir.E, Dir.W };   // the JS route's order
 
@@ -65,6 +66,7 @@ namespace Depths.Playtest
             _p = profile;
             _rnd = new BotRng(seed, profile.Name);
             _react = profile.ReactTicks;
+            _decide = Math.Max(2, Balance.Sec(profile.DecideS > 0 ? profile.DecideS : profile.ReactS));
             _strafe = _rnd.Next() < 0.5 ? 1 : -1;
         }
 
@@ -90,7 +92,8 @@ namespace Depths.Playtest
                 double d = Hyp(e.x - pl.x, e.y - pl.y) + (e.buried ? 1e9 : 0);
                 if (d < nd) { nd = d; nearest = e; }
             }
-            return live > 0 ? Fight(run, r, t, addNear ?? target ?? nearest!) : Quiet(run, r);
+            if (live == 0) return Quiet(run, r);
+            return _p.Expert ? Expert(run, r, t, addNear ?? target ?? nearest!) : Fight(run, r, t, addNear ?? target ?? nearest!);
         }
 
         BotAction Fight(RunState run, Room r, int t, Enemy target)

@@ -20,7 +20,7 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
 - **JS (`depths.html`, `src/`)**: frozen, **tagged `js-final`** (Brunch A+ is the default; A and B stay
   behind `?brunch=` for comparison). Suite 246/246 (headless Linux: 245, the known font test).
 - **C# (`csharp/`)**: deterministic core, netstandard2.1, also a Unity package (`com.depths.core`).
-  778/778, 148 parity rows. The whole run loop is ported and checked against JS recordings.
+  787/787, 148 parity rows. The whole run loop is ported and checked against JS recordings.
   **The game ticks at 60 Hz** (`Balance.TickHz`); every time-based dial is in seconds or per-second
   units. The suite runs at 210 Hz (assembly `[TickRate]` in `TickRate.cs`), where every dial is
   bit-identical to the JS one, so the parity rows are untouched; `RateTests` (23) compares key
@@ -62,6 +62,19 @@ fixed; see "Notes batch 3" under Owner decisions. Older entries: `docs/history/s
   are too few for deaths: the wide matrix (seeds 101-300) is the reference, see the 60 Hz entry below.
   Q-when-low almost never heals: the bot takes every item, so Tin Cup is usually replaced. The JS bot (`tools/playtest.js`, baseline tag
   `pre-features-2026-10-06`) plays only the frozen JS.
+- **Expert profile** (`--profiles expert`, `Expert.cs`, 2026-10-23, tournament builder B): a bot stronger than the
+  owner, to tune difficulty against. The other three play exactly as before (skilled seeds 101-105 x 20 min: JSON
+  identical before/after). Its brain: a danger map over the next 0.5 s (every shell, mark, charge line, rift strip,
+  contact body and King floor cell it has seen, as discs in time), every way to walk or blink (held, or a step then
+  a stand) played forward on the game's movement and trailing hitbox, scored on danger + the held gun's best range +
+  the walls; the gun with the most damage a second at that range and body (keys 1-4); closer on a winded boss.
+  Human limits, each a test in `ExpertBotTests` that a mutant breaks: reacts to anything new only after 0.15 s;
+  aim noise 0.03 rad and a mouse turning at most 20 rad/s; at most 8 decisions in any second (5 on the beat, the rest
+  when something has just been seen for 0.15 s), every input held 2+ ticks. It reads only the screen: positions
+  of bodies (their speed from two looks), shells (position, velocity), tells/marks/lines/cracks and how far along
+  they are, the floor's cells; never `run.rng`, `bossCd`, `shootCd` or any timer without a tell.
+  King with the starting kit (seeds 101-200, `--floor 14`): expert 100% won, median won fight 111.5 s (skilled 41%,
+  211.6 s). Full runs (101-160, 90 min): expert 60 wins / 0 deaths, skilled 44 / 16; 0 stuck, 0 errors.
 - Linux cloud sessions: `apt-get install dotnet-sdk-10.0`, then `DOTNET_ROLL_FORWARD=Major dotnet test csharp/Depths.sln`.
   `verify.ps1` is Windows-only (backslash paths): under Linux `pwsh` it stops at step 2.
 

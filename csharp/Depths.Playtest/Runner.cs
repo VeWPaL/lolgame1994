@@ -107,6 +107,7 @@ namespace Depths.Playtest
                     var act = _policy.Decide(Run, t);
                     where = "game";
                     if (act.UseActive && Run.state == "playing") UseActive();
+                    if (act.WeaponKey >= 1 && act.WeaponKey <= Weapons.All.Length) Run.player.weaponIdx = act.WeaponKey - 1;   // GameView's keys 1-4
                     if (act.Input.blink && TickOrder.TryBlink(Run, act.Input)) { o.blinks++; o.dodgeBlinks++; }
                     Step(act.Input);
                     where = "bot";

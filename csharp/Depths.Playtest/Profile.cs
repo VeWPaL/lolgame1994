@@ -14,6 +14,9 @@ namespace Depths.Playtest
         public double BandMin, BandMax;
         public double Blast;       // chance to throw the alt into a crowd of 3+
         public double Heal;        // HP (red + regen, the JS bot's hp) at or under which Q is tried
+        public bool Expert;        // fights with the expert's brain (Expert.cs); the other three play the JS bot's
+        public double DecideS;     // expert: seconds between decisions (ReactS still gates anything new)
+        public double AimRate;     // expert: the mouse's top turn rate, radians a second
 
         public static readonly IReadOnlyList<Profile> All = new[]
         {
@@ -23,12 +26,20 @@ namespace Depths.Playtest
                           BandMin = 150, BandMax = 260, Blast = 0.55, Heal = 2 },
             new Profile { Name = "skilled", ReactS = 0.114, AimErr = 0.03, Dodge = 0.9,
                           BandMin = 170, BandMax = 280, Blast = 0.85, Heal = 2 },
+            new Profile { Name = "expert", ReactS = 0.15, AimErr = 0.03, Dodge = 1,
+                          BandMin = 140, BandMax = 260, Blast = 0.85, Heal = 2, Expert = true, DecideS = 0.2, AimRate = 20 },
         };
+
+        /// <summary>The profile names, for the CLI's messages.</summary>
+        public static string Names
+        {
+            get { var n = new List<string>(); foreach (var p in All) n.Add(p.Name); return string.Join(", ", n); }
+        }
 
         public static Profile Get(string name)
         {
             foreach (var p in All) if (p.Name == name) return p;
-            throw new ArgumentException("no profile called " + name + " (novice, average, skilled)");
+            throw new ArgumentException("no profile called " + name + " (" + Names + ")");
         }
     }
 

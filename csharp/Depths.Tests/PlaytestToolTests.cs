@@ -24,7 +24,7 @@ namespace Depths.Tests
                 ("average", 38, 0.07, 0.55, 150, 260, 0.55, 2),
                 ("skilled", 24, 0.03, 0.9, 170, 280, 0.85, 2),
             };
-            var table = Profile.All.Select(p => (p.Name, p.ReactTicks, p.AimErr, p.Dodge, p.BandMin, p.BandMax, p.Blast, p.Heal));
+            var table = Profile.All.Where(p => !p.Expert).Select(p => (p.Name, p.ReactTicks, p.AimErr, p.Dodge, p.BandMin, p.BandMax, p.Blast, p.Heal));
             Assert.That(table, Is.EqualTo(js));
         }
 
@@ -613,7 +613,7 @@ namespace Depths.Tests
         [TestCase("play", "--seeds", "1,,2")]
         [TestCase("play", "--minutes", "-3")]
         [TestCase("play", "--minutes", "0")]
-        [TestCase("play", "--profiles", "expert")]
+        [TestCase("play", "--profiles", "pro")]
         [TestCase("play", "--brunch", "C")]
         [TestCase("play", "--label", "../x")]
         [TestCase("play", "--out", "")]
